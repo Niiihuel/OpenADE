@@ -5,8 +5,9 @@ edition = "2021"
 rust-version = "1.95"
 description = "Chromium embedded through CEF, without a window and without the GPU, for the project browser"
 
-# Not a member of the workspace: building it needs CEF itself, which only
-# `nix/shell-cef.nix` provides. `agents-window --features cef` is what uses it.
+# Not a member of the workspace: it builds on Linux alone, where
+# agents-window depends on it. Building it needs CEF itself, which
+# `shell.nix` provides.
 
 [dependencies]
 cef = { git = "https://github.com/tauri-apps/cef-rs", rev = "2861f6991fae3ee31f877891382adcbc9b9f0953", default-features = false }

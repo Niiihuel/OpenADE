@@ -3,7 +3,7 @@ name = "openide-browser"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Chrome DevTools protocol driver for the browser shared by the user and the agent"
+description = "DevTools protocol driver for the page of an embedded Chromium, shared by the user and the agent"
 
 [dependencies]
 base64 = "0.22"

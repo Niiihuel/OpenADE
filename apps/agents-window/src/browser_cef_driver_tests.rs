@@ -1,23 +1,180 @@
-//! Real-Chrome tests against local fixtures. Ignored by default, because the
-//! central suite must not need a browser:
+//! The driver against the embedded Chromium, without the runtime around it:
+//! each scenario opens a page of its own and drives it through the API of
+//! `openide_browser::Driver`. Opt-in, and run with the scenarios of
+//! `browser_cef_tests.rs`:
 //!
 //! ```sh
-//! OPENIDE_BROWSER_EXECUTABLE="$(command -v google-chrome-stable)" \
-//!   nix-shell --run "cargo test -p openide-browser --test chrome -- --ignored"
+//! nix-shell --run "cargo test -p agents-window -- --ignored real_cef --test-threads=1"
 //! ```
 //!
-//! Chrome runs headless with a throwaway profile and only ever visits the
-//! loopback server each test starts.
-#![cfg(unix)]
-mod support;
+//! Chromium opens no window and never touches the GPU, and only ever visits
+//! the loopback server each test starts.
 
-use openide_browser::*;
+use super::*;
+use openide_browser::{
+    ConsoleEntry, Evaluated, NetworkEntry, Png, Report, MAX_ARIA_BYTES, MAX_CONSOLE_TEXT_BYTES,
+    MAX_EVALUATE_BYTES, MAX_EVENTS, MAX_INPUT_TEXT_BYTES, MAX_REPORT_BYTES, MAX_REQUEST_URL_BYTES,
+    MAX_SCREENSHOT_BYTES,
+};
+use std::io::Read;
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
-use support::*;
 
+/// The pages the driver's recorded snapshots were taken from, and the
+/// recordings its unit tests reproduce them with.
+const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../crates/openide-browser/tests/fixtures");
+const RECORDED: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../crates/openide-browser/tests/recorded");
 const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
+
+/// A page of the embedded Chromium with a driver on it, as a context has
+/// them. The view only keeps the page open: nothing takes its frames.
+fn open(width: u32, height: u32, scale: f32) -> (Arc<LiveView>, Driver) {
+    let view = Arc::<LiveView>::default();
+    let driver = cef::Embedded::start(&view, &std::env::temp_dir(), (width, height), scale)
+        .unwrap_or_else(|failure| panic!("{}", failure.message));
+    // Composited as often as a page a command is running on.
+    view.embedded.busy(true);
+    (view, driver)
+}
+
+struct Response {
+    status: u16,
+    headers: Vec<(&'static str, String)>,
+    body: Vec<u8>,
+}
+
+impl Response {
+    fn html(body: impl Into<Vec<u8>>) -> Self {
+        Self {
+            status: 200,
+            headers: vec![("Content-Type", "text/html; charset=utf-8".into())],
+            body: body.into(),
+        }
+    }
+
+    fn status(status: u16, body: &str) -> Self {
+        Self {
+            status,
+            headers: vec![("Content-Type", "text/plain; charset=utf-8".into())],
+            body: body.as_bytes().to_vec(),
+        }
+    }
+
+    fn header(mut self, name: &'static str, value: &str) -> Self {
+        self.headers.retain(|(existing, _)| *existing != name);
+        self.headers.push((name, value.to_owned()));
+        self
+    }
+}
+
+/// One of the driver's fixture pages.
+fn fixture(name: &str) -> Option<Response> {
+    let name = name.trim_start_matches('/');
+    if name.is_empty() || name.contains(['/', '\\']) || name.contains("..") {
+        return None;
+    }
+    std::fs::read(Path::new(FIXTURES).join(name)).ok().map(Response::html)
+}
+
+/// An HTTP server on a free loopback port, alive until dropped. Only this
+/// machine can reach it and it serves only what the test hands it.
+struct Server {
+    origin: String,
+    port: u16,
+    stop: Arc<AtomicBool>,
+}
+
+impl Server {
+    /// `route` gets the method and the path with its query.
+    fn start(route: impl Fn(&str, &str) -> Response + Send + Sync + 'static) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let stop = Arc::new(AtomicBool::new(false));
+        let route = Arc::new(route);
+        let stopping = stop.clone();
+        thread::spawn(move || {
+            for stream in listener.incoming() {
+                if stopping.load(Ordering::Acquire) {
+                    break;
+                }
+                let Ok(stream) = stream else { continue };
+                let route = route.clone();
+                thread::spawn(move || {
+                    let _ = serve(stream, route.as_ref());
+                });
+            }
+        });
+        Self {
+            origin: format!("http://127.0.0.1:{port}"),
+            port,
+            stop,
+        }
+    }
+
+    /// The fixture pages by file name, plus an `/api/` that answers JSON.
+    fn fixtures() -> Self {
+        Self::start(|_, path| {
+            let path = path.split('?').next().unwrap_or("");
+            if path.starts_with("/api/") {
+                return Response::status(200, "{}").header("Content-Type", "application/json");
+            }
+            fixture(path).unwrap_or_else(|| Response::status(404, "no"))
+        })
+    }
+
+    /// The same server under another host name: a different site for Chromium.
+    fn origin_as(&self, host: &str) -> String {
+        format!("http://{host}:{}", self.port)
+    }
+}
+
+impl Drop for Server {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        let _ = TcpStream::connect(("127.0.0.1", self.port));
+    }
+}
+
+fn serve(mut stream: TcpStream, route: &dyn Fn(&str, &str) -> Response) -> std::io::Result<()> {
+    let mut request = Vec::new();
+    let mut scratch = [0u8; 4096];
+    let head = loop {
+        let count = stream.read(&mut scratch)?;
+        request.extend_from_slice(&scratch[..count]);
+        if let Some(end) = request.windows(4).position(|window| window == b"\r\n\r\n") {
+            break end;
+        }
+        if count == 0 || request.len() > 256 * 1024 {
+            return Ok(());
+        }
+    };
+    let text = String::from_utf8_lossy(&request[..head]).into_owned();
+    let mut line = text.lines().next().unwrap_or("").split(' ');
+    let (method, path) = (line.next().unwrap_or(""), line.next().unwrap_or("/"));
+    let length = text
+        .lines()
+        .filter_map(|line| line.split_once(':'))
+        .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+        .and_then(|(_, value)| value.trim().parse::<usize>().ok())
+        .unwrap_or(0);
+    // The body is read and never looked at.
+    let mut body = request.len() - head - 4;
+    while body < length.min(1024 * 1024) {
+        let count = stream.read(&mut scratch)?;
+        if count == 0 {
+            break;
+        }
+        body += count;
+    }
+    let response = route(method, path);
+    let mut reply = format!("HTTP/1.1 {} X\r\nConnection: close\r\nContent-Length: {}\r\n", response.status, response.body.len());
+    for (name, value) in &response.headers {
+        reply.push_str(&format!("{name}: {value}\r\n"));
+    }
+    reply.push_str("\r\n");
+    stream.write_all(reply.as_bytes())?;
+    stream.write_all(&response.body)?;
+    stream.flush()
+}
 
 fn snapshot(driver: &mut Driver) -> String {
     let snapshot = driver.snapshot(&SnapshotOptions::default()).unwrap();
@@ -40,8 +197,14 @@ fn viewport(driver: &mut Driver, width: u32, height: u32) -> Png {
     assert!(png.data.len() < MAX_SCREENSHOT_BYTES);
     assert!(png.data.starts_with(PNG_SIGNATURE));
     assert_eq!((png.width, png.height), (width, height));
-    assert_eq!(image_size(&png.data), Some((width, height)));
+    assert_eq!(decoded_size(&png.data), (width, height));
     png
+}
+
+/// The size a PNG decodes to.
+fn decoded_size(png: &[u8]) -> (u32, u32) {
+    let image = image::load_from_memory_with_format(png, image::ImageFormat::Png).unwrap();
+    (image.width(), image.height())
 }
 
 fn tool_error<T: std::fmt::Debug>(result: Result<T, DriverError>, pattern: &str) -> String {
@@ -53,30 +216,6 @@ fn tool_error<T: std::fmt::Debug>(result: Result<T, DriverError>, pattern: &str)
 
 fn evaluate(driver: &mut Driver, expression: &str) -> String {
     driver.evaluate(expression, None).unwrap().text
-}
-
-fn processes_using(directory: &Path) -> Vec<String> {
-    let needle = directory.to_str().unwrap();
-    std::fs::read_dir("/proc")
-        .unwrap()
-        .flatten()
-        .filter_map(|entry| std::fs::read(entry.path().join("cmdline")).ok())
-        .map(|bytes| String::from_utf8_lossy(&bytes).replace('\0', " "))
-        .filter(|command| command.contains(needle))
-        .collect()
-}
-
-fn alive(process: u32) -> bool {
-    // A zombie still has an entry; it counts as running only while it is not one.
-    std::fs::read_to_string(format!("/proc/{process}/stat"))
-        .is_ok_and(|stat| !stat.rsplit(')').next().unwrap_or("").trim_start().starts_with('Z'))
-}
-
-fn scratch(label: &str) -> PathBuf {
-    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().subsec_nanos();
-    let path = PathBuf::from(format!("/tmp/obt-{label}-{:x}", stamp ^ std::process::id()));
-    std::fs::create_dir(&path).unwrap();
-    path
 }
 
 const INPUT_PAGE: &str = r#"<!doctype html><html lang="es"><head><title>Fixture OpenIDE</title><style>
@@ -103,28 +242,17 @@ fn input_server() -> Server {
 }
 
 #[test]
-#[ignore = "needs Chrome"]
-fn navigation_input_clipboard_scrolling_history_and_cleanup() {
+#[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
+fn real_cef_driver_navigates_takes_input_copies_cuts_scrolls_and_keeps_history() {
     let server = input_server();
     let origin = server.origin.clone();
-    let base = scratch("life");
-    // The host may hand over a temporary root that a closed shell took with it.
-    let mut driver = Driver::launch(&LaunchOptions {
-        executable: executable(),
-        width: 640,
-        height: 480,
-        scale: 1.0,
-        temp_root: Some(base.join("deleted-nix-shell")),
-    })
-    .unwrap();
-    assert!(!base.join("deleted-nix-shell").exists(), "the deleted directory is not recreated");
-    let directory = driver.directory().unwrap().to_owned();
+    let (_page, mut driver) = open(640, 480, 1.0);
+    // CEF's files are in a directory of this user alone, short enough for
+    // the sockets Chromium makes below it.
+    let directory = openide_cef::directory().expect("CEF runs in this process");
     assert!(directory.file_name().unwrap().to_str().unwrap().starts_with("oid-"));
     assert!(directory.as_os_str().len() <= 48, "{directory:?}");
     assert_eq!(std::fs::metadata(&directory).unwrap().permissions().mode() & 0o777, 0o700);
-    assert!(directory.join("profile").is_dir(), "the profile lives inside the private directory");
-    let process = driver.process_id().unwrap();
-    assert!(alive(process));
 
     let info = driver.info().unwrap();
     assert_eq!((info.url.as_str(), info.can_go_back, info.can_go_forward), ("about:blank", false, false));
@@ -199,7 +327,7 @@ fn navigation_input_clipboard_scrolling_history_and_cleanup() {
     driver.scroll(0.0, 800.0).unwrap();
     let deadline = Instant::now() + Duration::from_secs(3);
     while !driver.info().unwrap().title.starts_with("Scroll ") && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(30));
+        thread::sleep(Duration::from_millis(30));
     }
     let title = driver.info().unwrap().title;
     assert!(title.starts_with("Scroll ") && title != "Scroll 0", "{title}");
@@ -241,119 +369,6 @@ fn navigation_input_clipboard_scrolling_history_and_cleanup() {
     driver.navigate(&origin).unwrap();
     assert_eq!(driver.info().unwrap().title, "Fixture OpenIDE");
     viewport(&mut driver, 800, 600);
-
-    driver.close();
-    assert!(!alive(process), "Chrome is killed and reaped");
-    assert!(!directory.exists(), "the profile and temporary files are removed");
-    assert_eq!(processes_using(&directory), Vec::<String>::new(), "no helper process is left behind");
-    assert_eq!(std::fs::read_dir(&base).unwrap().count(), 0);
-    std::fs::remove_dir_all(base).unwrap();
-}
-
-#[test]
-#[ignore = "needs Chrome"]
-fn temporary_roots_and_a_failed_launch_leave_nothing_behind() {
-    let base = scratch("root");
-    let managed = base.join("managed");
-    std::fs::create_dir(&managed).unwrap();
-    let options = |executable: PathBuf, temp_root: &Path| LaunchOptions {
-        executable,
-        width: 320,
-        height: 240,
-        scale: 1.0,
-        temp_root: Some(temp_root.to_owned()),
-    };
-    // A browser that is not there is a readable launch failure, and a retry works.
-    let missing = Driver::launch(&options(base.join("no-such-chrome"), &managed)).unwrap_err();
-    assert_eq!(missing.kind, ErrorKind::Launch);
-    assert!(missing.message.contains("no-such-chrome"), "{missing}");
-    assert_eq!(std::fs::read_dir(&managed).unwrap().count(), 0, "a failed launch removes its directory");
-    // One that starts and exits at once says what it printed.
-    let exits = Driver::launch(&options(PathBuf::from("/bin/sh"), &managed)).unwrap_err();
-    assert_eq!(exits.kind, ErrorKind::Launch);
-    assert_eq!(std::fs::read_dir(&managed).unwrap().count(), 0);
-
-    let mut driver = Driver::launch(&options(executable(), &managed)).unwrap();
-    viewport(&mut driver, 320, 240);
-    assert_eq!(driver.directory().unwrap().parent(), Some(managed.as_path()));
-    drop(driver);
-    assert_eq!(std::fs::read_dir(&managed).unwrap().count(), 0);
-
-    // A deep data path is valid for files and too long for Chromium's sockets.
-    let deep = base.join("browser-runtime").join("scope-".repeat(12)).join("tmp");
-    std::fs::create_dir_all(&deep).unwrap();
-    let mut driver = Driver::launch(&options(executable(), &deep)).unwrap();
-    viewport(&mut driver, 320, 240);
-    assert!(driver.directory().unwrap().as_os_str().len() <= 48);
-    assert_eq!(std::fs::read_dir(&deep).unwrap().count(), 0, "a short private root is used instead");
-    let directory = driver.directory().unwrap().to_owned();
-    drop(driver);
-    assert!(!directory.exists());
-    std::fs::remove_dir_all(base).unwrap();
-}
-
-/// Starts a driver, says where, and waits to be killed. Only when the parent
-/// test asks: on its own this is not a test.
-#[test]
-#[ignore = "needs Chrome"]
-fn holder_process() {
-    if std::env::var_os("OPENIDE_BROWSER_TEST_HOLDER").is_none() {
-        return;
-    }
-    let driver = launch(320, 240, 1.0);
-    println!("HOLDER {} {}", driver.process_id().unwrap(), driver.directory().unwrap().display());
-    std::thread::sleep(Duration::from_secs(600));
-}
-
-#[test]
-#[ignore = "needs Chrome"]
-fn chrome_exits_when_its_parent_dies_and_the_next_launch_collects_the_directory() {
-    use std::io::{BufRead, BufReader};
-    let mut holder = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--ignored", "--exact", "holder_process", "--nocapture", "--test-threads=1"])
-        .env("OPENIDE_BROWSER_TEST_HOLDER", "1")
-        .env("TMPDIR", "/tmp")
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .unwrap();
-    let line = BufReader::new(holder.stdout.take().unwrap())
-        .lines()
-        .map_while(Result::ok)
-        .find(|line| line.contains("HOLDER "))
-        .expect("the holder reports its browser");
-    let mut fields = line[line.find("HOLDER ").unwrap()..].split(' ').skip(1);
-    let process: u32 = fields.next().unwrap().parse().unwrap();
-    let directory = PathBuf::from(fields.next().unwrap());
-    assert!(alive(process) && directory.is_dir());
-
-    // No destructor runs: the parent is gone at once.
-    unsafe {
-        libc::kill(holder.id() as i32, libc::SIGKILL);
-    }
-    holder.wait().unwrap();
-    let deadline = Instant::now() + Duration::from_secs(15);
-    while (alive(process) || !processes_using(&directory).is_empty()) && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    assert!(!alive(process), "Chrome notices its command pipe closing and exits");
-    assert_eq!(processes_using(&directory), Vec::<String>::new());
-
-    // The directory outlived its owner. A launch that finds it old enough and
-    // unlocked removes it.
-    assert!(directory.is_dir());
-    let old = std::time::SystemTime::now() - Duration::from_secs(600);
-    std::fs::File::options().write(true).open(directory.join("driver.lock")).unwrap().set_modified(old).unwrap();
-    let driver = Driver::launch(&LaunchOptions {
-        executable: executable(),
-        width: 320,
-        height: 240,
-        scale: 1.0,
-        temp_root: Some(directory.parent().unwrap().to_owned()),
-    })
-    .unwrap();
-    assert!(!directory.exists(), "the abandoned directory is collected");
-    assert!(driver.directory().unwrap().is_dir());
 }
 
 // ---- Agent tools: refs, explicit actions, page observers and bounded output ----
@@ -380,11 +395,11 @@ fn tools_server() -> Server {
 }
 
 #[test]
-#[ignore = "needs Chrome"]
-fn refs_actions_waits_and_evaluate() {
+#[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
+fn real_cef_driver_acts_by_ref_waits_and_evaluates() {
     let server = tools_server();
     let origin = server.origin.clone();
-    let mut driver = launch(640, 480, 1.0);
+    let (_page, mut driver) = open(640, 480, 1.0);
     driver.navigate(&format!("{origin}/tools")).unwrap();
     let mut tree = snapshot(&mut driver);
     assert!(tree.contains("- button \"Efímero\" [ref=e"), "{tree}");
@@ -519,11 +534,11 @@ fn refs_actions_waits_and_evaluate() {
 }
 
 #[test]
-#[ignore = "needs Chrome"]
-fn console_network_dialogs_and_screenshots_stay_within_their_bounds() {
+#[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
+fn real_cef_driver_keeps_console_network_dialogs_and_screenshots_within_their_bounds() {
     let server = tools_server();
     let origin = server.origin.clone();
-    let mut driver = launch(640, 480, 1.0);
+    let (_page, mut driver) = open(640, 480, 1.0);
     driver.navigate(&format!("{origin}/tools")).unwrap();
     driver.wait_seconds(0.5).unwrap();
 
@@ -640,7 +655,7 @@ fn console_network_dialogs_and_screenshots_stay_within_their_bounds() {
     let paragraph = ref_of(&tree, "paragraph");
     let element = driver.screenshot(Capture::Element(Target::Ref(&paragraph))).unwrap();
     assert!(element.width <= 640 && element.height > 0 && element.height < 100, "element {}x{}", element.width, element.height);
-    assert_eq!(image_size(&element.data), Some((element.width, element.height)));
+    assert_eq!(decoded_size(&element.data), (element.width, element.height));
     if let Some(directory) = std::env::var_os("OPENIDE_BROWSER_E2E_ARTIFACTS") {
         std::fs::create_dir_all(&directory).unwrap();
         std::fs::write(Path::new(&directory).join("driver-full-page.png"), &page.data).unwrap();
@@ -665,18 +680,18 @@ fn console_network_dialogs_and_screenshots_stay_within_their_bounds() {
 /// protocol replies it was built from.
 const RECORDED_PAGES: [&str; 6] = ["tools", "form", "lists", "table", "frames", "custom"];
 
-/// Chrome's snapshot of each fixture is the text the unit suite reproduces
-/// from its recording. `OPENIDE_BROWSER_RECORD=1` rewrites the recordings
-/// instead, for a new Chrome or a changed fixture.
+/// Chromium's snapshot of each fixture is the text the driver's unit suite
+/// reproduces from its recording. `OPENIDE_BROWSER_RECORD=1` rewrites the
+/// recordings instead, for a new Chromium or a changed fixture.
 #[test]
-#[ignore = "needs Chrome"]
-fn fixture_snapshots_are_what_their_recordings_reproduce() {
+#[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
+fn real_cef_driver_snapshots_of_the_fixtures_are_what_their_recordings_reproduce() {
     let server = Server::fixtures();
     let record = std::env::var_os("OPENIDE_BROWSER_RECORD").is_some();
-    let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/recorded");
+    let directory = Path::new(RECORDED);
     for page in RECORDED_PAGES {
         // A browser of its own, so the refs are the ones a first page gets.
-        let mut driver = launch(900, 700, 1.0);
+        let (_page, mut driver) = open(900, 700, 1.0);
         driver.navigate(&format!("{}/{page}.html", server.origin)).unwrap();
         // Frames and late scripts settle.
         driver.wait_seconds(0.5).unwrap();
@@ -695,11 +710,11 @@ fn fixture_snapshots_are_what_their_recordings_reproduce() {
 }
 
 #[test]
-#[ignore = "needs Chrome"]
-fn snapshots_cover_frames_custom_controls_and_can_be_narrowed() {
+#[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
+fn real_cef_driver_snapshots_cover_frames_custom_controls_and_can_be_narrowed() {
     let server = Server::fixtures();
     let origin = server.origin.clone();
-    let mut driver = launch(900, 700, 1.0);
+    let (_page, mut driver) = open(900, 700, 1.0);
 
     driver.navigate(&format!("{origin}/custom.html")).unwrap();
     let tree = snapshot(&mut driver);
@@ -767,22 +782,22 @@ fn snapshots_cover_frames_custom_controls_and_can_be_narrowed() {
 }
 
 #[test]
-#[ignore = "needs Chrome"]
-fn a_frame_of_another_site_is_read_and_acted_on_and_another_window_opens_in_the_page() {
+#[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
+fn real_cef_driver_reads_and_acts_on_a_frame_of_another_site_and_opens_another_window_in_the_page() {
     let server = Server::fixtures();
     // The same loopback server under another host name is another site, which
-    // Chrome renders in another process.
+    // Chromium renders in another process.
     let outer = format!(
         "<!doctype html><title>Sitios</title><h1>Dos sitios</h1><iframe src=\"{}/frame.html\" title=\"Otro sitio\" style=\"width:300px;height:80px;margin-left:120px\"></iframe>\
          <button onclick=\"window.open('/form.html')\">Abrir ventana</button>",
         server.origin_as("localhost")
     );
     let pages = Server::start(move |_, _| Response::html(outer.clone()));
-    let mut driver = launch(640, 480, 1.0);
+    let (_page, mut driver) = open(640, 480, 1.0);
     driver.navigate(&pages.origin).unwrap();
     driver.wait_seconds(0.5).unwrap();
     // One panel has one page. A window the page opens by itself, with no
-    // click behind it, is refused: Chrome's own popup blocking stays on.
+    // click behind it, is refused before it exists.
     assert_eq!(evaluate(&mut driver, "String(window.open('/form.html'))"), "\"null\"");
     driver.wait_seconds(0.3).unwrap();
     assert_eq!(driver.info().unwrap().url, format!("{}/", pages.origin), "the page did not move by itself");
@@ -804,89 +819,13 @@ fn a_frame_of_another_site_is_read_and_acted_on_and_another_window_opens_in_the_
     assert!(snapshot(&mut driver).contains("Dos sitios"), "the document that opened is read like any other");
 }
 
-// ---- The live view: frame stream and raw input ----
-
-fn frames_for(stream: &FrameStream, time: Duration) -> Vec<Frame> {
-    let deadline = Instant::now() + time;
-    let mut frames = Vec::new();
-    while let Some(frame) = stream.next(deadline.saturating_duration_since(Instant::now())) {
-        frames.push(frame);
-    }
-    frames
-}
-
-const MOVING_PAGE: &str = "<!doctype html><title>Movimiento</title><body style=\"margin:0;height:4000px;background:linear-gradient(#fff,#036)\">\
-    <div id=\"box\" style=\"position:fixed;width:80px;height:80px;background:#c30\"></div><script>\
-    let t=0;(function step(){t++;box.style.left=(t*7%500)+'px';box.style.top=(t*3%300)+'px';requestAnimationFrame(step)})()</script>";
+// ---- Raw input, as the window sends it ----
 
 #[test]
-#[ignore = "needs Chrome"]
-fn the_frame_stream_is_device_sized_skips_for_a_slow_consumer_and_stops() {
-    let server = Server::start(|_, _| Response::html(MOVING_PAGE));
-    for (scale, width, height) in [(1.0, 640, 400), (2.0, 640, 400)] {
-        let mut driver = launch(width, height, scale);
-        driver.navigate(&server.origin).unwrap();
-        assert_eq!(evaluate(&mut driver, "devicePixelRatio"), format!("{scale}").trim_end_matches(".0"));
-        let expected = ((f64::from(width) * scale) as u32, (f64::from(height) * scale) as u32);
-        let woken = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let counter = woken.clone();
-        let stream = driver
-            .start_stream(FrameFormat::Jpeg { quality: 70 }, Some(std::sync::Arc::new(move || {
-                counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            })))
-            .unwrap();
-        let frames = frames_for(&stream, Duration::from_secs(2));
-        assert!(frames.len() >= 10, "{} frames at scale {scale}", frames.len());
-        assert!(frames.iter().all(|frame| (frame.width, frame.height) == expected), "{:?}", (frames[0].width, frames[0].height));
-        assert!(frames.iter().all(|frame| frame.data.starts_with(&[0xff, 0xd8]) && frame.data.len() <= MAX_FRAME_BYTES));
-        assert!(frames.windows(2).all(|pair| pair[0].sequence < pair[1].sequence));
-        assert!(woken.load(std::sync::atomic::Ordering::Relaxed) >= frames.len());
-
-        // A consumer that looks away: Chrome is left waiting and produces no backlog.
-        let before = frames.last().unwrap().sequence;
-        std::thread::sleep(Duration::from_millis(1000));
-        let first = stream.try_next().unwrap();
-        assert!(first.sequence - before <= 3, "{} frames arrived while nobody took any", first.sequence - before);
-        assert!(stream.try_next().is_none(), "at most one frame waits");
-        // And it resumes at once.
-        assert!(frames_for(&stream, Duration::from_millis(700)).len() >= 3);
-
-        // The driver stays responsive while frames flow, and input shows up in them.
-        assert_eq!(evaluate(&mut driver, "1 + 1"), "2");
-        driver.wheel(100.0, 100.0, 0.0, 600.0).unwrap();
-        assert!(stream.next(Duration::from_secs(2)).is_some());
-        let deadline = Instant::now() + Duration::from_secs(3);
-        while evaluate(&mut driver, "scrollY > 0") != "true" && Instant::now() < deadline {
-            stream.next(Duration::from_millis(50));
-        }
-        assert_eq!(evaluate(&mut driver, "scrollY > 0"), "true");
-
-        // Hidden view: the stream stops and nothing more arrives.
-        driver.stop_stream().unwrap();
-        assert!(!stream.is_active());
-        assert!(stream.next(Duration::from_millis(400)).is_none());
-        // Visible again.
-        let again = driver.start_stream(FrameFormat::Png, None).unwrap();
-        let frame = again.next(Duration::from_secs(3)).expect("a restarted stream delivers");
-        assert!(frame.data.starts_with(PNG_SIGNATURE));
-        assert_eq!((frame.width, frame.height), expected);
-        driver.stop_stream().unwrap();
-
-        // One lossless frame at device scale, and a tool screenshot at CSS scale.
-        let still = driver.capture_frame().unwrap();
-        assert!(still.data.starts_with(PNG_SIGNATURE));
-        assert_eq!((still.width, still.height), expected);
-        viewport(&mut driver, width, height);
-        let page = driver.screenshot(Capture::FullPage).unwrap();
-        assert_eq!((page.width, page.height), (width, 4000), "CSS pixels whatever the scale");
-    }
-}
-
-#[test]
-#[ignore = "needs Chrome"]
-fn raw_pointer_and_keyboard_input_reach_the_page_as_the_users_own() {
+#[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
+fn real_cef_driver_raw_pointer_and_keyboard_input_reach_the_page_as_the_users_own() {
     let server = tools_server();
-    let mut driver = launch(640, 480, 2.0);
+    let (_page, mut driver) = open(640, 480, 2.0);
     driver.navigate(&format!("{}/tools", server.origin)).unwrap();
     let centre = |driver: &mut Driver, selector: &str| -> (f64, f64) {
         let rect = evaluate(driver, &format!("(() => {{ const r = document.querySelector('{selector}').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }})()"));
@@ -962,14 +901,14 @@ fn raw_pointer_and_keyboard_input_reach_the_page_as_the_users_own() {
     driver.wheel(320.0, 240.0, 0.0, 500.0).unwrap();
     let deadline = Instant::now() + Duration::from_secs(3);
     while evaluate(&mut driver, "scrollY") == "0" && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(20));
+        thread::sleep(Duration::from_millis(20));
     }
     assert_ne!(evaluate(&mut driver, "scrollY"), "0");
 }
 
 #[test]
-#[ignore = "needs Chrome"]
-fn actions_wait_for_an_element_to_be_ready_and_give_up_with_the_reason() {
+#[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
+fn real_cef_driver_actions_wait_for_an_element_to_be_ready_and_give_up_with_the_reason() {
     let page = r#"<!doctype html><title>Esperas</title><style>button{margin:4px}#cover{position:fixed;inset:0;background:rgba(0,0,0,.2)}
       #moving{position:relative;animation:slide 1.2s linear 1 forwards}@keyframes slide{from{left:0}to{left:300px}}</style>
       <button id="late" style="display:none" onclick="out.textContent='tarde'">Tarde</button>
@@ -981,7 +920,7 @@ fn actions_wait_for_an_element_to_be_ready_and_give_up_with_the_reason() {
       <p id="out">Sin cambios</p><div id="cover"></div>
       <script>setTimeout(()=>{late.style.display=''},600);setTimeout(()=>{off.disabled=false},600);setTimeout(()=>{cover.remove()},900)</script>"#;
     let server = Server::start(move |_, _| Response::html(page));
-    let mut driver = launch(640, 480, 1.0);
+    let (_page, mut driver) = open(640, 480, 1.0);
     driver.navigate(&server.origin).unwrap();
     let started = Instant::now();
     // Covered until the overlay goes: the click waits instead of hitting the overlay.

@@ -4,10 +4,9 @@
 //! them, and a normal exit leaves no process and no directory. Opt-in:
 //!
 //! ```sh
-//! nix-shell nix/shell-cef.nix --run \
-//!   "cargo test -p agents-window --features cef -- --ignored real_cef --test-threads=1"
+//! nix-shell --run "cargo test -p agents-window -- --ignored real_cef --test-threads=1"
 //! ```
-#![cfg(all(feature = "cef", target_os = "linux"))]
+#![cfg(target_os = "linux")]
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -59,10 +58,10 @@ fn real_cef_probe_starts_in_the_application_itself_and_leaves_nothing_behind() {
 
 #[test]
 #[ignore = "opt-in: runs the application's probe with CEF's data files missing"]
-fn real_cef_that_cannot_start_leaves_the_system_browser_and_a_running_application() {
+fn real_cef_that_cannot_start_says_why_and_leaves_a_running_application() {
     // CEF's library alone, without the data files it reads from beside it:
     // an installation CEF itself would abort the whole process on.
-    let search = std::env::var_os("LD_LIBRARY_PATH").expect("the CEF shell sets the library path");
+    let search = std::env::var_os("LD_LIBRARY_PATH").expect("the shell sets the library path");
     let library = std::env::split_paths(&search)
         .map(|directory| directory.join("libcef.so"))
         .find(|library| library.is_file())
@@ -82,13 +81,10 @@ fn real_cef_that_cannot_start_leaves_the_system_browser_and_a_running_applicatio
     let said = String::from_utf8_lossy(&output.stderr);
     // The probe ends by itself, saying so: nothing killed it.
     assert_eq!(output.status.code(), Some(1), "{said}");
-    assert!(
-        said.contains("el navegador embebido (CEF) no pudo iniciarse y se usa el navegador del sistema. Falta icudtl.dat junto a "),
-        "{said}"
-    );
-    // With a Chrome or Chromium installed, the context then started on it,
-    // and holds the reason for its panel to say.
-    let on_the_system_browser =
-        said.contains("CEF no se inició; la aplicación usa el navegador del sistema. El panel avisa: Falta icudtl.dat junto a ");
-    assert!(on_the_system_browser || said.contains("No se encontró Google Chrome"), "{said}");
+    assert!(said.contains("OpenIDE: el navegador embebido (CEF) no pudo iniciarse. Falta icudtl.dat junto a "), "{said}");
+    // There is no other browser to start: the context failed, with what its
+    // tab says in the reason's place and how CEF may be tried again.
+    let told = said.lines().last().unwrap_or_default();
+    assert!(told.starts_with("Falta icudtl.dat junto a "), "{said}");
+    assert!(told.ends_with("se inicia una sola vez por ejecución: cerrá OpenIDE y volvé a abrirlo para reintentar."), "{said}");
 }

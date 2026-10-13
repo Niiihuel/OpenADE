@@ -102,10 +102,10 @@ revisiones y el alcance de uso.
 
 El crate propio `openide-browser` no incorpora código de terceros. Su diseño
 sigue a [agent-browser](https://github.com/vercel-labs/agent-browser),
-Copyright 2025 Vercel Inc., bajo Apache-2.0: un cliente CDP propio, la captura
-a partir del árbol de accesibilidad con referencias atadas al documento y el
-flujo de cuadros con acuses. Se consultó su código como referencia y no se
-copió ni se tradujo ninguna parte.
+Copyright 2025 Vercel Inc., bajo Apache-2.0: un cliente CDP propio y la
+captura a partir del árbol de accesibilidad con referencias atadas al
+documento. Se consultó su código como referencia y no se copió ni se tradujo
+ninguna parte.
 
 El texto de la captura accesible reproduce el formato de
 `ariaSnapshot({ mode: 'ai' })` de
@@ -120,11 +120,11 @@ elemento, en `src/scripts.rs`, siguen las de Playwright del mismo modo. No se
 incluye código de Playwright; [browser-driver.md](docs/browser-driver.md)
 enumera las diferencias de comportamiento.
 
-## Chromium embebido (opcional)
+## Chromium embebido
 
-Sólo con la opción de compilación `cef`
-([docs/browser-cef.md](docs/browser-cef.md)), que está apagada por defecto, la
-aplicación enlaza el [Chromium Embedded Framework](https://bitbucket.org/chromiumembedded/cef)
+En Linux la aplicación enlaza, para su navegador
+([docs/browser-cef.md](docs/browser-cef.md)), el
+[Chromium Embedded Framework](https://bitbucket.org/chromiumembedded/cef)
 154.0.34, Copyright (c) Marshall A. Greenblatt, bajo licencia BSD de tres
 cláusulas. Incluye Chromium 154.0.8037.98 y sus componentes; las licencias de
 todos ellos están en el `CREDITS.html` que acompaña a la distribución de CEF.

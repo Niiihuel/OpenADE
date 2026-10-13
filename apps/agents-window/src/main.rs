@@ -169,7 +169,7 @@ fn main() -> eframe::Result {
     // The embedded Chromium starts its helper processes as this executable.
     // Such a process is not the application either, and any other start
     // goes on without CEF being called.
-    #[cfg(feature = "cef")]
+    #[cfg(target_os = "linux")]
     if let Some(code) = openide_cef::run_child_process() {
         std::process::exit(code);
     }
@@ -180,7 +180,6 @@ fn main() -> eframe::Result {
         std::process::exit(browser_mcp::main());
     }
     // Checks, without a window, that the embedded Chromium runs here.
-    #[cfg(feature = "cef")]
     if std::env::args_os().nth(1).is_some_and(|argument| argument == "--cef-probe") {
         std::process::exit(browser_runtime::cef_probe());
     }

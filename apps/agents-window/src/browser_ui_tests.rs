@@ -142,17 +142,15 @@ fn connection_refused_uses_one_native_error_and_never_exposes_the_chrome_error_r
 }
 
 #[test]
-fn initial_blank_loading_and_missing_browser_states_have_no_clickable_page() {
+fn initial_blank_loading_and_failed_start_states_have_no_clickable_page() {
     let mut state = state();
     state.browser.url = "about:blank".into();
     assert_eq!(surface(&state.browser), Surface::Empty);
     for mode in [Surface::Empty, Surface::Loading, Surface::Error] {
         state.browser.navigating = mode == Surface::Loading;
-        // A context that found no browser never started.
-        state.browser.browser_missing = mode == Surface::Error;
+        // A context whose page could not be opened never started.
         state.browser.started = mode != Surface::Error;
-        state.browser.error = (mode == Surface::Error)
-            .then(|| "No se encontró Google Chrome, Chromium ni Microsoft Edge en este equipo.".into());
+        state.browser.error = (mode == Surface::Error).then(|| "CEF no creó la página a tiempo.".into());
         let mut tree = UiTree::new(build(&state, 320.0));
         let frame = tree.layout(Size::new(320.0, 480.0));
         assert_eq!(surface(&state.browser), mode);
@@ -162,13 +160,8 @@ fn initial_blank_loading_and_missing_browser_states_have_no_clickable_page() {
             .iter()
             .any(|region| region.id == "browser_viewport"));
         if mode == Surface::Error {
-            // The panel says what is missing and what to do about it, and
-            // offers to look again; there is nothing to install from here.
-            let (title, description) = error_copy(&state.browser);
-            assert_eq!(title, "No se encontró un navegador");
-            for part in ["Google Chrome", "Chromium", "Microsoft Edge", "OPENIDE_BROWSER_EXECUTABLE"] {
-                assert!(description.contains(part), "{description}");
-            }
+            // Another context may start: the panel offers to open one.
+            assert_eq!(error_copy(&state.browser).0, "El navegador no pudo iniciarse");
             assert!(texts(&frame).contains(&"Reintentar"));
             let retry = frame
                 .regions
@@ -182,23 +175,33 @@ fn initial_blank_loading_and_missing_browser_states_have_no_clickable_page() {
                 tree.handle_event(UiEvent::PointerUp(point)),
                 vec![UiAction::Clicked { id: "browser_restart".into() }]
             );
-            assert!(!frame.regions.iter().any(|region| region.id == "browser_install"));
         }
     }
 }
 
 #[test]
-fn a_system_the_browser_cannot_start_on_is_told_so_instead_of_being_asked_to_retry() {
-    let mut state = state();
-    state.browser.started = false;
-    state.browser.error = Some("El navegador no pudo iniciarse: Este sistema todavía no tiene un transporte para iniciar el navegador.".into());
-    assert_eq!(surface(&state.browser), Surface::Error);
-    let (title, description) = error_copy(&state.browser);
-    assert_eq!(title, "El navegador todavía no funciona en este sistema");
-    assert!(description.contains("sistema operativo"), "{description}");
-    // Any other failed start keeps the offer to try again.
-    state.browser.error = Some("El navegador no pudo iniciarse: salió con código 1".into());
-    assert_eq!(error_copy(&state.browser).0, "El navegador no pudo iniciarse");
+fn an_embedded_browser_that_cannot_start_says_so_with_its_reason_and_offers_no_retry() {
+    const REASON: &str = "Falta icudtl.dat junto a libcef.so. El navegador embebido se inicia una sola vez por ejecución: cerrá OpenIDE y volvé a abrirlo para reintentar.";
+    for width in [240.0, 320.0, 640.0] {
+        let mut state = state();
+        state.browser.started = false;
+        state.browser.engine_failed = true;
+        state.browser.error = Some(REASON.into());
+        assert_eq!(surface(&state.browser), Surface::Error);
+        // The reason is the card's own text, not a detail behind a hover.
+        assert_eq!(error_copy(&state.browser), ("El navegador embebido no pudo iniciarse".into(), REASON.into()));
+        let frame = UiTree::new(build(&state, width)).layout(Size::new(width, 620.0));
+        assert!(!has_image(&frame));
+        let said = texts(&frame).concat();
+        assert!(said.contains("El navegador embebido no pudo iniciarse") && said.contains("Falta icudtl.dat"), "{said}");
+        // Chromium starts once per run: nothing here could start it again.
+        for absent in ["browser_restart", "browser_navigate", "browser_focus_url", "browser_error_detail", "browser_viewport"] {
+            assert!(!frame.regions.iter().any(|region| region.id == absent), "{absent} at {width}");
+        }
+        // The same failure for another reason is told the same way.
+        state.browser.error = Some("Esta versión de OpenIDE sólo incluye su navegador embebido para Linux.".into());
+        assert_eq!(error_copy(&state.browser).1, "Esta versión de OpenIDE sólo incluye su navegador embebido para Linux.");
+    }
 }
 
 #[test]
@@ -368,45 +371,5 @@ fn browser_navigation_tooltips_open_below_the_toolbar() {
             position.y >= anchor.y + anchor.height,
             "{id} should open below its header, not above it"
         );
-    }
-}
-
-#[test]
-fn a_browser_that_fell_back_says_so_in_the_footer_with_its_reason_and_a_way_to_dismiss_it() {
-    const NOTICE: &str = "El navegador embebido no pudo iniciarse; se usa el del sistema.";
-    for width in [240.0, 320.0, 640.0] {
-        let mut state = state();
-        state.browser.engine_notice = Some("Falta icudtl.dat junto a libcef.so.".into());
-        let mut tree = UiTree::new(build(&state, width));
-        let frame = tree.layout(Size::new(width, 620.0));
-        // In the footer's own line: the page keeps its place and its size.
-        let page = |frame: &Frame| frame.regions.iter().find(|region| region.id == "browser_viewport").unwrap().rect;
-        let mut plain = UiTree::new(build(&self::state(), width));
-        assert_eq!(page(&frame), page(&plain.layout(Size::new(width, 620.0))));
-        assert!(texts(&frame).iter().any(|text| NOTICE.starts_with(text.trim_end_matches('…'))), "{:?}", texts(&frame));
-        assert!(!texts(&frame).contains(&"Sesión aislada · Compartida con el agente"));
-        let dismiss = frame
-            .regions
-            .iter()
-            .find(|region| region.id == "browser_notice_dismiss" && region.kind != HitKind::Hover)
-            .unwrap_or_else(|| panic!("no way to dismiss it at {width}"))
-            .rect;
-        assert!(dismiss.x >= 0.0 && dismiss.x + dismiss.width <= width && dismiss.y >= 620.0 - STATUS_HEIGHT, "{dismiss:?}");
-        let point = Point::new(dismiss.x + dismiss.width / 2.0, dismiss.y + dismiss.height / 2.0);
-        tree.handle_event(UiEvent::PointerDown(point));
-        assert_eq!(
-            tree.handle_event(UiEvent::PointerUp(point)),
-            vec![UiAction::Clicked { id: "browser_notice_dismiss".into() }]
-        );
-
-        // Anything the footer has to say about the page comes first.
-        state.browser.input_rejection = Some("La cola de entrada está llena.".into());
-        let frame = UiTree::new(build(&state, width)).layout(Size::new(width, 620.0));
-        assert!(!frame.regions.iter().any(|region| region.id == "browser_notice_dismiss"));
-        // Dismissed, the footer is the usual one.
-        state.browser.input_rejection = None;
-        state.browser.engine_notice = None;
-        let frame = UiTree::new(build(&state, width)).layout(Size::new(width, 620.0));
-        assert!(!frame.regions.iter().any(|region| region.id == "browser_notice_dismiss"));
     }
 }

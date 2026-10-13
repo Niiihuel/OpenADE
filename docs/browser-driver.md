@@ -1,27 +1,31 @@
 # Driver del navegador en Rust
 
-`crates/openide-browser` maneja Chrome directamente por su protocolo DevTools
-(CDP), sin Node, sin Playwright y sin un crate CDP de terceros. Reemplazó al
-proceso Node (`browser_bridge.mjs`) que usaba la aplicación y ofrece las
-operaciones que anuncian las [herramientas del agente](browser-tools.md), más
-la entrada cruda y el flujo de cuadros que necesita una vista en vivo.
+`crates/openide-browser` maneja la página de un Chromium embebido por su
+protocolo DevTools (CDP), sin Node, sin Playwright y sin un crate CDP de
+terceros. Reemplazó al proceso Node (`browser_bridge.mjs`) que usaba la
+aplicación y ofrece las operaciones que anuncian las
+[herramientas del agente](browser-tools.md), más la entrada cruda que
+necesita una vista en vivo.
 
-**Estado:** es lo que usa `agents-window` desde el 11 de octubre de 2026. El
-actor que lo maneja, la búsqueda del navegador, la vista y el proxy MCP están
-en [Runtime del navegador](browser-runtime.md). En este documento, «el
-bridge» es aquel proceso Node, que ya no existe: las comparaciones con él se
-conservan como registro de lo medido.
+**Estado:** es lo que usa `agents-window` desde el 11 de octubre de 2026, y
+desde el 13 sólo sobre el [Chromium embebido](browser-cef.md): el driver ya no
+inicia ningún navegador. Lanzar un Chrome headless por una tubería privada, su
+flujo de cuadros y la búsqueda de un navegador en el sistema se quitaron. El
+actor que lo maneja, la vista y el proxy MCP están en
+[Runtime del navegador](browser-runtime.md). En este documento, «el bridge»
+es aquel proceso Node, que ya no existe: las comparaciones con él se conservan
+como registro de lo medido.
 
 ## Piezas
 
 | Módulo | Qué hace |
 | --- | --- |
-| `transport` | Mueve mensajes JSON completos. `MessageSink` y `MessageSource` son el punto de reemplazo; aquí se implementa el pipe de Chrome. |
+| `transport` | Mueve mensajes JSON completos. `MessageSink` y `MessageSource` son sus dos extremos, que implementa quien embebe Chromium. |
 | `cdp` | Cliente fino: envía un método con parámetros a una sesión, espera su resultado y entrega los eventos. |
-| `chrome` | Inicia un Chrome headless privado, lo mata y lo cosecha, y limpia su directorio. Sólo Unix. |
-| `observer` | Corre en el hilo lector: consola, red, diálogos, navegaciones, marcos de otros procesos y cuadros, en estado acotado. |
-| `snapshot` | Convierte el árbol de accesibilidad de Chrome en el texto que lee el modelo y administra las referencias. Es puro. |
-| `driver`, `actions` | La API pública: navegación, destinos, acciones con espera, evaluación, capturas, portapapeles, entrada cruda y flujo. |
+| `directory` | `PrivateDirectory`: un directorio privado y de ruta corta para los archivos del navegador, que usa el Chromium embebido. Sólo Unix. |
+| `observer` | Corre en el hilo lector: consola, red, diálogos, navegaciones y marcos de otros procesos, en estado acotado. |
+| `snapshot` | Convierte el árbol de accesibilidad de Chromium en el texto que lee el modelo y administra las referencias. Es puro. |
+| `driver`, `actions` | La API pública: navegación, destinos, acciones con espera, evaluación, capturas, portapapeles y entrada cruda. |
 | `scripts` | El único JavaScript: una función auxiliar que corre **dentro de la página**, en un mundo aislado. |
 
 El llamador usa un hilo común y bloqueante, una solicitud por vez. Un hilo
@@ -32,49 +36,50 @@ respuesta se interpreta una sola vez, en el hilo que la pidió y directamente
 al tipo que necesita; una respuesta grande no demora los eventos que vienen
 detrás.
 
-## Proceso y transporte
+## Página y transporte
 
-Chrome se inicia con `--remote-debugging-pipe`: los comandos van a su
-descriptor 3 y las respuestas y eventos salen por el 4, un mensaje JSON por
-registro terminado en NUL. **No se abre ningún puerto TCP de depuración** y el
-sandbox de Chromium queda siempre activo; no existe una opción para
-desactivarlo. La ruta del ejecutable es explícita: el crate no busca
-navegadores.
+El driver no inicia ningún navegador ni crea ninguna página. Quien embebe
+Chromium crea la página y le entrega su extremo DevTools, que es un par de
+objetos pequeños:
 
-- **Entorno reducido.** Chrome hereda sólo `PATH`, `HOME`, `USER`, `LOGNAME`,
-  `LANG`, `LC_ALL` y `XDG_RUNTIME_DIR`. `TMPDIR`, `TMP` y `TEMP` apuntan al
-  directorio privado.
-- **Directorio privado.** `oid-XXXXXX`, modo 0700, con el perfil adentro
-  (`PrivateDirectory`, que también usa el Chromium embebido para el suyo). La
-  ruta completa no supera 48 bytes: Chromium crea sockets Unix debajo de su
-  raíz temporal y `sockaddr_un` admite 108 bytes. Si la raíz pedida es profunda o ya no existe se usa la heredada y
-  después `/tmp`; un directorio borrado no se recrea.
-- **Cierre.** Al soltar el `Driver` se cierra el pipe, se envía `SIGKILL` al
-  grupo de procesos de Chrome (zygotes, renderers y GPU incluidos), se
-  cosecha el proceso principal y se borra el directorio.
-- **Muerte del padre.** Si el proceso anfitrión muere sin ejecutar
-  destructores, Chrome ve cerrarse su pipe de comandos y termina solo
-  (verificado con `SIGKILL` al padre). El directorio queda huérfano y lo
-  recoge el siguiente arranque: cada directorio lleva un archivo
-  `driver.lock` con `flock`; uno con más de 60 s y sin candado pertenece a un
-  proceso muerto y se elimina. Los directorios `oid-` que haya dejado el
-  bridge de Node de una versión anterior, que no tienen ese archivo, no se
-  tocan.
-- **Un contexto, una página.** Un contexto de navegador aislado, sin
-  descargas, con una única página. Cualquier otra ventana que la página abra
-  se cierra, y lo que un clic pidió ver en ella se abre en la página:
+```rust
+pub trait MessageSink: Send { fn send(&mut self, message: &[u8]) -> io::Result<()>; }
+pub trait MessageSource: Send { fn receive(&mut self) -> io::Result<Option<Incoming>>; }
+```
+
+`Driver::connect_to_page(transport, ancho, alto, escala)` le pregunta a ese
+extremo qué página es (`Target.getTargetInfo`) y se adjunta a ella con una
+sesión propia. **No se abre ningún puerto TCP de depuración.**
+
+- **Con CEF.** El `MessageSink` llama a `SendDevToolsMessage` y el
+  `MessageSource` entrega lo que recibe el observador de mensajes DevTools a
+  través de un canal acotado. Ese transporte está en `crates/openide-cef`
+  ([Chromium embebido](browser-cef.md)), con los interruptores con los que
+  corre Chromium.
+- **Lo que queda a cargo de quien embebe.** La vida de la página, aislar su
+  almacenamiento, rechazar las ventanas emergentes (el driver no pide
+  descubrir otros destinos, que serían páginas ajenas) y rechazar las
+  descargas. La escala también la fija quien embebe: el driver sólo la usa
+  para devolver capturas a escala CSS.
+- **Directorio privado.** `PrivateDirectory` es el que usa el Chromium
+  embebido para sus archivos: `oid-XXXXXX`, modo 0700. La ruta completa no
+  supera 48 bytes: Chromium crea sockets Unix debajo de su raíz temporal y
+  `sockaddr_un` admite 108 bytes. Si la raíz pedida es profunda o ya no
+  existe se usa `/tmp`; un directorio borrado no se recrea. Soltarlo lo
+  borra. Si su dueño muere sin hacerlo, lo recoge el siguiente que se crea
+  bajo la misma raíz: cada directorio lleva un archivo `driver.lock` con
+  `flock`; uno con más de 60 s y sin candado pertenece a un proceso muerto y
+  se elimina. Los directorios `oid-` que haya dejado el bridge de Node de una
+  versión anterior, que no tienen ese archivo, no se tocan.
+- **Una página.** Lo que un clic pidió ver en otra pestaña o en otra ventana
+  se abre en la página:
   - La página anuncia que va a abrir una ventana (`Page.windowOpen`) antes de
     pedírsela al navegador, con la dirección y con si hubo un clic del
     usuario. Si lo hubo y la dirección es `http` o `https`, el driver navega
     la página ahí (`Page.navigate`). Es lo que cubre `target="_blank"`, una
-    ventana con nombre y `window.open`, también desde un marco, y vale para
-    cualquier extremo, el Chromium embebido incluido.
-  - Una pestaña que el propio navegador crea para un enlace con Control,
-    Shift o el botón del medio se anuncia con su dirección
-    (`Target.targetCreated`): el driver la cierra y navega la página ahí.
-  - El bloqueo de ventanas emergentes de Chrome queda activo (no se pasa
-    `--disable-popup-blocking`): lo que una página intenta abrir sin un clic
-    detrás lo rechaza Chrome, y no llega a ser una pestaña.
+    ventana con nombre y `window.open`, también desde un marco. Quien embebe
+    rechaza la ventana, que no llega a crearse.
+  - Lo que una página intenta abrir sin un clic detrás no abre nada.
   - La acción que provocó la navegación la espera como a la de un enlace
     común: `click` vuelve con el documento nuevo ya leído.
   - «Un clic del usuario» es lo que Chromium entiende por eso: lo que el
@@ -82,82 +87,12 @@ navegadores.
     cuenta como pedido por él. Visto en las pruebas: un `window.open`
     evaluado un segundo después de un clic en otra parte de la página se
     abrió. Cuánto dura esa activación no se midió.
-  - Medido con Chrome 150: en los dos casos la pestaña que Chrome crea
-    alcanza a pedir su dirección antes de cerrarse, así que la dirección se
-    pide dos veces. `--block-new-web-contents` no impide que se cree.
-    Adjuntarse a las pestañas nuevas con `waitForDebuggerOnStart` evita ese
-    pedido para una ventana de script, pero deja detenida a la página que la
-    abrió, que comparte proceso con ella; para una pestaña que crea el
-    navegador el pedido sale antes de que haya a qué adjuntarse.
-
-No se usa `PR_SET_PDEATHSIG`: esa señal depende del hilo que creó el proceso y
-mataría al navegador si ese hilo terminara antes que el driver.
-
-### Banderas de arranque
-
-Son las de Playwright que importan para una página única y silenciosa
-(sin primer arranque, sin extensiones ni sus páginas de fondo, sin
-sincronización ni actualizaciones, sin limitar temporizadores de páginas no
-visibles, sin caché de atrás/adelante), más
-`--force-device-scale-factor=<escala>`. La escala se fuerza en el arranque
-porque la emulada no cambia el tamaño de los cuadros del flujo.
-`CDPScreenshotNewSurface` se habilita porque sin ella una captura del viewport
-tarda tres cuadros en lugar de uno (49 ms contra 17 ms medidos).
-
-Una página headless que nunca se presentó puede quedar sin producir cuadros:
-nada se anima y un flujo iniciado en ese momento no entrega nada hasta que
-llega alguna entrada. Por eso el arranque captura un píxel. Con Chrome 150,
-6 de 60 arranques en paralelo quedaban detenidos sin esa captura y ninguno
-con ella.
-
-### Otros transportes
-
-El transporte es un par de objetos pequeños:
-
-```rust
-pub trait MessageSink: Send { fn send(&mut self, message: &[u8]) -> io::Result<()>; }
-pub trait MessageSource: Send { fn receive(&mut self) -> io::Result<Option<Incoming>>; }
-```
-
-`Driver::connect(transport, ancho, alto, escala)` maneja cualquier extremo
-que intercambie mensajes DevTools.
-
-- **Chromium embebido (CEF).** Habla el mismo protocolo en el mismo proceso:
-  el `MessageSink` llama a `SendDevToolsMessage` y el `MessageSource` entrega
-  lo que recibe el observador de mensajes DevTools a través de un canal
-  acotado. Ese transporte está en `crates/openide-cef`
-  ([Chromium embebido](browser-cef.md)). Su extremo es la página y no el
-  navegador, así que se usa con
-  `Driver::connect_to_page(transport, ancho, alto, escala)`: en lugar de crear
-  un contexto y una página con `Target.createBrowserContext` y
-  `Target.createTarget`, el driver le pregunta al extremo qué página es
-  (`Target.getTargetInfo`) y se adjunta a ella con una sesión propia. Lo
-  demás es igual, salvo tres cosas que quedan a cargo de quien embebe: aislar
-  el almacenamiento, rechazar las ventanas emergentes (el driver no pide
-  descubrir otros destinos, que serían páginas ajenas) y rechazar las
-  descargas. La escala también la fija quien embebe: el driver sólo la usa
-  para devolver capturas a escala CSS.
-- **Windows.** No hay implementación y **el crate no se compiló para Windows**
-  (el entorno sólo tiene la biblioteca estándar de Linux); la separación por
-  `cfg(unix)` se revisó leyendo el código. `Driver::launch` devuelve allí un
-  error legible y `connect` está disponible. Un transporte de pipe para
-  Windows necesita: dos pipes anónimos con los extremos del hijo marcados
-  heredables; pasar a Chrome `--remote-debugging-pipe` junto con
-  `--remote-debugging-io-pipes=<lectura>,<escritura>` con los valores de esos
-  handles (en Windows Chrome no puede recibir los descriptores 3 y 4 de otro
-  modo desde `std::process::Command`); el mismo encuadre terminado en NUL; un
-  Job Object con `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` para que el árbol de
-  procesos muera con el driver, como hace `mcp_process_tree.rs`; y el borrado
-  del perfil. No existe allí el límite de ruta de los sockets Unix. El barrido
-  de directorios huérfanos necesita un candado equivalente a `flock`
-  (`LockFileEx`).
 
 ## API
 
 ```rust
-let mut driver = Driver::launch(&LaunchOptions {
-    executable, width: 900, height: 700, scale: 2.0, temp_root: None,
-})?;
+// `transport` es el extremo DevTools de la página que creó quien embebe.
+let mut driver = Driver::connect_to_page(transport, 900, 700, 2.0)?;
 driver.navigate("http://localhost:3000/")?;
 let tree = driver.snapshot(&SnapshotOptions::default())?;   // texto con [ref=eN]
 driver.click(&Target::Ref("e7"))?;
@@ -167,7 +102,7 @@ let png = driver.screenshot(Capture::Viewport)?;
 
 | Grupo | Métodos |
 | --- | --- |
-| Ciclo de vida | `launch`, `connect`, `connect_to_page`, `resize`, `close`, `process_id`, `directory` |
+| Ciclo de vida | `connect_to_page`, `resize`; soltar el driver lo desconecta de la página |
 | Navegación | `navigate`, `back`, `forward`, `reload`, `info` (URL, título, historial, viewport) |
 | Lectura | `snapshot`, `console_messages`, `network_requests`, `screenshot`, `evaluate` |
 | Acciones | `click`, `click_at`, `fill`, `type_text`, `press`, `scroll`, `hover`, `select_options`, `set_checked`, `drag` |
@@ -175,7 +110,6 @@ let png = driver.screenshot(Capture::Viewport)?;
 | Diálogos | `handle_dialog` |
 | Portapapeles | `copy_selection`, `prepare_cut`, `confirm_cut` |
 | Entrada cruda | `pointer_move`, `pointer_down`, `pointer_up`, `wheel`, `hold_modifiers`, `key_down`, `key_up`, `insert_text` |
-| Flujo | `start_stream`, `start_stream_within`, `stop_stream`, `capture_frame` |
 
 Todo error es un `DriverError` con una clase, que dice más que el texto:
 
@@ -185,7 +119,6 @@ Todo error es un `DriverError` con una clase, que dice más que el texto:
 | `Tool` | La respuesta de la propia herramienta: referencia caducada, destino ambiguo, script que lanza, espera agotada. Es el `output.error` del bridge; no hay efecto incierto. |
 | `Failed` | La solicitud llegó a la página y falló o agotó su plazo. Si era una acción, su efecto es desconocido. |
 | `Navigation` | La página no cargó (`net::ERR_… at <url>`). El driver sigue utilizable. |
-| `Launch` | Chrome no pudo iniciarse. |
 | `Closed` | El navegador o su página ya no están. Hay que crear otro driver. |
 
 Los textos que llegan al modelo o al usuario son los que daba el bridge, en
@@ -341,25 +274,12 @@ usa una vez y se olvida si la página navega. El diálogo se contesta desde el
 hilo lector: mientras está abierto la página queda bloqueada, y con ella la
 solicitud que el driver esté esperando.
 
-## Vista en vivo
+## Entrada cruda
 
-- **Flujo.** `start_stream` inicia `Page.startScreencast` y devuelve un
-  `FrameStream` que puede vivir en otro hilo. Los cuadros son el viewport a
-  escala de dispositivo (1280×800 CSS a escala 2 son 2560×1600) y llegan como
-  los bytes JPEG o PNG que produjo Chrome, decodificados de base64 una sola
-  vez, directamente desde el mensaje. Convertirlos en píxeles es tarea de la
-  vista.
-- **Contrapresión.** Chrome espera el acuse de un cuadro antes de enviar más.
-  El acuse se envía recién cuando el consumidor toma el cuadro, así que una
-  vista lenta hace que Chrome saltee cuadros: aquí se guarda a lo sumo uno, el
-  más reciente.
-- **Visibilidad.** `stop_stream` detiene la codificación cuando la vista se
-  oculta; `start_stream` la reanuda.
-- **Presupuesto de píxeles.** `start_stream_within` pasa a Chrome un ancho y
-  un alto máximos (`maxWidth`, `maxHeight`): una vista con un límite de
-  píxeles pide cuadros que puede mostrar en lugar de descartar los que no.
-- **Cuadro sin pérdida.** `capture_frame` devuelve un PNG a escala de
-  dispositivo para cuando la página queda quieta.
+Los píxeles de la vista en vivo no pasan por el driver: los entrega quien
+embebe ([Chromium embebido](browser-cef.md#cómo-funciona)). La entrada de la
+ventana sí.
+
 - **Entrada cruda.** Puntero, rueda, teclas y texto llegan a la página como
   los del usuario. El driver recuerda botones y modificadores apretados: un
   movimiento entre `pointer_down` y `pointer_up` es un arrastre. `MouseButton`
@@ -385,12 +305,11 @@ imagen por píxel CSS cualquiera sea la escala, de hasta 2 MiB.
 | Resultado y script de `evaluate` | 16 KiB cada uno |
 | Consola y red | 200 entradas; texto 1 KiB; URL 512 bytes; informe 12 KiB |
 | Captura de `screenshot` | PNG de 2 MiB |
-| Cuadro del flujo o de `capture_frame` | 16 MiB |
 | Selección para el portapapeles | 16 KiB |
 | Texto de `fill`, `type_text` e `insert_text` | 16 KiB |
 | URL | 4096 bytes; sólo HTTP, HTTPS o `about:blank`, sin credenciales |
 | Viewport | 320–1600 × 240–1200 píxeles CSS |
-| Acciones, esperas y navegaciones | 10 s; arranque 20 s |
+| Acciones, esperas y navegaciones | 10 s; adjuntarse a la página, 20 s |
 | Mensaje del protocolo | 32 MiB; uno mayor se descarta sin acumularlo y falla sólo su solicitud |
 | Marcos de otros procesos y contextos seguidos | 64 |
 | Profundidad del árbol accesible | 400 niveles |
@@ -402,8 +321,12 @@ una cadena de Rust, se reemplaza en lugar de perder el mensaje.
 
 ## Mediciones
 
-Tomadas el 11 de octubre de 2026 en esta máquina (16 hilos, 14 GB), con Google
-Chrome 150.0.7871.46 y el ejemplo `measure` compilado con el perfil `desktop`.
+Son las del driver frente al bridge, y se conservan como registro: se tomaron
+el 11 de octubre de 2026 en esta máquina (16 hilos, 14 GB) sobre el Chrome
+headless 150.0.7871.46 que el driver lanzaba entonces, con un ejemplo
+`measure` que se quitó con ese motor. **No se repitieron sobre el Chromium
+embebido**; lo medido sobre él, a través del runtime, está en
+[Chromium embebido](browser-cef.md#mediciones).
 En todas las corridas la carga de un minuto estaba entre 0,3 y 1,4 y no había
 procesos `rustc`. El bridge se midió con Playwright 1.63.0 sobre el mismo
 Chrome y las mismas páginas.
@@ -446,108 +369,89 @@ la respuesta, y con o sin `Accessibility.enable`) y 83 ms de la captura del
 DOM; componer el texto lleva 20 ms. El bridge tarda más en esa página porque
 recorre el árbol dos veces.
 
-**Arranque**, hasta tener la página lista, con el entorno reducido que usa la
-aplicación: el driver entre 0,33 y 0,38 s y el bridge entre 0,59 y 0,61 s. El
-primer arranque después de haber corrido Chrome con otro entorno tarda unos
-3 s en ambos (2,9 s y 3,2 s medidos).
+**Arranque**, hasta tener la página lista: el driver entre 0,33 y 0,38 s y el
+bridge entre 0,59 y 0,61 s. El primer arranque después de haber corrido
+Chrome con otro entorno tardaba unos 3 s en ambos (2,9 s y 3,2 s medidos).
 
-**Flujo** a 1280×800 CSS, JPEG de calidad 80, con un consumidor en otro hilo
-que toma cada cuadro apenas llega:
-
-| | Escala 2 (2560×1600) | Escala 1 (1280×800) |
-| --- | --- | --- |
-| página animada | 38 cuadros/s, 492 KiB por cuadro | 60 cuadros/s, 194 KiB |
-| desplazamiento continuo (rueda cada 16 ms) | 35,6 cuadros/s | 59,8 cuadros/s |
-| siguiente cuadro tras un evento de rueda, desplazando | 26,5 a 27 ms de mediana | 14,9 ms |
-| página quieta: de la rueda al primer cuadro que la muestra | 64 ms de mediana (p95 69) | 16,7 ms (p95 34) |
-| cuadro sin pérdida | 63 KiB en 40 ms | 17 KiB en 15 ms |
-
-La calidad del JPEG no cambia estos números (se probó 80, 50 y 30): a escala 2
-el límite es el tiempo que tarda Chrome headless en rasterizar y capturar 4
-megapíxeles. Para separar lo que agrega el driver se repitió la misma medición
-con Node y Playwright, el mismo Chrome y la misma página: página quieta,
-58,6 ms a escala 2 y 17,6 ms a escala 1; desplazando, 25,7 ms y 14,0 ms. La
-referencia previa de «~16 ms de mediana a escala 2» no se reprodujo con
-ninguno de los dos caminos; coincide con lo que ambos miden a escala 1. Los
-cuadros por segundo sí coinciden con la referencia de 31 a 35.
+**Flujo.** La vista de aquel motor era un flujo de cuadros JPEG
+(`Page.startScreencast`) a 1280×800 CSS: 60 cuadros por segundo a escala 1 y
+38 a escala 2 (2560×1600), con 64 ms de mediana de la rueda al primer cuadro
+de una página quieta a escala 2. El límite era el tiempo que tarda un Chrome
+headless en rasterizar y capturar 4 megapíxeles.
 
 ## Validación
 
-Pruebas unitarias, sin navegador, parte de la suite central (67):
+Pruebas unitarias, sin navegador, parte de la suite central (58):
 
 ```sh
 nix-shell --run "cargo test -p openide-browser --lib"
 ```
 
-Cubren el encuadre del pipe, el emparejamiento de solicitudes, respuestas y
-eventos, la composición del texto a partir de árboles grabados, la caducidad
-de referencias, la descripción de una referencia frente a texto de la página
-que la imita, las teclas y sus combinaciones, el límite de tamaño del flujo y
-cada límite.
+Cubren el emparejamiento de solicitudes, respuestas y eventos, la composición
+del texto a partir de árboles grabados, la caducidad de referencias, la
+descripción de una referencia frente a texto de la página que la imita, las
+teclas y sus combinaciones, el directorio privado y su barrido, y cada
+límite.
 
-Pruebas contra Chrome real, ignoradas por defecto porque la suite central no
-debe necesitar un navegador (11 escenarios y un proceso auxiliar):
+Las pruebas contra el navegador real están en `agents-window`, que es quien
+tiene el motor: `browser_cef_driver_tests.rs` abre una página del Chromium
+embebido por escenario y la maneja con la API del driver, sin el runtime.
+Ignoradas por defecto, corren con las demás pruebas `real_cef`
+([Chromium embebido](browser-cef.md#validación)):
 
 ```sh
-OPENIDE_BROWSER_EXECUTABLE="$(command -v google-chrome-stable)" \
-  nix-shell --run "cargo test -p openide-browser --test chrome -- --ignored"
+nix-shell --run "cargo test -p agents-window -- --ignored --test-threads=1 real_cef_driver"
 ```
 
-Chrome corre headless con un perfil descartable y sólo visita el servidor
-HTTP local que inicia cada prueba. Reproducen cada escenario de la suite Node
-anterior (`scripts/browser-e2e.mjs`, eliminada junto con el bridge) que no era
-propio de Node y agregan el flujo (tamaño de cuadro a escala 1 y 2,
-contrapresión, detención), la entrada cruda (hover, selección por arrastre,
-teclas), las esperas de accionabilidad, un marco de otro sitio, las ventanas
-emergentes, el script que no cede y la muerte del proceso padre. Lo que esa
-suite comprobaba del actor, de la vista y del proxy MCP se prueba ahora en
-`agents-window`: ver [Runtime del navegador](browser-runtime.md#validación-reproducible).
-El escenario de la dependencia de Playwright ausente dejó de existir; en su
-lugar se prueba la falta de navegador.
+Chromium no abre ninguna ventana, no usa la GPU y sólo visita el servidor
+HTTP local que inicia cada prueba. Son los escenarios que antes corrían
+contra un Chrome lanzado: navegación, texto, portapapeles en dos pasos,
+desplazamiento e historial; referencias, acciones, esperas y evaluación, con
+el script que no cede; consola, red, diálogos y capturas dentro de sus
+límites; capturas accesibles de marcos y de controles propios, y sus
+opciones; un marco de otro sitio y una ventana que se abre en la página; la
+entrada cruda (hover, selección por arrastre, teclas); y las esperas de
+accionabilidad. La muerte del proceso que tiene el navegador se prueba ahora
+con la aplicación entera, en `browser_cef_tests.rs`. Lo que era propio de
+lanzar un navegador (un ejecutable que falta o termina enseguida, las raíces
+temporales de cada lanzamiento) y el flujo de cuadros se fueron con ellos.
 
 Las grabaciones de `tests/recorded` son las respuestas del protocolo para
-cada página fixture y el texto que Chrome dio. La suite unitaria reproduce
-ese texto sin navegador y la prueba real comprueba que Chrome siga dando el
-mismo. Para regrabarlas después de cambiar una fixture o de actualizar
-Chrome:
+cada página fixture (`tests/fixtures`) y el texto que dio el navegador. La
+suite unitaria reproduce ese texto sin navegador y la prueba real comprueba
+que el Chromium embebido siga dando el mismo: las grabaciones, hechas con
+Chrome 150, coinciden sin cambios con lo que da Chromium 154. Para regrabarlas
+después de cambiar una fixture o de actualizar CEF:
 
 ```sh
-OPENIDE_BROWSER_RECORD=1 OPENIDE_BROWSER_EXECUTABLE="$(command -v google-chrome-stable)" \
-  nix-shell --run "cargo test -p openide-browser --test chrome -- --ignored fixture_snapshots"
+OPENIDE_BROWSER_RECORD=1 nix-shell --run \
+  "cargo test -p agents-window -- --ignored --test-threads=1 real_cef_driver_snapshots_of_the_fixtures"
 ```
-
-Las mediciones se repiten con el ejemplo `measure` (`hold`, `latency`,
-`stream`) contra cualquier página servida por HTTP; su cabecera explica cada
-modo.
 
 ## Lo que no se incluye
 
-Buscar un navegador (lo decide el host), varias pestañas, descargas, subida
-de archivos, PDF, trazas, grabación, otros motores, un transporte TCP o
-WebSocket y la forma del cursor, que el protocolo no informa. El transporte de
-CEF vive en `crates/openide-cef`, no acá.
+Iniciar o buscar un navegador (la página la crea quien embebe), varias
+pestañas, descargas, subida de archivos, PDF, trazas, grabación, otros
+motores, un transporte TCP o WebSocket, los cuadros de la vista y la forma del
+cursor, que el protocolo no informa: las dos últimas las da CEF.
 
 Los eventos del puntero del protocolo sólo llegan a la página y a sus marcos.
 La lista abierta de un `<select>` es un widget aparte: las teclas actúan sobre
-ella, porque la página se las pasa, y un clic encima la cierra.
+ella, porque la página se las pasa, y un clic del protocolo encima la cierra.
+Por eso la ventana usa ahí las llamadas de CEF.
 
 Atajos conocidos:
 
 - Si `DOMSnapshot.captureSnapshot` falla (una página que supere el límite de
   mensaje), la captura accesible se entrega igual, con referencia en todo
   elemento, sin `[cursor=pointer]` y sin descender a los marcos.
-- El hilo lector contesta diálogos y acusa cuadros escribiendo en el pipe. Si
-  Chrome dejara de leer sus comandos esa escritura se bloquearía; Chrome los
-  lee en un hilo propio y no se observó.
-- La aceleración por GPU del Chrome headless no se configuró. Es lo que limita
-  el flujo a escala 2.
 
 ## Referencias
 
 El diseño sigue a [vercel-labs/agent-browser](https://github.com/vercel-labs/agent-browser)
 (Apache-2.0), que reemplazó Node y Playwright por un proceso Rust que habla
-CDP: cliente propio, captura a partir del árbol de accesibilidad con
-referencias atadas al documento, y flujo con acuses. No se copió código suyo.
+CDP: cliente propio y captura a partir del árbol de accesibilidad con
+referencias atadas al documento. No se copió código suyo.
 La forma del texto de la captura reproduce la de
 [Playwright](https://github.com/microsoft/playwright) (Apache-2.0). Ver
 [Créditos de terceros](../THIRD_PARTY_NOTICES.md).

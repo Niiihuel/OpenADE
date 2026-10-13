@@ -33,16 +33,14 @@ pub(crate) struct BrowserUiState {
     pub error: Option<String>,
     /// The error is a page that did not load, whatever its text says.
     pub load_failed: bool,
-    /// No browser was found on this machine to start the context with.
-    pub browser_missing: bool,
+    /// The embedded Chromium cannot start in this run of the application:
+    /// opening the context again would fail the same way.
+    pub engine_failed: bool,
     pub can_go_back: bool,
     pub can_go_forward: bool,
     pub queued_inputs: usize,
     pub input_rejection: Option<String>,
     pub more_open: bool,
-    /// Why the page runs on the system's browser and not on the embedded
-    /// one, until the notice is dismissed.
-    pub engine_notice: Option<String>,
 }
 
 /// The live surface a browser tab's frames are presented on.
@@ -168,7 +166,6 @@ fn surface(browser: &BrowserUiState) -> Surface {
         || browser.url.starts_with("chrome://network-error");
     let load_error = browser.error.as_deref().is_some_and(|error| {
         !browser.started
-            || browser.browser_missing
             || browser.load_failed
             || error.contains("net::ERR_")
     });
@@ -212,11 +209,9 @@ fn local_address(browser: &BrowserUiState) -> bool {
 
 fn error_copy(browser: &BrowserUiState) -> (String, String) {
     let error = browser.error.as_deref().unwrap_or("");
-    if browser.browser_missing {
-        (
-            "No se encontró un navegador".into(),
-            "Instalá Google Chrome, Chromium o Microsoft Edge, o indicá la ruta de uno en la variable OPENIDE_BROWSER_EXECUTABLE. Después volvé a intentar.".into(),
-        )
+    if browser.engine_failed {
+        // Said plainly, with the reason: there is no other browser to use.
+        ("El navegador embebido no pudo iniciarse".into(), error.chars().take(640).collect())
     } else if error.contains("ERR_CONNECTION_REFUSED") && local_address(browser) {
         // Nobody listens there: the project's server stopped, or never started.
         (format!("No se pudo conectar con {} — ¿sigue corriendo el servidor?", address_host(browser).unwrap_or_else(|| "localhost".into())),
@@ -233,16 +228,6 @@ fn error_copy(browser: &BrowserUiState) -> (String, String) {
         )
     } else if error.contains("ERR_CERT_") || error.contains("ERR_SSL_") {
         ("No se pudo verificar la conexión".into(), "El sitio tiene un problema con su certificado. Revisá la dirección o la configuración HTTPS del servidor.".into())
-    } else if error.contains("error while loading shared libraries") {
-        (
-            "El navegador no pudo iniciarse".into(),
-            "Faltan bibliotecas del sistema. Usá un Chromium instalado en este equipo.".into(),
-        )
-    } else if error.contains("no tiene un transporte") {
-        (
-            "El navegador todavía no funciona en este sistema".into(),
-            "Esta versión de OpenIDE no puede iniciar su navegador en este sistema operativo.".into(),
-        )
     } else if !browser.started {
         (
             "El navegador no pudo iniciarse".into(),
@@ -302,7 +287,9 @@ fn state_surface(browser: &BrowserUiState, width: f32, mode: Surface) -> Element
             .render()
             .center_content(),
     ];
-    if mode == Surface::Error {
+    // The reason is already on the card, and Chromium starts once per run:
+    // there is no detail to add and nothing a retry could change.
+    if mode == Surface::Error && !browser.engine_failed {
         if let Some(error) = &browser.error {
             content.push(
                 Tooltip::new(
@@ -320,8 +307,8 @@ fn state_surface(browser: &BrowserUiState, width: f32, mode: Surface) -> Element
                 .render(),
             );
         }
-        // A context that never started is opened again, which looks for a
-        // browser again; one that did only reopens the address.
+        // A context that never started is opened again; one that did only
+        // reopens the address.
         let action_id = if browser.started {
             "browser_navigate"
         } else {
@@ -380,10 +367,6 @@ fn status(browser: &BrowserUiState, width: f32, mode: Surface) -> Element {
             .then_some(browser.error.as_deref())
             .flatten()
     });
-    // Said while the footer has nothing else to say, and until dismissed.
-    let notice = browser.engine_notice.as_deref().filter(|_| {
-        error.is_none() && browser.queued_inputs == 0 && !browser.navigating && !browser.loading
-    });
     let text = if let Some(error) = error {
         error
             .lines()
@@ -398,24 +381,21 @@ fn status(browser: &BrowserUiState, width: f32, mode: Surface) -> Element {
         "Cargando página…".into()
     } else if browser.loading {
         "Actualizando vista…".into()
-    } else if notice.is_some() {
-        "El navegador embebido no pudo iniciarse; se usa el del sistema.".into()
     } else {
         "Sesión aislada · Compartida con el agente".into()
     };
-    let small = |text: String| Text::new(text, theme::component_palette()).size(10.5).muted();
-    let row = small(text)
+    let row = Text::new(text, theme::component_palette())
+        .size(10.5)
+        .muted()
         .truncate()
         .render()
         .padding(3.0)
-        .size(notice.is_none().then_some(width), Some(STATUS_HEIGHT));
-    let told = Tooltip::new(
+        .size(Some(width), Some(STATUS_HEIGHT));
+    Tooltip::new(
         row,
         "browser_status",
         if error.is_some() {
             "Entrada del navegador"
-        } else if notice.is_some() {
-            "Navegador embebido"
         } else {
             "Navegador de esta conversación"
         },
@@ -423,7 +403,6 @@ fn status(browser: &BrowserUiState, width: f32, mode: Surface) -> Element {
     )
     .description(
         error
-            .or(notice)
             .unwrap_or(
                 "Esta página pertenece a la conversación. No usa tu perfil personal del navegador.",
             )
@@ -432,16 +411,7 @@ fn status(browser: &BrowserUiState, width: f32, mode: Surface) -> Element {
             .collect::<String>(),
     )
     .max_width(360.0)
-    .render();
-    if notice.is_none() {
-        return told;
-    }
-    let dismiss = Element::clickable(
-        "browser_notice_dismiss",
-        small("Descartar".into()).render().padding(3.0),
-    )
-    .underline_on_hover();
-    Element::row(vec![told.flex(1.0), dismiss]).size(Some(width), Some(STATUS_HEIGHT))
+    .render()
 }
 
 pub(crate) fn build(state: &ViewState, width: f32) -> Element {

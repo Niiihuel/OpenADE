@@ -671,9 +671,6 @@ fn tab_status(state: &ViewState, kind: SideTab) -> String {
             .tab_id
             .is_some_and(|id| tabs.iter().any(|tab| tab.id == id));
         if current {
-            if state.browser.browser_missing {
-                return "Falta un navegador".into();
-            }
             if state.browser.error.is_some() {
                 return "Error".into();
             }

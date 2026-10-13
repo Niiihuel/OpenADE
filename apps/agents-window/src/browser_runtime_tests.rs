@@ -50,7 +50,6 @@ pub(crate) fn fixture(
         context_lost: Arc::new(AtomicBool::new(false)),
         visible: Arc::new(AtomicBool::new(false)),
         view: Arc::default(),
-        process: Arc::default(),
         scope,
         identity_digest: "fixture".into(),
         preview: Arc::default(),
@@ -78,7 +77,6 @@ fn handle() -> BrowserHandle {
         context_lost: Arc::new(AtomicBool::new(false)),
         visible: Arc::new(AtomicBool::new(true)),
         view: Arc::default(),
-        process: Arc::default(),
         scope: BrowserScope {
             workspace: PathBuf::from("/fixture"),
             session_id: "browser-test".into(),
@@ -89,10 +87,10 @@ fn handle() -> BrowserHandle {
     }
 }
 
-// ---- A DevTools endpoint the tests script in place of Chrome ---------------
-// The worker, its driver, the decoder and the broker are the real ones; only
-// the browser at the other end of the transport is played here. No process
-// is started and nothing leaves this one.
+// ---- A DevTools endpoint the tests script in place of a page ---------------
+// The worker, its driver and the broker are the real ones; only the page at
+// the other end of the transport is played here. Chromium is not started
+// and nothing leaves this process.
 
 struct Sink(mpsc::Sender<Value>, Arc<AtomicBool>);
 impl MessageSink for Sink {
@@ -128,7 +126,7 @@ struct Endpoint {
     /// Every request the runtime made of the browser, in order.
     requests: Arc<Mutex<Vec<(String, Value)>>>,
     incoming: mpsc::Sender<Incoming>,
-    /// The driver let go of its end, as when Chrome is stopped.
+    /// The driver let go of its end, as when its page is closed.
     released: Arc<AtomicBool>,
     dead: Arc<AtomicBool>,
 }
@@ -142,13 +140,6 @@ impl Endpoint {
         });
     }
 
-    /// A screencast frame, which Chrome holds the next one for until `ack`
-    /// is acknowledged.
-    fn frame(&self, image: &[u8], ack: i64) {
-        let data = base64::engine::general_purpose::STANDARD.encode(image);
-        self.event("Page.screencastFrame", json!({"data": data, "sessionId": ack}));
-    }
-
     fn asked(&self, method: &str) -> Vec<Value> {
         let requests = self.requests.lock().unwrap();
         requests
@@ -158,7 +149,7 @@ impl Endpoint {
             .collect()
     }
 
-    /// The browser dies: its end of the transport closes.
+    /// The page dies: its end of the transport closes.
     fn die(&self) {
         self.dead.store(true, Ordering::Release);
     }
@@ -199,8 +190,7 @@ fn endpoint(
             let result = match script(method, params, &browser) {
                 Some(answer) => answer,
                 None => Ok(match method {
-                    "Target.createBrowserContext" => json!({"browserContextId": "CONTEXT"}),
-                    "Target.createTarget" => json!({"targetId": "MAIN"}),
+                    "Target.getTargetInfo" => json!({"targetInfo": {"targetId": "MAIN"}}),
                     "Target.attachToTarget" => json!({"sessionId": "PAGE"}),
                     "Page.createIsolatedWorld" => json!({"executionContextId": 7}),
                     "Page.getFrameTree" => {
@@ -208,10 +198,6 @@ fn endpoint(
                     }
                     "Page.getNavigationHistory" => serde_json::from_str(HISTORY).unwrap(),
                     "DOM.resolveNode" => json!({"object": {"objectId": "OBJECT"}}),
-                    // A still page's lossless frame; a tool's capture has a clip.
-                    "Page.captureScreenshot" if params["format"] == "png" && params.get("clip").is_none() => {
-                        encoded(&picture(image::ImageFormat::Png, 8, 8, 0))
-                    }
                     _ => json!({}),
                 }),
             };
@@ -234,15 +220,14 @@ fn endpoint(
         };
         let transport = transport
             .take()
-            .ok_or_else(|| failed("El navegador de prueba ya se usó".into()))?;
-        Driver::connect(transport, viewport.0, viewport.1, scale).map_err(|error| failed(error.message))
+            .ok_or_else(|| failed("La página de prueba ya se usó".into()))?;
+        Driver::connect_to_page(transport, viewport.0, viewport.1, scale).map_err(|error| failed(error.message))
     });
     (launch, endpoint)
 }
 
 fn options(viewport: (u32, u32), scale: f32) -> BrowserLaunchOptions {
     BrowserLaunchOptions {
-        browser_executable: None,
         viewport_width: viewport.0,
         viewport_height: viewport.1,
         device_scale: scale,
@@ -310,10 +295,11 @@ fn tree() -> Option<Result<Value, &'static str>> {
     ]})))
 }
 
-fn picture(format: image::ImageFormat, width: u32, height: u32, shade: u8) -> Vec<u8> {
+/// A PNG as a tool's capture is.
+fn picture(width: u32, height: u32, shade: u8) -> Vec<u8> {
     let mut bytes = Vec::new();
     image::RgbImage::from_fn(width, height, |x, y| image::Rgb([x as u8, y as u8, shade]))
-        .write_to(&mut std::io::Cursor::new(&mut bytes), format)
+        .write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png)
         .unwrap();
     bytes
 }
@@ -328,10 +314,13 @@ fn text(result: &McpCallResult) -> Value {
 }
 
 #[test]
-fn the_worker_starts_a_context_follows_its_page_and_lets_go_of_the_browser_when_closed() {
+fn the_worker_starts_a_context_follows_its_page_and_lets_go_of_it_when_closed() {
     let (runtime, endpoint, _workspace) = scripted((640, 480), 2.0, |_, _, _| None);
     let started = runtime.snapshot();
-    assert!(!started.loading && started.error.is_none() && !started.browser_missing);
+    assert!(!started.loading && started.error.is_none() && started.error_code.is_none());
+    // The driver attached to the page it was handed; it made no other.
+    assert_eq!(endpoint.asked("Target.getTargetInfo").len(), 1);
+    assert!(endpoint.asked("Target.createTarget").is_empty());
     assert_eq!((started.viewport_width, started.viewport_height), (640, 480));
     assert_eq!((started.can_go_back, started.can_go_forward), (true, false));
     // The page moves on its own: the address, title and history are asked
@@ -343,16 +332,15 @@ fn the_worker_starts_a_context_follows_its_page_and_lets_go_of_the_browser_when_
     until("the page's address", || runtime.snapshot().url == "http://localhost:3000/");
     assert_eq!(runtime.snapshot().title, "Proyecto");
     assert!(!endpoint.released.load(Ordering::Acquire));
-    // Closing drops the driver before `drop` returns: with Chrome that kills
-    // the browser and removes its directory.
+    // Closing drops the driver, and with it the page, before `drop` returns.
     drop(runtime);
     assert!(endpoint.released.load(Ordering::Acquire));
 }
 
 #[test]
-fn a_context_without_a_browser_says_so_and_only_an_explicit_snapshot_tries_again() {
+fn a_context_that_could_not_start_says_why_and_only_an_explicit_snapshot_tries_again() {
     let workspace = tempfile::tempdir().unwrap();
-    let (mut found, _endpoint) = endpoint(
+    let (mut opened, _endpoint) = endpoint(
         (640, 480),
         1.0,
         Box::new(|method, _, _| (method == "Accessibility.getFullAXTree").then(tree).flatten()),
@@ -368,22 +356,20 @@ fn a_context_without_a_browser_says_so_and_only_an_explicit_snapshot_tries_again
             attempts += 1;
             if attempts == 1 {
                 return Err(StartFailure {
-                    code: "browser_missing",
-                    message: BROWSER_MISSING.into(),
+                    code: "launch_failed",
+                    message: "CEF no creó la página a tiempo.".into(),
                 });
             }
-            found()
+            opened()
         }),
     )
     .unwrap();
     until("the failed start", || runtime.snapshot().error.is_some());
-    let missing = runtime.snapshot();
-    assert!(missing.browser_missing && !missing.started && !missing.loading);
-    assert_eq!(missing.error_code.as_deref(), Some("browser_missing"));
-    let error = missing.error.unwrap();
-    for part in ["Google Chrome", "Chromium", "Microsoft Edge", "OPENIDE_BROWSER_EXECUTABLE"] {
-        assert!(error.contains(part), "{error}");
-    }
+    let failed = runtime.snapshot();
+    assert!(!failed.started && !failed.loading);
+    assert_eq!(failed.error_code.as_deref(), Some("launch_failed"));
+    let error = failed.error.unwrap();
+    assert_eq!(error, "CEF no creó la página a tiempo.");
     // An action is refused with that explanation, and is never replayed
     // into the page a later start opens.
     let refused = finish(
@@ -406,42 +392,44 @@ fn a_context_without_a_browser_says_so_and_only_an_explicit_snapshot_tries_again
             .unwrap(),
     )
     .unwrap();
-    assert!(retried.started && retried.error.is_none() && !retried.browser_missing);
+    assert!(retried.started && retried.error.is_none() && retried.error_code.is_none());
 }
 
 #[test]
-fn a_browser_that_cannot_start_says_why_and_leaves_its_private_directory_empty() {
-    let (data, workspace) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    let absent = data.path().join("no-such-browser");
-    let runtime = BrowserRuntime::start(
-        BrowserScope {
-            workspace: workspace.path().into(),
-            session_id: "browser-test".into(),
-        },
-        data.path(),
-        BrowserLaunchOptions {
-            browser_executable: Some(absent.clone()),
-            ..Default::default()
-        },
-    )
-    .unwrap();
-    until("the failed start", || runtime.snapshot().error.is_some());
-    let failed = runtime.snapshot();
-    assert_eq!(failed.error_code.as_deref(), Some("launch_failed"));
-    assert!(!failed.started && !failed.browser_missing);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        assert!(failed.error.unwrap().contains(absent.to_str().unwrap()));
-        let base = data.path().join("browser-runtime");
-        assert_eq!(fs::metadata(&base).unwrap().permissions().mode() & 0o777, 0o700);
-        assert_eq!(fs::read_dir(&base).unwrap().count(), 0, "nothing is left of the attempt");
-    }
-    // Scopes and viewports are checked before anything is started.
+fn an_embedded_browser_that_cannot_start_fails_every_context_with_its_reason_and_its_own_code() {
+    let workspace = tempfile::tempdir().unwrap();
     let scope = |session: &str| BrowserScope {
         workspace: workspace.path().into(),
         session_id: session.into(),
     };
+    const REASON: &str = "Falta icudtl.dat junto a libcef.so. El navegador embebido se inicia una sola vez por ejecución: cerrá OpenIDE y volvé a abrirlo para reintentar.";
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let counted = attempts.clone();
+    let runtime = BrowserRuntime::start_with(
+        scope("browser-test"),
+        options((640, 480), 1.0),
+        Box::new(move || {
+            counted.fetch_add(1, Ordering::Relaxed);
+            Err(StartFailure {
+                code: "engine_failed",
+                message: REASON.into(),
+            })
+        }),
+    )
+    .unwrap();
+    until("the failed start", || runtime.snapshot().error.is_some());
+    let failed = runtime.snapshot();
+    assert!(!failed.started && !failed.loading);
+    // The code is what the tab tells this apart by; the reason is its text.
+    assert_eq!((failed.error_code.as_deref(), failed.error.as_deref()), (Some("engine_failed"), Some(REASON)));
+    // The agent is told the same, and nothing reaches a page.
+    let client = runtime.mcp_client();
+    let refused = client.call_blocking("browser_navigate", json!({"url": "http://localhost:3000/"})).unwrap_err();
+    assert_eq!(refused, REASON);
+    assert_eq!(attempts.load(Ordering::Relaxed), 1, "only an explicit snapshot asks again");
+
+    // Scopes and viewports are checked before anything is started.
+    let data = tempfile::tempdir().unwrap();
     for session in ["", "a\nb", &"x".repeat(257)] {
         assert!(BrowserRuntime::start(scope(session), data.path(), BrowserLaunchOptions::default()).is_err());
     }
@@ -450,71 +438,12 @@ fn a_browser_that_cannot_start_says_why_and_leaves_its_private_directory_empty()
         ..Default::default()
     };
     assert!(BrowserRuntime::start(scope("ok"), data.path(), small).is_err());
-}
-
-#[cfg(unix)]
-#[test]
-fn the_browser_is_the_one_named_then_a_system_one_then_an_earlier_download() {
-    use std::os::unix::fs::PermissionsExt;
-    let root = tempfile::tempdir().unwrap();
-    let executable = |path: &Path| {
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, "#!/bin/sh\n").unwrap();
-        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
-        path.to_owned()
-    };
-    let (first, second) = (root.path().join("bin-a"), root.path().join("bin-b"));
-    let edge = executable(&second.join("microsoft-edge"));
-    let chromium = executable(&second.join("chromium"));
-    let search = std::env::join_paths([&first, &second]).unwrap();
-    let usual = [root.path().join("opt/absent"), executable(&root.path().join("opt/chrome"))];
-    let data = root.path().join("data");
-    let browsers = data.join("browser-runtime/deps/node_modules/playwright-core/.local-browsers");
-    executable(&browsers.join("chromium-1100/chrome-linux/chrome"));
-    let newest = executable(&browsers.join("chromium-1208/chrome-linux64/chrome"));
-    assert!(newest.is_absolute());
-    executable(&browsers.join("chromium_headless_shell-1300/chrome-linux/headless_shell"));
-    fs::create_dir_all(browsers.join("chromium-9999")).unwrap();
-    let choose = |named: Option<&str>, search: Option<&std::ffi::OsStr>, usual: &[PathBuf], downloads: Option<&Path>| {
-        choose_browser(named.map(Into::into), search, usual, downloads)
-    };
-
-    // The user's choice wins, by path or by a name on PATH, and is never
-    // replaced by another browser when it is wrong.
-    let named = executable(&root.path().join("elegido/chrome"));
-    assert_eq!(choose(Some(named.to_str().unwrap()), Some(&search), &usual, Some(&data)), Ok(named));
-    assert_eq!(choose(Some("microsoft-edge"), Some(&search), &usual, Some(&data)), Ok(edge.clone()));
-    let wrong = choose(Some("/no/such/chrome"), Some(&search), &usual, Some(&data)).unwrap_err();
-    assert!(wrong.contains("OPENIDE_BROWSER_EXECUTABLE") && wrong.contains("/no/such/chrome"), "{wrong}");
-    // An empty variable is no choice.
-    assert_eq!(choose(Some(""), Some(&search), &usual, Some(&data)), Ok(chromium.clone()));
-
-    // On PATH: Chrome before Chromium before Edge, whatever the directory order.
-    assert_eq!(choose(None, Some(&search), &usual, Some(&data)), Ok(chromium));
-    // A browser is started by the name it was found under: a snap's is a
-    // link to a launcher that reads that name.
-    let launcher = executable(&root.path().join("snap"));
-    std::os::unix::fs::symlink(&launcher, second.join("google-chrome")).unwrap();
-    let chrome = second.join("google-chrome");
-    assert_eq!(choose(None, Some(&search), &usual, Some(&data)), Ok(chrome));
-    // A file that cannot be executed is not a browser.
-    fs::write(first.join("google-chrome-stable"), "").unwrap_or_else(|_| {
-        fs::create_dir_all(&first).unwrap();
-        fs::write(first.join("google-chrome-stable"), "").unwrap();
-    });
-    assert!(choose(None, Some(&search), &usual, Some(&data)).unwrap().ends_with("google-chrome"));
-
-    // Then where the system usually installs one, then the newest Chromium
-    // an earlier version of the application downloaded, and never its
-    // headless shell.
-    let nowhere = std::env::join_paths([&first]).unwrap();
-    assert_eq!(choose(None, Some(&nowhere), &usual, Some(&data)), Ok(usual[1].clone()));
-    assert_eq!(choose(None, Some(&nowhere), &usual[..1], Some(&data)), Ok(newest));
-    assert_eq!(choose(None, None, &[], Some(&data)), Ok(browsers.join("chromium-1208/chrome-linux64/chrome")));
-    // Where that download cannot run it is not offered, and with nothing
-    // at all the panel is told what to install.
-    for downloads in [None, Some(root.path())] {
-        assert_eq!(choose(None, Some(&nowhere), &usual[..1], downloads), Err(BROWSER_MISSING.to_owned()));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let base = data.path().join("browser-runtime");
+        assert_eq!(fs::metadata(&base).unwrap().permissions().mode() & 0o777, 0o700);
+        assert_eq!(fs::read_dir(&base).unwrap().count(), 0, "nothing is left of the attempts");
     }
 }
 
@@ -960,7 +889,7 @@ fn tool_output_reaches_only_its_request_and_shapes_the_result() {
     assert!(shown.contains("localhost:3000") && !shown.contains("bank.example"));
 
     // A capture is an image block of any geometry.
-    let pixels = base64::engine::general_purpose::STANDARD.encode(picture(image::ImageFormat::Png, 20, 12, 0));
+    let pixels = base64::engine::general_purpose::STANDARD.encode(picture(20, 12, 0));
     let captured = reply(BrowserToolOutput {
         data: data("screenshot", json!({"width":20,"height":12,"bytes":64})),
         image: Some(Arc::from(pixels.as_str())),
@@ -1122,7 +1051,7 @@ async fn the_agent_reads_refs_acts_on_them_and_gets_each_tools_own_answer() {
             Some(Ok(json!({"result": {"type": "string", "value": "Proyecto"}})))
         }
         "Page.captureScreenshot" if params.get("clip").is_some() && params["format"] == "png" => {
-            Some(Ok(encoded(&picture(image::ImageFormat::Png, 64, 48, 7))))
+            Some(Ok(encoded(&picture(64, 48, 7))))
         }
         _ => None,
     });
@@ -1142,7 +1071,7 @@ async fn the_agent_reads_refs_acts_on_them_and_gets_each_tools_own_answer() {
     assert_eq!((&page["title"], &page["viewport"]), (&json!("Proyecto"), &json!({"width":640,"height":480})));
     assert_eq!((&page["can_go_back"], &page["screenshot_available"]), (&json!(true), &json!(false)));
     assert_eq!(read.content.len(), 1, "the application's own agent is sent no picture");
-    assert!(endpoint.asked("Page.captureScreenshot").iter().all(|params| params["format"] == "jpeg"), "and none is taken");
+    assert!(endpoint.asked("Page.captureScreenshot").is_empty(), "and none is taken");
     // The tree stays for an approval card to say what a ref is.
     assert_eq!(client.last_snapshot().as_ref(), aria);
     assert_eq!(
@@ -1203,7 +1132,7 @@ async fn the_agent_reads_refs_acts_on_them_and_gets_each_tools_own_answer() {
     assert_eq!(text(&call("browser_handle_dialog", json!({"accept":false})).await.unwrap())["next_dialog"], "dismiss");
     let trees = endpoint.asked("Accessibility.getFullAXTree").len();
     let captured = call("browser_take_screenshot", json!({})).await.unwrap();
-    let image = picture(image::ImageFormat::Png, 64, 48, 7);
+    let image = picture(64, 48, 7);
     assert_eq!(text(&captured)["screenshot"], json!({"width":64,"height":48,"bytes":image.len()}));
     assert_eq!(captured.content[1]["type"], "image");
     assert_eq!(captured.content[1]["data"], encoded(&image)["data"]);
@@ -1270,7 +1199,7 @@ async fn a_browser_that_dies_ends_its_context_and_the_agent_is_told_the_catalog_
     let state = runtime.snapshot();
     assert_eq!(state.error_code.as_deref(), Some("context_lost"));
     assert!(!state.started && state.error.unwrap().starts_with("Se perdió el contexto del navegador. Usá Reintentar para abrir otro."));
-    assert!(endpoint.released.load(Ordering::Acquire), "the dead browser's driver is dropped");
+    assert!(endpoint.released.load(Ordering::Acquire), "the dead page's driver is dropped");
     // This identity is over: nothing is replayed into a new browser.
     let refused = runtime.submit_ui(BrowserCommand::Reload).err().unwrap();
     assert!(refused.starts_with("Se perdió el contexto del navegador."));
@@ -1396,7 +1325,7 @@ fn modifier_keys_reach_the_page_with_the_window_s_pointer_and_wheel_and_with_not
 
 #[test]
 fn an_external_snapshot_also_gets_a_picture_of_the_viewport_and_can_be_narrowed() {
-    let image = picture(image::ImageFormat::Png, 64, 48, 3);
+    let image = picture(64, 48, 3);
     let pixels = image.clone();
     let (runtime, endpoint, _workspace) = scripted((640, 480), 1.0, move |method, params, _| match method {
         "Accessibility.getFullAXTree" => tree(),
@@ -1431,217 +1360,8 @@ fn an_external_snapshot_also_gets_a_picture_of_the_viewport_and_can_be_narrowed(
     assert!(runtime.snapshot().screenshot.is_none());
 }
 
-/// Lossless captures of the viewport: no clip, unlike a tool's screenshot.
-fn stills(endpoint: &Endpoint) -> usize {
-    endpoint
-        .asked("Page.captureScreenshot")
-        .iter()
-        .filter(|params| params["format"] == "png" && params.get("clip").is_none())
-        .count()
-}
-
-fn acknowledged(endpoint: &Endpoint, ack: i64) -> bool {
-    endpoint
-        .asked("Page.screencastFrameAck")
-        .iter()
-        .any(|params| params["sessionId"] == ack)
-}
-
 #[test]
-fn the_view_gets_frames_while_it_is_visible_and_one_lossless_frame_once_the_page_is_still() {
-    let moving = picture(image::ImageFormat::Jpeg, 64, 48, 10);
-    let rogue = picture(image::ImageFormat::Jpeg, 32, 24, 99);
-    let changed = picture(image::ImageFormat::Jpeg, 64, 48, 200);
-    // Set once the page has changed under an agent's capture.
-    let moved = Arc::new(AtomicBool::new(false));
-    let (page, redraw, back, other) = (moved.clone(), rogue.clone(), moving.clone(), changed.clone());
-    let (runtime, endpoint, _workspace) = scripted((640, 480), 2.0, move |method, params, browser| match method {
-        "Page.captureScreenshot" if params["format"] == "png" && params.get("clip").is_none() => {
-            let shade = if page.load(Ordering::Acquire) { 200 } else { 10 };
-            Some(Ok(encoded(&picture(image::ImageFormat::Png, 64, 48, shade))))
-        }
-        // An agent's capture at CSS scale: Chrome draws the page at another
-        // scale for a moment, the stream shows it, and then the page is
-        // back, or shows what it changed to meanwhile.
-        "Page.captureScreenshot" if params["format"] == "png" => {
-            if page.load(Ordering::Acquire) {
-                browser.frame(&other, 102);
-            } else {
-                browser.frame(&redraw, 100);
-                browser.frame(&back, 101);
-            }
-            Some(Ok(encoded(&picture(image::ImageFormat::Png, 64, 48, 0))))
-        }
-        _ => None,
-    });
-    let woken = Arc::new(AtomicUsize::new(0));
-    let counter = woken.clone();
-    runtime.on_frame(move || {
-        counter.fetch_add(1, Ordering::Relaxed);
-    });
-    let frame = |what: &str| {
-        let mut frame = None;
-        until(what, || {
-            frame = runtime.take_frame();
-            frame.is_some()
-        });
-        frame.unwrap().size()
-    };
-    let quiet = |what: &str| {
-        thread::sleep(STILL_DELAY + Duration::from_millis(250));
-        assert!(runtime.take_frame().is_none(), "{what}");
-    };
-
-    // Visible from the start: JPEG at the device's pixels, nothing scaled down.
-    until("the stream to start", || !endpoint.asked("Page.startScreencast").is_empty());
-    assert_eq!(endpoint.asked("Page.startScreencast"), [json!({"format":"jpeg","quality":80,"everyNthFrame":1})]);
-    // A page that is already still may send no frame: its first picture is
-    // the lossless one.
-    assert_eq!(frame("the first lossless frame"), [64, 48]);
-    assert_eq!(stills(&endpoint), 1);
-
-    // A frame is taken, shown and only then acknowledged to Chrome.
-    endpoint.frame(&moving, 1);
-    assert_eq!(frame("a frame of the stream"), [64, 48]);
-    until("its acknowledgement", || acknowledged(&endpoint, 1));
-    // Still again: one lossless frame replaces the JPEG, and the frame the
-    // capture makes Chrome send again is no news.
-    assert_eq!(frame("the lossless frame after it"), [64, 48]);
-    assert_eq!(stills(&endpoint), 2);
-    endpoint.frame(&moving, 2);
-    until("the repeated frame to be taken", || acknowledged(&endpoint, 2));
-    quiet("a repeated frame is not shown again");
-    assert_eq!(stills(&endpoint), 2, "and a still page is captured once");
-    let shown = woken.load(Ordering::Relaxed);
-    assert_eq!(shown, 3);
-
-    // The agent's capture never reaches the view: neither the re-render nor
-    // the unchanged page that follows it.
-    let capture = BrowserCommand::TakeScreenshot {
-        full_page: false,
-        selector: None,
-        role: None,
-        name: None,
-        reference: None,
-    };
-    let captured = finish(runtime.handle.submit(capture.clone()).unwrap()).unwrap();
-    assert!(captured.output.unwrap().image.is_some());
-    until("both frames to be taken", || acknowledged(&endpoint, 101));
-    quiet("the view keeps its last true frame");
-    assert_eq!(woken.load(Ordering::Relaxed), shown);
-
-    // What the page changed to meanwhile does: skipped as a frame of that
-    // moment, it comes back as the lossless frame, whose twin is no news.
-    let captures = stills(&endpoint);
-    moved.store(true, Ordering::Release);
-    finish(runtime.handle.submit(capture).unwrap()).unwrap();
-    assert_eq!(frame("a frame of the change"), [64, 48]);
-    until("its lossless capture", || stills(&endpoint) > captures);
-    thread::sleep(Duration::from_millis(300));
-    let _ = runtime.take_frame();
-    endpoint.frame(&changed, 103);
-    until("the twin to be taken", || acknowledged(&endpoint, 103));
-    quiet("the frame the capture caused is not shown over it");
-
-    // Hidden: Chrome stops encoding. Shown again: the stream starts over,
-    // and its first frame is news even if the page did not change.
-    assert!(runtime.set_visible(false));
-    until("the stream to stop", || !endpoint.asked("Page.stopScreencast").is_empty());
-    assert!(!runtime.set_visible(true));
-    until("the stream to start again", || endpoint.asked("Page.startScreencast").len() == 2);
-    endpoint.frame(&changed, 200);
-    assert_eq!(frame("the first frame of the new stream"), [64, 48]);
-
-    // A resized page has other frame bounds: the stream starts over at them.
-    let resized = finish(runtime.submit_ui(BrowserCommand::Resize { width: 800, height: 600 }).unwrap()).unwrap();
-    assert_eq!((resized.viewport_width, resized.viewport_height), (800, 600));
-    let metrics = endpoint.asked("Emulation.setDeviceMetricsOverride");
-    assert_eq!((&metrics.last().unwrap()["width"], &metrics.last().unwrap()["height"]), (&json!(800), &json!(600)));
-    until("the stream to restart", || endpoint.asked("Page.startScreencast").len() == 3);
-    // On request too: "Actualizar vista".
-    runtime.restart_stream();
-    until("the stream to restart on request", || endpoint.asked("Page.startScreencast").len() == 4);
-    assert!(runtime.snapshot().error.is_none());
-}
-
-#[test]
-fn frames_over_the_pixel_budget_are_scaled_down_by_chrome_and_keep_their_jpeg() {
-    assert_eq!(frame_bounds((1600, 1200), 2.0), (2.0, None));
-    assert_eq!(frame_bounds((1280, 800), 2.0), (2.0, None));
-    let (scale, limit) = frame_bounds((1600, 1200), 3.0);
-    let (width, height) = limit.unwrap();
-    assert!((2.07..2.08).contains(&scale), "{scale}");
-    assert!(u64::from(width) * u64::from(height) <= MAX_FRAME_PIXELS);
-    assert!(u64::from(width + 8) * u64::from(height + 8) > MAX_FRAME_PIXELS, "{width} × {height}");
-    assert_eq!((width as f32 / 1600.0 * 100.0).round(), (scale * 100.0).round());
-
-    let (runtime, endpoint, _workspace) = scripted((1600, 1200), 3.0, |_, _, _| None);
-    until("the stream to start", || !endpoint.asked("Page.startScreencast").is_empty());
-    assert_eq!(
-        endpoint.asked("Page.startScreencast"),
-        [json!({"format":"jpeg","quality":80,"everyNthFrame":1,"maxWidth":width,"maxHeight":height})]
-    );
-    // A capture at device scale would be over the budget too: none is asked for.
-    thread::sleep(STILL_DELAY + Duration::from_millis(300));
-    assert_eq!(stills(&endpoint), 0);
-    drop(runtime);
-}
-
-#[test]
-fn a_stream_that_cannot_start_says_so_keeps_the_page_and_is_asked_for_again() {
-    let failing = Arc::new(AtomicBool::new(true));
-    let fails = failing.clone();
-    let (runtime, endpoint, _workspace) = scripted((640, 480), 1.0, move |method, _, _| match method {
-        "Page.startScreencast" if fails.load(Ordering::Acquire) => Some(Err("Session closed")),
-        _ => None,
-    });
-    until("the lost stream", || runtime.snapshot().error_code.as_deref() == Some("stream_lost"));
-    let state = runtime.snapshot();
-    assert!(state.error.unwrap().starts_with("La vista en vivo se detuvo; se vuelve a pedir en unos segundos. Session closed"));
-    assert!(state.started, "the page and its context are still there");
-    // The periodic read of the page's state succeeds and must not make the
-    // view look live; nor is the stream asked for again at once.
-    thread::sleep(STATE_POLL * 2);
-    assert_eq!(runtime.snapshot().error_code.as_deref(), Some("stream_lost"));
-    assert_eq!(endpoint.asked("Page.startScreencast").len(), 1);
-    failing.store(false, Ordering::Release);
-    until("the stream to come back", || runtime.snapshot().error.is_none());
-    assert_eq!(endpoint.asked("Page.startScreencast").len(), 2);
-}
-
-#[test]
-fn a_lossless_frame_that_cannot_be_had_leaves_the_stream_running_and_is_not_asked_for_again() {
-    let (runtime, endpoint, _workspace) = scripted((640, 480), 2.0, |method, params, browser| match method {
-        "Page.captureScreenshot" if params["format"] == "png" && params.get("clip").is_none() => {
-            // The compositor has no frame yet; after that, the capture is
-            // one Chrome cannot give at all.
-            let first = stills(browser) == 1;
-            Some(Err(if first { "Unable to capture screenshot" } else { "Internal error" }))
-        }
-        _ => None,
-    });
-    until("the stream to start", || !endpoint.asked("Page.startScreencast").is_empty());
-    // A surface without a frame yet is asked again once more time has passed.
-    until("the second attempt", || stills(&endpoint) == 2);
-    thread::sleep(STILL_DELAY * 3);
-    assert_eq!(stills(&endpoint), 2, "a capture that failed for good is not repeated");
-    // The JPEG stream goes on as if nothing had happened.
-    assert!(endpoint.asked("Page.stopScreencast").is_empty());
-    assert!(runtime.snapshot().error.is_none());
-    endpoint.frame(&picture(image::ImageFormat::Jpeg, 64, 48, 10), 1);
-    until("a frame of the stream", || runtime.take_frame().is_some());
-    thread::sleep(STILL_DELAY * 3);
-    assert_eq!(stills(&endpoint), 2);
-    // A new stream may try again, once.
-    runtime.restart_stream();
-    until("the next stream's attempt", || stills(&endpoint) == 3);
-    thread::sleep(STILL_DELAY * 3);
-    assert_eq!(stills(&endpoint), 3);
-    assert!(runtime.snapshot().error.is_none());
-}
-
-#[test]
-fn a_surface_hidden_and_shown_while_the_worker_was_busy_still_gets_a_frame_of_a_new_stream() {
+fn a_surface_hidden_and_shown_while_the_worker_was_busy_is_still_owed_a_whole_frame() {
     let release = Arc::new(AtomicBool::new(false));
     let held = release.clone();
     let (runtime, endpoint, _workspace) = scripted((640, 480), 1.0, move |method, params, _| match method {
@@ -1655,8 +1375,9 @@ fn a_surface_hidden_and_shown_while_the_worker_was_busy_still_gets_a_frame_of_a_
         }
         _ => None,
     });
-    until("the first frame of a still page", || runtime.take_frame().is_some());
-    assert_eq!(endpoint.asked("Page.startScreencast").len(), 1);
+    // The page is asked for all of its view when this is set, which clears it.
+    let owed = || runtime.handle.view.refresh.load(Ordering::Acquire);
+    assert!(!owed());
     let evaluate = BrowserCommand::Evaluate {
         expression: "espera()".into(),
         selector: None,
@@ -1667,97 +1388,26 @@ fn a_surface_hidden_and_shown_while_the_worker_was_busy_still_gets_a_frame_of_a_
     let waiting = runtime.handle.submit(evaluate).unwrap();
     until("the script to reach the page", || !endpoint.asked("Runtime.evaluate").is_empty());
     // The tab is left and come back to while the worker waits on the page:
-    // it never sees the surface hidden. The window still waits for a frame
-    // of a new stream before it sends the page any input.
+    // it never sees the surface hidden. The window still waits for a whole
+    // frame before it sends the page any input.
     assert!(runtime.set_visible(false));
     assert!(!runtime.set_visible(true));
+    assert!(owed());
     release.store(true, Ordering::Release);
     finish(waiting).unwrap();
-    until("a new stream", || endpoint.asked("Page.startScreencast").len() == 2);
-    until("its first frame", || runtime.take_frame().is_some());
-    // Staying visible asks for nothing more.
+    until("the page to be asked for a whole frame", || !owed());
+    // Staying visible asks for nothing more; "Actualizar vista" does.
     assert!(runtime.set_visible(true));
-    thread::sleep(Duration::from_millis(300));
-    assert_eq!(endpoint.asked("Page.startScreencast").len(), 2);
-}
-
-#[test]
-fn a_scaled_down_stream_starts_over_to_show_what_an_agent_capture_made_it_skip() {
-    let changed = picture(image::ImageFormat::Jpeg, 64, 48, 200);
-    let other = changed.clone();
-    let (runtime, endpoint, _workspace) = scripted((1600, 1200), 3.0, move |method, params, browser| match method {
-        // The page changes under the agent's capture.
-        "Page.captureScreenshot" if params["format"] == "png" && params.get("clip").is_some() => {
-            browser.frame(&other, 300);
-            Some(Ok(encoded(&picture(image::ImageFormat::Png, 64, 48, 0))))
-        }
-        _ => None,
-    });
-    until("the stream to start", || !endpoint.asked("Page.startScreencast").is_empty());
-    endpoint.frame(&picture(image::ImageFormat::Jpeg, 64, 48, 10), 1);
-    until("a frame of the stream", || runtime.take_frame().is_some());
-    let capture = BrowserCommand::TakeScreenshot {
-        full_page: false,
-        selector: None,
-        role: None,
-        name: None,
-        reference: None,
-    };
-    finish(runtime.handle.submit(capture).unwrap()).unwrap();
-    until("the frame of that moment to be taken", || acknowledged(&endpoint, 300));
-    assert!(runtime.take_frame().is_none(), "a frame of the capture's moment is not shown");
-    // No lossless frame can bring it back at this scale: a new stream does.
-    until("the stream to start over", || endpoint.asked("Page.startScreencast").len() == 2);
-    assert_eq!(stills(&endpoint), 0);
-    endpoint.frame(&changed, 301);
-    until("the page as it is now", || runtime.take_frame().is_some());
-    // And once is enough.
-    thread::sleep(RERENDER_SETTLE + STILL_DELAY * 2);
-    assert_eq!(endpoint.asked("Page.startScreencast").len(), 2);
-}
-
-#[test]
-fn a_lost_stream_says_so_until_it_is_back_and_a_poll_does_not_hide_it() {
-    let handle = handle();
-    let page = || PageReply {
-        info: Some(PageInfo {
-            url: "http://localhost:3000/".into(),
-            width: 900,
-            height: 700,
-            scale: 1.0,
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
-    apply_reply(&handle, page()).unwrap();
-    mark_stream_lost(&handle, "Session closed");
-    let state = handle.snapshot();
-    assert_eq!(state.error_code.as_deref(), Some("stream_lost"));
-    assert!(state.error.unwrap().contains("La vista en vivo se detuvo"));
-    assert!(state.started, "the page and its context are still there");
-    assert!(apply_refresh(&handle, page()).unwrap().error.is_some());
-}
-
-#[test]
-fn decoded_frames_keep_their_pixels_and_respect_the_format_and_the_pixel_budget() {
-    for format in [image::ImageFormat::Jpeg, image::ImageFormat::Png] {
-        let frame = decode_frame(&picture(format, 40, 30, 200), format, 2.0).unwrap();
-        assert_eq!(frame.size(), [40, 30]);
-    }
-    // The declared format is the one decoded, whatever the bytes claim.
-    let png = picture(image::ImageFormat::Png, 4, 4, 0);
-    assert!(decode_frame(&png, image::ImageFormat::Jpeg, 2.0).is_err());
-    assert!(decode_frame(b"no es una imagen", image::ImageFormat::Jpeg, 2.0).is_err());
-    assert!(decode_frame(&[], image::ImageFormat::Png, 2.0).is_err());
-
-    // One row over the budget is refused from its header, before allocating.
-    let mut bytes = Vec::new();
-    image::GrayImage::new(3840, 2161)
-        .write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png)
-        .unwrap();
-    assert!(decode_frame(&bytes, image::ImageFormat::Png, 2.0)
-        .unwrap_err()
-        .contains("límite de píxeles"));
+    assert!(!owed());
+    runtime.refresh_view();
+    until("the page to be asked again", || !owed());
+    // So does a resize, whose page has another size.
+    let resized = finish(runtime.submit_ui(BrowserCommand::Resize { width: 800, height: 600 }).unwrap()).unwrap();
+    assert_eq!((resized.viewport_width, resized.viewport_height), (800, 600));
+    let metrics = endpoint.asked("Emulation.setDeviceMetricsOverride");
+    assert_eq!((&metrics.last().unwrap()["width"], &metrics.last().unwrap()["height"]), (&json!(800), &json!(600)));
+    until("the resized page to be asked for a whole frame", || !owed());
+    assert!(runtime.snapshot().error.is_none());
 }
 
 #[test]
@@ -1775,11 +1425,10 @@ fn a_published_frame_wakes_the_window_and_is_taken_once() {
         counter.fetch_add(1, Ordering::Relaxed);
     });
     for width in [8, 16] {
-        let image = picture(image::ImageFormat::Png, width, 4, 0);
-        let frame = decode_frame(&image, image::ImageFormat::Png, 2.0).unwrap();
+        let frame = limn_egui::SurfaceFrame::from_rgb([width, 4], &vec![0; width * 4 * 3], 2.0).unwrap();
         runtime.handle.view.publish(frame);
     }
-    // The window was slower than the decoder: it uploads the newest only.
+    // The window was slower than the page: it uploads the newest only.
     assert_eq!(woken.load(Ordering::Relaxed), 2);
     assert_eq!(runtime.take_frame().unwrap().size(), [16, 4]);
     assert!(runtime.take_frame().is_none());

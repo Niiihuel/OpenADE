@@ -12,7 +12,6 @@ fn observer() -> (Observer, Client, Receiver<Value>) {
     {
         let mut state = shared.state();
         state.page_session = "PAGE".into();
-        state.page_target = "MAIN".into();
         state.main_frame = "MAIN".into();
     }
     (Observer { shared }, client, written)
@@ -376,24 +375,6 @@ fn the_main_frame_reports_where_it_is_and_which_document_it_holds() {
 }
 
 #[test]
-fn another_window_is_closed_and_the_drivers_own_page_is_not() {
-    let (mut observer, client, written) = observer();
-    let created = |observer: &mut Observer, id: &str, kind: &str| {
-        observer.event(&client, "", "Target.targetCreated", json!({"targetInfo": {"targetId": id, "type": kind}}));
-    };
-    created(&mut observer, "MAIN", "page");
-    created(&mut observer, "WORKER", "service_worker");
-    created(&mut observer, "FRAME", "iframe");
-    assert!(posted(&written).is_empty());
-    created(&mut observer, "POPUP", "page");
-    assert_eq!(posted(&written), [(String::new(), "Target.closeTarget".to_owned(), json!({"targetId": "POPUP"}))]);
-    // Before the driver has its page, nothing is a popup.
-    observer.shared.state().page_target.clear();
-    created(&mut observer, "EARLY", "page");
-    assert!(posted(&written).is_empty());
-}
-
-#[test]
 fn what_a_click_asked_to_see_in_another_tab_opens_in_the_page_itself() {
     let (mut observer, client, written) = observer();
     let here = |url: &str| ("PAGE".to_owned(), "Page.navigate".to_owned(), json!({"url": url}));
@@ -416,26 +397,6 @@ fn what_a_click_asked_to_see_in_another_tab_opens_in_the_page_itself() {
     }
     assert!(posted(&written).is_empty());
     assert_eq!(observer.shared.state().requested, 2);
-
-    // A tab the browser made for a link clicked with Control, Shift or the
-    // middle button is closed, and says where the page goes instead.
-    let created = |observer: &mut Observer, id: &str, url: &str| {
-        observer.event(&client, "", "Target.targetCreated", json!({"targetInfo": {"targetId": id, "type": "page", "url": url}}));
-    };
-    created(&mut observer, "TAB", "http://fixture/linked");
-    assert_eq!(
-        posted(&written),
-        [(String::new(), "Target.closeTarget".to_owned(), json!({"targetId": "TAB"})), here("http://fixture/linked")]
-    );
-    // The window of a script has no address yet, and one that is not of the
-    // web is only closed.
-    created(&mut observer, "WINDOW", "");
-    created(&mut observer, "OTHER", "chrome://newtab/");
-    assert_eq!(posted(&written).len(), 2);
-    // The driver's own page is not another tab.
-    created(&mut observer, "MAIN", "http://fixture/");
-    assert!(posted(&written).is_empty());
-    assert_eq!(observer.shared.state().requested, 3);
 }
 
 #[test]

@@ -13,8 +13,8 @@ members = [
     "crates/openide-browser",
     "crates/openide-connections",
 ]
-# Built only as a dependency of `agents-window --features cef`: it needs CEF
-# itself, which the normal shell does not provide.
+# Builds on Linux alone, as a dependency of agents-window there: a member
+# would be built by the workspace's commands on every system.
 exclude = ["crates/openide-cef"]
 
 [workspace.package]
