@@ -97,6 +97,8 @@ pub struct MarketplaceViewState {
     pub filter_menu_open: bool,
     /// Rows shown per group; see `GROUP_STEP`.
     pub visible: usize,
+    /// Groups asked to show more than `visible`, each with how many.
+    pub visible_by: std::collections::BTreeMap<String, usize>,
     pub explore: MarketplaceExploreState,
     pub updates: BTreeMap<String, SkillUpdate>,
     pub update_checking: bool,
@@ -114,6 +116,8 @@ pub struct MarketplaceViewState {
     pub busy: bool,
     /// The item the running operation installs, updates, toggles or removes.
     pub busy_item: Option<String>,
+    /// The work on `busy_item` is its update, not its switch.
+    pub busy_update: bool,
     /// The open action menu, as `row:<id>` or `detail:<id>`.
     pub menu_item: Option<String>,
     pub pending_uninstall_id: Option<String>,
@@ -130,6 +134,7 @@ impl Default for MarketplaceViewState {
             category: None,
             filter_menu_open: false,
             visible: GROUP_STEP,
+            visible_by: Default::default(),
             explore: MarketplaceExploreState::default(),
             updates: BTreeMap::new(),
             update_checking: false,
@@ -145,6 +150,7 @@ impl Default for MarketplaceViewState {
             status_error: false,
             busy: false,
             busy_item: None,
+            busy_update: false,
             menu_item: None,
             pending_uninstall_id: None,
             pending_remove_source_id: None,
@@ -756,7 +762,9 @@ fn empty_list(state: &MarketplaceViewState, width: f32) -> Element {
             ))
     } else if state.filter == MarketplaceFilter::Updates {
         Notice::new(
-            if state.updates_checked && state.update_error.is_none() {
+            if state.update_error.is_some() {
+                "No se pudieron buscar actualizaciones"
+            } else if state.updates_checked {
                 "Sin actualizaciones disponibles"
             } else {
                 "Todavía no se buscaron actualizaciones"
@@ -866,7 +874,8 @@ pub(crate) fn catalog_list(
         if group.key == "remote" {
             rows.extend(remote_status(state, list_width));
         }
-        rows.extend(group.items.iter().take(state.visible).map(|item| {
+        let visible = state.visible_by.get(group.key).copied().unwrap_or(state.visible);
+        rows.extend(group.items.iter().take(visible).map(|item| {
             item_row(
                 state,
                 item,
@@ -876,18 +885,17 @@ pub(crate) fn catalog_list(
                 surface,
             )
         }));
-        if group.items.len() > state.visible {
+        if group.items.len() > visible {
             rows.push(
                 Button::new(
                     format!("marketplace_more:{}", group.key),
-                    format!("Mostrar más ({} restantes)", group.items.len() - state.visible),
+                    format!("Mostrar más ({} restantes)", group.items.len() - visible),
                     palette,
                 )
                 .variant(ButtonVariant::Ghost)
                 .size(ControlSize::Compact)
                 .width(list_width)
-                .render()
-                .dispatch_as("marketplace_more"),
+                .render(),
             );
         }
     }
@@ -1113,6 +1121,7 @@ fn status_alerts(state: &MarketplaceViewState) -> Vec<Element> {
                     AlertTone::Neutral
                 })
                 .compact(true)
+                .dismiss("marketplace_status_dismiss")
                 .render(),
         );
     }
@@ -1506,7 +1515,7 @@ fn detail_actions(state: &MarketplaceViewState, item: &MarketplaceItem) -> Eleme
                 theme::primary(format!("marketplace_details_update:{id}"), "Actualizar")
                     .size(ControlSize::Compact)
                     .enabled(!state.busy)
-                    .loading(working)
+                    .loading(working && state.busy_update)
                     .render()
                     .dispatch_as(format!("marketplace_update:{id}")),
             );
@@ -1524,10 +1533,19 @@ fn detail_actions(state: &MarketplaceViewState, item: &MarketplaceItem) -> Eleme
             .variant(ButtonVariant::Outline)
             .size(ControlSize::Compact)
             .enabled(!state.busy)
-            .loading(working && !state.updates.contains_key(id))
+            .loading(working && !state.busy_update)
             .render()
             .dispatch_as(format!("marketplace_toggle:{id}")),
         );
+        if item.enabled {
+            actions.push(
+                Button::new(format!("marketplace_try:{id}"), "Probar", palette)
+                    .variant(ButtonVariant::Outline)
+                    .size(ControlSize::Compact)
+                    .tooltip("Abrir una tarea nueva que pide usar esta skill")
+                    .render(),
+            );
+        }
         actions.push(action_menu(
             state,
             item,
@@ -1762,7 +1780,9 @@ pub(crate) fn with_list(
                 .padding(12.0)
                 .size(Some(list), None),
             Separator::vertical(palette).render(),
-            detail_or_landing(state, available_width - list - 1.0, SELECT, None, None).flex(1.0),
+            // Beside the list too: the landing holds the sources and the
+            // check for updates, and a selection must not shut them away.
+            detail_or_landing(state, available_width - list - 1.0, SELECT, None, back).flex(1.0),
         ])
     } else if let Some(item) = state.selected() {
         item_detail(state, &item, available_width, back)

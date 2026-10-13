@@ -685,7 +685,8 @@ fn the_standalone_page_is_the_same_list_beside_the_same_detail() {
     let list = rect(&frame, &row);
     let detail = rect(&frame, &install);
     assert!(list.x + list.width < detail.x, "list and detail side by side");
-    assert!(!has(&frame, "marketplace_details_close"));
+    // The landing, with the sources and the updates, stays one click away.
+    assert!(has(&frame, "marketplace_details_close"));
 
     // Too narrow for both: the detail with a way back, then the list.
     let frame = layout(marketplace_page(&state, 420.0), 420.0, 800.0);

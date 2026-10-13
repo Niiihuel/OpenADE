@@ -119,10 +119,6 @@ impl AgentsWindow {
         let UiAction::Clicked { id } = action else {
             return false;
         };
-        if id.starts_with("ide_marketplace_tab:") {
-            self.handle_marketplace_action(id);
-            return true;
-        }
         if self.view.ide.activity == IdeActivity::Git {
             use crate::environment_git_ui::EnvironmentGitPanel;
             if id == "ide_git_more" || id == "ide_git_more_dismiss" {
