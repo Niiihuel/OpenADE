@@ -1016,3 +1016,31 @@ fn export_marketplace_visual_review() {
         );
     }
 }
+
+#[test]
+fn the_section_holds_skills_plugins_mcp_and_sources_a_tab_each() {
+    use crate::marketplace_view::MarketplaceTab;
+    use crate::settings_ui::SettingsPage;
+    let mut state = crate::view::tests::empty_state();
+    state.main_page = crate::view::MainPage::Marketplace;
+    let size = Size::new(1200.0, 800.0);
+    let has = |state: &crate::view::ViewState, id: &str| {
+        UiTree::new(crate::view::build_view_sized(state, size.width, size.height)).layout(size).regions.iter().any(|region| region.id == id)
+    };
+    for key in ["skills", "plugins", "mcp", "sources"] {
+        assert!(has(&state, &format!("marketplace_tab:{key}")), "{key}");
+    }
+    // Each tab is its own page; the ones Settings also holds work here too.
+    assert!(has(&state, "marketplace_search") && !has(&state, "mcp_new"));
+    assert!(!state.shows(SettingsPage::Mcp) && !state.shows(SettingsPage::Plugins));
+    state.marketplace.tab = MarketplaceTab::Mcp;
+    assert!(has(&state, "mcp_new") && !has(&state, "marketplace_search"));
+    assert!(state.shows(SettingsPage::Mcp) && !state.shows(SettingsPage::Plugins));
+    state.marketplace.tab = MarketplaceTab::Plugins;
+    assert!(has(&state, "plugins_refresh") || has(&state, "plugins_pick_folder") || state.shows(SettingsPage::Plugins));
+    assert!(state.shows(SettingsPage::Plugins));
+    // In Settings, the page in view there is the one that counts.
+    state.show_settings = true;
+    state.settings_page = SettingsPage::Mcp;
+    assert!(state.shows(SettingsPage::Mcp) && !state.shows(SettingsPage::Plugins));
+}

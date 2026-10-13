@@ -590,6 +590,8 @@ impl AgentsWindow {
                     if state.updates.contains_key(item) {
                         self.marketplace_operation(MarketplaceOperation::Update(item.to_owned()));
                     }
+                } else if let Some(tab) = id.strip_prefix("marketplace_tab:").and_then(crate::marketplace_view::MarketplaceTab::from_key) {
+                    state.tab = tab;
                 } else if let Some(group) = id.strip_prefix("marketplace_more:") {
                     // Only the group that was asked grows.
                     *state.visible_by.entry(group.to_owned()).or_insert(state.visible) += GROUP_STEP;
