@@ -417,6 +417,10 @@ pub const NOTICE_CONTEXT_TRIMMED: &str = "context_trimmed";
 /// The provider stated its context limit; `detail` is that number of tokens.
 pub const NOTICE_CONTEXT_LIMIT: &str = "context_limit";
 
+/// An MCP server did not start and the turn goes on without it; `detail` is
+/// its id, a line break and why.
+pub const NOTICE_MCP_UNAVAILABLE: &str = "mcp_unavailable";
+
 /// Why a turn is paused at a model boundary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

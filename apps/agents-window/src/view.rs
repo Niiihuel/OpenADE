@@ -7407,6 +7407,7 @@ pub(crate) mod tests {
             args: vec!["-y".into()],
             cwd: None,
             credential_env_names: vec!["MCP_API_KEY".into()],
+            env: Default::default(),
             url: None,
             http_bearer_token_env_name: None,
             http_oauth: None,
@@ -7574,6 +7575,7 @@ pub(crate) mod tests {
             args: Vec::new(),
             cwd: None,
             credential_env_names: Vec::new(),
+            env: Default::default(),
             url: Some("https://mcp.example.test/mcp".into()),
             http_bearer_token_env_name: None,
             http_oauth: Some(crate::mcp_settings::McpHttpOAuthSettings {
@@ -7759,6 +7761,7 @@ pub(crate) mod tests {
             args: vec![],
             cwd: None,
             credential_env_names: vec![],
+            env: Default::default(),
             url: None,
             http_bearer_token_env_name: None,
             http_oauth: None,

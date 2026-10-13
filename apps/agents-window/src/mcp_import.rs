@@ -78,6 +78,7 @@ fn server(name: &str, entry: &Value) -> Option<McpServerSettings> {
             let passed = strings(entry.get("env_vars"));
             env_names(keys(entry.get("env")).into_iter().chain(passed.iter().map(String::as_str)))
         },
+        env: Default::default(),
         url: url.map(str::to_owned),
         http_bearer_token_env_name: url.and(text("bearer_token_env_var")).map(str::to_owned),
         http_oauth: None,

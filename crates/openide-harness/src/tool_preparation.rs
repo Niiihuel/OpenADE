@@ -40,6 +40,12 @@ pub trait PreparedToolSession: Send + Sync {
         None
     }
 
+    /// What preparation did on its own that the person must see, as the
+    /// `code` and `detail` of a `HostNotice` each.
+    fn notices(&self) -> Vec<(String, String)> {
+        Vec::new()
+    }
+
     /// Called on success, failure, and cancellation while the worker's Tokio
     /// runtime is still alive. Implementations should make shutdown idempotent.
     async fn shutdown(&self) -> Result<(), AgentError>;

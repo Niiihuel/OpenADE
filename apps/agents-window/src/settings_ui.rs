@@ -2230,18 +2230,18 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
                 .hint("Ruta relativa dentro del proyecto. Se comprueba al iniciar; vacío usa la carpeta del proyecto.")
                 .rows(),
             form_field(
-                "Variables de credenciales",
+                "Variables de entorno",
                 TextArea::new(
                     "mcp_draft_env_names",
                     &state.mcp_draft_env_names,
-                    "ej. MCP_API_KEY",
+                    "ej. MCP_API_KEY o LOG_LEVEL=debug",
                     control_palette(),
                 )
                 .width(body_width)
                 .height(76.0)
                 .render(),
             )
-            .hint("Sólo nombres, uno por línea. Sus valores se leen del entorno al iniciar el servidor y no se guardan.")
+            .hint("Una por línea. Un nombre solo (MCP_API_KEY) toma su valor del entorno al iniciar y no se guarda: usalo para credenciales. NOMBRE=valor se guarda tal cual en los ajustes.")
             .rows(),
         ].into_iter().flatten());
     }

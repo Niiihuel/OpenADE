@@ -767,6 +767,9 @@ impl AgentRunner {
         } else {
             None
         };
+        for (code, detail) in prepared.iter().flat_map(|session| session.notices()) {
+            sink.emit(AgentEventKind::HostNotice { code, detail })?;
+        }
         // Conversation resource preparation can capture a file baseline. Do
         // that after validation and before any pending manual command effect.
         if let Err(error) = self.process_manual_commands(lease, &cancel).await {

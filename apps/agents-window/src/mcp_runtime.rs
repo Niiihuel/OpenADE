@@ -21,6 +21,8 @@ pub(crate) struct McpRuntime {
     tools: Arc<McpCompositeTools>,
     mcp_tool_names: Vec<String>,
     resume_identity_digest: Option<String>,
+    /// Servers that did not start, each with why: the turn runs without them.
+    skipped: Vec<(String, String)>,
     clients: Vec<(String, McpClient)>,
     notification_cancel: CancellationToken,
     notification_tasks: Mutex<Vec<JoinHandle<()>>>,
@@ -113,6 +115,13 @@ impl PreparedToolSession for McpRuntime {
         self.resume_identity_digest.as_deref()
     }
 
+    fn notices(&self) -> Vec<(String, String)> {
+        self.skipped
+            .iter()
+            .map(|(id, why)| (openide_core::NOTICE_MCP_UNAVAILABLE.to_owned(), format!("{id}\n{why}")))
+            .collect()
+    }
+
     async fn shutdown(&self) -> Result<(), AgentError> {
         McpRuntime::shutdown(self)
             .await
@@ -161,8 +170,9 @@ impl McpRuntime {
 }
 
 /// Start enabled servers, discover complete tool snapshots, then compose them
-/// with the supplied local tools. Any failed or cancelled startup closes every
-/// server already started by this call.
+/// with the supplied local tools. A server that fails is closed and left out,
+/// and the others serve the turn; a cancelled startup closes every server
+/// already started by this call.
 #[cfg(test)]
 pub(crate) async fn discover_mcp_runtime(
     servers: &[McpServerSettings],
@@ -198,6 +208,7 @@ async fn discover_mcp_runtime_inner(
     let mut bindings = Vec::new();
     let mut server_identities = Vec::new();
     let mut all_resume_safe = true;
+    let mut skipped = Vec::new();
     for server in &enabled {
         if cancellation.is_cancelled() {
             return Err(failed_startup(McpStartupError::Cancelled, &clients).await);
@@ -229,7 +240,7 @@ async fn discover_mcp_runtime_inner(
         } else {
             match server.runtime_config(workspace) {
                 Ok(mut config) => {
-                    if server.credential_env_names.is_empty() {
+                    if server.credential_env_names.is_empty() && server.env.is_empty() {
                         if let Some(identity) = inspect_mcp_stdio_launch(&config) {
                             config.command = identity.canonical_command.into_os_string();
                             launch_recheck = Some((config.clone(), identity.digest));
@@ -249,6 +260,12 @@ async fn discover_mcp_runtime_inner(
         };
         let client = match connected {
             Ok(client) => client,
+            // A failure while being cancelled is the cancellation's, not the server's.
+            Err(McpStartupError::Failed(why)) if !cancellation.is_cancelled() => {
+                all_resume_safe = false;
+                skipped.push((server.id.clone(), why));
+                continue;
+            }
             Err(error) => {
                 return Err(failed_startup(error, &clients).await);
             }
@@ -283,6 +300,14 @@ async fn discover_mcp_runtime_inner(
                             server.id
                         ))
                     };
+                    if let (McpStartupError::Failed(why), false) = (&error, cancellation.is_cancelled()) {
+                        let why = why.clone();
+                        let _ = shutdown_all(&clients[clients.len() - 1..]).await;
+                        clients.pop();
+                        all_resume_safe = false;
+                        skipped.push((server.id.clone(), why));
+                        continue;
+                    }
                     return Err(failed_startup(error, &clients).await);
                 }
             };
@@ -398,6 +423,7 @@ async fn discover_mcp_runtime_inner(
         tools,
         mcp_tool_names,
         resume_identity_digest,
+        skipped,
         clients,
         notification_cancel,
         notification_tasks: Mutex::new(notification_tasks),
@@ -530,6 +556,7 @@ mod tests {
             args: Vec::new(),
             cwd: None,
             credential_env_names: Vec::new(),
+            env: Default::default(),
             url: Some(format!("http://{address}/mcp")),
             http_bearer_token_env_name: None,
             http_oauth: None,
@@ -684,6 +711,7 @@ mod tests {
                 args: Vec::new(),
                 cwd: None,
                 credential_env_names: Vec::new(),
+                env: Default::default(),
                 url: Some(format!("http://{address}/mcp")),
                 http_bearer_token_env_name: None,
                 http_oauth: None,
@@ -733,6 +761,7 @@ mod tests {
             args: Vec::new(),
             cwd: None,
             credential_env_names: Vec::new(),
+            env: Default::default(),
             url: None,
             http_bearer_token_env_name: None,
             http_oauth: None,
@@ -895,6 +924,7 @@ mod tests {
                 args: Vec::new(),
                 cwd: None,
                 credential_env_names: Vec::new(),
+                env: Default::default(),
                 url: Some(format!("http://{address}/mcp")),
                 http_bearer_token_env_name: None,
                 http_oauth: None,
@@ -956,6 +986,7 @@ mod tests {
             ],
             cwd: None,
             credential_env_names: Vec::new(),
+            env: Default::default(),
             url: None,
             http_bearer_token_env_name: None,
             http_oauth: None,
@@ -1089,9 +1120,37 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
         assert!(!called.exists());
     }
 
+    #[tokio::test]
+    async fn a_server_that_cannot_start_is_left_out_and_the_turn_is_told() {
+        let workspace = tempfile::tempdir().unwrap();
+        let missing = McpServerSettings {
+            id: "missing".to_owned(),
+            enabled: true,
+            program: "openide_missing_mcp_fixture_executable_123456".to_owned(),
+            args: Vec::new(),
+            cwd: None,
+            credential_env_names: Vec::new(),
+            env: Default::default(),
+            url: None,
+            http_bearer_token_env_name: None,
+            http_oauth: None,
+            http_env_headers: Vec::new(),
+        };
+        let runtime = discover_mcp_runtime(&[missing], workspace.path(), Arc::new(LocalTools::new()), &CancellationToken::new())
+            .await
+            .unwrap();
+        assert!(runtime.mcp_tool_names().is_empty());
+        assert!(runtime.mcp_resume_identity_digest().is_none());
+        let notices = PreparedToolSession::notices(&runtime);
+        assert_eq!(notices.len(), 1);
+        assert_eq!(notices[0].0, openide_core::NOTICE_MCP_UNAVAILABLE);
+        assert!(notices[0].1.starts_with("missing\nNo se pudo iniciar MCP missing"), "{:?}", notices[0].1);
+        runtime.shutdown().await.unwrap();
+    }
+
     #[cfg(windows)]
     #[tokio::test]
-    async fn failure_starting_later_server_closes_earlier_mock() {
+    async fn a_server_that_fails_to_start_is_left_out_and_the_earlier_one_serves() {
         let workspace = tempfile::tempdir().unwrap();
         let directory = tempfile::tempdir().unwrap();
         let script = directory.path().join("mock-mcp.ps1");
@@ -1105,19 +1164,24 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
             args: Vec::new(),
             cwd: None,
             credential_env_names: Vec::new(),
+            env: Default::default(),
             url: None,
             http_bearer_token_env_name: None,
             http_oauth: None,
             http_env_headers: Vec::new(),
         };
-        let failure = discover_mcp_runtime(
+        let runtime = discover_mcp_runtime(
             &[first, second],
             workspace.path(),
             Arc::new(LocalTools::new()),
             &CancellationToken::new(),
         )
-        .await;
-        assert!(failure.is_err());
+        .await
+        .unwrap();
+        assert_eq!(runtime.skipped.len(), 1);
+        assert!(runtime.mcp_tool_names().iter().any(|name| name.starts_with("mcp__first__")));
+        assert!(runtime.mcp_resume_identity_digest().is_none());
+        runtime.shutdown().await.unwrap();
         assert_eq!(fs::read_to_string(stopped).unwrap(), "stopped");
     }
 

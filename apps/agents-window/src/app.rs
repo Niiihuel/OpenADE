@@ -9674,7 +9674,12 @@ impl AgentsWindow {
             .cwd
             .map(|path| path.to_string_lossy().into_owned())
             .unwrap_or_default();
-        self.view.mcp_draft_env_names = server.credential_env_names.join("\n");
+        self.view.mcp_draft_env_names = server
+            .credential_env_names
+            .into_iter()
+            .chain(server.env.into_iter().map(|(name, value)| format!("{name}={value}")))
+            .collect::<Vec<_>>()
+            .join("\n");
         self.view.mcp_draft_http = server.url.is_some();
         self.view.mcp_draft_url = server.url.unwrap_or_default();
         self.view.mcp_draft_http_bearer_token_env_name =
@@ -9760,6 +9765,11 @@ impl AgentsWindow {
             .as_deref()
             .and_then(|id| self.view.mcp_servers.iter().find(|server| server.id == id))
             .is_some_and(|server| server.enabled);
+        let env_lines: Vec<&str> = if self.view.mcp_draft_http {
+            Vec::new()
+        } else {
+            self.view.mcp_draft_env_names.lines().map(str::trim).filter(|line| !line.is_empty()).collect()
+        };
         let server = crate::mcp_settings::McpServerSettings {
             http_env_headers,
             id: self.view.mcp_draft_id.trim().to_owned(),
@@ -9772,17 +9782,13 @@ impl AgentsWindow {
             args,
             cwd: (!self.view.mcp_draft_http && !self.view.mcp_draft_cwd.trim().is_empty())
                 .then(|| PathBuf::from(self.view.mcp_draft_cwd.trim())),
-            credential_env_names: if self.view.mcp_draft_http {
-                Vec::new()
-            } else {
-                self.view
-                    .mcp_draft_env_names
-                    .lines()
-                    .map(str::trim)
-                    .filter(|line| !line.is_empty())
-                    .map(str::to_owned)
-                    .collect()
-            },
+            // A line is a name to pass through, or `NAME=value` to write here.
+            credential_env_names: env_lines.iter().filter(|line| !line.contains('=')).map(|line| (*line).to_owned()).collect(),
+            env: env_lines
+                .iter()
+                .filter_map(|line| line.split_once('='))
+                .map(|(name, value)| (name.trim().to_owned(), value.trim().to_owned()))
+                .collect(),
             url: self
                 .view
                 .mcp_draft_http
@@ -14214,6 +14220,12 @@ impl AgentsWindow {
                 self.view.running = false;
                 self.view.status = "Turno cancelado".to_owned();
                 self.restore_pending_prompt();
+            }
+            AgentEventKind::HostNotice { code, detail } if code == openide_core::NOTICE_MCP_UNAVAILABLE => {
+                if let Some((id, why)) = detail.split_once('\n') {
+                    let status = crate::mcp_inspection::McpServerStatus::Failed(why.to_owned());
+                    self.view.mcp_inspection.last.insert(id.to_owned(), status);
+                }
             }
             AgentEventKind::HostNotice { code, detail } if code == openide_core::NOTICE_CONTEXT_LIMIT => {
                 // The provider said how much it takes: budget with it from now on.
@@ -29417,7 +29429,7 @@ mod tests {
     }
 
     #[test]
-    fn native_build_uses_enabled_mcp_before_requesting_a_model() {
+    fn native_build_goes_on_to_the_model_without_an_mcp_server_that_did_not_start() {
         let root = tempfile::tempdir().unwrap();
         let workspace = root.path().join("project");
         std::fs::create_dir(&workspace).unwrap();
@@ -29437,6 +29449,7 @@ mod tests {
                 args: Vec::new(),
                 cwd: None,
                 credential_env_names: Vec::new(),
+                env: Default::default(),
                 url: None,
                 http_bearer_token_env_name: None,
                 http_oauth: None,
@@ -29448,28 +29461,31 @@ mod tests {
 
         app.start_run();
         let session_id = app.view.selected_session.clone().unwrap();
-        for _ in 0..100 {
+        let events = |app: &AgentsWindow| app.store.as_ref().unwrap().load(&session_id).unwrap().unwrap().events;
+        let asked = |events: &[AgentEvent]| {
+            events.iter().position(|event| matches!(event.kind, AgentEventKind::ModelRequestStarted { .. }))
+        };
+        for _ in 0..3000 {
             app.poll_run();
-            if app.active_run.is_none() {
+            if app.active_run.is_none() || asked(&events(&app)).is_some() {
                 break;
             }
             std::thread::sleep(Duration::from_millis(10));
         }
-        assert!(app.active_run.is_none());
-        let events = app
-            .store
-            .as_ref()
-            .unwrap()
-            .load(&session_id)
-            .unwrap()
-            .unwrap()
-            .events;
-        assert!(events
-            .iter()
-            .any(|event| matches!(event.kind, AgentEventKind::TurnFailed { .. })));
-        assert!(!events
-            .iter()
-            .any(|event| matches!(event.kind, AgentEventKind::ModelRequestStarted { .. })));
+        let events = events(&app);
+        let told = events.iter().position(|event| {
+            matches!(&event.kind, AgentEventKind::HostNotice { code, detail }
+                if code == openide_core::NOTICE_MCP_UNAVAILABLE && detail.starts_with("fixture\n"))
+        });
+        // Told first, then the model is asked without that server.
+        assert!(told.is_some() && told < asked(&events), "{told:?}");
+        for _ in 0..100 {
+            app.poll_run();
+        }
+        assert!(matches!(
+            app.view.mcp_inspection.last.get("fixture"),
+            Some(crate::mcp_inspection::McpServerStatus::Failed(_))
+        ));
     }
 
     #[test]

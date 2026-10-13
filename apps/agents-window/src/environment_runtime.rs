@@ -287,6 +287,9 @@ impl PreparedToolSession for EnvironmentPrepared {
     fn mcp_resume_identity_digest(&self) -> Option<&str> {
         self.resume_identity.as_deref()
     }
+    fn notices(&self) -> Vec<(String, String)> {
+        self.inner.as_ref().map(|prepared| prepared.notices()).unwrap_or_default()
+    }
     async fn shutdown(&self) -> Result<(), AgentError> {
         match &self.inner {
             Some(prepared) => prepared.shutdown().await,
@@ -310,6 +313,7 @@ mod tests {
             args: Vec::new(),
             cwd: None,
             credential_env_names: Vec::new(),
+            env: Default::default(),
             url: None,
             http_bearer_token_env_name: None,
             http_oauth: None,
