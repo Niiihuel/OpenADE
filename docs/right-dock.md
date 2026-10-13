@@ -326,8 +326,8 @@ filtro, muestra su detalle bajo el registro, con encabezado y cierre propios.
 El navegador usa una única barra fija con historial, recarga, dirección y menú
 de acciones secundarias. No repite el título del sitio bajo la dirección ni
 añade una segunda barra de scroll alrededor de la página. Un estado de error
-propio reemplaza completamente una navegación fallida, incluida la captura
-blanca de Chrome. Para localhost se explica que hay que verificar el servidor
+propio reemplaza completamente una navegación fallida, incluida la página de
+error de Chromium. Para localhost se explica que hay que verificar el servidor
 y puerto; no se inicia un servidor automáticamente. Los detalles de aislamiento,
 entrada, portapapeles, límites y validación están en
 [Navegador del proyecto](browser-runtime.md).

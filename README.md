@@ -49,6 +49,12 @@ nix-shell --run 'python3 scripts/build.py'
 nix-shell --run ./target/desktop/agents-window
 ```
 
+En Linux el navegador del proyecto es un Chromium embebido (CEF), que la
+aplicación enlaza: `shell.nix` lo trae, y la primera vez descarga su archivo
+de 300 MB. Fuera de ese shell hacen falta `CEF_PATH` para compilar y el
+directorio de CEF en `LD_LIBRARY_PATH` para abrir la aplicación; ver
+[Chromium embebido](docs/browser-cef.md#compilar-y-abrir).
+
 El dictado del compositor usa SAPI en Windows. En Linux y macOS transcribe en la
 propia máquina con whisper.cpp: compilarlo requiere `cmake`, `libclang` y, en
 Linux, las cabeceras de ALSA (`libasound2-dev` o `alsa-lib`). La primera vez que

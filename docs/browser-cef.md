@@ -1,26 +1,25 @@
 # Chromium embebido (CEF)
 
-Con la opción de compilación `cef`, el navegador del proyecto corre sobre un
-Chromium embebido en la propia aplicación
-([CEF](https://bitbucket.org/chromiumembedded/cef) 154.0.34, a través de
-[cef-rs](https://github.com/tauri-apps/cef-rs)) en lugar de lanzar un Chrome
-headless. Está apagada por defecto. El resto del navegador no cambia: los
-mismos comandos, el mismo [driver](browser-driver.md), las mismas
-[herramientas](browser-tools.md) y la misma vista.
+El navegador del proyecto corre sobre un Chromium embebido en la propia
+aplicación ([CEF](https://bitbucket.org/chromiumembedded/cef) 154.0.34, a
+través de [cef-rs](https://github.com/tauri-apps/cef-rs)). Es su único motor:
+no se busca ni se lanza ningún navegador del sistema. El
+[runtime](browser-runtime.md) lo maneja con el [driver](browser-driver.md) y
+le ofrece al agente las [herramientas](browser-tools.md).
 
-Es la primera mitad del paso 4 del
-[plan](browser-runtime.md#motor-chromium-servo-y-lo-que-sigue): todo lo que no
-necesita GPU ni ventana. Chromium compone la página en la CPU y entrega cada
-cuadro sin comprimir, a la escala de la ventana, diciendo qué parte cambió:
-la aplicación copia, convierte y sube a su textura sólo esa parte. La segunda
-mitad, cuadros compartidos por GPU, no está hecha.
+Chromium compone la página en la CPU y entrega cada cuadro sin comprimir, a la
+escala de la ventana, diciendo qué parte cambió: la aplicación copia,
+convierte y sube a su textura sólo esa parte. No usa la GPU ni abre ninguna
+ventana. Cuadros compartidos por GPU, el paso siguiente del
+[plan](browser-runtime.md#motor-chromium-servo-y-lo-que-sigue), no están
+hechos.
 
 **Nadie vio todavía un cuadro de esto en la ventana real.** Todo lo que sigue
 se comprobó sin ventana: con pruebas, con mediciones a través del runtime y
 mirando volcados PNG de los cuadros que recibiría la vista. Eso incluye las
-listas desplegables, el cursor y el aviso del pie: que la ventana ponga de
-verdad el cursor que la página pide, y que la lista se vea bien compuesta en
-pantalla, falta mirarlo. También incluye las partes de cuadro: que la
+listas desplegables, el cursor y lo que dice la pestaña cuando CEF no
+arranca: que la ventana ponga de verdad el cursor que la página pide, y que
+la lista se vea bien compuesta en pantalla, falta mirarlo. También incluye las partes de cuadro: que la
 textura de la ventana quede igual a la página se comprobó con las escrituras
 que egui le entrega al renderizador, no con la GPU, y falta mirar en pantalla
 que no quede ningún rectángulo viejo después de desplazar, de abrir y cerrar
@@ -29,12 +28,15 @@ una lista o de cambiar el tamaño del panel.
 ## Compilar y abrir
 
 ```sh
-nix-shell --run "cargo build --profile desktop -p agents-window --features cef"
-nix-shell --run "target/desktop/agents-window"
+nix-shell --run "cargo build --profile desktop -p agents-window"
+nix-shell --run ./target/desktop/agents-window
 ```
 
-`shell.nix` trae CEF (`nix/cef.nix`, un archivo de 300 MB que se descarga la
-primera vez que se entra al shell). Define `CEF_PATH`, con lo que
+`python3 scripts/build.py`, dentro del mismo shell, hace esa compilación.
+`shell.nix` trae CEF (`nix/cef.nix`): en una máquina que no lo tiene, entrar
+al shell por primera vez descarga su archivo de 300 MB de
+`cef-builds.spotifycdn.com` y lo deja en el almacén de Nix (358 MB
+desempaquetado). Define `CEF_PATH`, con lo que
 `cef-dll-sys` enlaza contra ese directorio y no descarga nada, y lo agrega al
 final de `LD_LIBRARY_PATH`: de ahí se carga `libcef.so`, y CEF lee sus
 recursos y sus locales del directorio del que se cargó la biblioteca. Va al
@@ -49,45 +51,60 @@ de bibliotecas de todo lo que ejecuta (`cargo run`, `cargo test`). Por eso
 vez que cef-rs la deja. El resto de la copia es lo que usan las pruebas; al
 abrir el binario directamente, como hace `scripts/build.py`, no se usa.
 
+Fuera de ese shell hacen falta las dos cosas que él da: `CEF_PATH` al
+compilar y el directorio de CEF en `LD_LIBRARY_PATH` al abrir la aplicación,
+que sin `libcef.so` no arranca. Sin `CEF_PATH` el script de cef-rs descarga
+un CEF por su cuenta: **no se probó**, y en NixOS ese binario no viene
+preparado para encontrar sus bibliotecas.
+
 Para comprobar una instalación sin abrir la ventana:
 
 ```sh
-nix-shell --run "target/desktop/agents-window --cef-probe"
+nix-shell --run "./target/desktop/agents-window --cef-probe"
 ```
 
 Inicia un contexto como lo hace la ventana, espera su primer cuadro y lo dice:
-«CEF funciona: primer cuadro de 2560 × 1600 a los 160 ms, sin ventana y sin
+«CEF funciona: primer cuadro de 2560 × 1600 a los 175 ms, sin ventana y sin
 GPU.» Si CEF no arranca dice por qué y termina con código 1.
 
-Sin la opción nada de esto se compila ni se enlaza. `crates/openide-cef` está
-excluido del workspace, el árbol de dependencias por defecto es el mismo
-(`cargo tree`) y el binario no nombra `libcef.so`. Lo único que cambia para una
-compilación normal es `Cargo.lock`, que ahora nombra los paquetes de cef-rs: en
-una máquina que nunca los vio, cargo clona ese repositorio (39 MB de fuentes,
-no CEF) para resolver el archivo, aunque no compile nada de él.
+**Otros sistemas.** El motor sólo se compila para Linux:
+`crates/openide-cef` es una dependencia de `agents-window` bajo
+`cfg(target_os = "linux")` y queda fuera del workspace, así que los comandos
+del workspace no lo compilan en ningún otro sistema. En los demás la pestaña
+dice «El navegador embebido no pudo iniciarse», con «Esta versión de OpenIDE
+sólo incluye su navegador embebido para Linux.», y `--cef-probe` dice lo
+mismo y termina con código 1. **Ese camino no se compiló para otro sistema**:
+el entorno de desarrollo sólo tiene Linux. Se comprobó aquí que el reemplazo
+tiene las mismas funciones que el motor, compilando una vez la aplicación con
+él en lugar del motor.
 
 ## Cómo funciona
 
 | Pieza | Qué hace |
 | --- | --- |
 | `crates/openide-cef` | Inicia CEF una vez por proceso, abre páginas sin ventana y entrega de cada una sus cuadros y su extremo DevTools. Es lo único que enlaza `libcef.so`. |
-| `Driver::connect_to_page` | El driver se adjunta a una página que ya existe en lugar de crear su contexto y su página. |
+| `Driver::connect_to_page` | El driver se adjunta a la página que CEF creó para el contexto. |
 | `apps/agents-window/src/browser_cef.rs` | El contexto embebido del runtime: abre la página, guarda su último cuadro y convierte lo que cambió en la parte que toma la vista. |
 
 **Procesos.** CEF inicia sus procesos auxiliares (zygotes, renderers, red,
 compositor) con el mismo ejecutable de la aplicación. `main` los atiende antes
 que cualquier otra cosa, junto al modo `--browser-mcp`: si el proceso se inició
 con `--type=…` corre como auxiliar y termina. Cualquier otro inicio sigue de
-largo sin llamar a CEF. Sin la opción esa línea no existe. El sandbox de
-Chromium queda activo (los renderers corren con seccomp).
+largo sin llamar a CEF. El sandbox de Chromium queda activo (los renderers
+corren con seccomp).
 
 **Arranque.** CEF no se inicia con la aplicación sino con el primer contexto
 de navegador, en un hilo propio (`openide-cef`) que también lo cierra: CEF
 exige que lo cierre el hilo que lo inició. Su bucle de mensajes corre en un
 hilo de CEF, nunca en el de la interfaz. Los archivos de CEF van a un
-directorio privado `oid-XXXXXX` como el de Chrome, con las mismas reglas
-(modo 0700, ruta corta, recogido por el siguiente arranque si el proceso
-murió). CEF se inicia una sola vez por proceso: si falla, no se reintenta.
+directorio privado `oid-XXXXXX` con modo 0700, bajo `<datos>/browser-runtime`
+cuando esa ruta es corta y bajo `/tmp` cuando no: Chromium crea sockets Unix
+por debajo y la ruta completa no pasa de 48 bytes. Nunca va al `TMPDIR`
+heredado, que puede pertenecer a un `nix-shell` que ya terminó. Si el proceso
+muere sin borrarlo, lo recoge el siguiente arranque: el directorio lleva un
+archivo con candado, y uno de más de 60 s sin candado es de un proceso
+muerto. CEF se inicia una sola vez por proceso: si falla, no se reintenta
+([Si CEF no arranca](#si-cef-no-arranca)).
 
 **Sin GPU y sin pantalla.** Chromium corre con `--disable-gpu`,
 `--disable-gpu-compositing` y `--disable-software-rasterizer`: sin aceleración,
@@ -97,10 +114,43 @@ Wayland ni a X11 y no abre ningún dispositivo DRM. Con la plataforma Wayland
 el proceso de la aplicación y el del compositor abrían el nodo de render de la
 GPU aunque no cargaran ningún driver; con la plataforma headless no hay nada.
 Una prueba lo vigila: ningún proceso de CEF tiene abierto `/dev/dri/*` ni
-`/dev/nvidia*` ni mapea un driver gráfico. Sigue existiendo un proceso que
-Chromium llama «de GPU»: ahí corre su compositor por software. Ese proceso
-mapea el cargador de Vulkan que trae CEF (`libvulkan.so.1`) y ningún driver;
-`libdrm` y `libgbm` aparecen en todos porque `libcef.so` los enlaza.
+`/dev/nvidia*` ni mapea un driver gráfico, y una página que pide WebGL o
+WebGPU no recibe nada. Sigue existiendo un proceso que Chromium llama «de
+GPU»: ahí corre su compositor por software. Ese proceso mapea un cargador de
+Vulkan (`libvulkan.so.1`: el del sistema, que va antes que el de CEF en la
+ruta de bibliotecas) y ningún driver; `libdrm` y `libgbm` aparecen en todos
+porque `libcef.so` los enlaza.
+
+Chrome mira además los gráficos de la máquina por su cuenta, minutos después
+de arrancar, y eso también queda apagado:
+
+- **A los tres minutos** califica el equipo para sus modelos locales: inicia
+  un proceso auxiliar que le pide la GPU a Vulkan. Medido el 13 de octubre de
+  2026, antes de apagarlo: iniciado con `cargo run` o `cargo test`, ese
+  proceso cargó todos los drivers de Vulkan del sistema (Mesa y NVIDIA) y
+  tuvo abiertos `/dev/nvidiactl`, `/dev/nvidia0`, `/dev/nvidia-modeset` y los
+  dos `/dev/dri/renderD*` durante 3 s. La prueba de arriba no lo veía porque
+  mira un instante, mucho antes. Chromium corre ahora con
+  `--optimization-guide-performance-class=8` («GPU bloqueada», el valor que
+  usa Chrome for Testing): con la calificación dada, ese proceso no se inicia
+  nunca. Otra prueba lo vigila: una aplicación con un contexto abierto,
+  mirada cada 40 ms durante 200 s, no abre ningún dispositivo ni mapea ningún
+  driver.
+- **Dependía de cómo se abría.** Abierta la aplicación directamente, como
+  hacen `./target/…/agents-window` y `scripts/build.py --run`, una corrida de
+  cuatro minutos no cargó ningún driver ni abrió ningún dispositivo, y sólo
+  dejó en la salida de error «vkCreateInstance: Found no drivers!». Se
+  atribuye a que Dawn, con lo que Chromium le habla a Vulkan, busca
+  `libvulkan.so.1` primero junto a `libcef.so`: abierta así, `libcef.so` se
+  carga del directorio de CEF, que trae su propio cargador, y en NixOS ese
+  cargador no sabe dónde están los drivers; con cargo se carga de
+  `target/<perfil>/`, de donde `build.rs` borra ese cargador, y Dawn termina
+  en el del sistema, que sí los encuentra. Es lo que se infiere de lo
+  observado y del código de Dawn; no se siguió paso a paso. Si es así, en una
+  distribución convencional los habría encontrado de las dos formas.
+- **A los dos minutos** le pide al proceso «de GPU» la lista de adaptadores
+  de WebGPU. No cargó ningún driver ni abrió ningún dispositivo en ninguna de
+  las dos formas (mirado cada 4 ms).
 
 **Un navegador por contexto.** Cada conversación tiene su propio navegador de
 CEF con un contexto de solicitudes propio y sin ruta de caché: un perfil en
@@ -112,15 +162,14 @@ cerrarlo. Nada de eso llega al disco.
 DevTools de CEF: enviar es `SendDevToolsMessage` y recibir es un observador
 que pasa cada mensaje crudo a un canal de 256 lugares. No hay puerto ni
 tubería. El extremo de CEF es la página y no el navegador, así que
-`connect_to_page` le pregunta quién es (`Target.getTargetInfo`), se adjunta a
-ella con una sesión propia y sigue igual que siempre. No crea contexto ni
-página, no pide descubrir otros destinos (serían las páginas de otras
-conversaciones) y no toma la captura de un píxel que necesita Chrome headless.
-Herramientas, capturas, referencias, consola, red, diálogos, marcos de otro
-sitio y entrada de la ventana pasan por el mismo driver.
+`connect_to_page` le pregunta quién es (`Target.getTargetInfo`) y se adjunta
+a ella con una sesión propia. No crea contexto ni página y no pide descubrir
+otros destinos, que serían las páginas de otras conversaciones. Herramientas,
+capturas, referencias, consola, red, diálogos, marcos de otro sitio y entrada
+de la ventana pasan por ese driver.
 
-Lo que con Chrome resuelve el driver por el protocolo del navegador, acá lo
-resuelve quien embebe, sin mostrar nunca una ventana:
+Lo que no es de la página lo resuelve quien embebe, sin mostrar nunca una
+ventana:
 
 - Una ventana emergente no llega a crearse; `window.open` devuelve `null`.
   Lo que un clic pidió ver en otra pestaña se abre en la misma página: ver
@@ -145,14 +194,14 @@ parte del cuadro que la vista ya tiene (`SurfaceFrame::within` de limn). La
 ventana la sube a su textura con `present_surface`, que escribe sólo ese
 rectángulo. Un cambio cuesta lo que ocupa: el cursor de texto que parpadea
 son unas decenas de píxeles dos veces por segundo, y una página quieta no
-cuesta nada. La entrega a la vista es la de siempre, `LiveView::publish`, en
-un solo lugar. No hay JPEG ni PNG ni `screencast`. Las respuestas al agente
-comparten hilo con la copia y esperan a lo sumo una.
+cuesta nada. La entrega a la vista está en un solo lugar,
+`LiveView::publish`. Nada se comprime ni se decodifica. Las respuestas al
+agente comparten hilo con la copia y esperan a lo sumo una.
 
 - **Cuándo va el cuadro entero.** En la primera pintura, cuando la página
   cambia de tamaño, cuando la vista vuelve a mostrarse, con **Actualizar
   vista** y cuando lo pintado cubre toda la vista (2,9 ms de copia y 3,4 ms
-  de conversión a 2560 × 1600, como antes).
+  de conversión a 2560 × 1600).
 - **Nada se pierde y nada se encola.** Hay un solo lienzo y, esperando a la
   ventana, a lo sumo un cuadro entero y la parte que cambió después. Una
   parte que la ventana no llegó a tomar se reemplaza por la siguiente, que
@@ -184,8 +233,8 @@ comparten hilo con la copia y esperan a lo sumo una.
   aunque la página esté quieta.
 - **Capturas del agente.** Chromium vuelve a pintar la página en cada captura
   y, si es de un elemento o de la página completa, la dibuja distinta por un
-  momento. Las pinturas de ese momento se retienen igual que con el flujo
-  (durante la captura y 400 ms después): el lienzo las recibe y la vista no.
+  momento. Las pinturas de ese momento se retienen (durante la captura y
+  400 ms después): el lienzo las recibe y la vista no.
   Lo que queda sólo se muestra si difiere de lo que la vista ya tenía, y va
   como una sola parte con todo lo que se pintó mientras tanto.
 - **Cambio de tamaño.** Primero cambia la vista y después la página; puede
@@ -272,16 +321,26 @@ Las señales terminan la aplicación igual que sin CEF.
 
 ## Si CEF no arranca
 
-El contexto se inicia con el Chrome del sistema, igual que sin la opción. El
-pie del panel lo dice en su propia línea, «El navegador embebido no pudo
-iniciarse; se usa el del sistema.», con el motivo al pasar el puntero y
-**Descartar** a la derecha. Aparece cuando el pie no tiene otra cosa que decir
-(un error, entradas pendientes o una carga van primero) y no cambia el tamaño
-de la página. Descartado, no vuelve a aparecer mientras la aplicación siga
-abierta, tampoco en otra pestaña de navegador. El motivo queda además una vez
-en la salida de error: «OpenIDE: el navegador embebido (CEF) no pudo iniciarse
-y se usa el navegador del sistema. …». Si tampoco hay un Chrome instalado se
-ve el panel de siempre, «No se encontró un navegador».
+No hay otro navegador que usar. El contexto no se inicia y su pestaña lo dice
+en el lugar de la página, sin pasar el puntero por nada:
+
+- título: «El navegador embebido no pudo iniciarse»;
+- debajo, el motivo y qué hacer, por ejemplo «Falta icudtl.dat junto a
+  /nix/store/…/libcef.so. El navegador embebido se inicia una sola vez por
+  ejecución: cerrá OpenIDE y volvé a abrirlo para reintentar.»
+
+No ofrece **Reintentar** ni **Editar dirección**: CEF se inicia una sola vez
+por proceso, el fallo queda guardado y todo contexto posterior de esa
+ejecución falla igual, también en otra pestaña. La barra y su menú siguen
+ahí; **Reiniciar navegador** abre otro contexto, que dice lo mismo. Las
+herramientas del agente responden con ese mismo texto y no llegan a ninguna
+página. El motivo queda además una vez en la salida de error: «OpenIDE: el
+navegador embebido (CEF) no pudo iniciarse. …».
+
+Un contexto cuya página no pudo abrirse con CEF ya iniciado (CEF no la creó
+a tiempo, por ejemplo) es otro caso: la pestaña dice «El navegador no pudo
+iniciarse», con el detalle al pasar el puntero, y **Reintentar** abre un
+contexto nuevo.
 
 Probado con el binario de la aplicación: recursos de CEF ausentes junto a
 `libcef.so`. Se comprueba antes de iniciarlo, porque CEF aborta el proceso
@@ -296,10 +355,6 @@ Lo que no tiene salida:
 - Donde el sandbox de Chromium no puede usarse (un sistema que restringe los
   espacios de nombres de usuario) Chromium aborta el proceso. **No se probó**;
   en esta máquina funciona.
-
-Un Chrome elegido de forma explícita por quien inicia el contexto (las pruebas
-lo hacen) se usa en lugar de CEF. `OPENIDE_BROWSER_EXECUTABLE` sólo elige el
-Chrome de reemplazo.
 
 ## Lo que no salió como se suponía
 
@@ -321,9 +376,9 @@ Chrome de reemplazo.
 - **Faltando sus recursos, CEF aborta el proceso** en lugar de fallar.
 - **CEF trae un `libvulkan.so.1` propio** y cef-rs lo copia junto a los
   ejecutables. Con el directorio de CEF primero en la ruta de bibliotecas, o
-  al usar `cargo run` después de compilar con la opción, la ventana de la
-  aplicación habría abierto ese cargador en lugar del del sistema. No llegó a
-  pasar: nada de esto se ejecutó con ventana.
+  al usar `cargo run`, la ventana de la aplicación habría abierto ese
+  cargador en lugar del del sistema. Por eso va al final en `shell.nix` y
+  `crates/openide-cef/build.rs` borra la copia.
 - **Chromium toma SIGHUP, SIGINT y SIGTERM** aunque se le pida que no instale
   manejadores (`disable_signal_handlers` sólo conserva los de fallos): con
   ellos, una señal terminaba la aplicación con código 0. Se vuelven a dejar
@@ -366,51 +421,60 @@ Chrome de reemplazo.
   ver **Enlaces que piden otra pestaña**.
 - El proceso enlaza `libcef.so` al arrancar: unos 50 MB más de PSS aunque no
   se abra ningún navegador, también en cada proceso `--browser-mcp`.
-- Los auxiliares de CEF heredan el entorno de la aplicación; Chrome recibía
-  uno reducido. Las páginas no pueden leerlo.
+- Los auxiliares de CEF heredan el entorno de la aplicación, con las claves
+  de proveedores que tenga. Las páginas no pueden leerlo.
 - CEF escribe sus propias advertencias en la salida de error. Los mensajes de
   consola de las páginas no aparecen ahí. Después de un diálogo JavaScript,
   cada navegación deja una línea «Default dialog implementation requires a
   parent window handle»: es CEF cancelando un diálogo que ya no existe.
 - Un fallo fatal de Chromium en su parte de navegador termina la aplicación,
   porque esa parte corre dentro de ella.
-- `navigator.webdriver` es `false`. El Chrome lanzado lleva
-  `--enable-automation`, que lo pone en `true` (no se comparó).
-- Sólo Linux. No se compiló para otro sistema.
+- `navigator.webdriver` es `false`.
+- Sólo Linux: ver **Otros sistemas**, arriba.
 
 ## Mediciones
 
 Tomadas el 11 de octubre de 2026 a través del runtime real, sin ventana, con
-las pruebas `real_cef_measurements` y `real_chrome_measurements` compiladas
-con el perfil `desktop`: viewport de 1280 × 800 a escala 2 (cuadros de
-2560 × 1600), carga de un minuto por debajo de 1 y ningún `rustc` en curso.
-Cada cifra es el rango de ocho corridas con CEF y de tres con Chrome
-150.0.7871.46, cada una en un proceso nuevo. Los tiempos hasta un cuadro son
-hasta el cuadro listo para la ventana.
+la prueba `real_cef_measurements_of_the_live_view…` compilada con el perfil
+`desktop`: viewport de 1280 × 800 a escala 2 (cuadros de 2560 × 1600), carga
+de un minuto por debajo de 1 y ningún `rustc` en curso. Cada cifra es el
+rango de ocho corridas, cada una en un proceso nuevo. Los tiempos hasta un
+cuadro son hasta el cuadro listo para la ventana. **No se repitieron después
+de quitar el motor anterior**: el camino medido no cambió.
 
-| Medida | CEF, por software | Chrome headless |
-| --- | --- | --- |
-| Cuadros por segundo, página animando | 59,8 a 60,1 | 35,6 a 35,9 |
-| Cuadros por segundo, desplazamiento continuo | 59,6 a 59,7 | 30,5 a 31,5 |
-| De la rueda al siguiente cuadro, desplazando | mediana 16,6–16,7 ms, p90 17,0–17,1 | mediana 31,0–31,7 ms, p90 48–62 |
-| De la rueda al primer cuadro, página quieta | mediana 15,4–17,6 ms, p90 16,1–19,0 | mediana 63,0–63,7 ms, p90 64,6–65,6 |
-| Procesador mientras anima una esquina: la aplicación | 5 a 6 % de un núcleo (37 a 48 % antes de enviar sólo lo que cambia) | 37 a 38 % |
-| Procesador mientras anima una esquina: procesos del navegador | 10 a 11 % | 240 a 241 % |
-| Procesador desplazando: aplicación y navegador | 42–43 % y 52–53 % (antes 40–52 % y 51–52 %) | 36–37 % y 234–238 % |
-| Procesador animando fuera de pantalla | 1–2 % y 1–2 % | 1 % y 8 % |
-| Memoria que suma la aplicación, vista oculta | 82,6 a 86,3 MB | 2,8 a 3,2 MB |
-| Memoria que suma la aplicación, página quieta a la vista | 149,4 a 153,1 MB | 61,3 a 61,5 MB |
-| Memoria de los procesos del navegador, vista oculta | 220 a 222 MB en 9 | 318 a 327 MB en 11 |
-| Memoria de los procesos del navegador, animando | 214 a 215 MB | 400 a 413 MB |
-| Total con la vista oculta | 303 a 308 MB | 321 a 330 MB |
-| Total animando a la vista | 365 a 370 MB | 466 a 479 MB |
-| Primer contexto del proceso, hasta estar listo | 133 a 178 ms; 388 y 686 ms recién compilado | 383 a 392 ms; 3,5 s la primera vez |
-| Primer uso hasta el primer cuadro | 156 a 170 ms; 664 ms la primera vez | — |
-| Contextos siguientes, hasta estar listos | 24 a 26 ms | 356 a 373 ms |
-| Contextos siguientes, hasta el primer cuadro | 44 a 61 ms | 417 a 503 ms |
-| Clic del agente, a la vista y fuera de pantalla | 33–45 ms y 44–45 ms | 55 ms y 33–44 ms |
-| Captura del agente, a la vista y fuera de pantalla | 66 ms y 66–155 ms | 88 ms y 55–66 ms |
-| Cierre de un contexto | 2 a 3 ms | 15 a 20 ms |
+| Medida | Resultado |
+| --- | --- |
+| Cuadros por segundo, página animando | 59,8 a 60,1 |
+| Cuadros por segundo, desplazamiento continuo | 59,6 a 59,7 |
+| De la rueda al siguiente cuadro, desplazando | mediana 16,6–16,7 ms, p90 17,0–17,1 |
+| De la rueda al primer cuadro, página quieta | mediana 15,4–17,6 ms, p90 16,1–19,0 |
+| Procesador mientras anima una esquina: la aplicación | 5 a 6 % de un núcleo (37 a 48 % antes de enviar sólo lo que cambia) |
+| Procesador mientras anima una esquina: procesos del navegador | 10 a 11 % |
+| Procesador desplazando: aplicación y navegador | 42–43 % y 52–53 % (antes 40–52 % y 51–52 %) |
+| Procesador animando fuera de pantalla | 1–2 % y 1–2 % |
+| Memoria que suma la aplicación, vista oculta | 82,6 a 86,3 MB |
+| Memoria que suma la aplicación, página quieta a la vista | 149,4 a 153,1 MB |
+| Memoria de los procesos del navegador, vista oculta | 220 a 222 MB en 9 |
+| Memoria de los procesos del navegador, animando | 214 a 215 MB |
+| Total con la vista oculta | 303 a 308 MB |
+| Total animando a la vista | 365 a 370 MB |
+| Primer contexto del proceso, hasta estar listo | 133 a 178 ms; 388 y 686 ms recién compilado |
+| Primer uso hasta el primer cuadro | 156 a 170 ms; 664 ms la primera vez |
+| Contextos siguientes, hasta estar listos | 24 a 26 ms |
+| Contextos siguientes, hasta el primer cuadro | 44 a 61 ms |
+| Clic del agente, a la vista y fuera de pantalla | 33–45 ms y 44–45 ms |
+| Captura del agente, a la vista y fuera de pantalla | 66 ms y 66–155 ms |
+| Cierre de un contexto | 2 a 3 ms |
+
+**El motor anterior.** Hasta el 13 de octubre de 2026 el navegador lanzaba un
+Chrome headless del sistema, lo manejaba por una tubería privada y mostraba
+su página como un flujo de cuadros JPEG. Medido el mismo día y con la misma
+prueba (tres corridas, Chrome 150.0.7871.46): 35,6 a 35,9 cuadros por segundo
+animando y 30,5 a 31,5 desplazando; de la rueda al primer cuadro, en reposo,
+63,0 a 63,7 ms de mediana; 240 % de un núcleo en sus procesos mientras
+animaba una esquina; 356 a 373 ms por contexto; 466 a 479 MB en total
+animando a la vista. Del lado de la aplicación sumaba menos: 2,8 a 3,2 MB con
+la vista oculta, porque el navegador entero corría en otros procesos.
 
 Cómo se tomó cada una:
 
@@ -439,9 +503,8 @@ Cómo se tomó cada una:
   11 ms.
 
 Un cuadro entero de 2560 × 1600 le cuesta a la aplicación 2,8–3,0 ms en el
-hilo de CEF (la copia) y 3,4 ms en el hilo de cuadros (conversión y armado);
-con Chrome eran 8,0–8,1 ms de decodificar el JPEG. De ahí sale casi todo lo
-que gasta la aplicación cuando cambia toda la vista: a 60 cuadros por segundo
+hilo de CEF (la copia) y 3,4 ms en el hilo de cuadros (conversión y armado).
+De ahí sale casi todo lo que gasta la aplicación cuando cambia toda la vista: a 60 cuadros por segundo
 son 6,3 ms por cuadro, 38 % de un núcleo. Cuando cambia una parte se copia y
 se convierte sólo esa parte.
 
@@ -537,9 +600,9 @@ Tamaño:
 
 | | |
 | --- | --- |
-| El ejecutable `desktop` | 197 KB más (211,7 MB contra 211,5 MB); sin símbolos, 265 KB más (85,7 MB contra 85,5 MB) |
+| El ejecutable `desktop` | 214,2 MB; sin símbolos, 87,0 MB. Con los dos motores eran 215,4 MB y 87,3 MB (medido el 13 de octubre de 2026) |
 | Archivos de CEF a distribuir | 358 MB: `libcef.so` 260 MB, `locales/` 48 MB, `resources.pak` 23 MB, `libvk_swiftshader.so` 15 MB, `icudtl.dat` 11 MB y el resto 4 MB |
-| Un proceso que enlaza `libcef.so` sin usarlo | 58,2 a 59,4 MB de PSS contra 8,4 a 8,5 MB |
+| Un proceso que enlaza `libcef.so` sin usarlo | 57,2 MB de PSS, medido en un `--browser-mcp` en espera; sin enlazarlo eran 8,4 a 8,5 MB |
 
 De esos 358 MB, sin GL por software `libvk_swiftshader.so` no se carga, y de
 `locales/` haría falta sólo `en-US.pak`, el locale de CEF cuando no se le
@@ -548,37 +611,61 @@ distribuir ese subconjunto.**
 
 ## Validación
 
-Las pruebas rápidas no inician CEF, con la opción o sin ella. Con la opción
-se agregan las de `browser_cef.rs`: el idioma que se anuncia a las páginas, la
-frecuencia de la pantalla, cómo se dibuja una lista sobre la página y sobre
-una parte de ella, también cuando asoma por un borde, que una lista que se
-abre, cambia o se cierra llega a la vista aunque una captura del agente acabe
-de repintar la página sin cambios, y cómo viaja lo pintado: como una parte
-del cuadro, sin perder lo de un cuadro que la vista no tomó, entero después
-de un cambio de tamaño o de ocultarse, retenido durante una captura. El aviso
-del pie y su descarte se prueban sin la opción, en `browser_ui_tests.rs` y
-`browser_host_tests.rs`.
+Las pruebas rápidas, las de la suite central, no inician CEF. Las de
+`browser_cef.rs` cubren el idioma que se anuncia a las páginas, la
+frecuencia de la pantalla, la escala a la que se crea una página, cómo se
+dibuja una lista sobre la página y sobre una parte de ella, también cuando
+asoma por un borde, que una lista que se abre, cambia o se cierra llega a la
+vista aunque una captura del agente acabe de repintar la página sin cambios,
+y cómo viaja lo pintado: como una parte del cuadro, sin perder lo de un
+cuadro que la vista no tomó, entero después de un cambio de tamaño o de
+ocultarse, retenido durante una captura. Lo que dice la pestaña cuando CEF no
+puede iniciarse se prueba en `browser_ui_tests.rs`, `browser_host_tests.rs` y
+`browser_runtime_tests.rs`
+([las demás](browser-runtime.md#validación-reproducible)).
 
-Las pruebas contra el Chromium embebido están ignoradas por defecto. Son los
-mismos escenarios que corren contra Chrome real en `browser_chrome_tests.rs`,
-más los propios de CEF. No abren ventanas, no usan la GPU y sólo visitan
-páginas que la prueba sirve en localhost:
+Las pruebas contra el Chromium embebido real están ignoradas por defecto. No
+abren ventanas, no usan la GPU y sólo visitan páginas que la prueba sirve en
+localhost:
 
 ```sh
-nix-shell --run \
-  "cargo test -p agents-window --features cef -- --ignored real_cef --test-threads=1"
+nix-shell --run "cargo test -p agents-window -- --ignored real_cef --test-threads=1"
 ```
 
 Un arnés de pruebas no tiene un `main` que atienda a los auxiliares de CEF:
 las pruebas le indican a CEF el ejecutable de la aplicación que cargo compila
 al lado (`browser_subprocess_path`), por eso el comando no lleva `--bin`.
+Corren de a una: CEF se inicia una sola vez por proceso y todas comparten ese
+inicio.
 
-- Agente y cliente externo: los pasos de la prueba de Chrome y, además,
-  diálogos descartados y aceptados, `window.open` rechazado, el idioma
-  anunciado y un marco de otro sitio leído y accionado por referencia.
-- Vista en vivo a escala 2 y 1, entrada de la ventana, teclas modificadoras
-  y teclado español: los mismos pasos. De la página que anima una esquina la
-  vista recibe esa esquina y no cuadros enteros.
+`browser_cef_tests.rs`, a través del runtime:
+
+- Agente y cliente externo: arranque, navegación, captura con referencias,
+  acción por referencia, capturas reducidas, fallos que son respuestas, una
+  página que no carga, el historial, la misma llamada hecha desde el hilo de
+  una CLI en el puente de loopback, y un cliente MCP que pasa por el binario
+  real en modo proxy (lista de herramientas, captura con imagen, clic por
+  referencia). Además, diálogos descartados y aceptados, `window.open`
+  rechazado, el idioma anunciado y un marco de otro sitio leído y accionado
+  por referencia.
+- Vista en vivo a escala 2 y 1: la página dice la escala de la ventana, los
+  cuadros llegan al tamaño de dispositivo, ninguno con la vista oculta, uno
+  entero al volver a mostrarla, una página quieta deja de enviar, las
+  capturas del agente no llegan a la vista, un cambio hecho por el agente sí,
+  y cuadros al nuevo tamaño tras un resize. De la página que anima una
+  esquina la vista recibe esa esquina y no cuadros enteros.
+- Entrada de la ventana: `:hover`, selección por arrastre, doble y triple
+  clic, botones derecho y del medio, rueda, texto, teclas y portapapeles en
+  dos pasos.
+- Teclas modificadoras: Shift + clic que extiende una selección, lo que ven
+  los manejadores de la página con cada botón y con la rueda, y un enlace
+  pedido en otra pestaña con Control + clic, el botón del medio y Shift +
+  clic, tras lo cual la página sigue siendo una y sigue dibujándose.
+- Teclado español, en un `<input>` y un `<textarea>`: `á é í ó ú ñ ü ¿ ¡ €`,
+  emoji, Home, End, Delete, Backspace, flechas, Shift con flechas y con Home
+  y End, cortar y pegar, deshacer y rehacer por sus dos atajos, caracteres
+  como teclas que la página oye, Enter, Tab y Shift + Tab, PageUp y PageDown
+  en el área y, sin campo enfocado, PageDown, Espacio y Home sobre la página.
 - Partes de cuadro, a escala 2, 1 y 1,5: después de escribir, de que el
   cursor parpadee (cada parpadeo es una parte de menos del 2 % del cuadro),
   de desplazar, de abrir una lista, pasar el puntero por sus filas y
@@ -609,31 +696,48 @@ al lado (`browser_subprocess_path`), por eso el comando no lleva `--bin`.
   HTTP; un contexto nuevo después de cerrar otro empieza vacío; ningún archivo
   del directorio de CEF contiene lo que guardó una página.
 - Sin GPU: ningún proceso abre un dispositivo gráfico ni mapea un driver, y
-  WebGL no existe.
+  una página no obtiene WebGL ni un adaptador de WebGPU.
+- Sin GPU, minutos después: una aplicación aparte con un contexto abierto,
+  mirada cada 40 ms durante 200 s, sigue sin abrir un dispositivo ni mapear
+  un driver. Es la prueba más larga, y existe porque Chrome busca la GPU por
+  su cuenta a los dos y a los tres minutos de arrancar. **No se la vio
+  fallar**: antes de apagar esa búsqueda la vio un vigilante externo con las
+  mismas comprobaciones, no esta prueba.
+- Muerte de la aplicación: muerta con SIGKILL, sus auxiliares terminan solos
+  y el directorio que dejó lo recoge el siguiente que se crea a su lado.
 - Señales: con CEF iniciado, SIGHUP, SIGINT y SIGTERM siguen sin manejador.
-- `tests/browser_cef.rs` ejecuta el binario construido con `--cef-probe`: el
-  propio ejecutable atiende a los auxiliares, se llega al primer cuadro y al
-  salir no queda ningún proceso ni directorio. Y lo ejecuta con los recursos
-  de CEF ausentes: no muere, lo dice, sigue con el navegador del sistema y el
-  contexto lleva el motivo que muestra el pie del panel.
+
+`browser_cef_driver_tests.rs`, con el driver solo sobre una página de CEF,
+sin el runtime: son los escenarios que tenía el driver contra un Chrome
+lanzado ([Driver del navegador](browser-driver.md#validación)).
+
+`tests/browser_cef.rs` ejecuta el binario construido con `--cef-probe`: el
+propio ejecutable atiende a los auxiliares, se llega al primer cuadro y al
+salir no queda ningún proceso ni directorio. Y lo ejecuta con los recursos de
+CEF ausentes: no muere, dice el motivo y cómo reintentar, y termina con
+código 1.
 
 Las mediciones se repiten con el perfil optimizado, sin otra compilación en
 curso:
 
 ```sh
 nix-shell --run \
-  "cargo test --profile desktop -p agents-window --features cef --bin agents-window -- --ignored --nocapture --test-threads=1 real_cef_measurements"
+  "cargo test --profile desktop -p agents-window --bin agents-window -- --ignored --nocapture --test-threads=1 real_cef_measurements"
 ```
 
 Ese comando no recompila el ejecutable de la aplicación; tiene que existir de
-antes, compilado con la opción y el mismo perfil. Son dos pruebas: la de la
-vista en vivo y la de lo que cuesta un cambio según cuánto ocupa, que pide
-120 cuadros por segundo además de 60 sin cambiar lo que usa la aplicación.
+antes, compilado con el mismo perfil. Son dos pruebas: la de la vista en vivo
+y la de lo que cuesta un cambio según cuánto ocupa, que pide 120 cuadros por
+segundo además de 60 sin cambiar lo que usa la aplicación.
 
-Validado el 12 de octubre de 2026 con CEF 154.0.34 (Chromium 154.0.8037.98) en
-NixOS, sandbox activo: las dieciséis pruebas (catorce en el arnés, con las dos
-de mediciones, y las dos de `tests/browser_cef.rs`) pasaron en tres corridas
-seguidas y después de cada una no quedó ningún proceso de CEF ni directorio.
+Validado el 13 de octubre de 2026 con CEF 154.0.34 (Chromium 154.0.8037.98) en
+NixOS, sandbox activo: las veintisiete pruebas pasaron en una corrida de
+siete minutos y medio (veinticinco en el arnés, con las dos de mediciones, las
+ocho del driver y la que mira los gráficos durante 200 s, y las dos de
+`tests/browser_cef.rs`), sin que Chromium dejara ninguna advertencia de
+Vulkan. Una corrida anterior del mismo día, antes de apagar la búsqueda de la
+GPU a los tres minutos, sí las dejó. `--cef-probe` con el binario `desktop`:
+primer cuadro a los 166–178 ms, 474 y 753 ms recién compilado.
 
 ## Lo que queda para el paso de GPU
 

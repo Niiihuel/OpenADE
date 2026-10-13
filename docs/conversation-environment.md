@@ -193,22 +193,23 @@ comandos. Los marcadores incompletos o ambiguos mantienen cobertura parcial.
 
 ## Navegador
 
-`browser_runtime.rs` inicia un Chrome headless y lo maneja directamente por el
-protocolo DevTools con el driver propio `crates/openide-browser`, sin Node,
-npm ni Playwright. Chromium usa un contexto aislado; la vista nativa muestra
-su flujo de cuadros y envía puntero, texto, teclas y scroll al mismo actor que
-atiende las herramientas del agente. Hay navegación atrás/adelante, recarga,
+`browser_runtime.rs` abre una página en el Chromium embebido en la aplicación
+y la maneja por el protocolo DevTools con el driver propio
+`crates/openide-browser`, sin Node, npm ni Playwright. Chromium usa un contexto
+aislado; la vista nativa muestra los cuadros que pinta y envía puntero, texto,
+teclas y scroll al mismo actor que atiende las herramientas del agente. Hay navegación atrás/adelante, recarga,
 dirección y actualización de la vista.
 
-Abrir el panel no descarga ni instala nada: usa el Chrome, Chromium o Edge del
-sistema, o el que indique `OPENIDE_BROWSER_EXECUTABLE`. Si no encuentra
-ninguno lo dice y ofrece reintentar. Hay un máximo de cuatro runtimes, cola
+Abrir el panel no descarga ni instala nada, y no usa ningún navegador del
+sistema: el motor es parte de la aplicación. Si no puede iniciarse, la pestaña
+dice por qué. Hay un máximo de cuatro runtimes, cola
 compartida de 16 solicitudes, acciones con deadline y límites de capturas y
-árbol accesible. No es un WebView. Mantiene una página, cierra ventanas
+árbol accesible. No es un WebView. Mantiene una página, no abre ventanas
 emergentes y no acepta descargas. Los temporales del navegador son propios y
 sobreviven al cierre del shell que inició la app, siempre con un perfil
-aislado y sandbox habilitado. La selección del navegador y las pruebas reales
-se describen en [Runtime del navegador](browser-runtime.md).
+aislado y sandbox habilitado. El motor y las pruebas reales se describen en
+[Runtime del navegador](browser-runtime.md) y
+[Chromium embebido](browser-cef.md).
 
 En el próximo turno Build, un navegador abierto y listo de la conversación
 se anuncia como `mcp__openide_browser__…`. El agente recibe estado, URL y árbol

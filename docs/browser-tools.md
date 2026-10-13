@@ -99,7 +99,7 @@ browser_snapshot {"selector":"main form","max_depth":3}
 Un elemento conserva su referencia entre una captura completa y una reducida.
 Una captura reducida sólo agrega referencias; una de la página completa
 reemplaza el conjunto. Un selector que no coincide con un elemento visible es
-un error de herramienta. Medido con Chrome real sobre la página fixture de las
+un error de herramienta. Medido con el navegador real sobre la página fixture de las
 pruebas (40 filas de texto y cinco controles), `interactive_only` deja menos de
 la cuarta parte del texto.
 
@@ -423,20 +423,17 @@ del modelo con la que se verifican y reanudan turnos guardados.
 ```sh
 nix-shell --run "cargo test -p agents-window -- browser_ tool_presentation approval_ui environment_runtime"
 nix-shell --run "cargo test -p agents-window -p openide-bridge -- external_bridge tests::"
-OPENIDE_BROWSER_EXECUTABLE="$(command -v google-chrome-stable)" \
-  nix-shell --run "cargo test -p agents-window -- --ignored real_chrome"
-OPENIDE_BROWSER_EXECUTABLE="$(command -v google-chrome-stable)" \
-  nix-shell --run "cargo test -p openide-browser --test chrome -- --ignored"
+nix-shell --run "cargo test -p agents-window -- --ignored real_cef --test-threads=1"
 ```
 
 La segunda línea cubre el camino de las CLIs externas de punta a punta, por el
 socket de loopback del puente y con páginas en memoria: interruptor apagado,
 aprobación, negativa y vencimiento, un navegador por terminal y su dueño, el
 cierre con la concesión, el teclado, la validación del agente nativo y las
-imágenes. Lo que no ejercita es el arranque real del contexto (Chrome) ni una
-CLI real.
+imágenes. Lo que no ejercita es el arranque real del contexto (Chromium) ni
+una CLI real.
 
-La primera línea no necesita un navegador: maneja el runtime real contra un
+La primera línea no inicia Chromium: maneja el runtime real contra un
 extremo DevTools guionado y cubre el catálogo anunciado a ambos clientes
 (`open_preview` sólo al propio, con cada dirección que rechaza, la que abre por
 omisión y `0.0.0.0` abierto como `localhost`), los
@@ -445,10 +442,12 @@ límites de cada esquema, la clasificación de `mutating()`, cada clase de fallo
 perdido), las capturas reducidas, el camino de aprobación con la descripción
 de la referencia y las filas del chat.
 
-Las otras dos usan Chrome real y sólo visitan un servidor HTTP local. La del
-runtime recorre arranque, captura, acción por referencia, capturas reducidas y
-un cliente MCP externo a través del proxy. La del driver cubre en detalle lo
-que antes cubría la prueba del bridge: referencias (resolución, iframe,
+La tercera usa el [Chromium embebido](browser-cef.md#validación) real, sin
+ventana y sin GPU, y sólo visita un servidor HTTP local. Sus escenarios del
+runtime recorren arranque, captura, acción por referencia, capturas reducidas,
+la misma llamada hecha desde el hilo de una CLI externa y un cliente MCP
+externo a través del proxy. Los del driver (`real_cef_driver_…`) cubren en
+detalle lo que antes cubría la prueba del bridge: referencias (resolución, iframe,
 estabilidad, caducidad, destino ambiguo y sin coincidencias), cada
 herramienta, la consola y la red con sus límites y su reinicio al navegar,
 `browser_evaluate` (valor, función, elemento, error, resultado truncado,
@@ -456,5 +455,5 @@ script que no termina), diálogos (descarte predeterminado registrado,
 aceptación armada con texto, uso único, olvido al navegar) y capturas
 (viewport, elemento, página completa, exceso de 2 MiB).
 
-Validado el 11 de octubre de 2026 con Google Chrome 150.0.7871.46 empaquetado
-por NixOS, con sandbox habilitado.
+Validado el 13 de octubre de 2026 con CEF 154.0.34 (Chromium 154.0.8037.98)
+en NixOS, con sandbox habilitado.
