@@ -4746,7 +4746,35 @@ impl AgentsWindow {
             .map(|tab| tab.id.get())
     }
 
+    /// How much wider and taller the browser's pane is once the dock move
+    /// in progress ends than the last layout made it; nothing at rest.
+    /// `None` when the pane ends smaller or closed, or where it ends is not
+    /// known here (the IDE's docks): the page keeps its size, cut by the
+    /// pane, until the move is over, so nothing of the pane is left bare.
+    fn browser_pane_growth(&self) -> Option<(f32, f32)> {
+        let Some(motion) = &self.dock_motion else {
+            return Some((0.0, 0.0));
+        };
+        let shown = (self.view.right_presentation_width, self.view.bottom_presentation_height);
+        if shown == (None, None) {
+            return Some((0.0, 0.0));
+        }
+        if motion.ide || motion.right.target() <= 0.5 {
+            return None;
+        }
+        let wider = shown.0.map_or(0.0, |shown| motion.right.target() - shown);
+        let taller = shown
+            .1
+            .zip(motion.bottom.as_ref())
+            .map_or(0.0, |(shown, bottom)| shown - bottom.target());
+        (wider >= 0.0 && taller >= 0.0).then_some((wider, taller))
+    }
+
+    /// The size of the browser's pane, or the one it has when a dock that
+    /// is moving comes to rest: a page resized on every frame of the move
+    /// reflows again and again.
     fn browser_dimensions(&self) -> (u32, u32) {
+        let (wider, taller) = self.browser_pane_growth().unwrap_or_default();
         let viewport = self.tree.frame().regions.iter()
             .find(|region| region.id == "browser_viewport").map(|region| region.rect);
         let dock = dock_layout(&self.view, self.viewport_width);
@@ -4773,8 +4801,8 @@ impl AgentsWindow {
                 - crate::view::terminal_panel_height(&self.view, self.viewport_height),
             |rect| rect.height,
         );
-        (width.round().clamp(320.0, 1600.0) as u32,
-         height.round().clamp(240.0, 1200.0) as u32)
+        ((width + wider).round().clamp(320.0, 1600.0) as u32,
+         (height + taller).round().clamp(240.0, 1200.0) as u32)
     }
 
     fn browser_client_for_current_scope(&self) -> Option<crate::browser_runtime::BrowserMcpClient> {
@@ -5191,6 +5219,7 @@ impl AgentsWindow {
                     .get(&id)
                     .is_none_or(|requests| requests.is_empty());
                 let resize = idle
+                    && self.browser_pane_growth().is_some()
                     && self.browsers.get(&id).is_some_and(|runtime| {
                         let snapshot = runtime.snapshot();
                         snapshot.started
@@ -28934,6 +28963,47 @@ mod tests {
         let (left, _) = motion.update(280.0, 360.0, 1200.0, false, midway, false);
         assert_eq!(left, None);
         assert_eq!(motion.left.value(midway), 280.0);
+    }
+
+    #[test]
+    fn the_browser_takes_the_size_its_pane_ends_at_while_a_dock_moves() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        let start = Instant::now();
+        assert_eq!(app.browser_pane_growth(), Some((0.0, 0.0)));
+
+        // Maximizing: the right dock goes from 420 to 1000.
+        let mut motion = DockMotion::new(0.0, 420.0, 1400.0, start);
+        motion.update(0.0, 1000.0, 1400.0, true, start, false);
+        app.dock_motion = Some(motion);
+        app.view.right_presentation_width = Some(420.0);
+        assert_eq!(app.browser_pane_growth(), Some((580.0, 0.0)));
+        // A later frame shows it 280 wider with 300 to go: the same end.
+        app.view.right_presentation_width = Some(700.0);
+        assert_eq!(app.browser_pane_growth(), Some((300.0, 0.0)));
+        // At rest again the pane is what the layout says.
+        app.view.right_presentation_width = None;
+        assert_eq!(app.browser_pane_growth(), Some((0.0, 0.0)));
+
+        // Restoring: the pane ends narrower, and the page waits for the end.
+        let mut restoring = DockMotion::new(0.0, 1000.0, 1400.0, start);
+        restoring.maximized = true;
+        restoring.update(0.0, 420.0, 1400.0, false, start, false);
+        app.dock_motion = Some(restoring);
+        app.view.right_presentation_width = Some(1000.0);
+        assert_eq!(app.browser_pane_growth(), None);
+
+        // A dock that is closing, and the IDE's docks, leave the page as it is.
+        let mut closing = DockMotion::new(0.0, 420.0, 1400.0, start);
+        closing.update(0.0, 0.0, 1400.0, false, start, false);
+        app.dock_motion = Some(closing);
+        app.view.right_presentation_width = Some(300.0);
+        assert_eq!(app.browser_pane_growth(), None);
+        let mut ide = DockMotion::new(0.0, 420.0, 1400.0, start);
+        ide.update(0.0, 1000.0, 1400.0, true, start, false);
+        ide.ide = true;
+        app.dock_motion = Some(ide);
+        assert_eq!(app.browser_pane_growth(), None);
     }
 
     #[test]
