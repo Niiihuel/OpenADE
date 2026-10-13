@@ -10,7 +10,7 @@
 
 mod page;
 
-pub use page::{Cursor, Page, Paint, ALT_DOWN, COMMAND_DOWN, CONTROL_DOWN, SHIFT_DOWN};
+pub use page::{Cursor, Download, DownloadState, Page, Paint, ALT_DOWN, COMMAND_DOWN, CONTROL_DOWN, SHIFT_DOWN};
 
 use cef::*;
 use openide_browser::PrivateDirectory;

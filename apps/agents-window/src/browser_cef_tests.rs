@@ -1166,6 +1166,39 @@ fn tabs_of_one_context() {
     assert!(session.runtime.snapshot().error.is_none());
 }
 
+/// What a page asks to save goes to the downloads folder under a name no
+/// file there has, and the window and the agent are told how it stands.
+fn downloads_of_a_context() {
+    let origin = site();
+    let session = launch((640, 480), 2.0);
+    session.open(format!("{origin}/links"));
+    value(&session, "document.body.insertAdjacentHTML('beforeend', '<a id=\"bajar\" style=\"top:300px\" download=\"informe.html\" href=\"/landing?bajada\">Bajar</a>'); 0");
+    assert!(session.runtime.snapshot().downloads.is_empty());
+    let saved = |count: usize| {
+        session.until("the download to finish", || {
+            let downloads = session.runtime.snapshot().downloads;
+            downloads.len() == count && downloads.iter().all(|download| download.state == "complete")
+        });
+        session.runtime.snapshot().downloads
+    };
+    assert!(!session.agent("browser_click", json!({"selector": "#bajar"})).is_error);
+    let first = saved(1);
+    assert_eq!(first[0].name, "informe.html");
+    assert!(std::fs::read_to_string(&first[0].path).unwrap().contains("Llegaste por bajada"));
+    // The page stays where it was, and a second file of the same name gets its own.
+    assert!(session.runtime.snapshot().url.ends_with("/links"));
+    assert!(!session.agent("browser_click", json!({"selector": "text=Bajar"})).is_error);
+    let both = saved(2);
+    assert_eq!(both[1].name, "informe (1).html");
+    assert_ne!(both[0].path, both[1].path);
+    // The agent reads where they are.
+    let listed = session.agent("browser_downloads", json!({}));
+    assert!(!listed.is_error && format!("{:?}", listed.content).contains(&both[1].path), "{:?}", listed.content);
+    for download in both {
+        let _ = std::fs::remove_file(download.path);
+    }
+}
+
 /// Text and keys as the window sends them: a character of the US layout is a
 /// key that goes down and up, any other text is inserted, and editing keys
 /// and shortcuts are chords by name.
@@ -1746,6 +1779,12 @@ fn real_cef_takes_what_a_spanish_keyboard_types_and_its_editing_keys() {
 #[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
 fn real_cef_opens_in_a_tab_what_a_click_asked_to_see_in_another_tab() {
     what_a_click_asked_to_see_in_another_tab();
+}
+
+#[test]
+#[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
+fn real_cef_saves_what_a_page_downloads_and_tells_how_it_stands() {
+    downloads_of_a_context();
 }
 
 #[test]

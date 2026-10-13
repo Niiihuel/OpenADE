@@ -65,6 +65,7 @@ struct Core {
     /// Where the widget painted apart goes in the view, in device pixels.
     popup: Mutex<(i32, i32)>,
     cursor: Mutex<CursorType>,
+    downloads: Mutex<DownloadRecords>,
     state: Mutex<State>,
     changed: Condvar,
 }
@@ -398,7 +399,9 @@ wrap_context_menu_handler! {
 }
 
 wrap_download_handler! {
-    struct Downloads;
+    struct Downloads {
+        core: Arc<Core>,
+    }
     impl DownloadHandler {
         fn can_download(
             &self,
@@ -406,10 +409,121 @@ wrap_download_handler! {
             _url: Option<&CefString>,
             _request_method: Option<&CefString>,
         ) -> c_int {
-            // Nothing is ever written to the user's disk on a page's behalf.
-            0
+            // Nothing is written to the user's disk on a page's behalf until
+            // whoever embeds the page says where downloads go.
+            let downloads = lock(&self.core.downloads);
+            (downloads.directory.is_some() && downloads.list.len() < MAX_DOWNLOADS).into()
+        }
+
+        fn on_before_download(
+            &self,
+            _browser: Option<&mut Browser>,
+            download_item: Option<&mut DownloadItem>,
+            suggested_name: Option<&CefString>,
+            callback: Option<&mut BeforeDownloadCallback>,
+        ) -> c_int {
+            let (Some(item), Some(callback)) = (download_item, callback) else { return 0 };
+            let mut downloads = lock(&self.core.downloads);
+            let Some(directory) = downloads.directory.clone() else { return 0 };
+            let name = download_name(&suggested_name.map(ToString::to_string).unwrap_or_default());
+            // Never over a file that is there: a name of its own, reserved now.
+            let Some(path) = reserve(&directory, &name) else { return 0 };
+            callback.cont(Some(&path.to_string_lossy().as_ref().into()), 0);
+            downloads.list.push(Download {
+                id: item.id(),
+                name: path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or(name),
+                path,
+                received: 0,
+                total: None,
+                state: DownloadState::InProgress,
+            });
+            1
+        }
+
+        fn on_download_updated(
+            &self,
+            _browser: Option<&mut Browser>,
+            download_item: Option<&mut DownloadItem>,
+            _callback: Option<&mut DownloadItemCallback>,
+        ) {
+            let Some(item) = download_item else { return };
+            let mut downloads = lock(&self.core.downloads);
+            let id = item.id();
+            if let Some(download) = downloads.list.iter_mut().find(|download| download.id == id) {
+                download.received = item.received_bytes().max(0) as u64;
+                download.total = u64::try_from(item.total_bytes()).ok().filter(|total| *total > 0);
+                download.state = if item.is_complete() != 0 {
+                    DownloadState::Complete
+                } else if item.is_canceled() != 0 || item.is_interrupted() != 0 {
+                    DownloadState::Failed
+                } else {
+                    DownloadState::InProgress
+                };
+            }
         }
     }
+}
+
+/// Downloads one page keeps the record of.
+const MAX_DOWNLOADS: usize = 64;
+
+/// A file a page asked to save.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Download {
+    pub id: u32,
+    pub name: String,
+    pub path: std::path::PathBuf,
+    pub received: u64,
+    /// Unknown until the server says, and when it never does.
+    pub total: Option<u64>,
+    pub state: DownloadState,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DownloadState {
+    InProgress,
+    Complete,
+    Failed,
+}
+
+#[derive(Default)]
+struct DownloadRecords {
+    directory: Option<std::path::PathBuf>,
+    list: Vec<Download>,
+}
+
+/// The name a page suggested, as a file name of the downloads directory and
+/// nothing else: no directory of its own, no hidden file, no control character.
+fn download_name(suggested: &str) -> String {
+    let name: String = suggested
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or("")
+        .chars()
+        .filter(|letter| !letter.is_control())
+        .take(120)
+        .collect();
+    let name = name.trim().trim_start_matches('.').trim();
+    if name.is_empty() {
+        "descarga".to_owned()
+    } else {
+        name.to_owned()
+    }
+}
+
+/// Creates an empty file for the download under a name no file has: `name`,
+/// or `name (1)`, `name (2)`… before its extension.
+fn reserve(directory: &std::path::Path, name: &str) -> Option<std::path::PathBuf> {
+    std::fs::create_dir_all(directory).ok()?;
+    let (stem, extension) = match name.rsplit_once('.') {
+        Some((stem, extension)) if !stem.is_empty() => (stem, format!(".{extension}")),
+        _ => (name, String::new()),
+    };
+    (0..1000).find_map(|attempt| {
+        let candidate = if attempt == 0 { name.to_owned() } else { format!("{stem} ({attempt}){extension}") };
+        let path = directory.join(candidate);
+        std::fs::OpenOptions::new().write(true).create_new(true).open(&path).ok().map(|_| path)
+    })
 }
 
 wrap_request_handler! {
@@ -539,7 +653,10 @@ impl Page {
             .as_ref()
             .and_then(|host| host.0.request_context())
             .ok_or("La página ya no tiene un contexto para otra pestaña.")?;
-        Self::create(context, self.size(), scale, frame_rate, paint)
+        let page = Self::create(context, self.size(), scale, frame_rate, paint)?;
+        // A tab saves where the tab beside it does.
+        lock(&page.core.downloads).directory = lock(&self.core.downloads).directory.clone();
+        Ok(page)
     }
 
     fn create(
@@ -557,6 +674,7 @@ impl Page {
             paint: Box::new(paint),
             popup: Mutex::default(),
             cursor: Mutex::default(),
+            downloads: Mutex::default(),
             state: Mutex::new(State {
                 messages: Some(messages),
                 ..State::default()
@@ -580,7 +698,7 @@ impl Page {
             Dialogs::new(core.clone()),
             Files::new(),
             Menus::new(),
-            Downloads::new(),
+            Downloads::new(core.clone()),
         );
         let page = Self {
             core,
@@ -638,6 +756,17 @@ impl Page {
         if let Some(host) = &self.core.state().host {
             call(&host.0);
         }
+    }
+
+    /// From now on what the page asks to save goes to `directory`, under a
+    /// name no file there has. Until this is called nothing is saved.
+    pub fn save_downloads_to(&self, directory: std::path::PathBuf) {
+        lock(&self.core.downloads).directory = Some(directory);
+    }
+
+    /// The files the page asked to save, oldest first, as they stand now.
+    pub fn downloads(&self) -> Vec<Download> {
+        lock(&self.core.downloads).list.clone()
     }
 
     /// The view's size in CSS pixels.

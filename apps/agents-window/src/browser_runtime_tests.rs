@@ -581,6 +581,7 @@ fn catalog() -> Vec<(&'static str, Value, bool)> {
         ("browser_take_screenshot", json!({}), false),
         ("browser_handle_dialog", json!({"accept":true}), true),
         ("browser_tabs", json!({}), false),
+        ("browser_downloads", json!({}), false),
         ("browser_tab_new", json!({"url":"http://localhost:3000"}), true),
         ("browser_tab_select", json!({"id":2}), true),
         ("browser_tab_close", json!({"id":2}), true),

@@ -253,8 +253,8 @@ cortar; los de sólo lectura permiten copiar. El corte de `contenteditable`
 todavía no está implementado. La selección transferida tiene un máximo de
 16 KiB y no se retiene en el estado compartido con herramientas.
 
-Las capturas tienen un máximo de 2 MiB y el árbol accesible, 64 KiB. Hay una
-página por contexto, sin descargas ni ventanas emergentes. La cola Rust admite
+Las capturas tienen un máximo de 2 MiB y el árbol accesible, 64 KiB. Un
+contexto tiene hasta 8 pestañas y 64 descargas, sin ventanas emergentes. La cola Rust admite
 16 comandos. El broker acepta cuatro conexiones a la vez, una solicitud de
 hasta 64 KiB por conexión y responde hasta 4 MiB. La vista son los cuadros
 que Chromium pinta por software, descritos en **Vista en vivo**; no es un

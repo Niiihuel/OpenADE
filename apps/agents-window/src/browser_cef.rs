@@ -206,6 +206,33 @@ pub(super) struct Embedded {
     rgb: Mutex<Vec<u8>>,
 }
 
+/// Where a page's downloads go: the user's downloads folder, as the desktop
+/// names it, or `Downloads` in their home.
+pub(super) fn downloads_directory() -> PathBuf {
+    // A test's downloads are not the user's.
+    #[cfg(test)]
+    return std::env::temp_dir().join(format!("openide-test-downloads-{}", std::process::id()));
+    #[cfg(not(test))]
+    {
+        let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
+        let config = std::env::var_os("XDG_CONFIG_HOME").map_or_else(|| home.join(".config"), PathBuf::from);
+        std::fs::read_to_string(config.join("user-dirs.dirs"))
+            .ok()
+            .and_then(|dirs| user_download_dir(&dirs, &home))
+            .unwrap_or_else(|| home.join("Downloads"))
+    }
+}
+
+/// `XDG_DOWNLOAD_DIR` as `user-dirs.dirs` gives it: an absolute path, or one under `$HOME`.
+fn user_download_dir(dirs: &str, home: &Path) -> Option<PathBuf> {
+    let value = dirs.lines().find_map(|line| line.trim().strip_prefix("XDG_DOWNLOAD_DIR="))?.trim().trim_matches('"');
+    let path = match value.strip_prefix("$HOME/") {
+        Some(rest) => home.join(rest),
+        None => PathBuf::from(value),
+    };
+    (path.is_absolute() && path != home).then_some(path)
+}
+
 /// How CEF starts in this process. Its helper processes are this executable,
 /// whose `main` runs them, and its directory goes under the data root.
 fn host_options(data: &Path) -> openide_cef::Options {
@@ -325,6 +352,28 @@ impl Embedded {
         true
     }
 
+    /// What the pages of every tab asked to save, oldest first.
+    pub(super) fn downloads(&self) -> Vec<BrowserDownloadView> {
+        let mut all: Vec<openide_cef::Download> = self.page().iter().flat_map(|page| page.downloads()).collect();
+        for (_, page) in &*self.parked() {
+            all.extend(page.downloads());
+        }
+        all.sort_by_key(|download| download.id);
+        all.into_iter()
+            .map(|download| BrowserDownloadView {
+                name: download.name,
+                path: download.path.to_string_lossy().into_owned(),
+                received_bytes: download.received,
+                total_bytes: download.total,
+                state: match download.state {
+                    openide_cef::DownloadState::InProgress => "in_progress",
+                    openide_cef::DownloadState::Complete => "complete",
+                    openide_cef::DownloadState::Failed => "failed",
+                },
+            })
+            .collect()
+    }
+
     /// Closes the page of a tab the view is not showing.
     pub(super) fn close_tab(&self, tab: u64) -> bool {
         let mut parked = self.parked();
@@ -388,6 +437,7 @@ impl Embedded {
             rate: IDLE_FRAME_RATE,
             ..Canvas::default()
         };
+        page.save_downloads_to(downloads_directory());
         view.embedded.active.store(FIRST_TAB, Ordering::Release);
         *view.embedded.page() = Some(Arc::new(page));
         Ok(driver)
@@ -1048,6 +1098,20 @@ mod tests {
         assert_eq!(display_rate(&[0.008; 20]), None);
         assert_eq!(display_rate(&[f32::NAN; 48]), None);
         assert_eq!(display_rate(&[0.0; 48]), None);
+    }
+
+    #[test]
+    fn downloads_go_where_the_desktop_names_its_downloads_folder() {
+        use super::user_download_dir;
+        use std::path::{Path, PathBuf};
+        let home = Path::new("/home/ana");
+        let dirs = "# comment\nXDG_DESKTOP_DIR=\"$HOME/Escritorio\"\nXDG_DOWNLOAD_DIR=\"$HOME/Descargas\"\n";
+        assert_eq!(user_download_dir(dirs, home), Some(PathBuf::from("/home/ana/Descargas")));
+        assert_eq!(user_download_dir("XDG_DOWNLOAD_DIR=\"/datos/bajadas\"", home), Some(PathBuf::from("/datos/bajadas")));
+        // Not the home itself, which is how the desktop says there is none, nor a relative path.
+        assert_eq!(user_download_dir("XDG_DOWNLOAD_DIR=\"$HOME/\"", home), None);
+        assert_eq!(user_download_dir("XDG_DOWNLOAD_DIR=\"bajadas\"", home), None);
+        assert_eq!(user_download_dir("XDG_MUSIC_DIR=\"$HOME/Música\"", home), None);
     }
 
     #[test]

@@ -43,6 +43,8 @@ pub(crate) struct BrowserUiState {
     pub can_go_forward: bool,
     /// The tabs of this browser. Their strip shows once there are two.
     pub pages: Vec<crate::browser_runtime::BrowserTabView>,
+    /// What the browser's pages saved, oldest first.
+    pub downloads: Vec<crate::browser_runtime::BrowserDownloadView>,
     pub queued_inputs: usize,
     pub input_rejection: Option<String>,
     pub more_open: bool,
@@ -93,6 +95,9 @@ fn more_menu(browser: &BrowserUiState, width: f32) -> Element {
         menu_action("browser_mcp_config", Icon::Code, "Copiar conexión MCP", "Copia la configuración para conectar herramientas a esta página. La conexión existe mientras esta pestaña siga abierta.", ready),
         menu_action("browser_restart", Icon::Refresh, "Reiniciar navegador", "Abre un contexto nuevo y vuelve a la dirección actual. El estado de la página anterior se descarta.", true),
     ];
+    if !browser.downloads.is_empty() {
+        entries.insert(1, menu_action("browser_downloads_reveal", Icon::Folder, "Mostrar descargas", "Abre la carpeta donde este navegador guardó lo que descargó.", true));
+    }
     if !copies_in_bar(browser, width) {
         entries.insert(0, menu_action(COPY_URL, Icon::Copy, "Copiar dirección", "Copia la dirección visible en la barra al portapapeles.", has_address(browser)));
     }
@@ -469,6 +474,16 @@ fn status(browser: &BrowserUiState, width: f32, mode: Surface) -> Element {
         "Cargando página…".into()
     } else if browser.loading {
         "Actualizando vista…".into()
+    } else if let Some(download) = browser.downloads.last() {
+        // The newest download, until the page has something of its own to say.
+        match (download.state, download.total_bytes) {
+            ("complete", _) => format!("Descargado: {}", download.name),
+            ("failed", _) => format!("No se pudo descargar {}", download.name),
+            (_, Some(total)) if total > 0 => {
+                format!("Descargando {} · {} %", download.name, download.received_bytes.min(total) * 100 / total)
+            }
+            _ => format!("Descargando {}…", download.name),
+        }
     } else {
         "Sesión aislada · Compartida con el agente".into()
     };
