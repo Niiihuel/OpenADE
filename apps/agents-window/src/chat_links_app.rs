@@ -34,7 +34,7 @@ impl AgentsWindow {
         match id.trim_start_matches(MENU_ACTION_PREFIX) {
             "integrated" => self.open_chat_link(&menu.url, LinkTarget::Integrated, ctx),
             "system" => self.open_chat_link(&menu.url, LinkTarget::System, ctx),
-            "copy" => ctx.copy_text(menu.url),
+            "copy" => self.copy_link(menu.url, "", ctx),
             "copy_text" => ctx.copy_text(menu.text),
             _ => {}
         }

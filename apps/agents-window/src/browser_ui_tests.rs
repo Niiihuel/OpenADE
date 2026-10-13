@@ -310,13 +310,55 @@ fn viewport_uses_remaining_bounds_and_host_page_scroll_cannot_scroll_away_toolba
 }
 
 #[test]
+fn the_address_has_a_copy_button_that_shows_a_check_once_it_copied() {
+    use openide_ui::{DrawCommand, Icon};
+    let icons = |state: &ViewState| -> Vec<Icon> {
+        let frame = UiTree::new(build(state, 320.0)).layout(Size::new(320.0, 480.0));
+        let copy = frame
+            .regions
+            .iter()
+            .find(|region| region.id == COPY_URL && region.kind == HitKind::Button)
+            .map(|region| region.rect);
+        frame
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                DrawCommand::Icon { icon, rect, .. }
+                    if copy.is_some_and(|copy| copy.intersection(*rect).is_some()) =>
+                {
+                    Some(*icon)
+                }
+                _ => None,
+            })
+            .collect()
+    };
+    let mut state = state();
+    // With no address there is nothing to copy, and no button.
+    state.browser.url.clear();
+    state.browser.url_draft.clear();
+    assert!(icons(&state).is_empty());
+    state.browser.url_draft = "http://localhost:3000/".into();
+    assert_eq!(icons(&state), [Icon::Copy]);
+    state.link_copied = Some(crate::view::LinkCopied {
+        url: "http://localhost:3000/".into(),
+        by: COPY_URL,
+        at: std::time::Instant::now(),
+    });
+    assert_eq!(icons(&state), [Icon::Check]);
+    // A link copied elsewhere leaves this button as it was.
+    state.link_copied.as_mut().unwrap().by = "";
+    assert_eq!(icons(&state), [Icon::Copy]);
+}
+
+#[test]
 fn more_menu_exposes_real_secondary_actions_and_clamps_to_small_viewport() {
     let mut state = state();
     state.browser.more_open = true;
-    let mut tree = UiTree::new(build(&state, 320.0));
+    let mut tree = UiTree::new(build(&state, 300.0));
     tree.set_reduced_motion(true);
     let frame = tree.layout(Size::new(320.0, 480.0));
     for id in [
+        // Too narrow for the button beside the address: the menu copies.
         "browser_copy_url",
         "browser_snapshot",
         "browser_mcp_config",
@@ -345,7 +387,7 @@ fn browser_navigation_tooltips_open_below_the_toolbar() {
     ] {
         let mut tree = UiTree::new(Element::column(vec![
             Element::spacer().size(None, Some(120.0)),
-            navigation(&state.browser, 600.0),
+            navigation(&state.browser, false, 600.0),
             Element::spacer().flex(1.0),
         ]));
         tree.set_reduced_motion(true);

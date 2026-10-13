@@ -9,8 +9,8 @@ use std::collections::HashSet;
 use chrono::{Local, TimeZone};
 use openide_core::{OutputStream, PlanStepStatus};
 use openide_ui::{
-    Alert, AlertTone, Button, ButtonGroup, ButtonVariant, Card, CardDensity, Collapse,
-    Component, ControlSize, Element, FontFamily, Icon, IconButton as UiIconButton, ListRow, Marker,
+    Alert, AlertTone, Button, ButtonGroup, ButtonVariant, Card, CardDensity, ChatMinimap,
+    ChatMinimapMark, Collapse, Component, ControlSize, Element, FontFamily, Icon, IconButton as UiIconButton, ListRow, Marker,
     MarkerVariant, PageColumn, ScrollArea, Separator, Skeleton, Text, TextArea, TextRole, Ticker,
     ToolActivity, Tooltip, TooltipPlacement,
 };
@@ -41,6 +41,12 @@ const HEADER_FADE_HEIGHT: f32 = 42.0;
 /// Where a pinned user message rests below the header, and the height it
 /// keeps there: three lines of 21 inside the card's padding.
 const USER_PIN_INSET: f32 = 10.0;
+/// Room the rail of turns needs at the left of the reading column.
+const TURN_RAIL_ROOM: f32 = 56.0;
+/// A turn is in view once its message has come this close to the top.
+const TURN_IN_VIEW_LINE: f32 = 120.0;
+/// As much of a message as its mark can show.
+const TURN_MARK_TEXT: usize = 400;
 const USER_PIN_HEIGHT: f32 = 84.0;
 /// The turn fades out under the pinned message instead of being cut at its edge.
 const USER_PIN_FADE: f32 = 20.0;
@@ -306,9 +312,94 @@ fn user_message(
     }
     // Its actions show while the pointer is over the bubble, pinned or not.
     .hover_region()
+    .anchor(turn_anchor(item_index))
     .sticky_top_inset(USER_PIN_INSET)
     .sticky_top_max_height(USER_PIN_HEIGHT)
     .sticky_top_fade(USER_PIN_FADE)
+}
+
+/// What the message at transcript row `item_index` is revealed by.
+pub(crate) fn turn_anchor(item_index: usize) -> String {
+    format!("turn_anchor:{item_index}")
+}
+
+/// The action of a turn's mark in the rail: `turn_jump:{transcript row}`.
+pub(crate) const TURN_JUMP: &str = "turn_jump:";
+
+/// Where a jump leaves the message: its place when pinned.
+pub(crate) const TURN_JUMP_MARGIN: f32 = USER_PIN_INSET;
+
+fn user_rows(state: &ViewState) -> impl Iterator<Item = usize> + '_ {
+    state
+        .transcript
+        .iter()
+        .enumerate()
+        .filter_map(|(index, item)| matches!(item, TranscriptItem::User { .. }).then_some(index))
+}
+
+/// The transcript row of the message whose turn is at the top of the view,
+/// from the last layout: the last one that has reached the top.
+pub(crate) fn turn_in_view(state: &ViewState, tree: &openide_ui::UiTree) -> Option<usize> {
+    let mut rows = user_rows(state);
+    let first = rows.next()?;
+    Some(
+        rows.take_while(|row| {
+            tree.anchor_offset(&turn_anchor(*row))
+                .is_some_and(|top| top <= TURN_IN_VIEW_LINE)
+        })
+        .last()
+        .unwrap_or(first),
+    )
+}
+
+/// The start of `text`, cut at a character.
+fn head(text: &str) -> &str {
+    text.char_indices().nth(TURN_MARK_TEXT).map_or(text, |(end, _)| &text[..end])
+}
+
+/// The conversation's turns as marks at the left of the reading column: a
+/// mark shows how its turn opens and how the reply starts, and jumps to it.
+/// It needs two turns and room beside the column, and is the Agents window's.
+fn turn_rail(state: &ViewState, center_width: f32) -> Option<Element> {
+    // The Agents window's conversation only: the IDE's chat is a side panel.
+    if state.ide.mode != crate::ide_workspace::WindowMode::Agents
+        || center_width < READING_WIDTH + 2.0 * TURN_RAIL_ROOM
+    {
+        return None;
+    }
+    let mut turns: Vec<(usize, &str, &str)> = Vec::new();
+    for (index, item) in state.transcript.iter().enumerate() {
+        match item {
+            TranscriptItem::User { content, images } => {
+                let title = match (content.trim(), images.is_empty()) {
+                    ("", false) => "Imagen",
+                    ("", true) => "Mensaje",
+                    (text, _) => text,
+                };
+                turns.push((index, title, ""));
+            }
+            TranscriptItem::Assistant { content, .. } => {
+                if let Some(turn) = turns.last_mut().filter(|turn| turn.2.is_empty()) {
+                    turn.2 = content.trim();
+                }
+            }
+            _ => {}
+        }
+    }
+    if turns.len() < 2 {
+        return None;
+    }
+    let marks = turns
+        .into_iter()
+        .map(|(index, title, preview)| {
+            ChatMinimapMark::new(format!("{TURN_JUMP}{index}"), head(title)).preview(head(preview))
+        })
+        .collect();
+    let mut rail = ChatMinimap::new("turn_rail", marks, theme::component_palette());
+    if let Some(row) = state.turn_in_view {
+        rail = rail.active(format!("{TURN_JUMP}{row}"));
+    }
+    Some(rail.render())
 }
 
 fn message(
@@ -3937,6 +4028,24 @@ fn build_session_surface_layout(
             .flex(1.0);
     }
     let chat = timeline(state, center_width);
+    let chat = match turn_rail(state, center_width) {
+        // Over the gutter, at mid height; the transcript stays under it.
+        Some(rail) => Element::overlay(
+            chat,
+            Element::row(vec![
+                Element::column(vec![
+                    Element::spacer().flex(1.0),
+                    rail,
+                    Element::spacer().flex(1.0),
+                ]),
+                Element::spacer().flex(1.0),
+            ])
+            .padding(12.0),
+        )
+        .clip_children()
+        .flex(1.0),
+        None => chat,
+    };
     let chat = if state.show_jump_to_bottom {
         // A floating chat control must not shrink the scroll viewport or move
         // the composer when it appears after the user scrolls upward.
@@ -4380,6 +4489,8 @@ mod tests {
             tool_verification_is_error: false,
             selected_tool_id: None,
             show_jump_to_bottom: false,
+            turn_in_view: None,
+            link_copied: None,
             github_account: crate::github_account::GithubAccountStatus::Disconnected,
             github_account_menu_open: false,
             github_account_refreshing: false,
@@ -5485,6 +5596,118 @@ mod tests {
             DrawCommand::StrokeRect { rect, .. }
                 if rect.width >= 290.0 && rect.height >= 30.0
         )));
+    }
+
+    #[test]
+    #[ignore = "export the conversation with its rail of turns, at rest and with the pointer on a mark"]
+    fn export_turn_rail_visual_review() {
+        let output = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/openade-turn-rail-review");
+        std::fs::create_dir_all(&output).unwrap();
+        let mut state = state();
+        state.transcript.extend((0..9).flat_map(|index| {
+            [
+                TranscriptItem::User {
+                    content: format!("Pregunta {index}: ¿por qué salta el contenido al pasar el puntero?"),
+                    images: Vec::new(),
+                },
+                TranscriptItem::Assistant {
+                    content: format!(
+                        "Respuesta {index}. El fallo está en el cálculo del margen: la fila reserva \
+                         su alto aunque no se pinte, así que el mensaje no cambia de tamaño."
+                    ),
+                    streaming: false,
+                },
+            ]
+        }));
+        state.turn_in_view = Some(6);
+        let (width, height) = (1100.0, 640.0);
+        for hovered in [false, true] {
+            let root = build_session_surface(&state, width, false, true).background(theme::BACKGROUND);
+            let (ctx, mut tree) = crate::view::ide_visual_tests::native_tree(root);
+            tree.set_reduced_motion(true);
+            let mut frame = tree.layout(Size::new(width, height));
+            if hovered {
+                let mark = frame
+                    .regions
+                    .iter()
+                    .find(|region| region.id == format!("{TURN_JUMP}8"))
+                    .unwrap()
+                    .rect;
+                tree.handle_event(UiEvent::PointerMove(Point::new(mark.x + 4.0, mark.y + 4.0)));
+                frame = tree.layout(Size::new(width, height));
+            }
+            let name = if hovered { "hover" } else { "rest" };
+            let path = output.join(format!("turn-rail-{name}.svg"));
+            crate::settings_ui::visual_qa::write_native_frame_svg(&frame, &path, width, height).unwrap();
+            let svg = std::fs::read(&path).unwrap();
+            let parsed = resvg::usvg::Tree::from_data(
+                &svg,
+                &crate::settings_ui::visual_qa::native_svg_options(),
+            )
+            .unwrap();
+            let mut pixmap = resvg::tiny_skia::Pixmap::new(width as u32, height as u32).unwrap();
+            resvg::render(&parsed, resvg::tiny_skia::Transform::identity(), &mut pixmap.as_mut());
+            pixmap.save_png(path.with_extension("png")).unwrap();
+            ctx.end_pass().textures_delta.clear();
+        }
+    }
+
+    #[test]
+    fn the_turn_rail_stands_beside_the_column_and_a_mark_leads_to_its_turn() {
+        let mut state = state();
+        state.transcript.extend((0..20).flat_map(|index| {
+            [
+                TranscriptItem::User {
+                    content: format!("Pregunta {index}"),
+                    images: Vec::new(),
+                },
+                TranscriptItem::Assistant {
+                    content: format!("Respuesta {index}"),
+                    streaming: false,
+                },
+            ]
+        }));
+        let marks = |frame: &openide_ui::Frame| -> Vec<openide_ui::HitRegion> {
+            frame
+                .regions
+                .iter()
+                .filter(|region| region.id.starts_with(TURN_JUMP))
+                .cloned()
+                .collect()
+        };
+        // With no room beside the reading column there is no rail.
+        let narrow = UiTree::new(build_session_surface(&state, 800.0, false, true))
+            .layout(Size::new(800.0, 700.0));
+        assert!(marks(&narrow).is_empty());
+
+        let size = Size::new(1000.0, 700.0);
+        let mut tree = UiTree::new(build_session_surface(&state, 1000.0, false, true));
+        tree.set_reduced_motion(true);
+        let frame = tree.layout(size);
+        let rail = marks(&frame);
+        assert_eq!(rail.len(), 20);
+        let column_left = (size.width - READING_WIDTH) / 2.0;
+        assert!(rail.iter().all(|mark| mark.rect.x + mark.rect.width <= column_left));
+        assert_eq!(turn_in_view(&state, &tree), Some(0));
+
+        // The thirteenth turn's message is transcript row 24.
+        let point = Point::new(rail[12].rect.x + 4.0, rail[12].rect.y + rail[12].rect.height / 2.0);
+        tree.handle_event(UiEvent::PointerDown(point));
+        assert_eq!(
+            tree.handle_event(UiEvent::PointerUp(point)),
+            [openide_ui::UiAction::Clicked { id: format!("{TURN_JUMP}24") }]
+        );
+        tree.reveal_at_start(&turn_anchor(24), TURN_JUMP_MARGIN);
+        tree.layout(size);
+        let top = tree.anchor_offset(&turn_anchor(24)).expect("the message is laid out");
+        assert!((top - USER_PIN_INSET).abs() < 0.5, "{top}");
+        assert_eq!(turn_in_view(&state, &tree), Some(24));
+
+        // The IDE's chat has no rail, whatever the room.
+        state.ide.mode = crate::ide_workspace::WindowMode::Ide;
+        let ide = UiTree::new(build_session_surface(&state, 1000.0, false, true)).layout(size);
+        assert!(marks(&ide).is_empty());
     }
 
     #[test]
