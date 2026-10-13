@@ -389,6 +389,8 @@ fn tools_server() -> Server {
                 const context=document.querySelector('canvas').getContext('2d'),image=context.createImageData(640,2400);\
                 for(let i=0;i<image.data.length;i++)image.data[i]=i%4===3?255:Math.random()*256;context.putImageData(image,0,0)</script>"),
             "/quiet" => Response::html("<!doctype html><title>Silencio</title><h1>Silencio</h1>"),
+            "/upload" => Response::html("<!doctype html><title>Subida</title><input id=\"one\" type=\"file\"><input id=\"many\" type=\"file\" multiple><p id=\"got\">nada</p>\
+                <script>for (const input of document.querySelectorAll('input')) input.onchange = async () => { got.textContent = (await Promise.all([...input.files].map(async file => file.name + '=' + await file.text()))).join(); }</script>"),
             _ => fixture("tools.html").unwrap(),
         }
     })
@@ -531,6 +533,56 @@ fn real_cef_driver_acts_by_ref_waits_and_evaluates() {
     assert_eq!(evaluate(&mut driver, "window.ticks > 3"), "true", "the page's own timers go on");
     driver.click(&Target::Selector("#a")).unwrap();
     assert!(snapshot(&mut driver).contains("A pulsado"));
+}
+
+#[test]
+#[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
+fn real_cef_driver_gives_a_file_chooser_the_files_armed_for_it_and_leaves_it_closed_otherwise() {
+    let server = tools_server();
+    let (_page, mut driver) = open(640, 480, 1.0);
+    driver.navigate(&format!("{}/upload", server.origin)).unwrap();
+    let folder = tempfile::tempdir().unwrap();
+    let file = |name: &str, text: &str| {
+        let path = folder.path().join(name);
+        std::fs::write(&path, text).unwrap();
+        path.to_str().unwrap().to_owned()
+    };
+    let (first, second) = (file("uno.txt", "hola"), file("dos.txt", "chau"));
+    let choosers = |driver: &mut Driver| -> Vec<&'static str> {
+        let log = driver.console_messages(ConsoleLevel::Warning);
+        log.entries.iter().filter(|entry| entry.kind == "filechooser").filter_map(|entry| entry.action).collect()
+    };
+
+    // With nothing armed the chooser stays closed and the page gets no file.
+    driver.click(&Target::Selector("#one")).unwrap();
+    driver.wait_seconds(0.3).unwrap();
+    assert_eq!(evaluate(&mut driver, "got.textContent"), "\"nada\"");
+    assert_eq!(choosers(&mut driver), ["dismissed"]);
+
+    // Armed for the next chooser only.
+    driver.upload_files(&[first.clone()]).unwrap();
+    driver.click(&Target::Selector("#one")).unwrap();
+    driver.wait_seconds(0.3).unwrap();
+    assert_eq!(evaluate(&mut driver, "got.textContent"), "\"uno.txt=hola\"");
+    driver.click(&Target::Selector("#one")).unwrap();
+    driver.wait_seconds(0.3).unwrap();
+    assert_eq!(choosers(&mut driver), ["dismissed", "accepted", "dismissed"]);
+
+    // Several files only where the input takes several.
+    driver.upload_files(&[first.clone(), second.clone()]).unwrap();
+    driver.click(&Target::Selector("#one")).unwrap();
+    driver.wait_seconds(0.3).unwrap();
+    assert_eq!(choosers(&mut driver).last(), Some(&"dismissed"));
+    driver.upload_files(&[first.clone(), second]).unwrap();
+    driver.click(&Target::Selector("#many")).unwrap();
+    driver.wait_seconds(0.3).unwrap();
+    assert_eq!(evaluate(&mut driver, "got.textContent"), "\"uno.txt=hola,dos.txt=chau\"");
+
+    // Only files that exist, by absolute path.
+    for bad in ["uno.txt".to_owned(), folder.path().join("falta.txt").to_str().unwrap().to_owned(), folder.path().to_str().unwrap().to_owned()] {
+        assert_eq!(driver.upload_files(&[bad]).unwrap_err().kind, ErrorKind::Invalid);
+    }
+    assert_eq!(driver.upload_files(&[]).unwrap_err().kind, ErrorKind::Invalid);
 }
 
 #[test]

@@ -304,6 +304,10 @@ pub(crate) enum BrowserCommand {
         accept: bool,
         prompt_text: Option<String>,
     },
+    /// The files the page's next file chooser gets.
+    FileUpload {
+        paths: Vec<String>,
+    },
 }
 
 /// One end of a drag. The other element tools take the same fields inline.
@@ -440,6 +444,15 @@ impl BrowserCommand {
                 ..
             } if text.len() > 4096 || text.contains('\0') => {
                 return Err("Texto de diálogo demasiado extenso".into())
+            }
+            Self::FileUpload { paths }
+                if paths.is_empty()
+                    || paths.len() > 16
+                    || paths.iter().any(|path| {
+                        path.len() > 4096 || path.contains('\0') || !Path::new(path).is_absolute()
+                    }) =>
+            {
+                return Err("Indicá entre 1 y 16 rutas absolutas de archivos".into())
             }
             _ => {}
         }
@@ -1666,6 +1679,13 @@ fn execute(
                 ..Default::default()
             });
         }
+        FileUpload { paths } => {
+            driver.upload_files(paths)?;
+            reply.output = Some(BrowserToolOutput {
+                data: data("next_file_chooser", json!(paths)),
+                ..Default::default()
+            });
+        }
     }
     reply.info = Some(driver.info()?);
     let reading = matches!(pending.command, Snapshot { .. });
@@ -2509,6 +2529,12 @@ pub(crate) fn browser_mcp_tools() -> Vec<McpTool> {
         json!({"accept":{"type":"boolean"},"prompt_text":{"type":"string","maxLength":4096}}),
         vec!["accept"],
     );
+    add(
+        "browser_file_upload",
+        "Decide which local files the NEXT file chooser of the page gets: `paths`, absolute, one file unless the input accepts several. Call it before the click that opens the chooser (the file input or its upload button). Without it a chooser stays closed. The files are used once and forgotten when the page navigates; each chooser and whether it got its files appear in browser_console_messages as `filechooser`.",
+        json!({"paths":{"type":"array","minItems":1,"maxItems":16,"items":{"type":"string","minLength":1,"maxLength":4096}}}),
+        vec!["paths"],
+    );
     tools
 }
 
@@ -2539,6 +2565,7 @@ pub(crate) fn browser_tool_command(name: &str, arguments: Value) -> Result<Brows
         "browser_network_requests" => "network_requests",
         "browser_take_screenshot" => "take_screenshot",
         "browser_handle_dialog" => "handle_dialog",
+        "browser_file_upload" => "file_upload",
         _ => return Err(format!("Herramienta de navegador no anunciada: {name}")),
     };
     if object

@@ -105,9 +105,16 @@ fn clip(value: &str, maximum: usize) -> (String, bool) {
 
 fn identifying_value(arguments: &Value, keys: &[&str]) -> String {
     keys.iter()
-        .find_map(|key| arguments.get(*key)?.as_str())
+        .find_map(|key| {
+            let value = arguments.get(*key)?;
+            value.as_str().map(str::to_owned).or_else(|| {
+                // A list of names, as the files of an upload, is shown whole.
+                let names = value.as_array()?.iter().map(Value::as_str).collect::<Option<Vec<_>>>()?;
+                Some(names.join(", "))
+            })
+        })
         .map(|value| {
-            let (value, truncated) = clip(value, MAX_TARGET_BYTES);
+            let (value, truncated) = clip(&value, MAX_TARGET_BYTES);
             let mut value = value.replace(['\r', '\n', '\t'], " ");
             if truncated {
                 value.push('…');
@@ -214,6 +221,12 @@ pub(crate) fn summary(tool_name: &str, arguments: &str) -> ApprovalSummary {
             "Responder un diálogo de la página",
             Icon::Globe,
             &[],
+        ),
+        // The user approves which files leave the machine.
+        "browser_file_upload" => (
+            "Subir archivos a una página",
+            Icon::Globe,
+            &["paths"],
         ),
         _ if tool_name.starts_with("mcp__") => (
             "Usar conexión MCP",
@@ -635,6 +648,10 @@ mod tests {
                 "Responder un diálogo de la página".into(),
                 "openide_browser · browser_handle_dialog".into()
             )
+        );
+        assert_eq!(
+            browser("browser_file_upload", json!({"paths":["/home/ana/informe.pdf", "/home/ana/foto.png"]})),
+            ("Subir archivos a una página".into(), "/home/ana/informe.pdf, /home/ana/foto.png".into())
         );
         // Tools that only read keep the generic connection summary.
         assert_eq!(

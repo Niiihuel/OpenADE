@@ -176,8 +176,9 @@ ventana:
   **Enlaces que piden otra pestaña**, más abajo.
 - Un diálogo JavaScript no se muestra. El driver lo contesta por DevTools
   como siempre; CEF sólo lo deja abierto hasta entonces.
-- El selector de archivos se cancela, el menú contextual queda vacío y las
-  descargas se rechazan.
+- El selector de archivos no llega a CEF: el driver lo intercepta por DevTools
+  y entrega los archivos que el agente armó, o lo deja cerrado. El menú
+  contextual queda vacío y las descargas se rechazan.
 
 **Escala.** En la plataforma headless CEF respeta la escala que declara la
 vista: una vista de 1280 × 800 a escala 2 se pinta en 2560 × 1600 con

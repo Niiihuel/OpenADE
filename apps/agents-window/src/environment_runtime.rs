@@ -491,7 +491,7 @@ mod tests {
             .into_iter()
             .chain(["mcp__openide_browser__open_preview".to_owned()])
             .collect();
-        assert_eq!(advertised.len(), 21);
+        assert_eq!(advertised.len(), 22);
         for name in &expected {
             assert!(advertised.contains(name), "{name} is not advertised");
             // Reading the page the user has open is the one thing not asked.
@@ -501,7 +501,7 @@ mod tests {
                 "{name}"
             );
         }
-        assert_eq!(prepared.ask_tool_names().len(), 16);
+        assert_eq!(prepared.ask_tool_names().len(), 17);
         // The same in every turn, so an approval for the session outlives the tab.
         assert!(prepared.mcp_resume_identity_digest().is_some());
         // What the runner does with that list: a host that allows everything
