@@ -12,7 +12,7 @@
 use super::*;
 use eframe::egui;
 use std::hash::Hasher;
-use std::sync::atomic::AtomicU32;
+use std::sync::atomic::{AtomicU32, AtomicU64};
 
 /// Counts the paints after which the canvas was not, pixel for pixel, what
 /// Chromium had just painted: that the rectangle it names is all that
@@ -102,6 +102,8 @@ fn display_rate(intervals: &[f32]) -> Option<u32> {
 /// And one that is neither. Its paints go nowhere, but it stays a visible
 /// page: one CEF hides stops animating and timing for the agent's next step.
 const IDLE_FRAME_RATE: u32 = 10;
+/// The tab a context starts with.
+pub(super) const FIRST_TAB: u64 = 1;
 
 #[derive(Default)]
 struct Canvas {
@@ -191,7 +193,13 @@ fn overlay(rgb: &mut [u8], size: [usize; 2], corner: [usize; 2], popup: &Popup) 
 /// The embedded page of one context.
 #[derive(Default)]
 pub(super) struct Embedded {
-    page: Mutex<Option<openide_cef::Page>>,
+    /// The page of the tab the view shows.
+    page: Mutex<Option<Arc<openide_cef::Page>>>,
+    /// The pages of the other tabs, by tab. They share the first one's
+    /// cookies, cache and storage, and their paints go nowhere.
+    parked: Mutex<Vec<(u64, Arc<openide_cef::Page>)>>,
+    /// The tab whose page is `page`.
+    active: AtomicU64,
     canvas: Mutex<Canvas>,
     /// The frame thread's own: the canvas in the channel order a frame is
     /// built from, kept between frames.
@@ -257,8 +265,72 @@ fn fingerprint(pixels: &[u8]) -> u64 {
 }
 
 impl Embedded {
-    fn page(&self) -> MutexGuard<'_, Option<openide_cef::Page>> {
+    fn page(&self) -> MutexGuard<'_, Option<Arc<openide_cef::Page>>> {
         self.page.lock().unwrap_or_else(|poison| poison.into_inner())
+    }
+
+    fn parked(&self) -> MutexGuard<'_, Vec<(u64, Arc<openide_cef::Page>)>> {
+        self.parked.lock().unwrap_or_else(|poison| poison.into_inner())
+    }
+
+    /// Opens the page of another tab beside the context's first, with a
+    /// driver of its own. The view goes on showing the tab it shows.
+    pub(super) fn open_tab(view: &Arc<LiveView>, tab: u64) -> Result<Driver, String> {
+        // Not under the lock: the window asks this page for its cursor every frame.
+        let first = view.embedded.page().clone().ok_or("El navegador no tiene una página abierta.")?;
+        let scale = view.embedded.canvas().scale;
+        let painted = Arc::downgrade(view);
+        let page = first.open_beside(scale, IDLE_FRAME_RATE, move |paint| {
+            if let Some(view) = painted.upgrade().filter(|view| view.embedded.active.load(Ordering::Acquire) == tab) {
+                view.embedded.paint(&view, paint);
+            }
+        })?;
+        let transport = page.transport().ok_or("La pestaña no tiene conexión DevTools.")?;
+        let (width, height) = page.size();
+        let driver = Driver::connect_to_page(transport, width, height, f64::from(scale)).map_err(|error| error.message)?;
+        view.embedded.parked().push((tab, Arc::new(page)));
+        Ok(driver)
+    }
+
+    /// Shows another tab's page in the view, at the size the view has now.
+    /// The one it showed is kept beside. False when there is no such tab.
+    pub(super) fn select_tab(&self, tab: u64) -> bool {
+        let mut parked = self.parked();
+        let Some(index) = parked.iter().position(|(id, _)| *id == tab) else {
+            return false;
+        };
+        let (_, page) = parked.swap_remove(index);
+        let previous = self.page().replace(page.clone());
+        let was = self.active.swap(tab, Ordering::AcqRel);
+        if let Some(previous) = previous {
+            page.resize(previous.size().0, previous.size().1);
+            previous.set_frame_rate(IDLE_FRAME_RATE);
+            parked.push((was, previous));
+        }
+        drop(parked);
+        // The view holds the other tab's picture: this one is painted whole.
+        let mut canvas = self.canvas();
+        canvas.bgra = Vec::new();
+        canvas.size = [0, 0];
+        canvas.popup = None;
+        canvas.damage = None;
+        canvas.before_capture = None;
+        canvas.wheel_rest = (0.0, 0.0);
+        let (visible, rate) = (canvas.visible, canvas.rate);
+        drop(canvas);
+        page.set_frame_rate(rate);
+        if visible {
+            page.invalidate();
+        }
+        true
+    }
+
+    /// Closes the page of a tab the view is not showing.
+    pub(super) fn close_tab(&self, tab: u64) -> bool {
+        let mut parked = self.parked();
+        let before = parked.len();
+        parked.retain(|(id, _)| *id != tab);
+        parked.len() != before
     }
 
     fn canvas(&self) -> MutexGuard<'_, Canvas> {
@@ -300,7 +372,7 @@ impl Embedded {
             scale,
             IDLE_FRAME_RATE,
             move |paint| {
-                if let Some(view) = painted.upgrade() {
+                if let Some(view) = painted.upgrade().filter(|view| view.embedded.active.load(Ordering::Acquire) == FIRST_TAB) {
                     view.embedded.paint(&view, paint);
                 }
             },
@@ -316,7 +388,8 @@ impl Embedded {
             rate: IDLE_FRAME_RATE,
             ..Canvas::default()
         };
-        *view.embedded.page() = Some(page);
+        view.embedded.active.store(FIRST_TAB, Ordering::Release);
+        *view.embedded.page() = Some(Arc::new(page));
         Ok(driver)
     }
 
@@ -535,12 +608,16 @@ impl Embedded {
         if let Some(page) = &*self.page() {
             page.close();
         }
+        for (_, page) in &*self.parked() {
+            page.close();
+        }
     }
 
     /// Closes the page; its cookies, cache and storage go with it.
     pub(super) fn close(&self) {
         let page = self.page().take();
         drop(page);
+        self.parked().clear();
         *self.canvas() = Canvas::default();
         *self.rgb.lock().unwrap_or_else(|poison| poison.into_inner()) = Vec::new();
     }

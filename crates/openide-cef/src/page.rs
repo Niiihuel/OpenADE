@@ -517,6 +517,38 @@ impl Page {
         paint: impl Fn(&Paint) + Send + Sync + 'static,
     ) -> Result<Self, String> {
         crate::ensure_started(options)?;
+        // Without a cache path the context is an off-the-record profile of
+        // its own. The browser keeps it alive and releases it when it closes.
+        let context = request_context_create_context(Some(&RequestContextSettings::default()), None)
+            .ok_or("CEF no creó el contexto de la página.")?;
+        Self::create(context, size, scale, frame_rate, paint)
+    }
+
+    /// Opens another page in this one's context: the two share cookies, cache
+    /// and storage, as two tabs of one window do.
+    pub fn open_beside(
+        &self,
+        scale: f32,
+        frame_rate: u32,
+        paint: impl Fn(&Paint) + Send + Sync + 'static,
+    ) -> Result<Self, String> {
+        let context = self
+            .core
+            .state()
+            .host
+            .as_ref()
+            .and_then(|host| host.0.request_context())
+            .ok_or("La página ya no tiene un contexto para otra pestaña.")?;
+        Self::create(context, self.size(), scale, frame_rate, paint)
+    }
+
+    fn create(
+        mut context: RequestContext,
+        size: (u32, u32),
+        scale: f32,
+        frame_rate: u32,
+        paint: impl Fn(&Paint) + Send + Sync + 'static,
+    ) -> Result<Self, String> {
         let (messages, source) = mpsc::sync_channel(MESSAGE_BACKLOG);
         let core = Arc::new(Core {
             width: AtomicI32::new(size.0 as i32),
@@ -531,10 +563,6 @@ impl Page {
             }),
             changed: Condvar::new(),
         });
-        // Without a cache path the context is an off-the-record profile of
-        // its own. The browser keeps it alive and releases it when it closes.
-        let mut context = request_context_create_context(Some(&RequestContextSettings::default()), None)
-            .ok_or("CEF no creó el contexto de la página.")?;
         let window = WindowInfo {
             windowless_rendering_enabled: 1,
             ..Default::default()
@@ -610,6 +638,14 @@ impl Page {
         if let Some(host) = &self.core.state().host {
             call(&host.0);
         }
+    }
+
+    /// The view's size in CSS pixels.
+    pub fn size(&self) -> (u32, u32) {
+        (
+            self.core.width.load(Ordering::Relaxed) as u32,
+            self.core.height.load(Ordering::Relaxed) as u32,
+        )
     }
 
     /// Gives the view a new size in CSS pixels.

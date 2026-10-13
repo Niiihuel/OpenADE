@@ -253,6 +253,33 @@ fn non_navigation_errors_keep_the_page_and_pending_input_does_not_resize_it() {
 }
 
 #[test]
+fn the_strip_of_tabs_shows_with_a_second_tab_and_the_page_takes_what_is_left() {
+    use crate::browser_runtime::BrowserTabView;
+    let tab = |id, title: &str, url: &str, active| BrowserTabView { id, title: title.into(), url: url.into(), active };
+    let size = Size::new(360.0, 500.0);
+    let has = |frame: &Frame, id: &str| frame.regions.iter().any(|region| region.id == id);
+    let top = |frame: &Frame| frame.regions.iter().find(|region| region.id == "browser_viewport").unwrap().rect.y;
+
+    // One tab needs no strip: the page starts under the toolbar, as before.
+    let mut state = state();
+    state.browser.pages = vec![tab(1, "Inicio", "http://localhost:3000/", true)];
+    let alone = UiTree::new(build(&state, size.width)).layout(size);
+    assert!(!has(&alone, "browser_tab_select:1") && !has(&alone, "browser_tab_new"));
+    assert_eq!(top(&alone), TOOLBAR_HEIGHT + 1.0);
+
+    state.browser.pages.push(tab(2, "", "about:blank", false));
+    state.browser.pages[0].active = false;
+    state.browser.pages[1].active = true;
+    let frame = UiTree::new(build(&state, size.width)).layout(size);
+    for id in ["browser_tab_select:1", "browser_tab_close:1", "browser_tab_select:2", "browser_tab_close:2", "browser_tab_new"] {
+        assert!(has(&frame, id), "{id}");
+    }
+    let said = texts(&frame);
+    assert!(said.contains(&"Inicio") && said.contains(&"Nueva pestaña"), "{said:?}");
+    assert_eq!(top(&frame), TOOLBAR_HEIGHT + 1.0 + TABS_HEIGHT);
+}
+
+#[test]
 fn viewport_uses_remaining_bounds_and_host_page_scroll_cannot_scroll_away_toolbar() {
     let state = state();
     let size = Size::new(360.0, 500.0);

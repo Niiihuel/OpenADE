@@ -71,8 +71,10 @@ sesión propia. **No se abre ningún puerto TCP de depuración.**
   `flock`; uno con más de 60 s y sin candado pertenece a un proceso muerto y
   se elimina. Los directorios `oid-` que haya dejado el bridge de Node de una
   versión anterior, que no tienen ese archivo, no se tocan.
-- **Una página.** Lo que un clic pidió ver en otra pestaña o en otra ventana
-  se abre en la página:
+- **Una página por driver.** Lo que un clic pidió ver en otra pestaña o en
+  otra ventana se abre en la página, salvo que quien embebe abra pestañas:
+  con `open_windows_as_tabs(true)` la dirección espera en
+  `take_window_request` y la página no navega. Sin eso:
   - La página anuncia que va a abrir una ventana (`Page.windowOpen`) antes de
     pedírsela al navegador, con la dirección y con si hubo un clic del
     usuario. Si lo hubo y la dirección es `http` o `https`, el driver navega

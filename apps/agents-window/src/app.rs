@@ -4798,6 +4798,7 @@ impl AgentsWindow {
                 - crate::dock_tab_ui::HEADER_HEIGHT
                 - crate::browser_ui::TOOLBAR_HEIGHT
                 - 1.0
+                - crate::browser_ui::tabs_height(&self.view.browser)
                 - crate::browser_ui::STATUS_HEIGHT
                 - crate::view::terminal_panel_height(&self.view, self.viewport_height),
             |rect| rect.height,
@@ -5033,6 +5034,7 @@ impl AgentsWindow {
             snapshot.error_code.as_deref() == Some("engine_failed");
         self.view.browser.can_go_back = snapshot.can_go_back;
         self.view.browser.can_go_forward = snapshot.can_go_forward;
+        self.view.browser.pages = snapshot.tabs;
         previous != self.view.browser
     }
 
@@ -16644,6 +16646,20 @@ impl AgentsWindow {
                     }
                 },
                 "browser_restart" => { self.view.browser.more_open = false; self.restart_browser(); },
+                "browser_tab_new" => {
+                    self.view.browser.more_open = false;
+                    self.submit_browser_command(BrowserCommand::TabNew { url: None });
+                }
+                _ if id.starts_with("browser_tab_select:") || id.starts_with("browser_tab_close:") => {
+                    let (action, tab) = id.split_once(':').unwrap_or_default();
+                    if let Ok(id) = tab.parse::<u64>() {
+                        self.submit_browser_command(if action == "browser_tab_close" {
+                            BrowserCommand::TabClose { id }
+                        } else {
+                            BrowserCommand::TabSelect { id }
+                        });
+                    }
+                }
                 "browser_mcp_config" => { self.view.browser.more_open = false; self.copy_browser_mcp_config(ctx); },
                 "environment_open" | "dock_open:context" | "side_tab:context" => {
                     self.toggle_environment();

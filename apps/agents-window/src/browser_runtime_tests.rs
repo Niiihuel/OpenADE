@@ -580,6 +580,10 @@ fn catalog() -> Vec<(&'static str, Value, bool)> {
         ("browser_network_requests", json!({}), false),
         ("browser_take_screenshot", json!({}), false),
         ("browser_handle_dialog", json!({"accept":true}), true),
+        ("browser_tabs", json!({}), false),
+        ("browser_tab_new", json!({"url":"http://localhost:3000"}), true),
+        ("browser_tab_select", json!({"id":2}), true),
+        ("browser_tab_close", json!({"id":2}), true),
         ("browser_file_upload", json!({"paths":["/tmp/informe.pdf"]}), true),
     ]
 }
@@ -728,7 +732,7 @@ fn every_tool_maps_to_a_command_classified_as_reading_or_changing_the_page() {
         browser_tool_command("browser_snapshot", json!({})),
         Ok(BrowserCommand::Snapshot { interactive_only: false, max_depth: None, selector: None })
     ));
-    assert!(browser_tool_command("browser_tabs", json!({})).is_err());
+    assert!(browser_tool_command("browser_pdf_save", json!({})).is_err());
 }
 
 #[test]
@@ -835,6 +839,9 @@ fn new_tools_reject_arguments_outside_their_bounds() {
     rejected("browser_handle_dialog", json!({}));
     accepted("browser_file_upload", json!({"paths":["/tmp/a.txt","/tmp/b.txt"]}));
     rejected("browser_file_upload", json!({"paths":[]}));
+    rejected("browser_tab_new", json!({"url":"file:///etc/passwd"}));
+    rejected("browser_tab_select", json!({}));
+    rejected("browser_tab_close", json!({"id":"dos"}));
     rejected("browser_file_upload", json!({"paths":["relativa.txt"]}));
     rejected("browser_file_upload", json!({"paths":vec!["/tmp/a"; 17]}));
     rejected("browser_handle_dialog", json!({"accept":true,"prompt_text":"x".repeat(4097)}));
