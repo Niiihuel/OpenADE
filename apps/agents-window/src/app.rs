@@ -1532,6 +1532,8 @@ pub struct AgentsWindow {
     detail_generation: u64,
     detail_request: Option<DetailRequest>,
     github_worker: Option<GithubWorker>,
+    /// The commit message a model is writing for the git panel's form.
+    commit_generation: Option<crate::commit_message::Generation>,
     github_status: GithubStatus,
     github_in_flight: bool,
     github_account_worker: Option<GithubAccountWorker>,
@@ -7270,6 +7272,7 @@ impl AgentsWindow {
             detail_generation: 0,
             detail_request: None,
             github_worker: GithubWorker::spawn().ok(),
+            commit_generation: None,
             github_status: GithubStatus::Loading,
             github_in_flight: false,
             github_account_worker: GithubAccountWorker::spawn(github_preference).ok(),
