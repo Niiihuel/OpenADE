@@ -18435,7 +18435,7 @@ impl AgentsWindow {
                     let workspace_scope =
                         DockScope::new(scope.workspace_id.clone(), DockOwner::Workspace);
                     let tab = match kind {
-                        "context" => Some(self.dock.open(&workspace_scope, DockTabKind::Context)),
+                        "context" | "newtab" => Some(self.dock.open(&workspace_scope, DockTabKind::Context)),
                         "activity" => Some(self.dock.open(&scope, DockTabKind::Activity)),
                         "review" => Some(self.dock.open(&workspace_scope, DockTabKind::CodeReview)),
                         "changes" => Some(self.dock.open(&scope, DockTabKind::SessionChanges)),

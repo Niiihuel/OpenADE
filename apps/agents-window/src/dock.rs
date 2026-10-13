@@ -99,7 +99,7 @@ pub struct DockTab {
 impl DockTab {
     pub fn title(&self) -> String {
         match &self.kind {
-            DockTabKind::Context => "Vistas".to_owned(),
+            DockTabKind::Context => "Nueva pestaña".to_owned(),
             DockTabKind::Files => "Archivos".to_owned(),
             DockTabKind::Activity => "Actividad".to_owned(),
             DockTabKind::CodeReview => "Repositorio".to_owned(),

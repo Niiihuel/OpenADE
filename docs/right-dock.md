@@ -127,6 +127,16 @@ procesos. Agentes mantiene las pestañas de sesiones cuando caben y el selector
 de sesiones en anchos pequeños. El panel comparte altura, resize y animación;
 el atajo de alternar el panel inferior recupera la sección seleccionada.
 
+## Nueva pestaña
+
+**Nueva pestaña**, primera entrada del menú «+», abre una pestaña con la
+página que también muestra el panel vacío. Arriba, **Sugerencias**: lo que la
+conversación tiene para mostrar en ese momento, cada una con su dato: la vista
+previa de un servidor que inició el agente (su dirección), los cambios del
+chat y los de Git (cuántos archivos) y el plan (pasos hechos, abre Entorno).
+Sin nada de eso la sección no aparece. Debajo, **Todas las vistas**: las seis
+de siempre (`dock_overview.rs`).
+
 ## Maximizar el panel
 
 **Maximizar panel**, en la barra de pestañas junto a Ocultar panel, y
