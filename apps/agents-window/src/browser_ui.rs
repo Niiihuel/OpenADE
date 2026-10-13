@@ -488,7 +488,7 @@ fn status(browser: &BrowserUiState, width: f32, mode: Surface) -> Element {
         "Sesión aislada · Compartida con el agente".into()
     };
     let row = Text::new(text, theme::component_palette())
-        .size(10.5)
+        .font_size(10.5)
         .muted()
         .truncate()
         .render()

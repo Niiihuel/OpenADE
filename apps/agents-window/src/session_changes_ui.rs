@@ -163,7 +163,7 @@ fn append_changes(
         rows.push(
             Tooltip::new(
                 Text::new(changes.coverage_notes.join(" · "), theme::component_palette())
-                    .size(10.5)
+                    .font_size(10.5)
                     .muted()
                     .truncate()
                     .render()

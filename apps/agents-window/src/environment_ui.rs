@@ -7,7 +7,7 @@ use openide_ui::{
     Button, ButtonVariant, Collapse, Color, Component, ComponentPalette, ControlSize, DiffStat,
     DropdownMenu, DropdownMenuEntry, DropdownMenuItem, Element, FontFamily, FramedCard, Icon,
     IconButton, ListRow, PopoverPanel, PopoverPlacement, RadiusRole, ScrollArea,
-    ScrollbarAppearance, SectionHeader, SectionSizing, SpinnerVariant, Text, TextRole, Tooltip,
+    ScrollbarAppearance, SectionHeader, SectionHeaderSizing, SpinnerVariant, Text, TextRole, Tooltip,
     TooltipPlacement, TooltipSpec,
 };
 
@@ -399,9 +399,9 @@ fn section_heading(title: &str, detail: Option<String>, width: f32) -> Element {
     // Inset like the copy of the rows it stands over.
     let mut heading = SectionHeader::new(title, theme::component_palette())
         .width(width)
-        .sizing(SectionSizing {
+        .sizing(SectionHeaderSizing {
             padding: 6.0,
-            ..SectionSizing::LABEL
+            ..SectionHeaderSizing::LABEL
         });
     if let Some(detail) = detail {
         heading = heading.detail(detail);

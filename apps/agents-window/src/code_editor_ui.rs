@@ -2068,6 +2068,7 @@ mod tests {
 
     #[test]
     fn active_review_block_uses_scoped_text_buttons_without_mutating_the_controller() {
+        openide_ui::set_labels(openide_ui::Labels::SPANISH);
         let view = header_fixture(false);
         let before = view.controller.as_ref().unwrap().snapshot().unwrap();
         let review = pending_review(&view);

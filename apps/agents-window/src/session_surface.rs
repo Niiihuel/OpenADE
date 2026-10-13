@@ -2239,7 +2239,7 @@ fn exploration_lines(item: &TranscriptItem, state: &ViewState, live: bool) -> Ve
     let shortened = target.len() < presentation.target.len();
     let link = |action: &String, label: &str, color| {
         let link = openide_ui::Link::new(action, label, theme::component_palette())
-            .color(color)
+            .ink(color)
             .font_size(13.0)
             .render()
             .size(None, Some(STREAM_LINE_HEIGHT))

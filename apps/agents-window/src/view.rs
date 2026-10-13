@@ -2862,7 +2862,7 @@ fn file_preview_content(preview: &FilePreviewView, width: f32) -> Element {
                             theme::component_palette(),
                         )
                         .mono()
-                        .size(10.5)
+                        .font_size(10.5)
                         .ink(theme::CODE_GUTTER)
                         .render()
                             .size(Some(gutter_width), Some(16.0)),

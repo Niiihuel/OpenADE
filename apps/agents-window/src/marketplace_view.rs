@@ -11,7 +11,7 @@ use openide_ui::{
     Alert, AlertTone, Button, ButtonGroup, ButtonVariant, Card, CardDensity, CardGrid, Chip, Color,
     Component, ControlSize, DropdownMenu, DropdownMenuEntry, DropdownMenuItem, Element, FormField,
     Icon, IconButton, Modal, Notice, PageColumn, PageHeader, ScrollArea, SearchField,
-    SectionHeader, SectionSizing, Separator, SkeletonGroup, Text, TextField, TextRole, Tooltip,
+    SectionHeader, SectionHeaderSizing, Separator, SkeletonGroup, Text, TextField, TextRole, Tooltip,
     TooltipPlacement, TooltipSpec,
 };
 
@@ -834,7 +834,7 @@ pub(crate) fn catalog_list(
     }
     let heading = |title: &str, count: Option<usize>| {
         let mut header = SectionHeader::new(title, palette)
-            .sizing(SectionSizing::LIST)
+            .sizing(SectionHeaderSizing::LIST)
             .width(list_width);
         if let Some(count) = count {
             header = header.count(count);
@@ -1313,7 +1313,7 @@ fn detail_facts(state: &MarketplaceViewState, item: &MarketplaceItem, width: f32
     let palette = theme::component_palette();
     let mut facts = vec![
         SectionHeader::new("Detalles", palette)
-            .sizing(SectionSizing::LIST)
+            .sizing(SectionHeaderSizing::LIST)
             .width(width)
             .render(),
         detail_field("Tipo", "Skill (SKILL.md) para el agente nativo"),
@@ -1388,7 +1388,7 @@ fn detail_facts(state: &MarketplaceViewState, item: &MarketplaceItem, width: f32
     if let Some(details) = &starter {
         facts.push(
             SectionHeader::new("Qué instala", palette)
-                .sizing(SectionSizing::LIST)
+                .sizing(SectionHeaderSizing::LIST)
                 .detail(format!(
                     "{} archivos · {} KiB",
                     details.file_count,
@@ -1472,7 +1472,7 @@ fn detail_readme(state: &MarketplaceViewState, item: &MarketplaceItem, width: f3
     };
     Element::column(vec![
         SectionHeader::new("Instrucciones", palette)
-            .sizing(SectionSizing::LIST)
+            .sizing(SectionHeaderSizing::LIST)
             .detail("SKILL.md")
             .width(width)
             .render(),

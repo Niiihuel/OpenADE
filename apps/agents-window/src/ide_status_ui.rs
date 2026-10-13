@@ -477,7 +477,7 @@ fn services_popover(
                 .gap(6.0),
             )
             .dismiss(&dismiss, "")
-            .sizing(openide_ui::HeaderSizing::POPOVER)
+            .sizing(openide_ui::PanelHeaderSizing::POPOVER)
             .render()
             .foreground(palette.text),
         Element::row(vec![

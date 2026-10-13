@@ -5,8 +5,8 @@
 //! The app's own profiles live here so a screen never restates them.
 
 use openide_ui::{
-    ActionRowSizing, ButtonGroupSizing, ButtonSizing, FormFieldSizing, HeaderSizing, Modal,
-    NoticeSizing, PageHeaderSizing, PagerSizing, PopoverPanelSizing, RowSizing, SectionSizing,
+    ActionRowSizing, ButtonGroupSizing, ButtonSizing, FormFieldSizing, PanelHeaderSizing, Modal,
+    NoticeSizing, PageHeaderSizing, PagerSizing, PopoverPanelSizing, ListRowSizing, SectionHeaderSizing,
     StatusBarItemSizing, TextRole,
 };
 
@@ -153,7 +153,7 @@ pub const USAGE_HEADER: PageHeaderSizing = PageHeaderSizing {
 
 /// The heading of a group of changed files: a quiet label centered in a
 /// row as tall as the file rows.
-pub const CHANGE_SECTION: SectionSizing = SectionSizing {
+pub const CHANGE_SECTION: SectionHeaderSizing = SectionHeaderSizing {
     height: 26.0,
     padding: 4.0,
     gap: 6.0,
@@ -199,7 +199,7 @@ pub const FILES_EMPTY: NoticeSizing = NoticeSizing {
 
 /// A section of the debug sidebar: a disclosure and its title with a count,
 /// as tall as the rows it heads. Every row's copy starts under the title.
-pub const DEBUG_SECTION: SectionSizing = SectionSizing {
+pub const DEBUG_SECTION: SectionHeaderSizing = SectionHeaderSizing {
     height: 22.0,
     padding: 3.0,
     gap: 7.0,
@@ -210,16 +210,16 @@ pub const DEBUG_SECTION: SectionSizing = SectionSizing {
 };
 
 /// A frame, a thread or a breakpoint: one 22 px line.
-pub const DEBUG_ROW: RowSizing = RowSizing {
+pub const DEBUG_ROW: ListRowSizing = ListRowSizing {
     height: Some(22.0),
     padding: 3.0,
     gap: 7.0,
     leading_width: 16.0,
-    ..RowSizing::DENSE
+    ..ListRowSizing::DENSE
 };
 
 /// The session's state over its name, under the debug controls.
-pub const DEBUG_SESSION: RowSizing = RowSizing {
+pub const DEBUG_SESSION: ListRowSizing = ListRowSizing {
     two_line_height: Some(34.0),
     leading_height: Some(14.0),
     ..DEBUG_ROW
@@ -239,29 +239,29 @@ pub const TERMINAL_EXIT: NoticeSizing = NoticeSizing {
 };
 
 /// A saved project action: its label over the first line of its command.
-pub const PROJECT_ACTION: RowSizing = RowSizing {
+pub const PROJECT_ACTION: ListRowSizing = ListRowSizing {
     height: Some(42.0),
     two_line_height: Some(42.0),
     padding: 5.0,
     gap: 7.0,
     leading_width: 16.0,
     subtitle_size: 10.0,
-    ..RowSizing::COMPACT
+    ..ListRowSizing::COMPACT
 };
 
 /// A notification: as tall as its two lines, with its count and age beside
 /// the title.
-pub const NOTIFICATION: RowSizing = RowSizing {
+pub const NOTIFICATION: ListRowSizing = ListRowSizing {
     height: None,
     two_line_height: None,
     padding: 6.0,
     subtitle_size: 11.5,
-    ..RowSizing::COMPACT
+    ..ListRowSizing::COMPACT
 };
 
 /// What "Fuentes y herramientas" lists in the environment card: a name, a
 /// status beside it and an optional second line, before a small chevron.
-pub const ENVIRONMENT_ACTION: RowSizing = RowSizing {
+pub const ENVIRONMENT_ACTION: ListRowSizing = ListRowSizing {
     height: Some(32.0),
     two_line_height: Some(48.0),
     padding: 6.0,
@@ -274,11 +274,11 @@ pub const ENVIRONMENT_ACTION: RowSizing = RowSizing {
     meta_gap: 6.0,
     title_height: Some(18.0),
     subtitle_height: Some(18.0),
-    ..RowSizing::COMPACT
+    ..ListRowSizing::COMPACT
 };
 
 /// The sidebar's account row: two lines of 16 beside a mark as tall as both.
-pub const USAGE_ANCHOR: RowSizing = RowSizing {
+pub const USAGE_ANCHOR: ListRowSizing = ListRowSizing {
     height: Some(44.0),
     two_line_height: Some(44.0),
     padding: 6.0,
@@ -289,63 +289,63 @@ pub const USAGE_ANCHOR: RowSizing = RowSizing {
     meta_gap: 4.0,
     title_height: Some(16.0),
     subtitle_height: Some(16.0),
-    ..RowSizing::COMPACT
+    ..ListRowSizing::COMPACT
 };
 
 /// A web citation in the transcript: a title of 18 over an address of 16.
-pub const WEB_CITATION: RowSizing = RowSizing {
+pub const WEB_CITATION: ListRowSizing = ListRowSizing {
     height: None,
     two_line_height: None,
     padding: 9.0,
     subtitle_size: 10.0,
     title_height: Some(18.0),
     subtitle_height: Some(16.0),
-    ..RowSizing::COMPACT
+    ..ListRowSizing::COMPACT
 };
 
 /// A task in the sidebar: a status slot, a faded title and its menu, edge to
 /// edge in a row of the navigation height.
-pub const SIDEBAR_TASK: RowSizing = RowSizing {
+pub const SIDEBAR_TASK: ListRowSizing = ListRowSizing {
     two_line_height: Some(28.0),
     padding: 0.0,
     gap: 4.0,
     leading_height: Some(28.0),
     title_height: Some(28.0),
-    ..RowSizing::COMPACT
+    ..ListRowSizing::COMPACT
 };
 
 /// The heading of a group of tasks: its mark, its name, a count, a chevron
 /// and its menu, 4 px apart.
-pub const SIDEBAR_GROUP: RowSizing = RowSizing {
+pub const SIDEBAR_GROUP: ListRowSizing = ListRowSizing {
     two_line_height: Some(28.0),
     padding: 2.0,
     gap: 4.0,
     leading_height: Some(16.0),
     meta_gap: 4.0,
-    ..RowSizing::COMPACT
+    ..ListRowSizing::COMPACT
 };
 
 /// A destination of the sidebar: its icon, its name and its shortcut.
-pub const SIDEBAR_NAV: RowSizing = RowSizing {
+pub const SIDEBAR_NAV: ListRowSizing = ListRowSizing {
     title_size: 13.0,
-    ..RowSizing::COMPACT
+    ..ListRowSizing::COMPACT
 };
 
 /// A file the chat changed: its path and its counts on one line of 22.
-pub const CHANGES_FILE: RowSizing = RowSizing {
+pub const CHANGES_FILE: ListRowSizing = ListRowSizing {
     height: Some(38.0),
     padding: 8.0,
     gap: 6.0,
     meta_gap: 6.0,
     title_height: Some(22.0),
-    ..RowSizing::COMPACT
+    ..ListRowSizing::COMPACT
 };
 
 /// A task in the IDE's task list.
-pub const AGENT_LIST: RowSizing = RowSizing {
+pub const AGENT_LIST: ListRowSizing = ListRowSizing {
     height: Some(26.0),
     icon_size: 14.0,
-    ..RowSizing::COMPACT
+    ..ListRowSizing::COMPACT
 };
 
 /// An entry of the extensions list: three lines of copy beside its mark.
@@ -355,25 +355,25 @@ pub const EXTENSION_ICON: f32 = 28.0;
 
 /// A changed file of the repository: its name, its folder and its status
 /// letter on one line, beside the control that stages it.
-pub const CHANGE_ROW: RowSizing = RowSizing {
+pub const CHANGE_ROW: ListRowSizing = ListRowSizing {
     height: Some(26.0),
     padding: 2.0,
     gap: 4.0,
     meta_gap: 4.0,
-    ..RowSizing::COMPACT
+    ..ListRowSizing::COMPACT
 };
 
 /// A surface the dock can open, in the list of an empty dock.
-pub const DOCK_OPEN: RowSizing = RowSizing {
+pub const DOCK_OPEN: ListRowSizing = ListRowSizing {
     height: Some(38.0),
     padding: 5.0,
     gap: 6.0,
     title_size: crate::theme::UI_FONT_SIZE,
-    ..RowSizing::COMPACT
+    ..ListRowSizing::COMPACT
 };
 
 /// A line of the Problems panel: a file or one of its diagnostics.
-pub const PROBLEM_ROW: RowSizing = RowSizing {
+pub const PROBLEM_ROW: ListRowSizing = ListRowSizing {
     height: Some(26.0),
     padding: 5.0,
     gap: 6.0,
@@ -381,11 +381,11 @@ pub const PROBLEM_ROW: RowSizing = RowSizing {
     leading_width: 14.0,
     leading_height: Some(16.0),
     meta_gap: 6.0,
-    ..RowSizing::COMPACT
+    ..ListRowSizing::COMPACT
 };
 
 /// A turn's heading in the Activity log, at the pitch of its rows.
-pub const DOCK_TURN: SectionSizing = SectionSizing {
+pub const DOCK_TURN: SectionHeaderSizing = SectionHeaderSizing {
     height: 32.0,
     padding: 6.0,
     gap: 6.0,
@@ -397,54 +397,54 @@ pub const DOCK_TURN: SectionSizing = SectionSizing {
 
 /// The heading of a workspace sidebar. Its tools hang from the top of the
 /// 26 px row, a pixel above its center.
-pub const SIDEBAR_HEADER: HeaderSizing = HeaderSizing {
+pub const SIDEBAR_HEADER: PanelHeaderSizing = PanelHeaderSizing {
     center_tools: false,
-    ..HeaderSizing::SIDEBAR
+    ..PanelHeaderSizing::SIDEBAR
 };
 
 /// The bar over a pane. Its tools fill the 24 px between the insets, and
 /// one that sets no height of its own keeps that height.
-pub const PANE_HEADER: HeaderSizing = HeaderSizing {
+pub const PANE_HEADER: PanelHeaderSizing = PanelHeaderSizing {
     center_tools: false,
-    ..HeaderSizing::PANE
+    ..PanelHeaderSizing::PANE
 };
 
 /// The heading of the notifications popover, whose text action is as tall
 /// as the row.
-pub const NOTIFICATIONS_HEADER: HeaderSizing = HeaderSizing {
+pub const NOTIFICATIONS_HEADER: PanelHeaderSizing = PanelHeaderSizing {
     center_tools: false,
-    ..HeaderSizing::POPOVER
+    ..PanelHeaderSizing::POPOVER
 };
 
 /// The files panel's heading on the IDE sidebar: tools 4 apart.
-pub const FILES_HEADER_COMPACT: HeaderSizing = HeaderSizing {
+pub const FILES_HEADER_COMPACT: PanelHeaderSizing = PanelHeaderSizing {
     gap: 4.0,
     ..SIDEBAR_HEADER
 };
 
 /// The files panel's heading in the side pane: a row as tall as its tool.
-pub const FILES_HEADER: HeaderSizing = HeaderSizing {
+pub const FILES_HEADER: PanelHeaderSizing = PanelHeaderSizing {
     height: 24.0,
     gap: 4.0,
-    ..HeaderSizing::SIDEBAR
+    ..PanelHeaderSizing::SIDEBAR
 };
 
 /// A 32 px heading without an inset, its tools at the top: the project
 /// actions, the chat's changes and the usage popup.
-pub const TALL_HEADER: HeaderSizing = HeaderSizing {
+pub const TALL_HEADER: PanelHeaderSizing = PanelHeaderSizing {
     height: 32.0,
     gap: 6.0,
     title_role: TextRole::Body,
     center_tools: false,
-    ..HeaderSizing::SIDEBAR
+    ..PanelHeaderSizing::SIDEBAR
 };
 
 /// The commit view's heading: tools centered in 28, a 13 px title.
-pub const COMMIT_HEADER: HeaderSizing = HeaderSizing {
+pub const COMMIT_HEADER: PanelHeaderSizing = PanelHeaderSizing {
     height: 28.0,
     gap: 4.0,
     title_role: TextRole::Label,
-    ..HeaderSizing::SIDEBAR
+    ..PanelHeaderSizing::SIDEBAR
 };
 
 /// The review strip's pagers: the arrows touch the counter's slot.
@@ -503,11 +503,11 @@ pub const STATUS_BELL: StatusBarItemSizing = StatusBarItemSizing {
 };
 
 /// A shortcut of the empty editor: a larger title far from its keycaps.
-pub const EMPTY_EDITOR_ROW: RowSizing = RowSizing {
+pub const EMPTY_EDITOR_ROW: ListRowSizing = ListRowSizing {
     height: Some(32.0),
     gap: 20.0,
     title_size: 13.0,
-    ..RowSizing::COMPACT
+    ..ListRowSizing::COMPACT
 };
 
 #[cfg(test)]

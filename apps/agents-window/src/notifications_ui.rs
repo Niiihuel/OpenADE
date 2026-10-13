@@ -81,7 +81,7 @@ fn list(center: &NotificationCenter) -> Element {
         tools.push(theme::interactive_surface(Element::clickable(
             "notifications_clear",
             Text::new("Limpiar", theme::component_palette())
-                .size(11.5)
+                .font_size(11.5)
                 .muted()
                 .truncate()
                 .render()
@@ -107,7 +107,7 @@ fn list(center: &NotificationCenter) -> Element {
     if items.len() > VISIBLE {
         rows.push(
             Text::new(format!("y {} más", items.len() - VISIBLE), theme::component_palette())
-                .size(11.5)
+                .font_size(11.5)
                 .muted()
                 .truncate()
                 .render()
