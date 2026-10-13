@@ -45,6 +45,11 @@ tiene en marcha, y sólo mientras hay algo que listar:
   se pueda cancelar, el bloque termina en **Detener todos**, que cancela cada
   uno con la misma acción y las mismas comprobaciones que **Cancelar** en su
   tarjeta; no pide confirmación, igual que esa acción.
+  Cuando hay de los dos tipos se listan en dos grupos, **Activos · N** y
+  **Terminados · N**, primero los que siguen trabajando. Uno que terminó
+  muestra junto a su estado la primera línea de su respuesta final, y la
+  respuesta entera (hasta 600 caracteres) al pasar el puntero; el resto está
+  en su conversación.
 - **Terminales**: los comandos que el agente inició aquí, con **En ejecución**
   o la forma en que terminaron. La fila muestra su pestaña (**Ver en
   terminal**). Uno en ejecución tiene **Detener**, que pide la misma

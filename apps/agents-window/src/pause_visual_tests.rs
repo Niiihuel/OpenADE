@@ -115,6 +115,7 @@ fn waiting_on_child() -> ViewState {
         inputs: vec![],
         dispatch_error: None,
         depth: 1,
+        final_response: None,
     };
     // One child is held by the limit; another, not affected, keeps working.
     state.subagent_sessions = vec![

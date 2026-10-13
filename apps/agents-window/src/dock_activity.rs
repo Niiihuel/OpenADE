@@ -1948,6 +1948,7 @@ mod tests {
                 inputs: vec![],
                 dispatch_error: None,
                 depth: 1,
+                final_response: None,
             }];
             state.selected_tool_id = Some("agent-1".into());
             shot(&state, width, "detail-agent");

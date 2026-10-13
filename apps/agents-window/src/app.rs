@@ -8465,6 +8465,22 @@ impl AgentsWindow {
                                                                 .get(&child.session.id)
                                                                 .cloned(),
                                                             depth: link.depth,
+                                                            final_response: matches!(
+                                                                child.status,
+                                                                SubagentStatus::Completed | SubagentStatus::Failed | SubagentStatus::Cancelled
+                                                            )
+                                                            .then(|| {
+                                                                listing.sessions.iter().find(|record| record.session.id == child.session.id)
+                                                            })
+                                                            .flatten()
+                                                            .and_then(|record| {
+                                                                record.events.iter().rev().find_map(|event| match &event.kind {
+                                                                    AgentEventKind::AssistantMessage { content } if !content.trim().is_empty() => {
+                                                                        Some(content.trim().chars().take(600).collect::<String>())
+                                                                    }
+                                                                    _ => None,
+                                                                })
+                                                            }),
                                                         },
                                                     );
                                                 }

@@ -100,6 +100,7 @@ mod tests {
             inputs: vec![],
             dispatch_error: None,
             depth: 1,
+            final_response: None,
         }
     }
 
