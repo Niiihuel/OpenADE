@@ -49,6 +49,22 @@ pub fn active_skill_directories(data_root: &Path, workspace: &Path) -> io::Resul
         .collect())
 }
 
+/// The names of the skills switched on for this project, for the composer
+/// to offer: the ones the agent's index is made of.
+pub fn active_skill_names(data_root: &Path, workspace: &Path) -> Vec<String> {
+    let store = MarketplaceStore::new(data_root.to_path_buf(), workspace.to_path_buf());
+    let Ok(registry) = store.load_registry() else { return Vec::new() };
+    let mut names: Vec<String> = registry
+        .installed
+        .iter()
+        .filter(|entry| entry.enabled && store.applies(entry))
+        .map(|entry| entry.name.clone())
+        .collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
 fn skill_index(data_root: &Path, workspace: &Path) -> io::Result<SkillIndex> {
     let store = MarketplaceStore::new(data_root.to_path_buf(), workspace.to_path_buf());
     let registry = store.load_registry()?;

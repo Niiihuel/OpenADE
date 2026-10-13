@@ -685,7 +685,7 @@ impl MarketplaceStore {
 // when the agent selects a relevant installed skill.
 #[path = "marketplace_skill_index.rs"]
 mod skill_index;
-pub use skill_index::{active_skill_directories, active_skill_instructions};
+pub use skill_index::{active_skill_directories, active_skill_instructions, active_skill_names};
 
 fn applies_to(workspace_key: &str, entry: &Installation) -> bool {
     entry.scope == InstallScope::User || entry.workspace.as_deref() == Some(workspace_key)

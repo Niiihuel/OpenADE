@@ -138,6 +138,8 @@ pub(crate) enum ComposerSuggestionAction {
     ReviewChanges,
     /// Put a plugin's command prompt in the composer for the user to send.
     PluginCommand(PathBuf),
+    /// Start the message by asking for an installed skill by its name.
+    UseSkill(String),
     ReviewSkill(SkillSelection),
     ReferenceFile(PathBuf),
 }
@@ -164,6 +166,8 @@ pub(crate) struct ComposerSuggestionsState {
     /// Commands of the plugins the user switched on, set by the host before
     /// each command lookup.
     pub plugin_commands: Vec<crate::compat_hook_settings::PluginCommand>,
+    /// The marketplace skills switched on here, set the same way.
+    pub installed_skills: Vec<String>,
     dismissed: Option<ComposerTrigger>,
 }
 
@@ -287,6 +291,23 @@ impl ComposerSuggestionsState {
                         },
                     ));
                 }
+            }
+        }
+        for name in &self.installed_skills {
+            const DESCRIPTION: &str = "Skill instalada: pedir que la use";
+            if let Some(rank) = match_rank(name, DESCRIPTION, &query) {
+                let index = candidates.len();
+                candidates.push((
+                    rank,
+                    index,
+                    ComposerSuggestion {
+                        label: format!("/{name}"),
+                        description: DESCRIPTION.into(),
+                        action: ComposerSuggestionAction::UseSkill(name.clone()),
+                        group: "Skills",
+                        icon: Icon::Grid,
+                    },
+                ));
             }
         }
         for command in &self.plugin_commands {
@@ -655,5 +676,21 @@ pub(crate) fn popup(
         list.note("Resultados limitados").render()
     } else {
         list.render()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_installed_skill_is_offered_by_its_name_and_asks_for_itself() {
+        let mut state = ComposerSuggestionsState::default();
+        state.sync(Path::new("/proyecto"), trigger_at_cursor("/pdf", 4));
+        state.installed_skills = vec!["pdf-tools".into(), "otra".into()];
+        state.populate_commands(&Default::default());
+        let offered: Vec<_> = state.items.iter().map(|item| (item.label.as_str(), item.group)).collect();
+        assert_eq!(offered, [("/pdf-tools", "Skills")]);
+        assert!(matches!(&state.items[0].action, ComposerSuggestionAction::UseSkill(name) if name == "pdf-tools"));
     }
 }
