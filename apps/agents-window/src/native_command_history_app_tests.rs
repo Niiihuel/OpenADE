@@ -1071,6 +1071,7 @@ async fn export_native_command_history_visual_review() {
     let loaded = fixture.app.view.native_command_history.clone();
     for scenario in [
         "command-history",
+        "command-history-details",
         "command-history-empty",
         "command-palette-close-hover",
     ] {
@@ -1106,6 +1107,8 @@ async fn export_native_command_history_visual_review() {
                 } else {
                     loaded.clone()
                 };
+                fixture.app.view.native_command_history.details_open =
+                    scenario == "command-history-details";
                 native_command_history_ui::modal(&fixture.app.view, base(), width)
             };
             let ctx = egui::Context::default();

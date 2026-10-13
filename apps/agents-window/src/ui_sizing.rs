@@ -428,13 +428,6 @@ pub const PROBLEM_ROW: RowSizing = RowSizing {
     ..RowSizing::COMPACT
 };
 
-/// A row of the dock's Activity log: a title over its target, and a turn
-/// heading, at one pitch of 40 so the list stays virtual.
-pub const DOCK_TOOL: RowSizing = RowSizing {
-    height: Some(40.0),
-    ..RowSizing::COMPACT
-};
-
 /// A turn's heading in the Activity log, at the pitch of its rows.
 pub const DOCK_TURN: SectionSizing = SectionSizing {
     height: 32.0,

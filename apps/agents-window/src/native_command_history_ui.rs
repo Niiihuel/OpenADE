@@ -340,19 +340,6 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
         body.push(
             Element::row(vec![
                 Button::new(
-                    "native_command_history_details_toggle",
-                    if local.details_open {
-                        "Ocultar detalles"
-                    } else {
-                        "Detalles"
-                    },
-                    theme::component_palette(),
-                )
-                .variant(ButtonVariant::Outline)
-                .size(ControlSize::Compact)
-                .render()
-                .flex(1.0),
-                Button::new(
                     "native_command_history_exact_toggle",
                     if local.exact_data_open {
                         "Ver salida"
@@ -363,13 +350,14 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
                 )
                 .variant(ButtonVariant::Outline)
                 .size(ControlSize::Compact)
-                .render()
-                .flex(1.0),
-            ])
-            .gap(8.0),
+                .render(),
+                Element::spacer().flex(1.0),
+            ]),
         );
-        if local.details_open {
-            body.push(
+        // One block with what it lists, opening in place as every section does.
+        let mut details = Vec::new();
+        {
+            details.push(
                 Text::new(
                     format!(
                 "{} bytes observados · {} guardados · {} omitidos\nRango: {}–{} · revisión {}",
@@ -387,8 +375,19 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
                 .render(),
             );
             let header = &summary.header;
-            body.push(Text::new(format!("Conversación: {}\nProyecto: {}\nManager: {}\nComando: {}\nAislamiento: {} · {}\nRegistrado: {} Unix ms\nArgv: {}", header.binding.session_id, header.binding.workspace.display(), header.binding.manager_generation, header.binding.command_id, header.isolation, if header.pty { "PTY" } else { "Tuberías" }, header.registered_at_ms, serde_json::to_string(&header.argv).expect("argv serializes")), theme::component_palette()).mono().render());
+            details.push(Text::new(format!("Conversación: {}\nProyecto: {}\nManager: {}\nComando: {}\nAislamiento: {} · {}\nRegistrado: {} Unix ms\nArgv: {}", header.binding.session_id, header.binding.workspace.display(), header.binding.manager_generation, header.binding.command_id, header.isolation, if header.pty { "PTY" } else { "Tuberías" }, header.registered_at_ms, serde_json::to_string(&header.argv).expect("argv serializes")), theme::component_palette()).mono().render());
         }
+        body.push(
+            openide_ui::Collapsible::new(
+                "native_command_history_details_toggle",
+                "Detalles",
+                Element::column(details).gap(6.0),
+                theme::component_palette(),
+            )
+            .icon(Icon::InfoCircle)
+            .expanded(local.details_open)
+            .render(),
+        );
         if let Some(error) = summary
             .terminal
             .as_ref()
