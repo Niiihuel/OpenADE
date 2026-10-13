@@ -40,6 +40,122 @@ pub(crate) struct GitPanelView {
     pub hunk: usize,
     /// The pull request being written, while its form is open.
     pub pull: Option<crate::github::PullDraft>,
+    /// What the repository tab lists the changes of.
+    pub origin: ReviewOrigin,
+}
+
+/// Where the changes under review come from. The first three are the
+/// repository's and are listed in its tab; the last two are the chat's.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum ReviewOrigin {
+    #[default]
+    Uncommitted,
+    Branch,
+    Commit,
+    Chat,
+    Turn,
+}
+
+/// The one selector both tabs of changes carry: it says which origin is in
+/// view and takes to any other.
+pub(crate) fn origin_selector(active: ReviewOrigin) -> Element {
+    use ReviewOrigin::*;
+    let origins = [
+        (Uncommitted, "uncommitted", "Sin commitear"),
+        (Branch, "branch", "Rama"),
+        (Commit, "commit", "Commit"),
+        (Chat, "chat", "Chat"),
+        (Turn, "turn", "Último turno"),
+    ];
+    let button = |(origin, id, label): (ReviewOrigin, &str, &str)| {
+        Button::new(format!("review_origin:{id}"), label, theme::action_palette(theme::BACKGROUND, theme::FOREGROUND))
+            .variant(if origin == active { ButtonVariant::Subtle } else { ButtonVariant::Ghost })
+            .sizing(crate::ui_sizing::SMALL_LABEL_BUTTON)
+            .render()
+    };
+    // The repository's on one line and the chat's on the next: together
+    // they do not fit the narrowest sidebar.
+    let (repository, chat) = origins.split_at(3);
+    Element::column(vec![
+        Element::row(repository.iter().copied().map(button).collect()).gap(2.0),
+        Element::row(chat.iter().copied().map(button).collect()).gap(2.0),
+    ])
+    .gap(2.0)
+    .padding(4.0)
+}
+
+/// The files a branch or one commit changed, each opening its diff; before
+/// there is a commit in view, the commits to choose from.
+fn range_review(state: &ViewState, review: &GitReview, width: f32) -> Element {
+    let commit = state.git_panel.origin == ReviewOrigin::Commit;
+    let workflow = &state.environment.workflow;
+    let palette = theme::action_palette(theme::BACKGROUND, theme::FOREGROUND);
+    let note = |text: &str| UiText::new(text, theme::component_palette()).role(TextRole::Small).muted().render().padding(8.0);
+    let button = |id: &str, label: &str| {
+        Button::new(id, label, palette).variant(ButtonVariant::Ghost).sizing(crate::ui_sizing::SMALL_LABEL_BUTTON).render()
+    };
+    let mut rows = Vec::new();
+    if let Some(error) = &workflow.error {
+        rows.push(UiText::new(error, theme::component_palette()).role(TextRole::Small).ink(theme::DESTRUCTIVE).render().padding(8.0));
+    }
+    let Some(comparison) = workflow.comparison.as_ref().filter(|comparison| comparison.head.is_some() == commit) else {
+        if workflow.loading {
+            rows.push(note("Comparando…"));
+        } else if !commit {
+            rows.push(note("Elegí con qué rama comparar la actual."));
+            rows.push(button("environment_git_open_compare", "Comparar con una rama…"));
+        } else if review.recent.is_empty() {
+            rows.push(note("Esta rama todavía no tiene commits."));
+        } else {
+            let recent = review.recent.clone();
+            rows.push(
+                ScrollArea::uniform_list("review_commits", recent.len(), ROW_PITCH, move |index| {
+                    let (hash, subject) = &recent[index];
+                    openide_ui::ListRow::new(format!("review_commit:{index}"), subject, theme::component_palette())
+                        .meta(&hash[..hash.len().min(7)])
+                        .width(width - 8.0)
+                        .render()
+                })
+                .render()
+                .flex(1.0),
+            );
+        }
+        return Element::column(rows).gap(2.0).flex(1.0);
+    };
+    let title = match &comparison.head {
+        Some(hash) => format!("Commit {}", &hash[..hash.len().min(7)]),
+        None => format!("Contra {}", comparison.reference),
+    };
+    rows.push(Element::row(vec![
+        UiText::new(format!("{title} · {} archivos", comparison.files), theme::component_palette())
+            .role(TextRole::Small)
+            .muted()
+            .truncate()
+            .render()
+            .centered_y()
+            .flex(1.0),
+        DiffStat::new(comparison.additions, comparison.deletions, theme::component_palette())
+            .inks(theme::DIFF_ADDED, theme::DIFF_REMOVED)
+            .render()
+            .centered_y(),
+        if commit { button("review_commit_back", "Commits") } else { button("environment_git_open_compare", "Cambiar") },
+    ])
+    .gap(6.0)
+    .padding(4.0));
+    let changed = comparison.changed.clone();
+    rows.push(
+        ScrollArea::uniform_list("review_range_files", changed.len(), ROW_PITCH, move |index| {
+            let file = &changed[index];
+            openide_ui::ListRow::new(format!("environment_git_compare_file:{index}"), &file.path, theme::component_palette())
+                .icon(openide_ui::file_icon(&file.path))
+                .meta(format!("+{} −{}", file.additions, file.deletions))
+                .width(width - 8.0)
+                .render()
+        })
+        .render()
+        .flex(1.0),
+    );
+    Element::column(rows).gap(2.0).flex(1.0)
 }
 
 /// A change as it was when it was marked viewed: its file, its section and
@@ -1367,6 +1483,11 @@ pub(super) fn navigator_body(state: &ViewState, width: f32) -> Element {
         .expand()
         .render(),
     );
+    children.insert(0, origin_selector(state.git_panel.origin));
+    if state.git_panel.origin != ReviewOrigin::Uncommitted {
+        children.push(range_review(state, review, width));
+        return Element::column(children).gap(0.0).flex(1.0);
+    }
     if review.branch == "HEAD separado" {
         children.push(below(
             Notice::new("HEAD separado", theme::component_palette())
@@ -2220,6 +2341,15 @@ mod tests {
         // Asked in another project, it is not this project's question.
         state.workspace = "/workspace/other".into();
         assert!(dialog(&state).0.regions.is_empty());
+    }
+
+    #[test]
+    fn the_selector_names_every_origin_and_marks_the_one_in_view() {
+        let frame = UiTree::new(origin_selector(ReviewOrigin::Commit)).layout(Size::new(240.0, 80.0));
+        for origin in ["uncommitted", "branch", "commit", "chat", "turn"] {
+            assert!(frame.regions.iter().any(|region| region.id == format!("review_origin:{origin}")), "{origin}");
+        }
+        assert_eq!(texts(&frame), ["Sin commitear", "Rama", "Commit", "Chat", "Último turno"]);
     }
 
     #[test]

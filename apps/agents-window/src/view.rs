@@ -56,7 +56,7 @@ mod dock_visual_tests;
 pub(crate) mod document_markdown_ui;
 #[path = "git_panel.rs"]
 mod git_panel;
-pub(crate) use git_panel::{reveal_key as git_reveal_key, viewed_key as git_viewed_key, GitConfirmView, GitPanelView};
+pub(crate) use git_panel::{origin_selector, reveal_key as git_reveal_key, viewed_key as git_viewed_key, GitConfirmView, GitPanelView, ReviewOrigin};
 #[path = "ide_activity_ui.rs"]
 pub(crate) mod ide_activity_ui;
 #[path = "ide_search_ui.rs"]

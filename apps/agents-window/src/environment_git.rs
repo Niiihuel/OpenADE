@@ -133,6 +133,9 @@ pub(crate) struct BranchComparison {
     pub reference: String,
     /// The commit of `reference` the comparison was made against.
     pub base: String,
+    /// The commit compared, when it is one commit against its parent and
+    /// not the branch against `reference`.
+    pub head: Option<String>,
     /// The files the branch changed, in Git's order; the first of them when
     /// there are very many, which `files` still counts.
     pub changed: Vec<ChangedFile>,
@@ -149,6 +152,19 @@ pub(crate) struct ChangedFile {
     pub path: String,
     pub additions: usize,
     pub deletions: usize,
+}
+
+impl BranchComparison {
+    /// The commits compared, as `git diff` names them.
+    pub fn range(&self) -> String {
+        format!("{}...{}", self.base, self.head.as_deref().unwrap_or("HEAD"))
+    }
+}
+
+/// Whether what is compared is one commit, named by its full hash, and not
+/// a branch of the listing.
+pub(crate) fn names_commit(reference: &str) -> bool {
+    reference.len() == 40 && reference.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 /// Files of a comparison that are listed one by one.
@@ -684,23 +700,33 @@ fn compare(
     snapshot: &GitSnapshot,
     reference: &str,
 ) -> Result<BranchComparison, String> {
-    let branch = snapshot
-        .branches
-        .branches
-        .iter()
-        .find(|branch| branch.reference == reference)
-        .ok_or("Elegí una rama del listado para comparar")?;
+    let commit = names_commit(reference);
+    // shortcut: a commit is compared with its first parent, so the first commit of a repository has no comparison; upgrade when someone needs to review it.
+    let against = if commit {
+        format!("{reference}^")
+    } else {
+        snapshot
+            .branches
+            .branches
+            .iter()
+            .find(|branch| branch.reference == reference)
+            .ok_or("Elegí una rama del listado para comparar")?
+            .reference
+            .clone()
+    };
     git_branches::validate_snapshot(workspace, &snapshot.branches)?;
-    let head = snapshot
-        .head
-        .as_deref()
-        .ok_or("Creá el primer commit antes de comparar ramas")?;
+    let head = if commit { reference } else {
+        snapshot
+            .head
+            .as_deref()
+            .ok_or("Creá el primer commit antes de comparar ramas")?
+    };
     let base = git_branches::git_text(
         workspace,
         &[
             "rev-parse",
             "--verify",
-            &format!("{}^{{commit}}", branch.reference),
+            &format!("{against}^{{commit}}"),
         ],
     )?;
     let range = format!("{base}...{head}");
@@ -736,6 +762,7 @@ fn compare(
     let mut comparison = BranchComparison {
         reference: reference.into(),
         base: base.clone(),
+        head: commit.then(|| reference.to_owned()),
         ahead,
         behind,
         ..Default::default()
@@ -1009,19 +1036,32 @@ mod tests {
             comparison.changed,
             [ChangedFile { path: "feature.txt".into(), additions: 2, deletions: 0 }]
         );
-        let detail = crate::git_review::load_branch_file_diff(&repo.root, &comparison.base, Path::new("feature.txt"))
+        let detail = crate::git_review::load_branch_file_diff(&repo.root, &comparison.range(), Path::new("feature.txt"))
             .unwrap()
             .unwrap();
         assert_eq!(
             (detail.stage, detail.file.additions, detail.file.deletions),
             (crate::git_review::DiffStage::Branch, 2, 0)
         );
-        assert!(crate::git_review::load_branch_file_diff(&repo.root, &comparison.base, Path::new("tracked.txt"))
+        assert!(crate::git_review::load_branch_file_diff(&repo.root, &comparison.range(), Path::new("tracked.txt"))
             .unwrap()
             .is_none());
+        // One commit is compared with its parent, whatever came after it.
+        std::fs::write(repo.root.join("later.txt"), "later\n").unwrap();
+        repo.git(&["add", "--", "later.txt"]);
+        repo.git(&["commit", "-m", "Later"]);
+        let feature = repo.git(&["rev-parse", "HEAD~1"]);
+        let snapshot = load_snapshot(&repo.root).unwrap();
+        let commit = compare(&repo.root, &snapshot, &feature).unwrap();
+        assert_eq!(commit.head.as_deref(), Some(feature.as_str()));
+        assert_eq!(commit.changed, [ChangedFile { path: "feature.txt".into(), additions: 2, deletions: 0 }]);
+        let detail = crate::git_review::load_branch_file_diff(&repo.root, &commit.range(), Path::new("feature.txt")).unwrap().unwrap();
+        assert_eq!(detail.file.additions, 2);
+        assert!(crate::git_review::load_branch_file_diff(&repo.root, &commit.range(), Path::new("later.txt")).unwrap().is_none());
+        assert!(crate::git_review::load_git_review(&repo.root).unwrap().recent.iter().map(|(hash, _)| hash).any(|hash| *hash == feature));
         // Only a commit names a base, and only a path inside the project a file.
         assert!(crate::git_review::load_branch_file_diff(&repo.root, "--output=x", Path::new("feature.txt")).is_err());
-        assert!(crate::git_review::load_branch_file_diff(&repo.root, &comparison.base, Path::new("../feature.txt")).is_err());
+        assert!(crate::git_review::load_branch_file_diff(&repo.root, &comparison.range(), Path::new("../feature.txt")).is_err());
         assert!(compare(&repo.root, &snapshot, "--output=/tmp/invalid").is_err());
     }
 

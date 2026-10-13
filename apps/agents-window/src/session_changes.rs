@@ -137,6 +137,8 @@ pub struct SessionChangesRequest {
     /// Share the host's already loaded journal, rather than copying every delta.
     /// None reads the journal in the background with its own byte/event caps.
     pub events: Option<Arc<Vec<AgentEvent>>>,
+    /// Only what the last turn changed, against the files as it found them.
+    pub last_turn: bool,
 }
 
 #[derive(Debug)]
@@ -198,16 +200,18 @@ impl SessionChangesWorker {
                     state.pending.take().expect("checked pending request")
                 };
                 let result = match &request.events {
-                    Some(events) => load_session_changes(
+                    Some(events) => load_changes(
                         &request.storage_root,
                         &request.session_id,
                         &request.workspace,
                         events,
+                        request.last_turn,
                     ),
-                    None => load_stored_session_changes(
+                    None => load_stored_changes(
                         &request.storage_root,
                         &request.session_id,
                         &request.workspace,
+                        request.last_turn,
                     ),
                 }
                 .map_err(|error| error.to_string());
@@ -866,6 +870,15 @@ pub fn load_stored_session_changes(
     session_id: &str,
     workspace: &Path,
 ) -> io::Result<SessionChanges> {
+    load_stored_changes(storage_root, session_id, workspace, false)
+}
+
+fn load_stored_changes(
+    storage_root: &Path,
+    session_id: &str,
+    workspace: &Path,
+    last_turn: bool,
+) -> io::Result<SessionChanges> {
     baseline_path(storage_root, session_id)?;
     if read_baseline(storage_root, session_id, &workspace.canonicalize()?)?.is_none() {
         return unavailable_changes(
@@ -876,7 +889,7 @@ pub fn load_stored_session_changes(
     }
     match read_stored_journal(storage_root, session_id)? {
         StoredJournal::Events(events) => {
-            load_session_changes(storage_root, session_id, workspace, &events)
+            load_changes(storage_root, session_id, workspace, &events, last_turn)
         }
         StoredJournal::Unavailable(reason) => unavailable_changes(session_id, workspace, &reason),
     }
@@ -1101,6 +1114,19 @@ pub fn load_session_changes(
     workspace: &Path,
     events: &[AgentEvent],
 ) -> io::Result<SessionChanges> {
+    load_changes(storage_root, session_id, workspace, events, false)
+}
+
+/// The chat's changes since its baseline, or with `last_turn` only those of
+/// its last turn: the files as the turns before it left them are then what
+/// each one is compared against.
+fn load_changes(
+    storage_root: &Path,
+    session_id: &str,
+    workspace: &Path,
+    events: &[AgentEvent],
+    last_turn: bool,
+) -> io::Result<SessionChanges> {
     let started = Instant::now();
     let root = workspace.canonicalize()?;
     let mut result = SessionChanges {
@@ -1136,9 +1162,20 @@ pub fn load_session_changes(
         started,
         None,
     )?;
+    let turn_start = events
+        .iter()
+        .rposition(|event| matches!(event.kind, AgentEventKind::TurnStarted { .. }))
+        .filter(|_| last_turn);
+    let found = match turn_start {
+        Some(start) => replay_session(storage_root, session_id, &root, &baseline, &events[..start], started, None)?.replayed,
+        None => BTreeMap::new(),
+    };
     let mut total_diff_bytes = 0usize;
     for (path, replayed) in replayed {
-        let original = baseline.original(&path);
+        let original = match found.get(&path) {
+            Some(before) => before.content.clone(),
+            None => baseline.original(&path),
+        };
         if original.as_ref().ok() == replayed.content.as_ref().ok() && original.is_ok() {
             continue;
         }
@@ -2869,6 +2906,46 @@ mod tool_diff_deadline_tests {
             journal.push(b'\n');
         }
         fs::write(storage.join("session.jsonl"), journal).unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_last_turn_is_compared_with_the_files_as_it_found_them() {
+        let temp = tempfile::tempdir().unwrap();
+        let (storage, workspace) = (temp.path().join("store"), temp.path().join("project"));
+        fs::create_dir_all(&storage).unwrap();
+        fs::create_dir_all(&workspace).unwrap();
+        fs::write(workspace.join("kept.txt"), b"start\n").unwrap();
+        let mut events = vec![AgentEvent::new("session", 1, AgentEventKind::SessionStarted { workspace: workspace.clone() })];
+        capture_baseline(&storage, "session", &workspace, &events).unwrap();
+        let write = |id: &str, path: &str, content: &str| ToolCall {
+            id: id.into(),
+            name: "write_file".into(),
+            arguments: serde_json::json!({"path": path, "content": content}),
+        };
+        let turn = |events: &mut Vec<AgentEvent>| {
+            events.push(AgentEvent::new("session", events.len() as u64 + 1, AgentEventKind::TurnStarted { prompt: "x".into() }));
+        };
+        turn(&mut events);
+        execute_and_record(&storage, &workspace, &mut events, write("one", "kept.txt", "start\nfirst turn\n")).await;
+        execute_and_record(&storage, &workspace, &mut events, write("two", "early.txt", "early\n")).await;
+        turn(&mut events);
+        execute_and_record(&storage, &workspace, &mut events, write("three", "kept.txt", "start\nfirst turn\nlast turn\n")).await;
+        execute_and_record(&storage, &workspace, &mut events, write("four", "late.txt", "late\n")).await;
+
+        let seen = |last_turn: bool| -> Vec<(String, usize, String)> {
+            load_stored_changes(&storage, "session", &workspace, last_turn)
+                .unwrap()
+                .files
+                .into_iter()
+                .map(|change| (change.file.path, change.file.additions, change.file.status))
+                .collect()
+        };
+        assert_eq!(
+            seen(false),
+            [("early.txt".into(), 1, "Nuevo".into()), ("kept.txt".into(), 2, "Modificado".into()), ("late.txt".into(), 1, "Nuevo".into())]
+        );
+        // What an earlier turn wrote is where the last one started from.
+        assert_eq!(seen(true), [("kept.txt".into(), 1, "Modificado".into()), ("late.txt".into(), 1, "Nuevo".into())]);
     }
 
     #[tokio::test]

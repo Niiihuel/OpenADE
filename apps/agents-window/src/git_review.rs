@@ -95,6 +95,8 @@ pub struct GitReview {
     pub conflicts: usize,
     /// Short hash and subject of HEAD, when there is a commit.
     pub last_commit: Option<(String, String)>,
+    /// Full hash and subject of the newest commits of the branch, HEAD first.
+    pub recent: Vec<(String, String)>,
 }
 
 /// The groups a list of changes shows, in their order.
@@ -135,6 +137,23 @@ pub struct GroupRange {
 
 /// The error of a review asked of a folder outside any work tree.
 pub const NOT_A_REPOSITORY: &str = "Esta carpeta no es un repositorio de Git";
+
+/// Commits a review offers to look at one by one.
+const RECENT_COMMITS: usize = 30;
+
+fn read_recent_commits(workspace: &Path) -> Vec<(String, String)> {
+    let output = command_no_window("git")
+        .args(["log", &format!("-{RECENT_COMMITS}"), "--format=%H%x00%s"])
+        .current_dir(workspace)
+        .stderr(Stdio::null())
+        .output();
+    let Ok(output) = output else { return Vec::new() };
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| line.split_once('\0'))
+        .map(|(hash, subject)| (hash.to_owned(), subject.chars().take(200).collect()))
+        .collect()
+}
 
 fn read_last_commit(workspace: &Path) -> Option<(String, String)> {
     let output = command_no_window("git")
@@ -572,16 +591,18 @@ fn read_diff_with_scope(
     read_diff(workspace, if staged { &["--cached"] } else { &[] }, paths, max_bytes)
 }
 
-/// One file as the branch changed it since it left `base`: the diff of the
-/// commits `base...HEAD`, whatever the working tree holds now.
-pub fn load_branch_file_diff(workspace: &Path, base: &str, relative: &Path) -> io::Result<Option<FileDiffDetail>> {
-    let plain = !base.is_empty() && base.len() <= 64 && base.bytes().all(|byte| byte.is_ascii_hexdigit());
+/// One file as a range of commits changed it, whatever the working tree
+/// holds now: `base...HEAD` for a branch since it left `base`, `parent...commit`
+/// for one commit.
+pub fn load_branch_file_diff(workspace: &Path, range: &str, relative: &Path) -> io::Result<Option<FileDiffDetail>> {
+    let commit = |name: &str| !name.is_empty() && name.len() <= 64 && name.bytes().all(|byte| byte.is_ascii_hexdigit());
+    let plain = range.split_once("...").is_some_and(|(base, head)| commit(base) && (head == "HEAD" || commit(head)));
     let inside = !relative.as_os_str().is_empty()
         && relative.components().all(|component| matches!(component, Component::Normal(_)));
     if !plain || !inside {
         return Err(io::Error::new(io::ErrorKind::PermissionDenied, "invalid branch diff request"));
     }
-    let (text, truncated) = read_diff(workspace, &[&format!("{base}...HEAD")], &[relative], MAX_FILE_DIFF_BYTES)?;
+    let (text, truncated) = read_diff(workspace, &[range], &[relative], MAX_FILE_DIFF_BYTES)?;
     let mut review = GitReview::default();
     parse_section_with_limit(&mut review, "ARCHIVO", &text, MAX_FILE_DIFF_LINES);
     let requested = relative.to_string_lossy().replace('\\', "/");
@@ -1162,6 +1183,7 @@ fn load_review(workspace: &Path, diff_files: Option<usize>) -> io::Result<GitRev
         branch: read_branch(workspace),
         tracking: read_tracking(workspace),
         last_commit: read_last_commit(workspace),
+        recent: read_recent_commits(workspace),
         ..GitReview::default()
     };
     let mut loaded = 0usize;
