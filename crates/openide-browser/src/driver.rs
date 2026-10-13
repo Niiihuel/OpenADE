@@ -241,8 +241,9 @@ pub enum Cue {
 }
 
 /// Told of each pointed action before its input is sent: what it does and
-/// where, in CSS pixels of the viewport.
-pub type ActionWatch = Box<dyn FnMut(Cue, (f64, f64)) + Send>;
+/// where, in CSS pixels of the viewport. It answers whether it took time
+/// over it, in which the page may have moved.
+pub type ActionWatch = Box<dyn FnMut(Cue, (f64, f64)) -> bool + Send>;
 
 pub struct Driver {
     pub(crate) client: Client,
@@ -284,10 +285,9 @@ impl Driver {
         self.watch = watch;
     }
 
-    pub(crate) fn cue(&mut self, cue: Cue, point: (f64, f64)) {
-        if let Some(watch) = &mut self.watch {
-            watch(cue, point);
-        }
+    /// Whether the watch took time over it.
+    pub(crate) fn cue(&mut self, cue: Cue, point: (f64, f64)) -> bool {
+        self.watch.as_mut().is_some_and(|watch| watch(cue, point))
     }
 
     /// Drives the one page an embedder already created, which `transport`

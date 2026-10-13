@@ -1735,8 +1735,8 @@ impl LiveView {
 
     /// Shows the window where the agent's pointer goes and what it does
     /// there. While the page is `watched` the action waits for the pointer
-    /// to get there, so the two are seen together.
-    fn point(&self, kind: Cue, to: (f64, f64), watched: bool) {
+    /// to get there, so the two are seen together: `true` when it did.
+    fn point(&self, kind: Cue, to: (f64, f64), watched: bool) -> bool {
         let now = Instant::now();
         let cue = {
             let mut last = self.cue.lock().unwrap_or_else(|poison| poison.into_inner());
@@ -1755,6 +1755,7 @@ impl LiveView {
             self.wake();
             thread::sleep(cue.travel);
         }
+        watched && !cue.travel.is_zero()
     }
 }
 
