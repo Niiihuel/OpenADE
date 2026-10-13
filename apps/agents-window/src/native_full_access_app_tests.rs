@@ -502,6 +502,25 @@ fn full_access_confirmation_blocks_message_admission_before_model_or_network_pre
 }
 
 #[test]
+fn a_sites_permission_is_saved_listed_changed_and_removed() {
+    use crate::browser_sites::{BrowserSites, SiteAccess};
+    let root = tempfile::tempdir().unwrap();
+    let mut app = fixture(root.path());
+    app.set_browser_site("https://example.com/una/ruta", Some(SiteAccess::Allow)).unwrap();
+    assert_eq!(app.browser_sites.access("https://example.com"), SiteAccess::Allow);
+    assert_eq!(app.view.browser_sites, app.browser_sites.sites);
+    assert_eq!(BrowserSites::load(&app.data_root).unwrap(), app.browser_sites);
+    // What is not a site changes nothing, on disk or in the list.
+    assert!(app.set_browser_site("no es un sitio", Some(SiteAccess::Allow)).is_err());
+    assert_eq!(app.view.browser_sites.len(), 1);
+    app.set_browser_site("https://example.com", Some(SiteAccess::Block)).unwrap();
+    assert_eq!(app.browser_sites.access("https://example.com"), SiteAccess::Block);
+    app.set_browser_site("https://example.com", None).unwrap();
+    assert!(app.view.browser_sites.is_empty());
+    assert_eq!(BrowserSites::load(&app.data_root).unwrap(), BrowserSites::default());
+}
+
+#[test]
 fn the_browsers_tools_ask_unless_they_only_read_or_everything_is_allowed() {
     let root = tempfile::tempdir().unwrap();
     let mut app = fixture(root.path());

@@ -1532,6 +1532,8 @@ pub struct AgentsWindow {
     detail_generation: u64,
     detail_request: Option<DetailRequest>,
     github_worker: Option<GithubWorker>,
+    /// What the agent may do in the browser on each site without asking.
+    browser_sites: crate::browser_sites::BrowserSites,
     /// The commit message a model is writing for the git panel's form.
     commit_generation: Option<crate::commit_message::Generation>,
     github_status: GithubStatus,
@@ -4809,6 +4811,32 @@ impl AgentsWindow {
          (height + taller).round().clamp(240.0, 1200.0) as u32)
     }
 
+    /// The site a call of the selected conversation's agent acts on in its
+    /// own browser: never the page of a CLI's browser or of another chat.
+    pub(crate) fn agent_browser_site(&self, tool_name: &str, arguments: &str) -> Option<String> {
+        let scope = self.dock_scope();
+        let tab = self
+            .dock
+            .tabs(&scope.workspace_id)
+            .iter()
+            .find(|tab| tab.kind == DockTabKind::Browser && tab.owner == scope.owner)?;
+        let page = self.browsers.get(&tab.id.get()).map(|runtime| runtime.snapshot().url).unwrap_or_default();
+        crate::browser_sites::site_of_call(tool_name, arguments, &page)
+    }
+
+    /// Keeps a site's permission and shows it in the settings.
+    pub(crate) fn set_browser_site(&mut self, address: &str, access: Option<crate::browser_sites::SiteAccess>) -> Result<(), String> {
+        let mut sites = self.browser_sites.clone();
+        match access {
+            Some(access) => sites.set(address, access)?,
+            None => sites.sites.retain(|site| site.origin != address),
+        }
+        sites.save(&self.data_root)?;
+        self.view.browser_sites = sites.sites.clone();
+        self.browser_sites = sites;
+        Ok(())
+    }
+
     fn browser_client_for_current_scope(&self) -> Option<crate::browser_runtime::BrowserMcpClient> {
         let scope = self.dock_scope();
         let workspace = std::fs::canonicalize(&self.view.workspace).ok()?;
@@ -4850,6 +4878,15 @@ impl AgentsWindow {
             if let Some(client) = self.browser_client_for_current_scope() {
                 self.view.browser_refs = client.last_snapshot();
             }
+            let scope = self.dock_scope();
+            self.view.agent_page_url = self
+                .dock
+                .tabs(&scope.workspace_id)
+                .iter()
+                .find(|tab| tab.kind == DockTabKind::Browser && tab.owner == scope.owner)
+                .and_then(|tab| self.browsers.get(&tab.id.get()))
+                .map(|runtime| runtime.snapshot().url)
+                .unwrap_or_default();
         }
     }
 
@@ -6955,6 +6992,9 @@ impl AgentsWindow {
             session_changes: Default::default(),
             browser: Default::default(),
             browser_refs: Arc::from(""),
+            agent_page_url: String::new(),
+            browser_sites: crate::browser_sites::BrowserSites::load(&root).unwrap_or_default().sites,
+            browser_site_draft: String::new(),
             review_detail: None,
             terminal_tabs: Vec::new(),
             terminal_controls: Default::default(),
@@ -7273,6 +7313,7 @@ impl AgentsWindow {
             detail_generation: 0,
             detail_request: None,
             github_worker: GithubWorker::spawn().ok(),
+            browser_sites: crate::browser_sites::BrowserSites::load(&root).unwrap_or_default(),
             commit_generation: None,
             github_status: GithubStatus::Loading,
             github_in_flight: false,
@@ -13804,16 +13845,28 @@ impl AgentsWindow {
                         arguments: serde_json::to_string_pretty(&tool_call.arguments)
                             .unwrap_or_default(),
                     });
-                    let waiting = if openide_harness::is_user_interaction_tool(&tool_call.name) {
-                        "Esperando tu respuesta".to_owned()
+                    // A site the user decided about is answered as they said,
+                    // for the turn that is running in the conversation shown.
+                    let decided = (self.view.running
+                        && self.view.selected_session.as_deref() == Some(event.session_id.as_str()))
+                    .then(|| self.agent_browser_site(&tool_call.name, &tool_call.arguments.to_string()))
+                    .flatten()
+                    .map(|site| self.browser_sites.access(&site))
+                    .filter(|access| *access != crate::browser_sites::SiteAccess::Ask);
+                    if let Some(access) = decided {
+                        self.answer_permission(request_id, access == crate::browser_sites::SiteAccess::Allow);
                     } else {
-                        format!("Permiso pendiente: {}", tool_call.name)
-                    };
-                    self.notify_session(
-                        crate::notifications::Event::Approval,
-                        &waiting,
-                        &event.session_id,
-                    );
+                        let waiting = if openide_harness::is_user_interaction_tool(&tool_call.name) {
+                            "Esperando tu respuesta".to_owned()
+                        } else {
+                            format!("Permiso pendiente: {}", tool_call.name)
+                        };
+                        self.notify_session(
+                            crate::notifications::Event::Approval,
+                            &waiting,
+                            &event.session_id,
+                        );
+                    }
                 }
                 self.view.status = waiting_status(&tool_call.name);
             }
@@ -17028,6 +17081,28 @@ impl AgentsWindow {
                     if self.commit_settings_preferences(next, "Destino de los enlaces guardado") {
                         self.view.chat_link_opening = opening;
                     }
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("browser_site_") => {
+                let listed = |index: &str| index.parse::<usize>().ok().and_then(|index| self.view.browser_sites.get(index).cloned());
+                let changed = match id.split_once(':') {
+                    Some(("browser_site_cycle", index)) => listed(index).map(|site| self.set_browser_site(&site.origin, Some(site.access.next()))),
+                    Some(("browser_site_remove", index)) => listed(index).map(|site| self.set_browser_site(&site.origin, None)),
+                    _ if id == "browser_site_add" => {
+                        let draft = self.view.browser_site_draft.clone();
+                        let added = self.set_browser_site(&draft, Some(crate::browser_sites::SiteAccess::Allow));
+                        if added.is_ok() {
+                            self.view.browser_site_draft.clear();
+                            self.tree.set_input_value("browser_site_draft", "");
+                        }
+                        Some(added)
+                    }
+                    _ => None,
+                };
+                match changed {
+                    Some(Ok(())) => self.set_settings_notice("Permisos por sitio guardados", false),
+                    Some(Err(error)) => self.set_settings_notice(error, true),
+                    None => {}
                 }
             }
             UiAction::Clicked { id } if id.starts_with(crate::preview::SETTING_ACTION_PREFIX) => {
@@ -20472,6 +20547,7 @@ impl AgentsWindow {
                     self.view.settings_terminal_shell_editing = true;
                     self.clear_settings_notice();
                 }
+                "browser_site_draft" => self.view.browser_site_draft = value,
                 "mcp_draft_id" => self.view.mcp_draft_id = value,
                 "mcp_draft_url" => self.view.mcp_draft_url = value,
                 "mcp_draft_http_bearer_token_env_name" => {

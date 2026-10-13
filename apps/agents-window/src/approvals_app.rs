@@ -29,6 +29,23 @@ impl AgentsWindow {
             return true;
         }
         let decision = match choice.as_str() {
+            // The site is the one the request acts on now, read again here.
+            "allow_site" => {
+                let site = self
+                    .view
+                    .pending_permissions
+                    .iter()
+                    .find(|permission| permission.request_id == target.request_id)
+                    .and_then(|permission| self.agent_browser_site(&permission.tool_name, &permission.arguments));
+                let Some(site) = site.filter(|_| target.child_session_id.is_none()) else {
+                    return true;
+                };
+                if let Err(error) = self.set_browser_site(&site, Some(crate::browser_sites::SiteAccess::Allow)) {
+                    self.view.status = error;
+                    return true;
+                }
+                PermissionChoice::Allow
+            }
             "allow_once" => PermissionChoice::Allow,
             "allow_session" => PermissionChoice::AllowSession,
             "deny" => PermissionChoice::Deny,

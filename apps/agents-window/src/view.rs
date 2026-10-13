@@ -724,6 +724,11 @@ pub struct ViewState {
     /// The accessible tree the agent last read from this conversation's
     /// browser: what the refs of a pending approval name.
     pub(crate) browser_refs: std::sync::Arc<str>,
+    /// Where the page of the agent's own browser was when it last asked.
+    pub(crate) agent_page_url: String,
+    /// The sites with a permission of their own, and the one being added.
+    pub(crate) browser_sites: Vec<crate::browser_sites::Site>,
+    pub(crate) browser_site_draft: String,
     pub review_detail: Option<ReviewDetailView>,
     pub terminal_tabs: Vec<DockTabView>,
     pub terminal_menu_open: bool,
@@ -4291,6 +4296,9 @@ pub(crate) mod tests {
             session_changes: Default::default(),
             browser: Default::default(),
             browser_refs: std::sync::Arc::from(""),
+            agent_page_url: String::new(),
+            browser_sites: Vec::new(),
+            browser_site_draft: String::new(),
             review_detail: None,
             terminal_tabs: Vec::new(),
             terminal_menu_open: false,

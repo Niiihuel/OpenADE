@@ -83,6 +83,7 @@ mod github_account;
 mod github_account_menu_ui;
 mod github_account_ui;
 mod github_contributions;
+mod browser_sites;
 mod commit_message;
 mod github_worker;
 mod home;
