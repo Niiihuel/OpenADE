@@ -46,6 +46,57 @@ pub struct GithubPull {
     pub author: String,
     pub base: String,
     pub draft: bool,
+    /// The commit the pull request is at, for asking about its checks.
+    pub head: String,
+    /// How its checks stand, once they could be read.
+    pub checks: Option<PullChecks>,
+}
+
+/// How the checks of a pull request's last commit stand, all together.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PullChecks {
+    Passing,
+    Failing,
+    Pending,
+    /// The repository runs no check on it.
+    None,
+}
+
+impl PullChecks {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Passing => "Checks exitosos",
+            Self::Failing => "Checks fallando",
+            Self::Pending => "Checks pendientes",
+            Self::None => "Sin checks de CI",
+        }
+    }
+}
+
+/// One verdict from GitHub's two reports on a commit: its check runs and the
+/// combined status older integrations still set. A failure anywhere fails
+/// it; otherwise anything unfinished keeps it pending.
+fn checks_of(check_runs: &Value, status: &Value) -> PullChecks {
+    let mut seen = Vec::new();
+    for run in check_runs.get("check_runs").and_then(Value::as_array).into_iter().flatten() {
+        seen.push(match (run.get("status").and_then(Value::as_str), run.get("conclusion").and_then(Value::as_str)) {
+            (Some("completed"), Some("success" | "neutral" | "skipped")) => PullChecks::Passing,
+            (Some("completed"), _) => PullChecks::Failing,
+            _ => PullChecks::Pending,
+        });
+    }
+    // The combined status says `pending` also when nothing ever reported.
+    if status.get("statuses").and_then(Value::as_array).is_some_and(|statuses| !statuses.is_empty()) {
+        seen.push(match status.get("state").and_then(Value::as_str) {
+            Some("success") => PullChecks::Passing,
+            Some("failure" | "error") => PullChecks::Failing,
+            _ => PullChecks::Pending,
+        });
+    }
+    [PullChecks::Failing, PullChecks::Pending, PullChecks::Passing]
+        .into_iter()
+        .find(|state| seen.contains(state))
+        .unwrap_or(PullChecks::None)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -194,6 +245,14 @@ fn parse_pulls(value: &Value, repository: &GithubRepository, branch: &str) -> Ve
                     .take(100)
                     .collect(),
                 draft: entry.get("draft").and_then(Value::as_bool).unwrap_or(false),
+                head: entry
+                    .get("head")
+                    .and_then(|head| head.get("sha"))
+                    .and_then(Value::as_str)
+                    .filter(|sha| sha.len() <= 64 && sha.bytes().all(|byte| byte.is_ascii_hexdigit()))
+                    .unwrap_or("")
+                    .to_owned(),
+                checks: None,
             })
         })
         .collect()
@@ -244,7 +303,27 @@ fn fetch_pulls(
     }
     let value: Value = serde_json::from_slice(&bytes)
         .map_err(|_| "GitHub devolvió una respuesta no válida".to_owned())?;
-    Ok(parse_pulls(&value, repository, branch))
+    let mut pulls = parse_pulls(&value, repository, branch);
+    // Only the pull request the panel shows; a failure to read its checks
+    // leaves it without a verdict rather than without the pull request.
+    if let Some(pull) = pulls.first_mut().filter(|pull| !pull.head.is_empty()) {
+        let report = |path: &str| -> Option<Value> {
+            let mut request = client
+                .get(format!("https://api.github.com/repos/{}/{}/commits/{}/{path}", repository.owner, repository.name, pull.head))
+                .query(&[("per_page", "100")])
+                .header(reqwest::header::USER_AGENT, "OpenIDE-Agent-Window")
+                .header(reqwest::header::ACCEPT, "application/vnd.github+json");
+            if let Some(token) = account.and_then(crate::github_account::auth_token_for_account) {
+                request = request.bearer_auth(token);
+            }
+            let response = request.send().ok().filter(|response| response.status().is_success())?;
+            let mut bytes = Vec::new();
+            response.take(MAX_RESPONSE_BYTES + 1).read_to_end(&mut bytes).ok()?;
+            (bytes.len() as u64 <= MAX_RESPONSE_BYTES).then(|| serde_json::from_slice(&bytes).ok()).flatten()
+        };
+        pull.checks = report("check-runs").zip(report("status")).map(|(runs, status)| checks_of(&runs, &status));
+    }
+    Ok(pulls)
 }
 
 /// What GitHub is asked to open: the branch into `base`, described by the
@@ -380,6 +459,30 @@ pub fn load_overview(workspace: &Path, account: Option<&str>) -> Option<GithubOv
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_checks_of_a_commit_are_one_verdict_and_a_failure_decides_it() {
+        let runs = |runs: &[(&str, Option<&str>)]| {
+            serde_json::json!({"check_runs": runs.iter().map(|(status, conclusion)| serde_json::json!({"status": status, "conclusion": conclusion})).collect::<Vec<_>>()})
+        };
+        let none = serde_json::json!({"state": "pending", "statuses": []});
+        let old = |state: &str| serde_json::json!({"state": state, "statuses": [{"state": state}]});
+        let (done, ok, bad) = ("completed", Some("success"), Some("failure"));
+        assert_eq!(checks_of(&runs(&[]), &none), PullChecks::None);
+        assert_eq!(checks_of(&runs(&[(done, ok), (done, Some("skipped")), (done, Some("neutral"))]), &none), PullChecks::Passing);
+        assert_eq!(checks_of(&runs(&[(done, ok), ("in_progress", None)]), &none), PullChecks::Pending);
+        assert_eq!(checks_of(&runs(&[(done, ok), ("queued", None), (done, bad)]), &none), PullChecks::Failing);
+        assert_eq!(checks_of(&runs(&[(done, Some("timed_out"))]), &none), PullChecks::Failing);
+        // What an older integration reported counts the same.
+        assert_eq!(checks_of(&runs(&[]), &old("success")), PullChecks::Passing);
+        assert_eq!(checks_of(&runs(&[(done, ok)]), &old("failure")), PullChecks::Failing);
+        assert_eq!(checks_of(&runs(&[(done, ok)]), &old("pending")), PullChecks::Pending);
+        // A commit of a pull request is asked about by its own hash only.
+        let repository = parse_remote("git@github.com:owner/repo.git", "origin").unwrap();
+        let pull = |sha: &str| serde_json::json!([{"number": 3, "title": "T", "head": {"ref": "topic", "sha": sha}}]);
+        assert_eq!(parse_pulls(&pull("0123abcd"), &repository, "topic")[0].head, "0123abcd");
+        assert_eq!(parse_pulls(&pull("../../otro"), &repository, "topic")[0].head, "");
+    }
 
     #[test]
     fn a_new_pull_names_the_forks_branch_and_a_refusal_is_told_in_the_users_terms() {

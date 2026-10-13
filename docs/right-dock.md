@@ -199,6 +199,20 @@ reutiliza la navegación normal de documentos.
 Los cambios del chat mantienen su procedencia y cobertura del registro. Su
 lista de archivos y el diff seleccionado usan scroll virtual independiente.
 
+### Revisar un diff
+
+El encabezado del diff de un archivo tiene **Marcar como visto**. Un cambio
+visto queda atenuado en la lista. La marca vale para ese cambio tal como
+estaba (archivo, sección y cantidad de líneas): si el archivo vuelve a cambiar
+es otro cambio, todavía sin ver. No se guarda entre ejecuciones.
+
+Bajo el encabezado, un cambio **sin preparar** muestra sus bloques: «Bloque 2
+de 5» con el encabezado `@@` del bloque, flechas para recorrerlos y
+**Descartar bloque…**. Tras confirmar, ese bloque sale del árbol de trabajo
+(`git apply --reverse` de un parche con sólo ese bloque); los demás bloques y
+lo ya preparado no se tocan. Un cambio preparado, uno binario o uno cuya vista
+quedó parcial por tamaño no ofrecen bloques.
+
 ### Archivos del chat y capturas
 
 Abrir un archivo desde una actividad resuelve nuevamente la fila original del
