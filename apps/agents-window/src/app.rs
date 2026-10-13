@@ -17978,6 +17978,23 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id == "review_detail_retry" => {
                 self.request_review_detail();
             }
+            UiAction::Clicked { id } if id == "review_detail_viewed" => {
+                let key = self.view.review_detail.as_ref().and_then(|detail| match &detail.content {
+                    Some(Ok(Some(diff))) => Some(crate::view::git_viewed_key(
+                        &detail.path,
+                        detail.stage == DiffStage::Staged,
+                        diff.file.additions,
+                        diff.file.deletions,
+                    )),
+                    _ => None,
+                });
+                if let Some(key) = key {
+                    let viewed = &mut self.view.git_panel.viewed;
+                    if !viewed.remove(&key) {
+                        viewed.insert(key);
+                    }
+                }
+            }
             UiAction::Clicked { id } if id == "review_detail_previous" => {
                 if let Some(detail) = &mut self.view.review_detail {
                     detail.page_index = detail.page_index.saturating_sub(1);

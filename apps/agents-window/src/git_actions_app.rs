@@ -32,15 +32,45 @@ impl AgentsWindow {
                 self.view.git_panel.confirm = None;
                 return true;
             }
+            "review_hunk_previous" => {
+                self.view.git_panel.hunk = self.view.git_panel.hunk.saturating_sub(1);
+                return true;
+            }
+            "review_hunk_next" | "review_hunk_discard" => {
+                // The blocks are those of the diff that is open, as it was read.
+                let open = self.view.review_detail.as_ref().and_then(|detail| match &detail.content {
+                    Some(Ok(Some(diff))) if detail.stage == DiffStage::Unstaged => Some((
+                        detail.path.clone(),
+                        diff.file.lines.iter().filter(|line| line.kind == crate::git_review::ReviewLineKind::Hunk).count(),
+                    )),
+                    _ => None,
+                });
+                let Some((path, blocks)) = open.filter(|(_, blocks)| *blocks > 0) else {
+                    return true;
+                };
+                let current = self.view.git_panel.hunk.min(blocks - 1);
+                if id == "review_hunk_next" {
+                    self.view.git_panel.hunk = (current + 1).min(blocks - 1);
+                } else if self.view.environment.workflow.busy.is_none() && self.git_action_request.is_none() {
+                    // Never at once: the dialog names the block first.
+                    self.view.git_panel.confirm = Some(crate::view::GitConfirmView {
+                        workspace: self.view.workspace.clone(),
+                        trash: false,
+                        paths: vec![PathBuf::from(path)],
+                        hunk: Some(current),
+                    });
+                }
+                return true;
+            }
             "review_discard_confirm" => {
                 // What was named in the dialog is what is discarded, and only
                 // in the repository it was asked for.
                 if let Some(confirm) = self.view.git_panel.confirm.take() {
                     if confirm.workspace == self.view.workspace {
-                        let kind = if confirm.trash {
-                            GitActionKind::Trash
-                        } else {
-                            GitActionKind::Discard
+                        let kind = match (confirm.trash, confirm.hunk) {
+                            (true, _) => GitActionKind::Trash,
+                            (false, Some(hunk)) => GitActionKind::DiscardHunk(hunk),
+                            (false, None) => GitActionKind::Discard,
                         };
                         self.submit_git_action(kind, confirm.paths);
                     }
@@ -158,6 +188,7 @@ impl AgentsWindow {
                         workspace: self.view.workspace.clone(),
                         trash: group == Untracked,
                         paths,
+                        hunk: None,
                     });
                 }
             }
@@ -239,7 +270,7 @@ impl AgentsWindow {
                         Ok(()) => {
                             if matches!(
                                 response.request.kind,
-                                GitActionKind::Discard | GitActionKind::Trash
+                                GitActionKind::Discard | GitActionKind::Trash | GitActionKind::DiscardHunk(_)
                             ) {
                                 self.invalidate_workspace_files();
                                 if self.view.side_tab == SideTab::Files
@@ -247,6 +278,10 @@ impl AgentsWindow {
                                 {
                                     self.refresh_file_rows();
                                 }
+                            }
+                            if matches!(response.request.kind, GitActionKind::DiscardHunk(_)) {
+                                // The diff that is open lost a block.
+                                self.request_review_detail();
                             }
                             self.request_git_review(response.request.workspace);
                             if self.view.environment.open || self.git_sidebar_visible() {

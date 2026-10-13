@@ -807,6 +807,7 @@ fn export_git_sidebar_visual_review() {
             paths: (0..count)
                 .map(|index| format!("apps/agents-window/src/dock_chrome_{index}.rs").into())
                 .collect(),
+            hunk: None,
         });
         render(window(&state), size, &format!("{name}-1440"), Pointer::None);
     }

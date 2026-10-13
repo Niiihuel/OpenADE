@@ -126,7 +126,10 @@ configuración de la cuenta. No se solicitan permisos adicionales al abrir el gr
   propios. Al crear un PR no se puede elegir la base ni editar título y cuerpo.
 - Faltan remotos GitHub Enterprise y casos de fork con nombres de remotos no
   convencionales.
-- Check runs, reviews, conflictos y conversaciones de PR aún no se presentan.
+- Del PR de la rama se muestra el estado de sus checks en una línea (exitosos,
+  fallando, pendientes o sin CI), sumando los *check runs* y el estado
+  combinado de su último commit. El detalle de cada check, las reviews, los
+  conflictos y las conversaciones aún no se presentan.
 - GitHub Enterprise requiere un host y endpoint configurables.
 
 La lectura de PR usa el [endpoint oficial de GitHub](https://docs.github.com/en/rest/pulls/pulls).

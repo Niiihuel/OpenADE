@@ -34,6 +34,16 @@ pub(crate) struct GitPanelView {
     /// unsaved changes gives its place to the close button.
     pub tab_revealed: Option<u64>,
     pub confirm: Option<GitConfirmView>,
+    /// The changes the user marked as viewed, as [`viewed_key`] names them.
+    pub viewed: std::collections::BTreeSet<String>,
+    /// The block of the open diff that its tools act on, counted from zero.
+    pub hunk: usize,
+}
+
+/// A change as it was when it was marked viewed: its file, its section and
+/// its size. One that changed again since is another, not yet viewed.
+pub(crate) fn viewed_key(path: &str, staged: bool, additions: usize, deletions: usize) -> String {
+    format!("{}:{additions}:{deletions}:{path}", if staged { "staged" } else { "local" })
 }
 
 /// Changes about to be thrown away, waiting for the user's answer.
@@ -43,6 +53,8 @@ pub(crate) struct GitConfirmView {
     /// Untracked files go to the trash; tracked ones are restored.
     pub trash: bool,
     pub paths: Vec<PathBuf>,
+    /// Only this block of the one file, counted from zero, is thrown away.
+    pub hunk: Option<usize>,
 }
 
 /// The row an action ID belongs to: `section:file` or `n:index` for a file,
@@ -73,6 +85,7 @@ struct ListContext {
     revealed: [Option<String>; 2],
     /// The file whose diff is open.
     selected: Option<(String, DiffStage)>,
+    viewed: Arc<std::collections::BTreeSet<String>>,
 }
 
 impl ListContext {
@@ -294,7 +307,9 @@ fn file_row(context: &ListContext, group: ChangeGroup, index: usize) -> Element 
         .icon(openide_ui::file_icon(path))
         .icon_ink(theme::ICON_PRIMARY)
         .filled();
-    if deleted {
+    // A change already viewed steps back; the ones left to read stand out.
+    let viewed = context.viewed.contains(&viewed_key(path, group == ChangeGroup::Staged, additions, deletions));
+    if deleted || viewed {
         row = row.title_ink(theme::FOREGROUND_SUBTLE);
     }
     if let Some(parent) = parent.filter(|_| context.width >= 320.0) {
@@ -473,6 +488,14 @@ pub(super) fn discard_dialog(state: &ViewState, base: Element, width: f32) -> El
     let count = confirm.paths.len();
     let names = named_files(&confirm.paths);
     let (title, description, label) = match (confirm.trash, count) {
+        (false, 1) if confirm.hunk.is_some() => (
+            "¿Descartar este bloque?".to_owned(),
+            format!(
+                "Se perderá el bloque {} de los cambios sin preparar de {names}. No se puede deshacer.",
+                confirm.hunk.unwrap_or(0) + 1
+            ),
+            "Descartar bloque",
+        ),
         (true, 1) => (
             "¿Enviar a la papelera?".to_owned(),
             format!("{names} no tiene seguimiento de Git e irá a la papelera del sistema."),
@@ -858,6 +881,19 @@ fn github_footer(status: &GithubStatus, surface: Color) -> Option<Element> {
                     .sizing(crate::ui_sizing::SMALL_LABEL_BUTTON)
                     .render(),
                 );
+                if let Some(checks) = pull.checks {
+                    use crate::github::PullChecks;
+                    rows.push(
+                        UiText::new(checks.label(), theme::component_palette())
+                            .role(TextRole::Micro)
+                            .ink(match checks {
+                                PullChecks::Failing => theme::DESTRUCTIVE,
+                                PullChecks::Passing => theme::DIFF_ADDED,
+                                PullChecks::Pending | PullChecks::None => theme::FOREGROUND_SUBTLE,
+                            })
+                            .render(),
+                    );
+                }
             } else if github.branch != "HEAD separado" {
                 for (id, label) in [
                     ("github_pr_create", "Crear pull request"),
@@ -903,12 +939,13 @@ fn github_footer(status: &GithubStatus, surface: Color) -> Option<Element> {
 
 #[cfg(test)]
 fn detail_content(detail: &ReviewDetailView, width: f32) -> Element {
-    detail_view(detail, width, true)
+    detail_view(detail, width, true, &Default::default())
 }
 
 /// `back` adds the way out to the list of changes. The IDE keeps that list in
 /// its sidebar, so there a diff is a document on its own.
-fn detail_view(detail: &ReviewDetailView, width: f32, back: bool) -> Element {
+fn detail_view(detail: &ReviewDetailView, width: f32, back: bool, panel: &GitPanelView) -> Element {
+    let viewed = &panel.viewed;
     let stage = if detail.stage == DiffStage::Staged {
         "Preparado"
     } else {
@@ -1023,6 +1060,23 @@ fn detail_view(detail: &ReviewDetailView, width: f32, back: bool) -> Element {
         }
     }
     header.push(Element::spacer().flex(1.0));
+    // Once its diff is read, a change can be marked viewed: it steps back in the list.
+    if let Some(Ok(Some(diff))) = &detail.content {
+        let seen = viewed.contains(&viewed_key(&detail.path, detail.stage == DiffStage::Staged, diff.file.additions, diff.file.deletions));
+        header.push(
+            UiIconButton::new(
+                "review_detail_viewed",
+                Icon::Check,
+                theme::action_palette(theme::BACKGROUND, if seen { theme::DIFF_ADDED } else { theme::FOREGROUND_SUBTLE }),
+            )
+            .variant(ButtonVariant::Subtle)
+            .size(ControlSize::Dense)
+            .tooltip_with(
+                TooltipSpec::new(if seen { "Marcar como no visto" } else { "Marcar como visto" }).placement(TooltipPlacement::Below),
+            )
+            .render(),
+        );
+    }
     header.extend([
         UiIconButton::new(
             "review_detail_open_editor",
@@ -1075,6 +1129,47 @@ fn detail_view(detail: &ReviewDetailView, width: f32, back: bool) -> Element {
                 ));
                 children.push(Element::spacer().flex(1.0));
             } else {
+                // The blocks of an unstaged change can be thrown away one at a time.
+                let blocks: Vec<&str> = file
+                    .lines
+                    .iter()
+                    .filter(|line| line.kind == crate::git_review::ReviewLineKind::Hunk)
+                    .map(|line| line.text.as_str())
+                    .collect();
+                if detail.stage == DiffStage::Unstaged && !blocks.is_empty() && !diff.truncated {
+                    let current = panel.hunk.min(blocks.len() - 1);
+                    let tool = |id: &str, icon, hint: &str, enabled| {
+                        UiIconButton::new(id, icon, theme::action_palette(theme::BACKGROUND, theme::FOREGROUND_SUBTLE))
+                            .variant(ButtonVariant::Subtle)
+                            .size(ControlSize::Dense)
+                            .enabled(enabled)
+                            .tooltip_with(TooltipSpec::new(hint).placement(TooltipPlacement::Below))
+                            .render()
+                    };
+                    children.push(
+                        Element::row(vec![
+                            tool("review_hunk_previous", Icon::ArrowLeft, "Bloque anterior", current > 0),
+                            tool("review_hunk_next", Icon::ArrowRight, "Bloque siguiente", current + 1 < blocks.len()),
+                            UiText::new(format!("Bloque {} de {}", current + 1, blocks.len()), theme::component_palette())
+                                .role(TextRole::Small)
+                                .render()
+                                .centered_y(),
+                            Element::truncated_text(blocks[current])
+                                .font_family(FontFamily::Monospace)
+                                .font_size(11.0)
+                                .foreground(theme::FOREGROUND_SUBTLE)
+                                .flex(1.0)
+                                .centered_y(),
+                            Button::new("review_hunk_discard", "Descartar bloque…", theme::action_palette(theme::BACKGROUND, theme::FOREGROUND))
+                                .variant(ButtonVariant::Ghost)
+                                .sizing(crate::ui_sizing::SMALL_LABEL_BUTTON)
+                                .render(),
+                        ])
+                        .gap(6.0)
+                        .padding(4.0)
+                        .size(None, Some(crate::dock_tab_ui::HEADER_HEIGHT)),
+                    );
+                }
                 let language = CodeLanguage::from_extension(
                     Path::new(&file.path)
                         .extension()
@@ -1117,7 +1212,7 @@ fn detail_view(detail: &ReviewDetailView, width: f32, back: bool) -> Element {
 pub(super) fn content(state: &ViewState, width: f32) -> Element {
     let ide = crate::ide_workspace::active(state);
     if let Some(detail) = &state.review_detail {
-        return detail_view(detail, width, !ide);
+        return detail_view(detail, width, !ide, &state.git_panel);
     }
     if ide {
         // The list of changes lives in the source control sidebar.
@@ -1299,6 +1394,7 @@ pub(super) fn navigator_body(state: &ViewState, width: f32) -> Element {
                 .review_detail
                 .as_ref()
                 .map(|detail| (detail.path.clone(), detail.stage)),
+            viewed: Arc::new(state.git_panel.viewed.clone()),
         }));
     }
     if review.truncated {
@@ -1371,10 +1467,70 @@ mod tests {
     }
 
     #[test]
+    fn a_change_is_marked_viewed_as_it_was_and_is_another_once_it_changes() {
+        let detail = text_detail();
+        let Some(Ok(Some(diff))) = &detail.content else { unreachable!() };
+        let (added, removed) = (diff.file.additions, diff.file.deletions);
+        let key = viewed_key(&detail.path, detail.stage == DiffStage::Staged, added, removed);
+        assert_ne!(key, viewed_key(&detail.path, detail.stage != DiffStage::Staged, added, removed));
+        assert_ne!(key, viewed_key(&detail.path, detail.stage == DiffStage::Staged, added + 1, removed));
+        assert_ne!(key, viewed_key("otro.rs", detail.stage == DiffStage::Staged, added, removed));
+        let offer = |viewed: &std::collections::BTreeSet<String>| {
+            let panel = GitPanelView { viewed: viewed.clone(), ..Default::default() };
+            let mut tree = UiTree::new(detail_view(&detail, 620.0, true, &panel));
+            tree.layout(Size::new(620.0, 300.0));
+            assert!(tree.focus("review_detail_viewed"));
+            let frame = tree.layout(Size::new(620.0, 300.0));
+            texts(&frame).into_iter().map(str::to_owned).collect::<Vec<_>>()
+        };
+        assert!(offer(&Default::default()).contains(&"Marcar como visto".to_owned()));
+        assert!(offer(&[key].into()).contains(&"Marcar como no visto".to_owned()));
+        // A change whose diff is not there yet has nothing to have been viewed.
+        let loading = ReviewDetailView { content: None, ..detail.clone() };
+        let frame = UiTree::new(detail_view(&loading, 620.0, true, &Default::default())).layout(Size::new(620.0, 300.0));
+        assert!(!frame.regions.iter().any(|region| region.id == "review_detail_viewed"));
+    }
+
+    #[test]
+    fn the_blocks_of_an_unstaged_change_are_walked_and_offered_to_discard() {
+        let mut detail = text_detail();
+        let has = |detail: &ReviewDetailView, panel: &GitPanelView, id: &str| {
+            let frame = UiTree::new(detail_view(detail, 720.0, true, panel)).layout(Size::new(720.0, 400.0));
+            (frame.regions.iter().any(|region| region.id == id && region.kind == openide_ui::HitKind::Button), texts(&frame).join(" | "))
+        };
+        let blocks = 2;
+        if let Some(Ok(Some(diff))) = &mut detail.content {
+            diff.file.lines = ["@@ -1,3 +1,3 @@", "@@ -20 +20 @@ fn otra()"]
+                .into_iter()
+                .map(|text| crate::git_review::ReviewLine {
+                    kind: crate::git_review::ReviewLineKind::Hunk,
+                    text: text.into(),
+                    old_number: None,
+                    new_number: None,
+                })
+                .collect();
+        }
+        detail.stage = DiffStage::Unstaged;
+        let panel = GitPanelView::default();
+        let (offered, said) = has(&detail, &panel, "review_hunk_discard");
+        assert_eq!(offered, blocks > 0, "{said}");
+        if blocks > 0 {
+            assert!(said.contains(&format!("Bloque 1 de {blocks}")) && said.contains("@@ -1,3 +1,3 @@"), "{said}");
+            // A place past the last block is the last block.
+            let far = GitPanelView { hunk: 99, ..Default::default() };
+            let last = has(&detail, &far, "review_hunk_discard").1;
+            assert!(last.contains(&format!("Bloque {blocks} de {blocks}")) && last.contains("fn otra()"), "{last}");
+        }
+        // What is staged is not thrown away from here.
+        detail.stage = DiffStage::Staged;
+        assert!(!has(&detail, &panel, "review_hunk_discard").0);
+    }
+
+    #[test]
     fn a_diff_only_offers_the_way_back_where_the_list_shares_its_tab() {
         let detail = text_detail();
         for back in [true, false] {
-            let frame = UiTree::new(detail_view(&detail, 620.0, back)).layout(Size::new(620.0, 300.0));
+            let frame = UiTree::new(detail_view(&detail, 620.0, back, &Default::default())).layout(Size::new(620.0, 300.0));
             let shows_crumb = frame.commands.iter().any(|command| {
                 matches!(command, DrawCommand::Text { text, .. } if text == "Cambios")
             });
@@ -1521,6 +1677,7 @@ mod tests {
 
     fn context(review: GitReview, width: f32, surface: Color) -> ListContext {
         ListContext {
+            viewed: Default::default(),
             review: Arc::new(review),
             width,
             pending: false,
@@ -2009,6 +2166,7 @@ mod tests {
             workspace: "/workspace/project".into(),
             trash,
             paths: (0..count).map(|index| format!("src/file-{index}.rs").into()).collect(),
+            hunk: None,
         };
         state.git_panel.confirm = Some(confirm(false, 1));
         let (frame, text) = dialog(&state);
@@ -2028,6 +2186,12 @@ mod tests {
         assert!(text.contains("¿Enviar a la papelera?") && text.contains("papelera del sistema"));
         state.git_panel.confirm = Some(confirm(true, 2));
         assert!(dialog(&state).1.contains("¿Enviar 2 archivos a la papelera?"));
+
+        // One block of one file says which.
+        state.git_panel.confirm = Some(GitConfirmView { hunk: Some(2), ..confirm(false, 1) });
+        let (frame, text) = dialog(&state);
+        assert!(has(&frame, "review_discard_confirm"));
+        assert!(text.contains("¿Descartar este bloque?") && text.contains("el bloque 3") && text.contains("«src/file-0.rs»"), "{text}");
 
         // Asked in another project, it is not this project's question.
         state.workspace = "/workspace/other".into();
@@ -2057,8 +2221,19 @@ mod tests {
             author: "ana".into(),
             base: "main".into(),
             draft: false,
+            head: "abc123".into(),
+            checks: Some(crate::github::PullChecks::Failing),
         };
-        assert_eq!(offered("topic", vec![open]), [false, false]);
+        assert_eq!(offered("topic", vec![open.clone()]), [false, false]);
+        // The pull request says how its checks stand.
+        let status = GithubStatus::Ready(crate::github::GithubOverview {
+            repository: crate::github::parse_remote("git@github.com:team/project.git", "origin").unwrap(),
+            branch: "topic".into(),
+            pulls: vec![open],
+            notice: None,
+        });
+        let frame = UiTree::new(github_footer(&status, theme::BACKGROUND).unwrap()).layout(Size::new(320.0, 200.0));
+        assert!(texts(&frame).contains(&"Checks fallando"), "{:?}", texts(&frame));
     }
 
     #[test]

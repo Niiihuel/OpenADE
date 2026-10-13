@@ -17,6 +17,9 @@ pub enum GitActionKind {
     Discard,
     /// Move untracked files to the system trash, where they can be recovered.
     Trash,
+    /// Take one block of a tracked file's unstaged changes out of the
+    /// worktree: the one at this place among them, counted from zero.
+    DiscardHunk(usize),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -73,6 +76,27 @@ impl GitActionWorker {
     }
 }
 
+/// One block of a file's diff as a patch of its own: the file's header and
+/// that block. Nothing for a diff that is not text, or without that block.
+fn hunk_patch(diff: &str, index: usize) -> Option<String> {
+    if diff.contains("\nGIT binary patch") || diff.contains("\nBinary files ") {
+        return None;
+    }
+    let mut header = String::new();
+    let mut hunks: Vec<String> = Vec::new();
+    for line in diff.split_inclusive('\n') {
+        if line.starts_with("@@") {
+            hunks.push(line.to_owned());
+        } else if let Some(hunk) = hunks.last_mut() {
+            hunk.push_str(line);
+        } else {
+            header.push_str(line);
+        }
+    }
+    let hunk = hunks.get(index)?;
+    Some(format!("{header}{hunk}"))
+}
+
 fn apply(request: &GitActionRequest, trash: crate::file_ops::Trash) -> io::Result<()> {
     if request.paths.is_empty()
         || request.paths.iter().any(|path| {
@@ -87,6 +111,40 @@ fn apply(request: &GitActionRequest, trash: crate::file_ops::Trash) -> io::Resul
             io::ErrorKind::PermissionDenied,
             "La ruta del cambio no es válida",
         ));
+    }
+    if let GitActionKind::DiscardHunk(index) = request.kind {
+        let [path] = request.paths.as_slice() else {
+            return Err(io::Error::other("Un bloque se descarta de un solo archivo"));
+        };
+        let diff = command_no_window("git")
+            .args(["--literal-pathspecs", "diff", "--no-color", "--no-ext-diff", "--"])
+            .arg(path)
+            .current_dir(&request.workspace)
+            .output()?;
+        let patch = diff
+            .status
+            .success()
+            .then(|| hunk_patch(&String::from_utf8_lossy(&diff.stdout), index))
+            .flatten()
+            .ok_or_else(|| io::Error::other("Ese bloque ya no está entre los cambios del archivo. Actualizá el diff."))?;
+        // Applied backwards to the worktree alone: the index is not touched.
+        let mut apply = command_no_window("git")
+            .args(["apply", "--reverse", "--whitespace=nowarn", "-"])
+            .current_dir(&request.workspace)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()?;
+        {
+            use std::io::Write;
+            apply.stdin.take().expect("piped").write_all(patch.as_bytes())?;
+        }
+        let output = apply.wait_with_output()?;
+        if !output.status.success() {
+            let message: String = String::from_utf8_lossy(&output.stderr).trim().chars().take(800).collect();
+            return Err(io::Error::other(format!("Git no pudo descartar el bloque. {message}")));
+        }
+        return Ok(());
     }
     if request.kind == GitActionKind::Trash {
         for path in &request.paths {
@@ -130,7 +188,9 @@ fn apply(request: &GitActionRequest, trash: crate::file_ops::Trash) -> io::Resul
             GitActionKind::Unstage => {
                 command.args(["rm", "--cached", "--force", "--ignore-unmatch"])
             }
-            GitActionKind::Discard | GitActionKind::Trash => command.args(["checkout", "--quiet"]),
+            GitActionKind::Discard | GitActionKind::Trash | GitActionKind::DiscardHunk(_) => {
+                command.args(["checkout", "--quiet"])
+            }
         };
         let output = command
             .arg("--")
@@ -169,6 +229,52 @@ mod tests {
             "{}",
             String::from_utf8_lossy(&result.stderr)
         );
+    }
+
+    #[test]
+    fn one_block_of_a_change_is_discarded_and_the_others_and_the_index_stay() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path();
+        git(path, &["init", "--quiet"]);
+        git(path, &["config", "user.email", "t@example.test"]);
+        git(path, &["config", "user.name", "T"]);
+        let lines = |first: &str, last: &str| {
+            let mut all: Vec<String> = (1..=40).map(|line| format!("linea {line}")).collect();
+            all[1] = first.to_owned();
+            all[37] = last.to_owned();
+            all.join("\n") + "\n"
+        };
+        fs::write(path.join("a.txt"), lines("linea 2", "linea 38")).unwrap();
+        git(path, &["add", "a.txt"]);
+        git(path, &["commit", "--quiet", "-m", "base"]);
+        // Two changes far apart are two blocks; a third, staged, is not among them.
+        fs::write(path.join("b.txt"), "preparado\n").unwrap();
+        git(path, &["add", "b.txt"]);
+        fs::write(path.join("a.txt"), lines("ARRIBA", "ABAJO")).unwrap();
+        let discard = |index: usize| {
+            apply(
+                &GitActionRequest {
+                    workspace: path.to_owned(),
+                    generation: 1,
+                    kind: GitActionKind::DiscardHunk(index),
+                    paths: vec![PathBuf::from("a.txt")],
+                },
+                no_trash,
+            )
+        };
+        discard(1).unwrap();
+        assert_eq!(fs::read_to_string(path.join("a.txt")).unwrap(), lines("ARRIBA", "linea 38"));
+        assert_eq!(fs::read_to_string(path.join("b.txt")).unwrap(), "preparado\n");
+        // What was the second block is gone: there is one left, and no other.
+        assert!(discard(1).is_err());
+        discard(0).unwrap();
+        assert_eq!(fs::read_to_string(path.join("a.txt")).unwrap(), lines("linea 2", "linea 38"));
+        assert!(discard(0).is_err());
+
+        let diff = "diff --git a/a b/a\nindex 1..2 100644\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n-x\n+y\n@@ -9 +9 @@\n-p\n+q\n";
+        assert_eq!(hunk_patch(diff, 1).unwrap(), "diff --git a/a b/a\nindex 1..2 100644\n--- a/a\n+++ b/a\n@@ -9 +9 @@\n-p\n+q\n");
+        assert_eq!(hunk_patch(diff, 2), None);
+        assert_eq!(hunk_patch("diff --git a/i b/i\nBinary files a/i and b/i differ\n", 0), None);
     }
 
     fn no_trash(_: &Path) -> Result<(), String> {
