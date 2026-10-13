@@ -4842,6 +4842,15 @@ impl AgentsWindow {
         crate::browser_sites::site_of_call(tool_name, arguments, &page)
     }
 
+    fn blocked_browser_sites(&self) -> Vec<String> {
+        self.browser_sites
+            .sites
+            .iter()
+            .filter(|site| site.access == crate::browser_sites::SiteAccess::Block)
+            .map(|site| site.origin.clone())
+            .collect()
+    }
+
     /// Keeps a site's permission and shows it in the settings.
     pub(crate) fn set_browser_site(&mut self, address: &str, access: Option<crate::browser_sites::SiteAccess>) -> Result<(), String> {
         let mut sites = self.browser_sites.clone();
@@ -4852,6 +4861,11 @@ impl AgentsWindow {
         sites.save(&self.data_root)?;
         self.view.browser_sites = sites.sites.clone();
         self.browser_sites = sites;
+        // The browsers that are open stop at a blocked site from now on.
+        let blocked = self.blocked_browser_sites();
+        for runtime in self.browsers.values() {
+            runtime.set_blocked_sites(blocked.clone());
+        }
         Ok(())
     }
 
@@ -5192,6 +5206,7 @@ impl AgentsWindow {
                 Ok(runtime) => {
                     let repaint = ctx.clone();
                     runtime.on_frame(move || repaint.request_repaint());
+                    runtime.set_blocked_sites(self.blocked_browser_sites());
                     self.browsers.insert(id, runtime);
                 }
                 Err(error) if self.view.browser.tab_id == Some(id) => {
@@ -14002,6 +14017,25 @@ impl AgentsWindow {
                 | AgentEventKind::ModelRequestStarted { .. }
         ) {
             self.environment_dirty = true;
+        }
+        // The tabs the agent opened for this turn and did not ask to keep go
+        // with it.
+        if matches!(
+            event.kind,
+            AgentEventKind::TurnCompleted { .. } | AgentEventKind::TurnFailed { .. } | AgentEventKind::TurnCancelled
+        ) && self.view.selected_session.as_deref() == Some(event.session_id.as_str())
+        {
+            let scope = self.dock_scope();
+            let browser = self
+                .dock
+                .tabs(&scope.workspace_id)
+                .iter()
+                .find(|tab| tab.kind == DockTabKind::Browser && tab.owner == scope.owner)
+                .map(|tab| tab.id.get())
+                .filter(|id| self.browsers.contains_key(id));
+            if let Some(id) = browser {
+                self.enqueue_browser_input(id, crate::browser_runtime::BrowserCommand::CloseAgentTabs {});
+            }
         }
         // A turn that was stopped or failed does not go on to what was queued
         // behind it until the user says so.

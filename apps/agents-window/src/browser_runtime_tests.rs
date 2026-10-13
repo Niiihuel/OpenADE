@@ -53,6 +53,7 @@ pub(crate) fn fixture(
         scope,
         preview: Arc::default(),
         reveal: Arc::default(),
+        blocked: Arc::default(),
     };
     (
         BrowserRuntime {
@@ -82,6 +83,7 @@ fn handle() -> BrowserHandle {
         },
         preview: Arc::default(),
         reveal: Arc::default(),
+        blocked: Arc::default(),
     }
 }
 
@@ -584,6 +586,7 @@ fn catalog() -> Vec<(&'static str, Value, bool)> {
         ("browser_downloads", json!({}), false),
         ("browser_clipboard_read", json!({}), false),
         ("browser_tab_new", json!({"url":"http://localhost:3000"}), true),
+        ("browser_tab_keep", json!({"id":2}), false),
         ("browser_tab_select", json!({"id":2}), true),
         ("browser_tab_close", json!({"id":2}), true),
         ("browser_file_upload", json!({"paths":["/tmp/informe.pdf"]}), true),

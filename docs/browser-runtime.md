@@ -117,9 +117,8 @@ La ventana envía además el puntero, en los mismos píxeles CSS:
 - **Un enlace pedido en otra pestaña.** Un enlace con `target="_blank"`, un
   script que llama a `window.open` y Control + clic, el botón del medio o
   Shift + clic sobre un enlace piden otra pestaña u otra ventana. Cuando lo
-  pidió un clic, los dos primeros abren una pestaña nueva del mismo navegador,
-  que pasa a ser la que se ve; los clics con tecla o botón del medio abren en
-  la misma página. Nunca se abre una ventana. El detalle está en **Enlaces que
+  pidió un clic, todos abren una pestaña nueva del mismo navegador, que pasa a
+  ser la que se ve. Nunca se abre una ventana. El detalle está en **Enlaces que
   piden otra pestaña**, más abajo.
 
 **Enlaces que piden otra pestaña.** La regla es la misma para el usuario y
@@ -129,7 +128,7 @@ para las herramientas del agente, cuyo clic es un clic:
 | --- | --- |
 | Clic en un enlace con `target="_blank"` o con el nombre de otra ventana | Se abre en una pestaña nueva, que pasa a ser la activa. La página que lo pidió queda en la suya. |
 | Clic en algo cuyo script llama a `window.open(dirección)` | Lo mismo. El script recibe `null`: la pestaña nueva no tiene `opener`. |
-| Control + clic, Shift + clic o botón del medio sobre un enlace | Chromium lo abre directamente en la misma página. |
+| Control + clic, Shift + clic o botón del medio sobre un enlace | Lo mismo: pestaña nueva, y la página queda donde estaba. |
 | `window.open` o un clic hecho por script, sin un clic del usuario detrás | No abre nada: el script recibe `null`. |
 | Un destino que no es `http` ni `https` | No abre nada. |
 | Un formulario que envía a otra pestaña | Se abre su dirección por GET en la pestaña nueva, **sin los datos**, que no se envían. |
@@ -561,8 +560,7 @@ otra, y `localStorage`, IndexedDB y los service workers no se restauran así.
   direcciones, herramientas `browser_tab*`), pero la que abre un enlace no
   conoce a la página que la pidió. Una ventana que un script abre vacía para
   llenarla después no abre nada, y un formulario que envía a otra pestaña
-  pierde sus datos: ver **Enlaces que piden otra pestaña**. Las pestañas que
-  abre el agente no se cierran solas al terminar su turno.
+  pierde sus datos: ver **Enlaces que piden otra pestaña**.
 - **Teclas para todo el texto.** Lo que no está en la distribución
   estadounidense del driver (`ñ`, acentos) se inserta sin `keydown`, y una
   tecla lleva el código físico de esa distribución, no el del teclado real.

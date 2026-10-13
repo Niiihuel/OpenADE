@@ -105,6 +105,9 @@ pub(crate) struct BrowserTabView {
     pub title: String,
     pub url: String,
     pub active: bool,
+    /// The agent opened it and has not asked to keep it: it closes when the
+    /// agent's turn ends.
+    pub temporary: bool,
 }
 
 /// Text a page copied: its own Copy button, or a script's copy behind a click.
@@ -379,6 +382,13 @@ pub(crate) enum BrowserCommand {
     TabClose {
         id: u64,
     },
+    /// The agent wants a tab it opened to stay after its turn.
+    TabKeep {
+        id: u64,
+    },
+    /// Closes the tabs the agent opened and did not ask to keep. The window's
+    /// own, when the agent's turn ends: no tool names it.
+    CloseAgentTabs {},
 }
 
 /// One end of a drag. The other element tools take the same fields inline.
@@ -642,6 +652,7 @@ impl BrowserCommand {
                 | Self::TabList {}
                 | Self::Downloads {}
                 | Self::ClipboardRead {}
+                | Self::TabKeep { .. }
                 | Self::TakeScreenshot { .. }
         )
     }
@@ -725,9 +736,29 @@ struct BrowserHandle {
     preview: Arc<Mutex<Option<String>>>,
     /// `open_preview` asked for this context's tab to be shown.
     reveal: Arc<AtomicBool>,
+    /// The sites the user blocked for the agent, as origins.
+    blocked: Arc<Mutex<Vec<String>>>,
 }
 
 impl BrowserHandle {
+    /// Why the agent may not run `command` here, when the user blocked the
+    /// site it goes to or the one the page is on.
+    fn blocked_for_agent(&self, command: &BrowserCommand) -> Option<String> {
+        let blocked = self.blocked.lock().unwrap_or_else(|poison| poison.into_inner());
+        let is_blocked = |url: &str| crate::browser_sites::origin_of(url).is_some_and(|origin| blocked.contains(&origin));
+        let refused = match command {
+            BrowserCommand::Navigate { url } | BrowserCommand::TabNew { url: Some(url) } => is_blocked(url),
+            BrowserCommand::TabNew { url: None }
+            | BrowserCommand::TabList {}
+            | BrowserCommand::TabSelect { .. }
+            | BrowserCommand::TabClose { .. }
+            | BrowserCommand::Downloads {}
+            | BrowserCommand::Back => false,
+            _ => is_blocked(&self.state.lock().unwrap_or_else(|poison| poison.into_inner()).url),
+        };
+        refused.then(|| "El usuario bloqueó este sitio para el agente (Ajustes → Navegador → Permisos por sitio). No se leyó ni se hizo nada en él.".to_owned())
+    }
+
     fn submit(&self, command: BrowserCommand) -> Result<BrowserRequest, String> {
         self.submit_as(command, true, false)
     }
@@ -738,6 +769,14 @@ impl BrowserHandle {
         include_image: bool,
     ) -> Result<BrowserRequest, String> {
         command.validate()?;
+        // A site the user blocked is closed to the agent whole: it does not
+        // go there, and it neither reads nor acts on a page of it. Leaving,
+        // and the tabs themselves, stay open to it.
+        if include_aria {
+            if let Some(refusal) = self.blocked_for_agent(&command) {
+                return Err(refusal);
+            }
+        }
         let clipboard_operation = match &command {
             BrowserCommand::CopySelection => Some(BrowserClipboardOperation::Copy),
             BrowserCommand::PrepareCut => Some(BrowserClipboardOperation::PrepareCut),
@@ -920,6 +959,7 @@ impl BrowserRuntime {
             scope,
             preview: Arc::default(),
             reveal: Arc::default(),
+            blocked: Arc::default(),
         };
         let worker = Worker {
             handle: handle.clone(),
@@ -929,6 +969,7 @@ impl BrowserRuntime {
             parked: Vec::new(),
             next_tab: cef::FIRST_TAB + 1,
             agent_acted: false,
+            agent_tabs: Vec::new(),
             shown: false,
         };
         let (finishing, finished) = mpsc::channel();
@@ -967,6 +1008,11 @@ impl BrowserRuntime {
 
     pub(crate) fn scale(&self) -> f32 {
         self.scale
+    }
+
+    /// The origins the agent may not go to, read or act on from now on.
+    pub(crate) fn set_blocked_sites(&self, origins: Vec<String>) {
+        *self.handle.blocked.lock().unwrap_or_else(|poison| poison.into_inner()) = origins;
     }
 
     pub(crate) fn submit_ui(&self, command: BrowserCommand) -> Result<BrowserRequest, String> {
@@ -1239,6 +1285,8 @@ struct Worker {
     next_tab: u64,
     /// The last command that reached a page was the agent's.
     agent_acted: bool,
+    /// The tabs the agent opened and did not ask to keep.
+    agent_tabs: Vec<u64>,
     /// The page's paints are let through to the view.
     shown: bool,
 }
@@ -1387,6 +1435,8 @@ impl Worker {
             Ok((driver, info)) => {
                 // What asks for another tab gets one, as in any browser.
                 driver.open_windows_as_tabs(true);
+                self.handle.view.embedded.open_tabs_apart();
+                self.agent_tabs.clear();
                 self.driver = Some(driver);
                 self.tab = cef::FIRST_TAB;
                 self.next_tab = cef::FIRST_TAB + 1;
@@ -1489,6 +1539,7 @@ impl Worker {
                 title: tab.title.clone(),
                 url: tab.url.clone(),
                 active: false,
+                temporary: self.agent_tabs.contains(&tab.id),
             })
             .collect();
         if self.driver.is_some() {
@@ -1497,6 +1548,7 @@ impl Worker {
                 title: state.title.clone(),
                 url: state.url.clone(),
                 active: true,
+                temporary: self.agent_tabs.contains(&self.tab),
             });
         }
         tabs.sort_by_key(|tab| tab.id);
@@ -1539,10 +1591,27 @@ impl Worker {
                 }));
             }
             TabList {} => Ok(None),
-            TabNew { url } => self.open_tab().map(|()| Some(url.clone().map_or(
-                Snapshot { interactive_only: false, max_depth: None, selector: None },
-                |url| Navigate { url },
-            ))),
+            TabKeep { id } => {
+                self.agent_tabs.retain(|tab| tab != id);
+                Ok(None)
+            }
+            // The turn that opened them is over: what it did not ask to keep
+            // goes. One tab always stays, and an order to close is not a tool's.
+            CloseAgentTabs {} => {
+                for id in std::mem::take(&mut self.agent_tabs) {
+                    let _ = self.close_tab(id);
+                }
+                Ok(Some(Snapshot { interactive_only: false, max_depth: None, selector: None }))
+            }
+            TabNew { url } => self.open_tab().map(|()| {
+                if agent {
+                    self.agent_tabs.push(self.tab);
+                }
+                Some(url.clone().map_or(
+                    Snapshot { interactive_only: false, max_depth: None, selector: None },
+                    |url| Navigate { url },
+                ))
+            }),
             TabSelect { id } => self.select_tab(*id).map(|()| Some(Snapshot { interactive_only: false, max_depth: None, selector: None })),
             // The page of the tab left showing is read again.
             TabClose { id } => self.close_tab(*id).map(|()| Some(Snapshot { interactive_only: false, max_depth: None, selector: None })),
@@ -1571,8 +1640,15 @@ impl Worker {
     /// `window.open` behind a click): opens it there. Without room for one
     /// more, or a browser that has no tabs, it opens in the page itself.
     fn follow_window_request(&mut self) -> Option<BrowserCommand> {
-        let url = self.driver.as_ref()?.take_window_request()?;
-        let _ = self.open_tab();
+        let url = self
+            .driver
+            .as_ref()?
+            .take_window_request()
+            .or_else(|| self.handle.view.embedded.take_tab_request())?;
+        // One the agent's own click opened is the agent's to clean up.
+        if self.open_tab().is_ok() && self.agent_acted {
+            self.agent_tabs.push(self.tab);
+        }
         self.publish_tabs();
         Some(BrowserCommand::Navigate { url })
     }
@@ -1769,7 +1845,8 @@ fn execute(
     }
     match command {
         // Done by the worker before a page is asked.
-        TabList {} | TabNew { .. } | TabSelect { .. } | TabClose { .. } | Downloads {} | ClipboardRead {} => {}
+        TabList {} | TabNew { .. } | TabSelect { .. } | TabClose { .. } | TabKeep { .. } | CloseAgentTabs {} | Downloads {}
+        | ClipboardRead {} => {}
         Navigate { url } => driver.navigate(url)?,
         Back => driver.back()?,
         Forward => driver.forward()?,
@@ -2357,7 +2434,7 @@ pub(crate) fn native_tool_names() -> Vec<String> {
 
 /// The tools that only read the page. They never ask: what they return is
 /// what the user already sees in the tab.
-const READ_TOOLS: [&str; 8] = [
+const READ_TOOLS: [&str; 9] = [
     "browser_snapshot",
     "browser_wait_for",
     "browser_console_messages",
@@ -2366,6 +2443,7 @@ const READ_TOOLS: [&str; 8] = [
     "browser_tabs",
     "browser_downloads",
     "browser_clipboard_read",
+    "browser_tab_keep",
 ];
 
 /// Whether a call to the native agent's tool `name` goes ahead without
@@ -2608,6 +2686,15 @@ impl McpToolClient for BrowserMcpClient {
             browser_tool_command(name, arguments).map_err(McpError::Protocol)?
         };
         let mutating = command.mutating();
+        // An answer the model reads, not a broken call.
+        if let Some(refusal) = self.handle.blocked_for_agent(&command) {
+            return Ok(McpCallResult {
+                content: vec![json!({"type":"text","text":refusal})],
+                is_error: true,
+                structured_content: None,
+                extra: BTreeMap::new(),
+            });
+        }
         let mut request = self.handle.submit(command).map_err(McpError::Protocol)?;
         if name == OPEN_PREVIEW {
             // Opening is also showing: the window brings the tab forward.
@@ -2845,7 +2932,7 @@ pub(crate) fn browser_mcp_tools() -> Vec<McpTool> {
     );
     add(
         "browser_tabs",
-        "List the tabs of this browser: each one's `id`, title, address and whether it is the `active` one, the tab the user sees and every other tool acts on. A link that asks for another tab opens one and makes it active.",
+        "List the tabs of this browser: each one's `id`, title, address, whether it is the `active` one (the tab the user sees and every other tool acts on) and whether it is `temporary`. A link that asks for another tab opens one and makes it active. A tab you opened is temporary: it closes when your turn ends unless you call browser_tab_keep on it.",
         json!({}),
         vec![],
     );
@@ -2866,6 +2953,12 @@ pub(crate) fn browser_mcp_tools() -> Vec<McpTool> {
         "Open a new tab and make it active, at `url` if given (http or https) and otherwise blank. It shares cookies and sign-ins with the other tabs. At most 8 tabs.",
         json!({"url":{"type":"string","minLength":1,"maxLength":4096}}),
         vec![],
+    );
+    add(
+        "browser_tab_keep",
+        "Keep the tab `id` open after this turn: for a page the user should go on seeing, or that you will need in a later turn. Tabs you open close by themselves when the turn ends otherwise.",
+        json!({"id":{"type":"integer","minimum":1}}),
+        vec!["id"],
     );
     add(
         "browser_tab_select",
@@ -2922,6 +3015,7 @@ pub(crate) fn browser_tool_command(name: &str, arguments: Value) -> Result<Brows
         "browser_tab_new" => "tab_new",
         "browser_tab_select" => "tab_select",
         "browser_tab_close" => "tab_close",
+        "browser_tab_keep" => "tab_keep",
         _ => return Err(format!("Herramienta de navegador no anunciada: {name}")),
     };
     if object
@@ -2993,6 +3087,10 @@ mod cef {
         }
         pub(super) fn downloads(&self) -> Vec<BrowserDownloadView> {
             Vec::new()
+        }
+        pub(super) fn open_tabs_apart(&self) {}
+        pub(super) fn take_tab_request(&self) -> Option<String> {
+            None
         }
         pub(super) fn start(_: &Arc<LiveView>, _: &Path, _: (u32, u32), _: f32) -> Result<Driver, StartFailure> {
             Err(StartFailure {

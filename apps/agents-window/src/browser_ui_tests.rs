@@ -255,7 +255,7 @@ fn non_navigation_errors_keep_the_page_and_pending_input_does_not_resize_it() {
 #[test]
 fn the_strip_of_tabs_shows_with_a_second_tab_and_the_page_takes_what_is_left() {
     use crate::browser_runtime::BrowserTabView;
-    let tab = |id, title: &str, url: &str, active| BrowserTabView { id, title: title.into(), url: url.into(), active };
+    let tab = |id, title: &str, url: &str, active| BrowserTabView { id, title: title.into(), url: url.into(), active, temporary: false };
     let size = Size::new(360.0, 500.0);
     let has = |frame: &Frame, id: &str| frame.regions.iter().any(|region| region.id == id);
     let top = |frame: &Frame| frame.regions.iter().find(|region| region.id == "browser_viewport").unwrap().rect.y;

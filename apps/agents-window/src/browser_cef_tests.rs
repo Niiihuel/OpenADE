@@ -1003,18 +1003,21 @@ fn modifier_keys_with_the_pointer_and_the_wheel() {
     assert_eq!(seen(), "wheel shift 120,0");
     assert_eq!(value(&session, "scrollY"), 0);
 
-    // A link clicked for another tab or another window, where there is one
-    // page and no other is ever made.
+    // A link clicked for another tab or another window opens a tab of its
+    // own, and the page it was clicked on stays where it is.
     value(&session, "(link => link.onclick = link.onauxclick = null)(document.querySelector('#link')); 0");
     for (button, modifiers) in [(left, CONTROL), (middle, 0), (left, SHIFT)] {
         click(320.0, 30.0, button, modifiers);
-        // Chromium is asked first, has nowhere else to open it and opens it
-        // in the page itself.
-        session.until("the link to open in the page itself", || session.runtime.snapshot().url == format!("{origin}/"));
-        session.open(form.clone());
+        session.until("the link to open in a tab of its own", || {
+            let state = session.runtime.snapshot();
+            state.url == format!("{origin}/") && state.tabs.len() == 2
+        });
+        let opened = session.runtime.snapshot().tabs[1].id;
+        let back = session.window(BrowserCommand::TabClose { id: opened }).unwrap();
+        assert_eq!((back.url.as_str(), back.tabs.len()), (form.as_str(), 1));
         session.settle(Duration::from_millis(300));
     }
-    // The one page is still there and still drawn.
+    // The page is still there and still drawn.
     session.settle(Duration::from_millis(700));
     let _ = session.runtime.take_frame();
     value(&session, "document.body.style.background = '#fde'; 0");
@@ -1025,9 +1028,8 @@ fn modifier_keys_with_the_pointer_and_the_wheel() {
 
 /// A link for another tab and a script that opens a window open a tab of
 /// their own when a click asked for them, the user's or the agent's alike,
-/// and the view shows it. A link clicked with Control, Shift or the middle
-/// button opens in the page itself. A window the page opens by itself opens
-/// nothing.
+/// and the view shows it. So does a link clicked with Control, Shift or the
+/// middle button. A window the page opens by itself opens nothing.
 fn what_a_click_asked_to_see_in_another_tab() {
     use openide_browser::modifiers::{CONTROL, SHIFT};
     let origin = site();
@@ -1075,7 +1077,10 @@ fn what_a_click_asked_to_see_in_another_tab() {
     for (button, modifiers) in [(left, CONTROL), (middle, 0), (left, SHIFT)] {
         click(112.0, button, modifiers);
         arrives("plain");
-        reopen();
+        session.until("its own tab", || tabs().len() == 2);
+        let closed = session.window(BrowserCommand::TabClose { id: tabs()[1].id }).unwrap();
+        assert_eq!((closed.url.as_str(), closed.tabs.len()), (links.as_str(), 1));
+        session.settle(Duration::from_millis(300));
     }
     // The agent's click is the same click, and what it is answered is the
     // page that opened: its address, its title and its tree.
@@ -1163,7 +1168,54 @@ fn tabs_of_one_context() {
     assert_eq!((blank.url.as_str(), blank.tabs.len()), ("about:blank", 2));
     let closed = session.window(BrowserCommand::TabClose { id: blank.tabs[1].id }).unwrap();
     assert_eq!((closed.url.as_str(), closed.tabs.len()), (links.as_str(), 1));
+
+    // What the agent opens is temporary: it goes when its turn ends, unless
+    // the agent asked to keep it. The user's own tabs are never closed for it.
+    let temporary = || -> Vec<(u64, bool)> { session.runtime.snapshot().tabs.iter().map(|tab| (tab.id, tab.temporary)).collect() };
+    let mine = session.window(BrowserCommand::TabNew { url: None }).unwrap().tabs[1].id;
+    assert!(!session.agent("browser_tab_new", json!({"url": format!("{origin}/landing?uno")})).is_error);
+    assert!(!session.agent("browser_tab_new", json!({"url": format!("{origin}/landing?dos")})).is_error);
+    let (first, second) = (mine + 1, mine + 2);
+    assert_eq!(temporary(), [(1, false), (mine, false), (first, true), (second, true)]);
+    assert!(!session.agent("browser_tab_keep", json!({"id": second})).is_error);
+    let after = session.window(BrowserCommand::CloseAgentTabs {}).unwrap();
+    assert_eq!(after.tabs.iter().map(|tab| (tab.id, tab.temporary)).collect::<Vec<_>>(), [(1, false), (mine, false), (second, false)]);
+    // The turn's end is not a tool: the agent cannot ask for it.
+    assert!(browser_tool_command("browser_close_agent_tabs", json!({})).is_err());
     assert!(session.runtime.snapshot().error.is_none());
+}
+
+/// A site the user blocked is closed to the agent whole, reading included,
+/// while the user goes on using it and the agent can still leave.
+fn a_blocked_site() {
+    let origin = site();
+    let session = launch((640, 480), 2.0);
+    session.open(format!("{origin}/links"));
+    assert!(!session.agent("browser_snapshot", json!({})).is_error);
+    session.runtime.set_blocked_sites(vec![origin.clone()]);
+    for (tool, arguments) in [
+        ("browser_snapshot", json!({})),
+        ("browser_take_screenshot", json!({})),
+        ("browser_click", json!({"selector": "#blank"})),
+        ("browser_evaluate", json!({"expression": "document.title"})),
+        ("browser_navigate", json!({"url": format!("{origin}/landing?otra")})),
+        ("browser_tab_new", json!({"url": format!("{origin}/landing?otra")})),
+    ] {
+        let refused = session.agent(tool, arguments);
+        assert!(refused.is_error && format!("{:?}", refused.content).contains("bloqueó este sitio"), "{tool}: {:?}", refused.content);
+    }
+    // The page is the user's to use, and nothing the agent asked reached it.
+    assert_eq!(value_as_user(&session), format!("{origin}/links"));
+    // It can still list its tabs and go somewhere that is not blocked.
+    assert!(!session.agent("browser_tabs", json!({})).is_error);
+    assert!(!session.agent("browser_navigate", json!({"url": "about:blank"})).is_error);
+    session.runtime.set_blocked_sites(Vec::new());
+    assert!(!session.agent("browser_navigate", json!({"url": format!("{origin}/links")})).is_error);
+}
+
+/// Where the page is, as the window knows it without asking the agent's way.
+fn value_as_user(session: &Session) -> String {
+    session.runtime.snapshot().url
 }
 
 /// A page's own Copy button works: what the user copied with it is theirs,
@@ -1807,6 +1859,12 @@ fn real_cef_takes_what_a_spanish_keyboard_types_and_its_editing_keys() {
 #[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
 fn real_cef_opens_in_a_tab_what_a_click_asked_to_see_in_another_tab() {
     what_a_click_asked_to_see_in_another_tab();
+}
+
+#[test]
+#[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
+fn real_cef_refuses_the_agent_a_blocked_site_reading_included() {
+    a_blocked_site();
 }
 
 #[test]

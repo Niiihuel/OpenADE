@@ -47,6 +47,7 @@ o `selector` (un selector que identifique un único elemento).
 | `browser_downloads` | ninguno | Lee |
 | `browser_clipboard_read` | ninguno | Lee |
 | `browser_tab_new` | `url` opcional (`http` o `https`) | Modifica |
+| `browser_tab_keep` | `id` | Lee |
 | `browser_tab_select` | `id` | Modifica |
 | `browser_tab_close` | `id` | Modifica |
 | `open_preview` | `url` opcional (sólo de este equipo) | Modifica |
@@ -302,7 +303,13 @@ browser_tabs {}
 browser_tab_new {"url":"http://localhost:3000/admin"}
 browser_tab_select {"id":1}
 browser_tab_close {"id":2}
+browser_tab_keep {"id":3}
 ```
+
+Las pestañas que abre el agente (con `browser_tab_new` o con un clic suyo que
+pide otra pestaña) son **temporales**: se cierran solas cuando termina su
+turno. `browser_tab_keep` deja abierta la que el usuario tiene que ver después;
+no pide permiso. Las que abrió el usuario nunca se cierran por el agente.
 
 `browser_tabs` devuelve `id`, título, dirección y `active` de cada una, y no
 pide permiso. Abrir, cambiar y cerrar responden con la página de la pestaña
@@ -448,8 +455,13 @@ navegador ofrece **Permitir siempre en ‹sitio›**, que guarda el permiso y
 aprueba esa acción. La lista se ve y se edita en Ajustes → Navegador →
 Permisos por sitio: cada fila cambia de valor o se quita, y se agregan sitios
 a mano. El permiso se aplica a la conversación que está a la vista y con un
-turno en curso; en cualquier otro caso la acción se pregunta. Las herramientas
-que sólo leen no preguntan en ningún sitio, tampoco en uno bloqueado.
+turno en curso; en cualquier otro caso la acción se pregunta.
+
+**Bloquear** lo hace cumplir el navegador mismo (`set_blocked_sites`), no la
+aprobación: el agente no navega a un sitio bloqueado, y sobre una página de ese
+sitio no lee ni actúa, tampoco con las herramientas que nunca preguntan, ni con
+**Permitir todo**, ni desde una CLI externa. Puede irse a otro sitio y manejar
+sus pestañas. El usuario sigue usando el sitio con normalidad.
 
 ## El puntero del agente
 
