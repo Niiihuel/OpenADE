@@ -596,7 +596,27 @@ fn enter_during_a_turn_queues_for_the_next_one_and_a_queued_message_can_be_taken
     // Sent, or kept waiting with the queue paused: never lost.
     let kept = app.turn_queue.get(&session).is_some_and(|queue| queue.paused && queue.items.len() == 1);
     assert!(app.view.running || kept);
+    // A queued message keeps what was attached to it, and the queue outlives
+    // the window: it comes back waiting for the user, not sending by itself.
+    app.turn_queue.clear();
+    app.view.running = true;
+    app.view.prompt = "Mirá este archivo".into();
+    app.view.composer_attachments =
+        vec![ComposerAttachmentView { path: "src/main.rs".into(), label: "main.rs".into(), is_dir: false, selection: None }];
+    app.start_run();
+    assert!(app.view.composer_attachments.is_empty());
+    assert_eq!(app.view.queued_messages.last().map(|message| message.images), Some(1));
+    let reopened = load_turn_queues(&app.data_root);
+    let queue = &reopened[&session];
+    assert!(queue.paused);
+    assert_eq!((queue.items[0].text.as_str(), queue.items[0].attachments[0].path.as_str()), ("Mirá este archivo", "src/main.rs"));
+    // Brought back to the composer with its attachment.
+    let id = app.view.queued_messages.last().unwrap().id.clone();
+    app.apply_action(UiAction::Clicked { id: format!("queue_edit:{id}") }, &ctx);
+    assert_eq!(app.view.composer_attachments.len(), 1);
+    assert!(load_turn_queues(&app.data_root).is_empty());
 }
+
 
 #[test]
 fn a_sites_permission_is_saved_listed_changed_and_removed() {
