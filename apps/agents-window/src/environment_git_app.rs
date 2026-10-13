@@ -221,11 +221,12 @@ impl AgentsWindow {
                     self.tree
                         .set_input_value("environment_git_push_branch", &workflow.push_branch);
                 }
-                if !snapshot
-                    .branches
-                    .branches
-                    .iter()
-                    .any(|branch| branch.reference == workflow.compare_reference)
+                if !crate::environment_git::names_commit(&workflow.compare_reference)
+                    && !snapshot
+                        .branches
+                        .branches
+                        .iter()
+                        .any(|branch| branch.reference == workflow.compare_reference)
                 {
                     workflow.compare_reference = snapshot
                         .branches
@@ -606,7 +607,7 @@ impl AgentsWindow {
         }
     }
 
-    fn submit_environment_git_action(&mut self, id: &str, ctx: &egui::Context) {
+    pub(super) fn submit_environment_git_action(&mut self, id: &str, ctx: &egui::Context) {
         if self.view.environment.workflow.busy.is_some() {
             return;
         }

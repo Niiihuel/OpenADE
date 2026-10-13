@@ -27,6 +27,8 @@ pub(crate) struct SessionChangesUiState {
     pub result: Option<Result<Arc<SessionChanges>, String>>,
     pub selected_file: Option<String>,
     pub page: usize,
+    /// Only the last turn's changes are asked for and shown.
+    pub last_turn: bool,
 }
 
 pub(crate) fn build(state: &ViewState, width: f32) -> Element {
@@ -35,7 +37,7 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
 
 fn build_content(ui: &SessionChangesUiState, width: f32) -> Element {
     let inner = (width - 24.0).max(140.0);
-    let title = Element::faded_text("Cambios del chat", 12.0)
+    let title = Element::faded_text(if ui.last_turn { "Cambios del último turno" } else { "Cambios del chat" }, 12.0)
         .font_family(FontFamily::Sans)
         .foreground(theme::FOREGROUND)
         .font_size(14.0)
@@ -55,6 +57,10 @@ fn build_content(ui: &SessionChangesUiState, width: f32) -> Element {
         .width(inner)
         .sizing(crate::ui_sizing::TALL_HEADER)
         .render()];
+    {
+        use crate::view::ReviewOrigin;
+        rows.insert(0, crate::view::origin_selector(if ui.last_turn { ReviewOrigin::Turn } else { ReviewOrigin::Chat }));
+    }
     match &ui.result {
         None => rows.push(
             Text::new(

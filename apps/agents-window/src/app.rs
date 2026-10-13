@@ -6119,9 +6119,9 @@ impl AgentsWindow {
         // the generation check replaces it only with the matching result.
         let path = PathBuf::from(&detail.path);
         let stage = detail.stage;
-        // A branch diff starts from the commit the comparison in view names.
+        // A branch diff is of the commits the comparison in view names.
         let base = (stage == DiffStage::Branch)
-            .then(|| self.view.environment.workflow.comparison.as_ref().map(|comparison| comparison.base.clone()))
+            .then(|| self.view.environment.workflow.comparison.as_ref().map(|comparison| comparison.range()))
             .flatten();
         self.queue_detail(DetailKind::Diff { path, stage, base });
     }
@@ -6253,6 +6253,7 @@ impl AgentsWindow {
                     session_id,
                     generation: self.view.session_changes.generation,
                     events: None,
+                    last_turn: self.view.session_changes.last_turn,
                 });
         let submitted = request
             .and_then(|request| {
@@ -18457,6 +18458,52 @@ impl AgentsWindow {
                 if let GithubStatus::Ready(github) = &self.github_status {
                     let url = github.repository.web_url();
                     ctx.open_url(egui::OpenUrl::new_tab(url));
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("review_origin:") => {
+                use crate::view::ReviewOrigin;
+                let origin = match id.trim_start_matches("review_origin:") {
+                    "branch" => ReviewOrigin::Branch,
+                    "commit" => ReviewOrigin::Commit,
+                    "chat" => ReviewOrigin::Chat,
+                    "turn" => ReviewOrigin::Turn,
+                    _ => ReviewOrigin::Uncommitted,
+                };
+                if matches!(origin, ReviewOrigin::Chat | ReviewOrigin::Turn) {
+                    // The chat's changes have a tab of their own.
+                    self.view.session_changes.last_turn = origin == ReviewOrigin::Turn;
+                    self.view.session_changes.selected_file = None;
+                    self.request_session_changes();
+                    self.apply_action(UiAction::Clicked { id: "dock_open:changes".into() }, ctx);
+                } else {
+                    let workflow = &mut self.view.environment.workflow;
+                    // A comparison of the other kind is not this origin's.
+                    if workflow.comparison.as_ref().is_some_and(|comparison| comparison.head.is_some() != (origin == ReviewOrigin::Commit)) {
+                        workflow.comparison = None;
+                        workflow.compare_reference.clear();
+                    }
+                    workflow.error = None;
+                    self.view.git_panel.origin = origin;
+                    if workflow.snapshot.is_none() {
+                        self.request_environment_git(crate::environment_git::Operation::Refresh, ctx);
+                    }
+                    if !self.ide_workspace_active() {
+                        self.apply_action(UiAction::Clicked { id: "dock_open:review".into() }, ctx);
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id == "review_commit_back" => {
+                self.view.environment.workflow.comparison = None;
+            }
+            UiAction::Clicked { id } if id.starts_with("review_commit:") => {
+                let commit = id
+                    .trim_start_matches("review_commit:")
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(|index| Some(self.view.git_review.as_ref()?.as_ref().ok()?.recent.get(index)?.0.clone()));
+                if let Some(commit) = commit {
+                    self.view.environment.workflow.compare_reference = commit;
+                    self.submit_environment_git_action("environment_git_compare_refresh", ctx);
                 }
             }
             UiAction::Clicked { id } if id == "github_pr_create" || id == "github_pr_cancel" => {
