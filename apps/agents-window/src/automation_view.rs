@@ -1126,9 +1126,15 @@ pub fn editor_modal_body(state: &AutomationViewState, width: f32) -> Element {
 fn editor_modal_layout(state: &AutomationViewState, width: f32, form: Element) -> Element {
     let stepper = Stepper::new(
         vec![
-            Step::new("automation_step:content", "Contenido").description("Define la tarea"),
-            Step::new("automation_step:schedule", "Horario").description("Elige cuándo"),
-            Step::new("automation_step:agent", "Agente").description("Modelo y acceso"),
+            Step::new("automation_step:content", "Contenido")
+                .description("Define la tarea")
+                .icon(Icon::Text),
+            Step::new("automation_step:schedule", "Horario")
+                .description("Elige cuándo")
+                .icon(Icon::Clock),
+            Step::new("automation_step:agent", "Agente")
+                .description("Modelo y acceso")
+                .icon(Icon::Settings),
         ],
         state.editor_step.index(),
         theme::component_palette(),
