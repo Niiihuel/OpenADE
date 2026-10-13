@@ -6355,6 +6355,14 @@ impl AgentsWindow {
                     .overview
                     .map(GithubStatus::Ready)
                     .unwrap_or(GithubStatus::NoRemote);
+                // The branch has its pull request: the form that asked for it is done.
+                if matches!(&self.github_status, GithubStatus::Ready(github) if !github.pulls.is_empty())
+                    && self.view.git_panel.pull.take().is_some()
+                {
+                    for id in ["github_pr_title", "github_pr_body", "github_pr_base"] {
+                        self.tree.set_input_value(id, "");
+                    }
+                }
                 if let Some(Ok(review)) = &mut self.view.git_review {
                     Arc::make_mut(review).github = self.github_status.clone();
                     changed = true;
@@ -18405,17 +18413,34 @@ impl AgentsWindow {
                     ctx.open_url(egui::OpenUrl::new_tab(url));
                 }
             }
-            UiAction::Clicked { id } if id == "github_pr_create" || id == "github_pr_create_draft" => {
-                if let (Some(worker), Some(workspace)) =
-                    (&self.github_worker, self.review_active_workspace.clone())
+            UiAction::Clicked { id } if id == "github_pr_create" || id == "github_pr_cancel" => {
+                self.view.git_panel.pull = (id == "github_pr_create").then(Default::default);
+                for id in ["github_pr_title", "github_pr_body", "github_pr_base"] {
+                    self.tree.set_input_value(id, "");
+                }
+            }
+            UiAction::InputChanged { id, value } if id.starts_with("github_pr_") => {
+                if let Some(pull) = &mut self.view.git_panel.pull {
+                    match id.as_str() {
+                        "github_pr_title" => pull.title = value,
+                        "github_pr_body" => pull.body = value,
+                        "github_pr_base" => pull.base = value,
+                        _ => {}
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id == "github_pr_submit" || id == "github_pr_submit_draft" => {
+                if let (Some(worker), Some(workspace), Some(pull)) =
+                    (&self.github_worker, self.review_active_workspace.clone(), self.view.git_panel.pull.clone())
                 {
                     let request = GithubRequest {
                         workspace,
                         generation: self.review_generation,
                         account: self.github_query_account().map(str::to_owned),
-                        create_pull: Some(id == "github_pr_create_draft"),
+                        create_pull: Some(crate::github::PullDraft { draft: id == "github_pr_submit_draft", ..pull }),
                     };
                     if !self.github_in_flight && worker.submit(request).is_ok() {
+                        // What was written stays until the pull request shows: a refusal keeps it to correct.
                         self.github_in_flight = true;
                         self.github_status = GithubStatus::Loading;
                         if let Some(Ok(review)) = &mut self.view.git_review {

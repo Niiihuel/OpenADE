@@ -394,15 +394,27 @@ fn api_json(request: reqwest::blocking::RequestBuilder, token: &str) -> Result<(
 
 /// Opens a pull request for the current branch into the repository's default
 /// branch. The branch must already be on GitHub: nothing is pushed from here.
-pub fn create_pull(workspace: &Path, account: &str, draft: bool) -> Result<GithubPull, String> {
+/// A pull request as the user wrote it. What is left empty is filled in:
+/// title and description from the last commit, base with the default branch.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct PullDraft {
+    pub title: String,
+    pub body: String,
+    pub base: String,
+    pub draft: bool,
+}
+
+pub fn create_pull(workspace: &Path, account: &str, draft: &PullDraft) -> Result<GithubPull, String> {
     let repository =
         discover_repository(workspace).ok_or("Este proyecto no tiene un remoto de GitHub")?;
     let branch = current_branch(workspace)
         .ok_or("HEAD separado: elegí una rama antes de crear el pull request")?;
-    let title = git_output(workspace, &["log", "-1", "--format=%s"])
-        .filter(|title| !title.is_empty())
+    let written = |text: &str| Some(text.trim().to_owned()).filter(|text| !text.is_empty());
+    let title = written(&draft.title)
+        .or_else(|| git_output(workspace, &["log", "-1", "--format=%s"]).filter(|title| !title.is_empty()))
         .ok_or("Creá un commit antes de crear el pull request")?;
-    let body = git_output(workspace, &["log", "-1", "--format=%b"]).unwrap_or_default();
+    let body = written(&draft.body)
+        .unwrap_or_else(|| git_output(workspace, &["log", "-1", "--format=%b"]).unwrap_or_default());
     let token = crate::github_account::auth_token_for_account(account)
         .ok_or_else(|| format!("Reconecta la cuenta {account} para crear el pull request."))?;
     let client = reqwest::blocking::Client::builder()
@@ -413,16 +425,21 @@ pub fn create_pull(workspace: &Path, account: &str, draft: bool) -> Result<Githu
         "https://api.github.com/repos/{}/{}",
         repository.owner, repository.name
     );
-    let (status, bytes) = api_json(client.get(&api), &token)?;
-    let base = serde_json::from_slice::<Value>(&bytes)
-        .ok()
-        .filter(|_| status == 200)
-        .and_then(|value| value.get("default_branch")?.as_str().map(str::to_owned))
-        .ok_or_else(|| pull_refusal(status, &bytes))?;
+    let base = match written(&draft.base) {
+        Some(base) => base,
+        None => {
+            let (status, bytes) = api_json(client.get(&api), &token)?;
+            serde_json::from_slice::<Value>(&bytes)
+                .ok()
+                .filter(|_| status == 200)
+                .and_then(|value| value.get("default_branch")?.as_str().map(str::to_owned))
+                .ok_or_else(|| pull_refusal(status, &bytes))?
+        }
+    };
     if base == branch && repository.head_owner.eq_ignore_ascii_case(&repository.owner) {
         return Err("Cambiá a una rama de trabajo antes de crear el pull request".to_owned());
     }
-    let payload = pull_payload(&repository, &branch, &base, &title, &body, draft);
+    let payload = pull_payload(&repository, &branch, &base, &title, &body, draft.draft);
     let (status, bytes) = api_json(client.post(format!("{api}/pulls")).json(&payload), &token)?;
     if status != 201 {
         return Err(pull_refusal(status, &bytes));
