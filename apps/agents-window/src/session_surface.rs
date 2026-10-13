@@ -3841,7 +3841,9 @@ fn queued_messages(state: &ViewState, width: f32) -> Option<Element> {
                 .centered_y(),
             Text::new(
                 match (message.next_turn, message.images) {
-                    (true, _) => "Próximo turno".to_owned(),
+                    (true, 0) => "Próximo turno".to_owned(),
+                    (true, 1) => "Próximo turno · 1 adjunto".to_owned(),
+                    (true, attached) => format!("Próximo turno · {attached} adjuntos"),
                     (false, 0) => "En este turno".to_owned(),
                     (false, 1) => "En este turno · 1 imagen".to_owned(),
                     (false, images) => format!("En este turno · {images} imágenes"),
@@ -3857,7 +3859,7 @@ fn queued_messages(state: &ViewState, width: f32) -> Option<Element> {
             row.push(tool(format!("queue_steer:{}", message.id), Icon::ArrowUp, "Redirigir: enviarlo ahora, sin detener el turno"));
         }
         // Its images are not the composer's to hold again.
-        if message.images == 0 {
+        if message.next_turn || message.images == 0 {
             row.push(tool(format!("queue_edit:{}", message.id), Icon::Edit, "Editar: traerlo de vuelta al compositor"));
         }
         row.push(tool(format!("queue_remove:{}", message.id), Icon::Close, "Quitar de la cola"));

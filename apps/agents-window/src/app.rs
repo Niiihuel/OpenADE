@@ -374,11 +374,32 @@ struct ActiveCompact {
 /// Messages one conversation may have waiting for turns of their own.
 const MAX_QUEUED_TURNS: usize = 16;
 
-#[derive(Default)]
+const TURN_QUEUE_FILE: &str = "turn-queue.json";
+
+#[derive(Default, serde::Serialize, serde::Deserialize)]
 struct TurnQueue {
     /// Each with a number of its own, oldest first.
-    items: Vec<(u64, String)>,
+    items: Vec<QueuedTurn>,
     paused: bool,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct QueuedTurn {
+    id: u64,
+    text: String,
+    attachments: Vec<ComposerAttachmentView>,
+}
+
+/// The queues as they were left, each waiting for the user to let it go on:
+/// opening the app sends nothing by itself.
+fn load_turn_queues(root: &Path) -> HashMap<String, TurnQueue> {
+    let mut queues: HashMap<String, TurnQueue> = std::fs::read(root.join(TURN_QUEUE_FILE))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default();
+    queues.retain(|_, queue| !queue.items.is_empty());
+    queues.values_mut().for_each(|queue| queue.paused = true);
+    queues
 }
 
 pub(crate) fn native_model_backend(
@@ -7378,8 +7399,8 @@ impl AgentsWindow {
             github_worker: GithubWorker::spawn().ok(),
             browser_sites: crate::browser_sites::BrowserSites::load(&root).unwrap_or_default(),
             commit_generation: None,
-            turn_queue: HashMap::new(),
-            turn_queue_next: 1,
+            turn_queue_next: 1 + load_turn_queues(&root).values().flat_map(|queue| &queue.items).map(|turn| turn.id).max().unwrap_or(0),
+            turn_queue: load_turn_queues(&root),
             browser_copied: HashMap::new(),
             browser_copy_out: None,
             github_status: GithubStatus::Loading,
@@ -12715,13 +12736,30 @@ impl AgentsWindow {
         self.view.queue_paused = waiting.is_some_and(|queue| queue.paused && !queue.items.is_empty());
         self.view.queued_messages = queued
             .into_iter()
-            .chain(waiting.into_iter().flat_map(|queue| &queue.items).map(|(id, text)| crate::view::QueuedMessageView {
-                id: format!("next:{id}"),
-                text: text.clone(),
-                images: 0,
+            .chain(waiting.into_iter().flat_map(|queue| &queue.items).map(|turn| crate::view::QueuedMessageView {
+                id: format!("next:{}", turn.id),
+                text: turn.text.clone(),
+                images: turn.attachments.len(),
                 next_turn: true,
             }))
             .collect();
+        self.save_turn_queues();
+    }
+
+    /// Every change to a queue ends in `refresh_queued_messages`, so this is
+    /// where it reaches the disk: a queue outlives the window.
+    fn save_turn_queues(&mut self) {
+        let waiting: HashMap<&String, &TurnQueue> =
+            self.turn_queue.iter().filter(|(_, queue)| !queue.items.is_empty()).collect();
+        let path = self.data_root.join(TURN_QUEUE_FILE);
+        let staged = path.with_extension("json.tmp");
+        let saved = serde_json::to_vec(&waiting)
+            .map_err(std::io::Error::other)
+            .and_then(|bytes| std::fs::write(&staged, bytes))
+            .and_then(|()| std::fs::rename(&staged, &path));
+        if let Err(error) = saved {
+            self.view.status = format!("La cola no se pudo guardar: {error}");
+        }
     }
 
     fn clear_prompt_after_queueing(&mut self) {
@@ -12737,20 +12775,20 @@ impl AgentsWindow {
     /// running one ends.
     fn queue_next_turn(&mut self) {
         let text = self.view.prompt.trim().to_owned();
-        let Some(session) = self.view.selected_session.clone().filter(|_| !text.is_empty()) else {
+        let attached = !self.view.composer_attachments.is_empty();
+        let Some(session) = self.view.selected_session.clone().filter(|_| !text.is_empty() || attached) else {
             return;
         };
-        if !self.view.composer_attachments.is_empty() {
-            self.view.status = "Los adjuntos no van en cola. Ctrl+Enter los envía ahora, sin detener el turno.".to_owned();
-            return;
-        }
         let queue = self.turn_queue.entry(session).or_default();
         if queue.items.len() >= MAX_QUEUED_TURNS {
             self.view.status = format!("La cola ya tiene {MAX_QUEUED_TURNS} mensajes");
             return;
         }
-        queue.items.push((self.turn_queue_next, text));
+        let attachments = std::mem::take(&mut self.view.composer_attachments);
+        queue.items.push(QueuedTurn { id: self.turn_queue_next, text, attachments });
         self.turn_queue_next += 1;
+        let draft_key = self.draft_key();
+        self.attachment_drafts.remove(&draft_key);
         self.clear_prompt_after_queueing();
         self.view.status = "En cola para cuando termine este turno. Ctrl+Enter lo envía ahora.".to_owned();
         self.refresh_queued_messages();
@@ -12771,16 +12809,19 @@ impl AgentsWindow {
         let Some(queue) = self.turn_queue.get_mut(&session).filter(|queue| !queue.paused && !queue.items.is_empty()) else {
             return false;
         };
-        let (id, text) = queue.items.remove(0);
-        let writing = std::mem::replace(&mut self.view.prompt, text.clone());
+        let turn = queue.items.remove(0);
+        let writing = std::mem::replace(&mut self.view.prompt, turn.text.clone());
+        // The composer holds none of its own here: that was checked above.
+        self.view.composer_attachments = turn.attachments.clone();
         self.start_run();
         if !self.view.running {
             // It could not be sent: it waits, and so do the ones behind it.
             let queue = self.turn_queue.entry(session).or_default();
-            queue.items.insert(0, (id, text));
+            queue.items.insert(0, turn);
             queue.paused = true;
         }
         self.view.prompt.clear();
+        self.view.composer_attachments.clear();
         self.tree.set_input_value("prompt", &writing);
         if !writing.is_empty() {
             self.apply_action(UiAction::InputChanged { id: "prompt".into(), value: writing }, ctx);
@@ -12806,11 +12847,12 @@ impl AgentsWindow {
         let Some(session) = self.view.selected_session.clone() else {
             return true;
         };
-        if action != "queue_remove" && !self.view.prompt.trim().is_empty() {
+        if action != "queue_remove" && (!self.view.prompt.trim().is_empty() || !self.view.composer_attachments.is_empty()) {
             self.view.status = "Enviá o borrá lo que estás escribiendo antes de traer un mensaje de la cola".to_owned();
             return true;
         }
         // Out of where it waits first: the running turn's inbox, or this queue.
+        let mut attachments = Vec::new();
         let text = match target.split_once(':') {
             Some(("steer", input)) => self
                 .store
@@ -12822,8 +12864,10 @@ impl AgentsWindow {
                 .map(|input| input.text),
             Some(("next", number)) => number.parse::<u64>().ok().and_then(|number| {
                 let queue = self.turn_queue.get_mut(&session)?;
-                let index = queue.items.iter().position(|(id, _)| *id == number)?;
-                Some(queue.items.remove(index).1)
+                let index = queue.items.iter().position(|turn| turn.id == number)?;
+                let turn = queue.items.remove(index);
+                attachments = turn.attachments;
+                Some(turn.text)
             }),
             _ => None,
         };
@@ -12834,6 +12878,7 @@ impl AgentsWindow {
             return true;
         };
         if action != "queue_remove" {
+            self.view.composer_attachments = attachments;
             self.view.prompt = text.clone();
             self.tree.set_input_value("prompt", &text);
             self.apply_action(UiAction::InputChanged { id: "prompt".into(), value: text }, ctx);
@@ -14056,6 +14101,7 @@ impl AgentsWindow {
         if matches!(event.kind, AgentEventKind::TurnCancelled | AgentEventKind::TurnFailed { .. }) {
             if let Some(queue) = self.turn_queue.get_mut(&event.session_id).filter(|queue| !queue.items.is_empty()) {
                 queue.paused = true;
+                self.save_turn_queues();
             }
         }
         // The turn took a queued message, or ended: the queue shown is stale.

@@ -190,6 +190,7 @@ pub struct QueuedMessageView {
     /// one that becomes a turn of its own.
     pub id: String,
     pub text: String,
+    /// Images of one for the running turn; attachments of one for the next.
     pub images: usize,
     /// Waits for the turn to end, and is then sent as the next one.
     pub next_turn: bool,
@@ -268,7 +269,7 @@ pub struct AbortedToolBatchView {
     pub remaining_calls: usize,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ComposerAttachmentView {
     /// Workspace-relative path using `/` as a display and prompt separator.
     pub path: String,
