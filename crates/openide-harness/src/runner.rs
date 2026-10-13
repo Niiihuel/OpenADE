@@ -7177,6 +7177,33 @@ mod tests {
     }
 
     #[test]
+    fn a_policy_without_a_time_limit_waits_for_the_answer() {
+        let dir = tempfile::tempdir().unwrap();
+        let tool = Arc::new(CountingTool {
+            executions: AtomicUsize::new(0),
+        });
+        let runner = AgentRunner::new(model_with_tool_call(), tool.clone()).with_permission_policy(
+            PermissionPolicy::new()
+                .with_tool("echo", PermissionMode::Ask)
+                .with_timeout(Duration::MAX),
+        );
+        let handle = runner.start(request(dir.path().to_path_buf()));
+        let id = wait_for_permission(&handle);
+        // Longer than the limit that fails closed in the test above.
+        std::thread::sleep(Duration::from_millis(150));
+        assert!(handle.resolve_permission(&id, PermissionChoice::Allow));
+        let events = receive_until_terminal(&handle);
+        assert!(events.iter().any(|event| matches!(
+            &event.kind,
+            AgentEventKind::PermissionResolved {
+                resolution: PermissionResolution::Allowed,
+                ..
+            }
+        )));
+        assert_eq!(tool.executions.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
     fn cancellation_while_waiting_for_permission_stops_the_turn() {
         let dir = tempfile::tempdir().unwrap();
         let tool = Arc::new(CountingTool {

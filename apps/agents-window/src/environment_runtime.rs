@@ -16,7 +16,7 @@ use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    browser_runtime::BrowserMcpClient,
+    browser_runtime::ConversationBrowser,
     image_runtime::ImageMcpClient,
     mcp_runtime::McpToolPreparation,
     mcp_settings::{McpServerSettings, McpSettings},
@@ -27,7 +27,7 @@ pub(crate) struct EnvironmentToolPreparation {
     session_id: String,
     prior_events: Arc<Vec<AgentEvent>>,
     servers: Vec<McpServerSettings>,
-    browser: Option<BrowserMcpClient>,
+    browser: Option<ConversationBrowser>,
     browser_allowed: bool,
     image: Option<ImageMcpClient>,
     plugin_root: Option<PathBuf>,
@@ -39,7 +39,7 @@ impl EnvironmentToolPreparation {
         session_id: String,
         prior_events: Arc<Vec<AgentEvent>>,
         servers: Vec<McpServerSettings>,
-        browser: Option<BrowserMcpClient>,
+        browser: Option<ConversationBrowser>,
     ) -> Self {
         Self {
             storage_root,
@@ -186,7 +186,8 @@ impl ToolPreparation for EnvironmentToolPreparation {
             .as_ref()
             .map_or_else(Vec::new, |prepared| prepared.ask_tool_names().to_vec());
         // The tools this window serves itself. Each of them asks every time,
-        // but the browser's once the user has allowed everything.
+        // but the browser's that only read the page, and all of the
+        // browser's once the user has allowed everything.
         let mut own: Vec<(&str, Arc<dyn McpToolClient>)> = Vec::new();
         if let Some(browser) = &self.browser {
             own.push(("openide_browser", Arc::new(browser.clone())));
@@ -226,8 +227,7 @@ impl ToolPreparation for EnvironmentToolPreparation {
                 composite
                     .mcp_tool_names()
                     .filter(|name| {
-                        !(browser_allowed
-                            && name.starts_with(crate::browser_runtime::NATIVE_TOOL_PREFIX))
+                        !crate::browser_runtime::native_tool_allowed(name, browser_allowed)
                     })
                     .map(str::to_owned),
             );
@@ -236,8 +236,8 @@ impl ToolPreparation for EnvironmentToolPreparation {
         let external_identity = inner
             .as_ref()
             .and_then(|prepared| prepared.mcp_resume_identity_digest());
-        // The browser identity includes this live actor instance and its frozen
-        // scope. Replacing a closed browser cannot resume an old tool batch.
+        // The browser's identity is the same in every turn: its tab opens on
+        // a call, so no live browser is bound to the turn.
         // An unverified external MCP identity remains unverified after composition.
         let serves_own = self.browser.is_some() || self.image.is_some();
         let resume_identity = match (serves_own, inner.as_ref(), external_identity) {
@@ -251,7 +251,7 @@ impl ToolPreparation for EnvironmentToolPreparation {
                 if let Some(browser) = &self.browser {
                     hash.update(browser.identity_digest().as_bytes());
                 }
-                // After a separator the browser's hex digest never holds, so a
+                // After a separator the browser's digest never holds, so a
                 // turn with only the browser keeps the identity it had.
                 if let Some(image) = &self.image {
                     hash.update([0]);
@@ -455,23 +455,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn every_browser_tool_is_advertised_and_requires_the_users_approval() {
+    async fn every_browser_tool_is_advertised_with_no_browser_open_and_all_but_reads_ask() {
         use openide_harness::{LocalTools, PermissionMode, PermissionPolicy};
         let root = tempfile::tempdir().unwrap();
         let workspace = tempfile::tempdir().unwrap();
-        let (runtime, _commands) = crate::browser_runtime::tests::fixture(
-            crate::browser_runtime::BrowserScope {
-                workspace: workspace.path().to_path_buf(),
-                session_id: "fixture".into(),
-            },
-            Default::default(),
-        );
+        // No tab is open: the turn is given the tools all the same.
+        let closed = || ConversationBrowser::new(|| Err("sin navegador".into()));
         let prepared = EnvironmentToolPreparation::new(
             root.path().to_path_buf(),
             "fixture".into(),
             Arc::new(Vec::new()),
             Vec::new(),
-            Some(runtime.mcp_client()),
+            Some(closed()),
         )
         .prepare(
             workspace.path(),
@@ -499,8 +494,16 @@ mod tests {
         assert_eq!(advertised.len(), 21);
         for name in &expected {
             assert!(advertised.contains(name), "{name} is not advertised");
-            assert!(prepared.ask_tool_names().contains(name), "{name} skips approval");
+            // Reading the page the user has open is the one thing not asked.
+            assert_eq!(
+                prepared.ask_tool_names().contains(name),
+                !crate::browser_runtime::native_tool_allowed(name, false),
+                "{name}"
+            );
         }
+        assert_eq!(prepared.ask_tool_names().len(), 16);
+        // The same in every turn, so an approval for the session outlives the tab.
+        assert!(prepared.mcp_resume_identity_digest().is_some());
         // What the runner does with that list: a host that allows everything
         // still asks before a page script, and a host denial is never relaxed.
         let evaluate = openide_core::ToolCall {
@@ -530,19 +533,12 @@ mod tests {
 
         // Once the user allowed everything in the conversation, none of the
         // browser's tools is marked to ask, and the host's policy decides.
-        let (runtime, _commands) = crate::browser_runtime::tests::fixture(
-            crate::browser_runtime::BrowserScope {
-                workspace: workspace.path().to_path_buf(),
-                session_id: "fixture".into(),
-            },
-            Default::default(),
-        );
         let allowed = EnvironmentToolPreparation::new(
             root.path().to_path_buf(),
             "fixture".into(),
             Arc::new(Vec::new()),
             Vec::new(),
-            Some(runtime.mcp_client()),
+            Some(closed()),
         )
         .with_browser_allowed(true)
         .prepare(
