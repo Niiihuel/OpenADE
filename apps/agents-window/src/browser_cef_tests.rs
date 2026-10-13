@@ -331,9 +331,18 @@ fn serves_the_agent_and_an_external_client(session: Session, origin: &str) -> Se
     assert_eq!(state["viewport"], json!({"width": 900, "height": 700}));
     let tree = state["aria_snapshot"].as_str().unwrap().to_owned();
     let (field, button) = (ref_of(&tree, "textbox \"Nombre\""), ref_of(&tree, "button \"Aplicar\""));
+    assert!(session.runtime.agent_cue().is_none(), "reading points at nothing");
     assert!(!session.agent("browser_fill", json!({"ref": field, "text": "Niño 🧠"})).is_error);
+    // The window is told where the agent writes and where it clicks, in the
+    // page's own pixels: its pointer is drawn there, never by the page.
+    let wrote = session.runtime.agent_cue().unwrap();
+    let inside = |(x, y): (f32, f32)| x > 0.0 && x < 900.0 && y > 0.0 && y < 700.0;
+    assert!(wrote.kind == openide_browser::Cue::Type && wrote.from.is_none() && inside(wrote.to), "{wrote:?}");
     let clicked = session.agent("browser_click", json!({"ref": button}));
     assert!(page(&clicked)["aria_snapshot"].as_str().unwrap().contains("Niño 🧠"));
+    let pressed = session.runtime.agent_cue().unwrap();
+    assert!(pressed.kind == openide_browser::Cue::Click && inside(pressed.to) && pressed.to != wrote.to, "{pressed:?}");
+    assert_eq!(pressed.from, Some(wrote.to), "it leaves from where it last acted");
     // What an approval card would say that ref is.
     let last = session.runtime.mcp_client().last_snapshot();
     assert_eq!(openide_browser::element_of(&last, &button), Some(("button".into(), "Aplicar".into())));

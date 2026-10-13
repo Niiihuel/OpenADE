@@ -1085,10 +1085,15 @@ async fn the_agent_reads_refs_acts_on_them_and_gets_each_tools_own_answer() {
     let shallow = text(&shallow)["aria_snapshot"].as_str().unwrap().to_owned();
     assert!(shallow.contains("navigation \"Acciones\" [ref=e3]") && !shallow.contains("Guardar"), "{shallow}");
 
+    // Reading the page points at nothing.
+    assert_eq!(runtime.agent_cue(), None);
     // Acting by ref clicks where the element is, and answers with fresh refs.
     let clicked = call("browser_click", json!({"ref":"e4"})).await.unwrap();
     assert!(!clicked.is_error);
     assert_eq!(text(&clicked)["aria_snapshot"], aria);
+    // The window is told where the agent's pointer went, to draw it there.
+    let cue = runtime.agent_cue().unwrap();
+    assert_eq!((cue.kind, cue.from, cue.to), (Cue::Click, None, (20.0, 30.0)));
     let pointer = endpoint.asked("Input.dispatchMouseEvent");
     assert_eq!(
         pointer.iter().map(|event| (event["type"].as_str().unwrap(), &event["x"], &event["y"])).collect::<Vec<_>>(),
@@ -1107,6 +1112,7 @@ async fn the_agent_reads_refs_acts_on_them_and_gets_each_tools_own_answer() {
     assert_eq!(endpoint.asked("Input.dispatchMouseEvent").len(), 3);
     assert!(endpoint.asked("Input.dispatchKeyEvent").is_empty());
     assert!(runtime.snapshot().error.is_none());
+    assert_eq!(runtime.agent_cue(), Some(cue), "an action that never reached the page points nowhere new");
 
     // Tools that return data of their own do not bury it behind the tree.
     let evaluated = call("browser_evaluate", json!({"expression":"document.title"})).await.unwrap();

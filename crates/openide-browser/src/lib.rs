@@ -30,7 +30,7 @@ pub mod modifiers {
 #[cfg(unix)]
 pub use directory::PrivateDirectory;
 pub use driver::{
-    Capture, Driver, Evaluated, PageInfo, Png, Snapshot, Target, MAX_ARIA_BYTES, MAX_EVALUATE_BYTES,
+    ActionWatch, Capture, Cue, Driver, Evaluated, PageInfo, Png, Snapshot, Target, MAX_ARIA_BYTES, MAX_EVALUATE_BYTES,
     MAX_INPUT_TEXT_BYTES, MAX_SCREENSHOT_BYTES, MAX_SELECTION_BYTES, MAX_URL_BYTES, TIMEOUT,
 };
 pub use observer::{

@@ -1,6 +1,7 @@
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
 mod agent_cli_definitions;
+mod agent_cursor;
 mod agent_tool_settings;
 mod review_model;
 mod turn_check;

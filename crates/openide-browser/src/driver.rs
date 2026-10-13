@@ -230,6 +230,20 @@ struct PreparedCut {
     object: String,
 }
 
+/// What a pointed action is about to do at a point of the page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Cue {
+    /// The pointer goes there: a hover, or an end of a drag.
+    Move,
+    Click,
+    /// A field is about to be written in.
+    Type,
+}
+
+/// Told of each pointed action before its input is sent: what it does and
+/// where, in CSS pixels of the viewport.
+pub type ActionWatch = Box<dyn FnMut(Cue, (f64, f64)) + Send>;
+
 pub struct Driver {
     pub(crate) client: Client,
     pub(crate) shared: Arc<Shared>,
@@ -249,6 +263,7 @@ pub struct Driver {
     pub(crate) pointer: (f64, f64),
     pub(crate) buttons: u8,
     pub(crate) modifiers: u8,
+    watch: Option<ActionWatch>,
 }
 
 impl std::fmt::Debug for Driver {
@@ -262,6 +277,19 @@ impl std::fmt::Debug for Driver {
 }
 
 impl Driver {
+    /// Has `watch` told of each pointed action before its input is sent. The
+    /// page hears nothing of it: it is for a host to show the action, and the
+    /// time `watch` takes is time the action waits.
+    pub fn watch_actions(&mut self, watch: Option<ActionWatch>) {
+        self.watch = watch;
+    }
+
+    pub(crate) fn cue(&mut self, cue: Cue, point: (f64, f64)) {
+        if let Some(watch) = &mut self.watch {
+            watch(cue, point);
+        }
+    }
+
     /// Drives the one page an embedder already created, which `transport`
     /// reaches: an embedded Chromium hands out the DevTools endpoint of each
     /// page it makes. The page's lifetime, its storage, its popups and its
@@ -290,6 +318,7 @@ impl Driver {
             pointer: (0.0, 0.0),
             buttons: 0,
             modifiers: 0,
+            watch: None,
         };
         // The endpoint is the page, and names itself.
         let info: Value = driver.call("", "Target.getTargetInfo", json!({}))?;

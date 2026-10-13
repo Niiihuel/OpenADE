@@ -6,8 +6,9 @@
 
 use async_trait::async_trait;
 use base64::Engine;
+use crate::agent_cursor::AgentCue;
 use openide_browser::{
-    Capture, ConsoleLevel, Driver, DriverError, ErrorKind, MouseButton, PageInfo, SnapshotOptions,
+    Capture, ConsoleLevel, Cue, Driver, DriverError, ErrorKind, MouseButton, PageInfo, SnapshotOptions,
     Target,
 };
 use openide_harness::{McpCallResult, McpError, McpStdioConfig, McpTool, McpToolClient};
@@ -858,6 +859,15 @@ impl BrowserRuntime {
     pub(crate) fn visible(&self) -> bool {
         self.handle.visible.load(Ordering::Acquire)
     }
+    /// With less motion the agent's pointer does not travel, and no action
+    /// waits for it.
+    pub(crate) fn set_reduced_motion(&self, reduced: bool) {
+        self.handle.view.still.store(reduced, Ordering::Release);
+    }
+    /// Where the agent's pointer last went on this page.
+    pub(crate) fn agent_cue(&self) -> Option<AgentCue> {
+        *self.handle.view.cue.lock().unwrap_or_else(|poison| poison.into_inner())
+    }
     /// The pointer the page asks for where the window's last was.
     pub(crate) fn cursor(&self) -> Option<eframe::egui::CursorIcon> {
         self.handle.view.embedded.cursor()
@@ -1284,7 +1294,15 @@ impl Worker {
             view.embedded.resize((width, height));
         }
         view.embedded.busy(true);
+        if agent {
+            // The agent is seen to act: the window's own pointer needs no stand-in.
+            let (view, visible) = (view.clone(), self.handle.visible.clone());
+            driver.watch_actions(Some(Box::new(move |cue, point| {
+                view.point(cue, point, visible.load(Ordering::Acquire))
+            })));
+        }
         let outcome = execute(driver, pending, view);
+        driver.watch_actions(None);
         view.embedded.busy(false);
         match outcome {
             Ok(reply) => {
@@ -1659,6 +1677,10 @@ struct LiveView {
     refresh: AtomicBool,
     /// The page itself, which Chromium paints.
     embedded: cef::Embedded,
+    /// Where the agent's pointer last went, for the window to draw.
+    cue: Mutex<Option<AgentCue>>,
+    /// The user asked for less motion: the pointer is put where it acts.
+    still: AtomicBool,
 }
 
 impl LiveView {
@@ -1696,6 +1718,11 @@ impl LiveView {
         }
         painted.push(frame);
         drop(painted);
+        self.wake();
+    }
+
+    /// Has the window look at what changed here.
+    fn wake(&self) {
         if let Some(notify) = self
             .notify
             .lock()
@@ -1703,6 +1730,30 @@ impl LiveView {
             .as_ref()
         {
             notify();
+        }
+    }
+
+    /// Shows the window where the agent's pointer goes and what it does
+    /// there. While the page is `watched` the action waits for the pointer
+    /// to get there, so the two are seen together.
+    fn point(&self, kind: Cue, to: (f64, f64), watched: bool) {
+        let now = Instant::now();
+        let cue = {
+            let mut last = self.cue.lock().unwrap_or_else(|poison| poison.into_inner());
+            // A pointer that faded comes back as a first one does.
+            let from = last
+                .filter(|last| last.pose(now, last.to).is_some())
+                .map(|last| last.to);
+            let mut cue = AgentCue::new(kind, from, (to.0 as f32, to.1 as f32), now);
+            if self.still.load(Ordering::Acquire) {
+                cue.travel = Duration::ZERO;
+            }
+            *last = Some(cue);
+            cue
+        };
+        if watched {
+            self.wake();
+            thread::sleep(cue.travel);
         }
     }
 }

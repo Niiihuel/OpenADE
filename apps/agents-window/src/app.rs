@@ -1448,6 +1448,7 @@ pub struct AgentsWindow {
     // came while the tab was watched: a frame from before it was hidden still
     // shows when it comes back, but takes no input.
     browser_live: HashMap<u64, bool>,
+    agent_cursor: crate::agent_cursor::AgentCursor,
     // The window's scale, which a browser context is launched with; zero
     // until the first frame has told it.
     browser_scale: f32,
@@ -4856,6 +4857,7 @@ impl AgentsWindow {
             && !self.view.show_settings
             && self.view.main_page == MainPage::Workspace;
         for (id, runtime) in &self.browsers {
+            runtime.set_reduced_motion(self.reduced_motion);
             let shown = visible && Some(*id) == active;
             // The stream stops with the tab. What its page looked like then
             // is not known to be what it looks like when it is shown again.
@@ -5377,6 +5379,36 @@ impl AgentsWindow {
                 }
                 _ => None,
             })
+    }
+
+    /// Paints the agent's pointer over the page it acts on, while that page
+    /// is the one shown. `origin` is where the window's tree is painted.
+    fn paint_agent_cursor(&mut self, ui: &egui::Ui, origin: egui::Pos2) {
+        let Some(tab) = self.view.browser.tab_id else {
+            return;
+        };
+        let Some(cue) = self.browsers.get(&tab).and_then(|browser| browser.agent_cue()) else {
+            return;
+        };
+        let surface = crate::browser_ui::surface_id(tab);
+        let shown = self.tree.frame().commands.iter().rev().find_map(|command| match command {
+            openide_ui::DrawCommand::Surface { rect, id, .. } if *id == surface => {
+                Some(egui::Rect::from_min_size(
+                    origin + egui::vec2(rect.x, rect.y),
+                    egui::vec2(rect.width, rect.height),
+                ))
+            }
+            _ => None,
+        });
+        let Some(shown) = shown else {
+            return;
+        };
+        // A CSS pixel of the page is a point of the window.
+        let page = egui::Rect::from_min_size(
+            shown.min,
+            egui::vec2(self.view.browser.viewport_width as f32, self.view.browser.viewport_height as f32),
+        );
+        self.agent_cursor.paint(ui, page, shown, &cue, self.reduced_motion);
     }
 
     /// The CSS pixel of the page under a window position. A drag that left
@@ -7160,6 +7192,7 @@ impl AgentsWindow {
             browser_inputs: HashMap::new(),
             browser_restart_urls: HashMap::new(),
             browser_live: HashMap::new(),
+            agent_cursor: Default::default(),
             browser_scale: 0.0,
             browser_pointer_down: None,
             browser_wheel: Default::default(),
@@ -21302,6 +21335,7 @@ impl eframe::App for AgentsWindow {
             }
         }
         render::paint(ui, &frame);
+        self.paint_agent_cursor(ui, area.min);
         if !workflow_modal_open && !self.view.show_command_center {
             if let Some((body, caret)) = self.tree.editor_ime_rects() {
                 let rect = |r: openide_ui::Rect| {

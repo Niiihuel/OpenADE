@@ -2,7 +2,7 @@
 //! element can take them, and the raw pointer and keyboard events the live
 //! view forwards from the user.
 
-use crate::driver::{failed, invalid, timed_out, tool, Driver, Outcome, Resolved, Target, MAX_INPUT_TEXT_BYTES, TIMEOUT};
+use crate::driver::{failed, invalid, timed_out, tool, Cue, Driver, Outcome, Resolved, Target, MAX_INPUT_TEXT_BYTES, TIMEOUT};
 use crate::keys::{self, Key};
 use crate::ErrorKind;
 use serde::{Deserialize, Serialize};
@@ -83,6 +83,7 @@ impl Driver {
         self.run(TIMEOUT, |driver| {
             let resolved = driver.resolve(target)?;
             let point = driver.actionable(&resolved, POINTER)?;
+            driver.cue(Cue::Click, point);
             driver.click_point(point)
         })
     }
@@ -102,6 +103,7 @@ impl Driver {
                 ..POINTER
             };
             let point = driver.actionable(&resolved, wants)?;
+            driver.cue(Cue::Move, point);
             driver.move_to(point)
         })
     }
@@ -116,7 +118,8 @@ impl Driver {
                 editable: true,
                 ..Wants::default()
             };
-            driver.actionable(&resolved, wants)?;
+            let point = driver.actionable(&resolved, wants)?;
+            driver.cue(Cue::Type, point);
             let object = driver.element(&resolved)?;
             let prepared: Value = driver.library(&resolved.session, Some(&object), None, "fill", json!([text]))?;
             if let Some(error) = prepared["error"].as_str() {
@@ -172,7 +175,8 @@ impl Driver {
                 enabled: true,
                 ..Wants::default()
             };
-            driver.actionable(&resolved, wants)?;
+            let point = driver.actionable(&resolved, wants)?;
+            driver.cue(Cue::Click, point);
             // The options may still be arriving: ask until they are all there.
             for pause in RETRY_PAUSES.into_iter().chain(std::iter::repeat(500)) {
                 std::thread::sleep(Duration::from_millis(pause));
@@ -215,6 +219,7 @@ impl Driver {
                 Some(stand_in) => driver.actionable_object(&resolved, &stand_in, POINTER)?,
                 None => driver.actionable(&resolved, POINTER)?,
             };
+            driver.cue(Cue::Click, point);
             driver.click_point(point)?;
             // The click happened: what goes wrong from here is an uncertain effect, not a refusal.
             match driver.checked(&resolved) {
@@ -244,6 +249,7 @@ impl Driver {
             let destination = driver.resolve(to)?;
             let session = driver.session.clone();
             let start = driver.actionable(&source, POINTER)?;
+            driver.cue(Cue::Move, start);
             driver.move_to(start)?;
             driver.pointer_event("mousePressed", start, MouseButton::Left, 1)?;
             let dropped = (|| -> Outcome<()> {
@@ -272,6 +278,7 @@ impl Driver {
             ..POINTER
         };
         let end = self.actionable(destination, wants)?;
+        self.cue(Cue::Move, end);
         self.move_to(end)?;
         let world = self.world(&source.session, &source.frame)?;
         let started: bool = self.library(&source.session, None, Some(world), "drag_started", json!([]))?;

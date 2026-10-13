@@ -314,14 +314,46 @@ elemento.
 
 ## Permisos
 
-En el motor propio, `environment_runtime.rs` agrega **cada** herramienta
-anunciada con el prefijo `mcp__openide_browser__` a la lista de aprobación, y
-el runner aplica `require_ask_unless_denied`: se pregunta aunque la política
-general permita todo, y una denegación del host no se relaja.
-`browser_evaluate` sigue ese mismo camino; la tarjeta de aprobación muestra el
-script (hasta 4 KiB, como un comando). «Permitir en la sesión» vale para esa
-misma llamada con esos mismos argumentos. En modo Plan las herramientas MCP no
-se anuncian.
+En el motor propio las herramientas se anuncian en cada turno Build, haya o no
+una pestaña **Navegador** abierta: la primera llamada hace que la ventana abra
+la pestaña en el panel de esa conversación e inicie el navegador
+(`ConversationBrowser`, por la misma cola que usan las CLIs externas), y si el
+usuario la cierra, la siguiente llamada la vuelve a abrir. Una conversación
+que continúa fuera de pantalla abre la suya, nunca la que está a la vista.
+
+Las que sólo leen la página (`browser_snapshot`, `browser_wait_for`,
+`browser_console_messages`, `browser_network_requests` y
+`browser_take_screenshot`) no piden permiso en ningún modo: devuelven lo que el
+usuario ya ve en la pestaña. Las demás se agregan a la lista de aprobación
+(`environment_runtime.rs`) y el runner aplica `require_ask_unless_denied`: se
+pregunta en cada llamada y una denegación del host no se relaja. Con
+**Permitir todo** ninguna herramienta del navegador pregunta
+(`native_tool_allowed`). `browser_evaluate` sigue ese mismo camino; la tarjeta
+de aprobación muestra el script (hasta 4 KiB, como un comando). «Permitir en la
+sesión» vale para esa misma llamada con esos mismos argumentos, y sigue
+valiendo aunque la pestaña se cierre y se abra de nuevo. Una solicitud de
+permiso no vence: espera la respuesta del usuario o el fin del turno. En modo
+Plan las herramientas MCP no se anuncian.
+
+## El puntero del agente
+
+Cuando el agente hace clic, pasa por encima, escribe en un campo, elige una
+opción o arrastra, la ventana dibuja un puntero sobre la página: aparece, va
+hasta el elemento, muestra un anillo donde hace clic y pasa a ser el cursor de
+texto mientras escribe; luego queda quieto 2,4 s y se desvanece. Es el tema de
+cursores del propio escritorio: Bibata Modern Classic si está instalado
+(`XCURSOR_PATH`), si no el de `XCURSOR_THEME`, y un punto cuando no hay tema
+que leer. El archivo se lee en ejecución; la aplicación no lo incluye.
+
+El driver avisa dónde va a actuar antes de enviar la entrada
+(`Driver::watch_actions`, `Cue`), y sólo para las llamadas del agente: la
+entrada de la ventana no lo mueve. Mientras la pestaña está a la vista la
+acción espera a que el puntero llegue (entre 0,12 y 0,45 s según la distancia),
+para que se vean juntos; con la pestaña oculta no espera nada, y con
+**Reducir movimiento** el puntero aparece en el lugar sin recorrido ni espera.
+Lo pinta la ventana encima de la superficie (`agent_cursor.rs`): a la página
+no se le envía nada, así que ningún script lo lee y no sale en
+`browser_take_screenshot`.
 
 La tarjeta de aprobación dice qué es una referencia: `botón "Guardar" (e12)`,
 `campo de texto (e5)`. El rol y el nombre son los que imprimió la última
