@@ -500,3 +500,37 @@ fn full_access_confirmation_blocks_message_admission_before_model_or_network_pre
     assert_policy_unchanged(&app, baseline, &bytes);
     assert!(!app.view.running);
 }
+
+#[test]
+fn allowing_everything_covers_the_browsers_tools_which_otherwise_ask() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app = fixture(root.path());
+    let call = openide_core::ToolCall {
+        id: "call".into(),
+        name: "mcp__openide_browser__browser_snapshot".into(),
+        arguments: serde_json::json!({}),
+    };
+    let mode = |app: &AgentsWindow, asks: bool| {
+        let mut policy = app.native_permission_policy().unwrap();
+        if asks {
+            // What a turn does with a tool its preparation marks to ask.
+            policy.require_ask_unless_denied(&call.name);
+        }
+        policy.mode_for_call_with_session_grants("s", root.path(), root.path(), "", &call, &[])
+    };
+    // Without it the host names no browser tool, and the turn marks each to ask.
+    assert_eq!(mode(&app, false), PermissionMode::Deny);
+    assert_eq!(mode(&app, true), PermissionMode::Ask);
+    app.agent_tool_settings.set_full_access(true);
+    assert_eq!(mode(&app, false), PermissionMode::Allow);
+    for name in crate::browser_runtime::native_tool_names() {
+        let call = openide_core::ToolCall { name, ..call.clone() };
+        let policy = app.native_permission_policy().unwrap();
+        assert_eq!(
+            policy.mode_for_call_with_session_grants("s", root.path(), root.path(), "", &call, &[]),
+            PermissionMode::Allow,
+            "{}",
+            call.name
+        );
+    }
+}

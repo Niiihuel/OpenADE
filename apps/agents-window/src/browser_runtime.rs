@@ -1918,6 +1918,37 @@ pub(crate) struct BrowserMcpClient {
 /// tell which server the conversation started.
 pub(crate) const OPEN_PREVIEW: &str = "open_preview";
 
+/// What the native agent calls each tool of this browser by.
+pub(crate) const NATIVE_TOOL_PREFIX: &str = "mcp__openide_browser__";
+
+pub(crate) fn native_tool_names() -> Vec<String> {
+    browser_mcp_tools()
+        .into_iter()
+        .map(|tool| tool.name)
+        .chain([OPEN_PREVIEW.to_owned()])
+        .map(|name| format!("{NATIVE_TOOL_PREFIX}{name}"))
+        .collect()
+}
+
+/// Told to an agent that is given this browser: without it a model reaches
+/// for the system's browser, which a conversation has no use for.
+const AGENT_NOTE: &str = "OpenIDE has a browser built in, in a tab beside this conversation, and the user watches it. Use its tools, the ones named mcp__openide_browser__*, whenever a page has to be opened, read, checked or acted on: open_preview shows a local server you started, browser_navigate opens any other address, browser_snapshot reads the page, and the other browser_* tools act on it. Do not launch a system browser (xdg-open, open, start) and do not ask the user to open a page for you.";
+
+/// Told to an agent whose conversation has no browser tab open, so it says
+/// what to do instead of trying the system's browser.
+const AGENT_NOTE_CLOSED: &str = "OpenIDE has a browser built in, but its tab is not open in this conversation, so you have no browser tools in this turn. When a page has to be opened, read or checked, say so and ask the user to open the Browser tab of this conversation's panel and send the message again. Do not launch a system browser (xdg-open, open, start).";
+
+/// `instructions` followed by the note about this browser: how to use it
+/// when the turn is given it, how to get it otherwise.
+pub(crate) fn with_agent_note(instructions: String, offered: bool) -> String {
+    let note = if offered { AGENT_NOTE } else { AGENT_NOTE_CLOSED };
+    if instructions.is_empty() {
+        note.to_owned()
+    } else {
+        format!("{instructions}\n\n{note}")
+    }
+}
+
 fn open_preview_tool() -> McpTool {
     McpTool {
         name: OPEN_PREVIEW.into(),

@@ -28,6 +28,7 @@ pub(crate) struct EnvironmentToolPreparation {
     prior_events: Arc<Vec<AgentEvent>>,
     servers: Vec<McpServerSettings>,
     browser: Option<BrowserMcpClient>,
+    browser_allowed: bool,
     image: Option<ImageMcpClient>,
     plugin_root: Option<PathBuf>,
 }
@@ -46,9 +47,18 @@ impl EnvironmentToolPreparation {
             prior_events,
             servers,
             browser,
+            browser_allowed: false,
             image: None,
             plugin_root: None,
         }
+    }
+
+    /// The user allowed everything in this conversation: the browser this
+    /// window serves does not ask either. The host's policy has to allow its
+    /// tools too, or they stay denied as any tool it does not name.
+    pub fn with_browser_allowed(mut self, allowed: bool) -> Self {
+        self.browser_allowed = allowed;
+        self
     }
 
     /// Image generation writes a file and spends money: the caller offers it
@@ -175,7 +185,8 @@ impl ToolPreparation for EnvironmentToolPreparation {
         let mut asks = inner
             .as_ref()
             .map_or_else(Vec::new, |prepared| prepared.ask_tool_names().to_vec());
-        // The tools this window serves itself. Each of them asks every time.
+        // The tools this window serves itself. Each of them asks every time,
+        // but the browser's once the user has allowed everything.
         let mut own: Vec<(&str, Arc<dyn McpToolClient>)> = Vec::new();
         if let Some(browser) = &self.browser {
             own.push(("openide_browser", Arc::new(browser.clone())));
@@ -210,7 +221,16 @@ impl ToolPreparation for EnvironmentToolPreparation {
                     });
                 }
             };
-            asks.extend(composite.mcp_tool_names().map(str::to_owned));
+            let browser_allowed = self.browser_allowed;
+            asks.extend(
+                composite
+                    .mcp_tool_names()
+                    .filter(|name| {
+                        !(browser_allowed
+                            && name.starts_with(crate::browser_runtime::NATIVE_TOOL_PREFIX))
+                    })
+                    .map(str::to_owned),
+            );
             tools = Arc::new(composite);
         }
         let external_identity = inner
@@ -507,5 +527,32 @@ mod tests {
             mode(open.with_tool(evaluate.name.clone(), PermissionMode::Deny)),
             PermissionMode::Deny
         );
+
+        // Once the user allowed everything in the conversation, none of the
+        // browser's tools is marked to ask, and the host's policy decides.
+        let (runtime, _commands) = crate::browser_runtime::tests::fixture(
+            crate::browser_runtime::BrowserScope {
+                workspace: workspace.path().to_path_buf(),
+                session_id: "fixture".into(),
+            },
+            Default::default(),
+        );
+        let allowed = EnvironmentToolPreparation::new(
+            root.path().to_path_buf(),
+            "fixture".into(),
+            Arc::new(Vec::new()),
+            Vec::new(),
+            Some(runtime.mcp_client()),
+        )
+        .with_browser_allowed(true)
+        .prepare(
+            workspace.path(),
+            Arc::new(LocalTools::new()),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert!(allowed.ask_tool_names().is_empty(), "{:?}", allowed.ask_tool_names());
+        assert_eq!(crate::browser_runtime::native_tool_names(), expected);
     }
 }
