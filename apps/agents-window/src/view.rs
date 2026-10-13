@@ -7441,7 +7441,7 @@ pub(crate) mod tests {
         }
         // Activating a saved server means it will connect during a native
         // turn. The badge must remain reachable without claiming a live link.
-        for (enabled, label) in [(true, "Activado para turnos"), (false, "Desactivado")] {
+        for (enabled, label) in [(true, "Habilitado · sin probar"), (false, "Deshabilitado")] {
             state.mcp_servers[0].enabled = enabled;
             for width in [520.0, 1100.0] {
                 let mut tree = UiTree::new(build_view(&state, width));

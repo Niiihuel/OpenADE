@@ -1411,6 +1411,10 @@ fn capability_page(
     ]
 }
 
+fn reason_is_empty(status: Option<&crate::mcp_inspection::McpServerStatus>) -> bool {
+    matches!(status, Some(crate::mcp_inspection::McpServerStatus::Failed(reason)) if reason.trim().is_empty())
+}
+
 fn mcp_page(state: &ViewState, compact: bool) -> Vec<Element> {
     let editable = state.mcp_load_error.is_none();
     let mut content = Vec::new();
@@ -1440,11 +1444,16 @@ fn mcp_page(state: &ViewState, compact: bool) -> Vec<Element> {
         ));
     }
     for server in &state.mcp_servers {
-        let status = if server.enabled {
-            "Activado para turnos"
-        } else {
-            "Desactivado"
+        use crate::mcp_inspection::McpServerStatus;
+        let last = state.mcp_inspection.last.get(&server.id).filter(|_| server.enabled);
+        let status = match (server.enabled, last) {
+            (false, _) => "Deshabilitado".to_owned(),
+            (true, Some(McpServerStatus::Connected { tools: 1 })) => "Conectado · 1 herramienta".to_owned(),
+            (true, Some(McpServerStatus::Connected { tools })) => format!("Conectado · {tools} herramientas"),
+            (true, Some(McpServerStatus::Failed(_))) => "No se pudo conectar".to_owned(),
+            (true, None) => "Habilitado · sin probar".to_owned(),
         };
+        let failed = matches!(last, Some(McpServerStatus::Failed(_)));
         let toggle_label = if server.enabled {
             "Desactivar"
         } else {
@@ -1456,9 +1465,10 @@ fn mcp_page(state: &ViewState, compact: bool) -> Vec<Element> {
                 .scope
                 .as_ref()
                 .is_some_and(|scope| scope.server.id == server.id);
+        // After a failure the same check is the way to try again.
         let inspection = outline(
             &format!("mcp_inspect:{}", server.id),
-            "Inspeccionar herramientas",
+            if failed { "Reconectar" } else { "Inspeccionar herramientas" },
         )
         .icon(SettingsPage::Mcp.icon())
         .enabled(editable && server.enabled && !state.running && !state.mcp_inspection.is_busy())
@@ -1484,7 +1494,11 @@ fn mcp_page(state: &ViewState, compact: bool) -> Vec<Element> {
                 Text::new(&server.id, theme::component_palette())
                     .render()
                     .flex(1.0),
-                Text::new(status, theme::card_palette()).muted().render(),
+                if failed {
+                    Text::new(status, theme::card_palette()).ink(theme::DESTRUCTIVE).render()
+                } else {
+                    Text::new(status, theme::card_palette()).muted().render()
+                },
             ])
             .gap(10.0),
             Text::new(
@@ -1498,6 +1512,15 @@ fn mcp_page(state: &ViewState, compact: bool) -> Vec<Element> {
             .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
             .render(),
         ];
+        if let Some(McpServerStatus::Failed(reason)) = last.filter(|_| !reason_is_empty(last)) {
+            let reason: String = reason.lines().next().unwrap_or("").chars().take(240).collect();
+            server_content.push(
+                Text::new(reason, theme::component_palette())
+                    .role(TextRole::Small)
+                    .ink(theme::DESTRUCTIVE)
+                    .render(),
+            );
+        }
         if let Some(oauth) = &server.http_oauth {
             server_content.push(
                 Text::new(

@@ -61,8 +61,18 @@ pub(crate) enum McpInspectionPhase {
     Discarded,
 }
 
+/// How the last connection to a server went, by its id. Connections are
+/// made for a turn or for an inspection, so this is the newest one seen.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum McpServerStatus {
+    Connected { tools: usize },
+    Failed(String),
+}
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct McpInspectionUiState {
+    /// Kept across inspections; forgotten for a server whose settings change.
+    pub last: std::collections::BTreeMap<String, McpServerStatus>,
     pub scope: Option<McpInspectionScope>,
     pub phase: McpInspectionPhase,
     pub snapshot: Option<McpInspectionSnapshot>,
@@ -80,6 +90,7 @@ impl McpInspectionUiState {
 
     pub fn begin(&mut self, scope: McpInspectionScope) {
         *self = Self {
+            last: std::mem::take(&mut self.last),
             scope: Some(scope),
             phase: McpInspectionPhase::Running,
             ..Self::default()
@@ -116,6 +127,17 @@ impl McpInspectionUiState {
         };
         self.error = result.error;
         self.shutdown_error = result.shutdown_error;
+        // A cancelled inspection says nothing about the server.
+        let status = match (self.phase, &self.snapshot) {
+            (McpInspectionPhase::Completed, Some(snapshot)) => Some(McpServerStatus::Connected { tools: snapshot.tools.len() }),
+            (McpInspectionPhase::Failed, _) => Some(McpServerStatus::Failed(
+                self.error.clone().or_else(|| self.shutdown_error.clone()).unwrap_or_default(),
+            )),
+            _ => None,
+        };
+        if let Some(status) = status {
+            self.last.insert(result.scope.server.id.clone(), status);
+        }
         true
     }
 }
