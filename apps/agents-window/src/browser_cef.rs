@@ -352,6 +352,19 @@ impl Embedded {
         true
     }
 
+    /// The host opens tabs: a link clicked for another tab asks for one
+    /// instead of opening in the page.
+    pub(super) fn open_tabs_apart(&self) {
+        if let Some(page) = &*self.page() {
+            page.open_tabs_apart();
+        }
+    }
+
+    /// The address a click on the page shown last asked to see in another tab.
+    pub(super) fn take_tab_request(&self) -> Option<String> {
+        self.page().as_ref().and_then(|page| page.take_tab_request())
+    }
+
     /// What the pages of every tab asked to save, oldest first.
     pub(super) fn downloads(&self) -> Vec<BrowserDownloadView> {
         let mut all: Vec<openide_cef::Download> = self.page().iter().flat_map(|page| page.downloads()).collect();

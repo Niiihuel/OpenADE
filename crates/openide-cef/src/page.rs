@@ -66,6 +66,10 @@ struct Core {
     popup: Mutex<(i32, i32)>,
     cursor: Mutex<CursorType>,
     downloads: Mutex<DownloadRecords>,
+    /// A link clicked for another tab is handed over instead of opening here,
+    /// and the address of the last one waits to be taken.
+    tabs_apart: std::sync::atomic::AtomicBool,
+    tab_request: Mutex<Option<String>>,
     state: Mutex<State>,
     changed: Condvar,
 }
@@ -527,13 +531,15 @@ fn reserve(directory: &std::path::Path, name: &str) -> Option<std::path::PathBuf
 }
 
 wrap_request_handler! {
-    struct Requests;
+    struct Requests {
+        core: Arc<Core>,
+    }
     impl RequestHandler {
         fn on_open_urlfrom_tab(
             &self,
             _browser: Option<&mut Browser>,
             _frame: Option<&mut Frame>,
-            _target_url: Option<&CefString>,
+            target_url: Option<&CefString>,
             target_disposition: WindowOpenDisposition,
             user_gesture: c_int,
         ) -> c_int {
@@ -542,6 +548,15 @@ wrap_request_handler! {
             // itself, where there is no other. What asks for one with no
             // click of the user's behind it is refused, as a popup is.
             let here = target_disposition == sys::cef_window_open_disposition_t::CEF_WOD_CURRENT_TAB.into();
+            // Whoever embeds the page has tabs: the address is kept for it
+            // to open in one, and the page stays where it is.
+            if !here && user_gesture != 0 && self.core.tabs_apart.load(Ordering::Relaxed) {
+                let url = target_url.map(ToString::to_string).unwrap_or_default();
+                if url.starts_with("http://") || url.starts_with("https://") {
+                    *lock(&self.core.tab_request) = Some(url);
+                }
+                return 1;
+            }
             (!here && user_gesture == 0).into()
         }
     }
@@ -654,8 +669,9 @@ impl Page {
             .and_then(|host| host.0.request_context())
             .ok_or("La página ya no tiene un contexto para otra pestaña.")?;
         let page = Self::create(context, self.size(), scale, frame_rate, paint)?;
-        // A tab saves where the tab beside it does.
+        // A tab saves where the tab beside it does, and opens tabs as it does.
         lock(&page.core.downloads).directory = lock(&self.core.downloads).directory.clone();
+        page.core.tabs_apart.store(self.core.tabs_apart.load(Ordering::Relaxed), Ordering::Relaxed);
         Ok(page)
     }
 
@@ -675,6 +691,8 @@ impl Page {
             popup: Mutex::default(),
             cursor: Mutex::default(),
             downloads: Mutex::default(),
+            tabs_apart: std::sync::atomic::AtomicBool::new(false),
+            tab_request: Mutex::default(),
             state: Mutex::new(State {
                 messages: Some(messages),
                 ..State::default()
@@ -694,7 +712,7 @@ impl Page {
             Render::new(core.clone()),
             Display::new(core.clone()),
             Life::new(core.clone()),
-            Requests::new(),
+            Requests::new(core.clone()),
             Dialogs::new(core.clone()),
             Files::new(),
             Menus::new(),
@@ -762,6 +780,17 @@ impl Page {
     /// name no file there has. Until this is called nothing is saved.
     pub fn save_downloads_to(&self, directory: std::path::PathBuf) {
         lock(&self.core.downloads).directory = Some(directory);
+    }
+
+    /// From now on a link clicked with Control, Shift or the middle button
+    /// does not open in this page: its address waits in `take_tab_request`.
+    pub fn open_tabs_apart(&self) {
+        self.core.tabs_apart.store(true, Ordering::Relaxed);
+    }
+
+    /// The address last clicked for another tab, once.
+    pub fn take_tab_request(&self) -> Option<String> {
+        lock(&self.core.tab_request).take()
     }
 
     /// The files the page asked to save, oldest first, as they stand now.
