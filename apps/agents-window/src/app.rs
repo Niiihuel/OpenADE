@@ -1636,6 +1636,11 @@ fn project_branch_for_workspace(workspace: &str) -> Option<String> {
     (branch != "Rama desconocida").then_some(branch)
 }
 
+/// Read from the checkout's own remotes; nothing is asked of GitHub.
+fn project_on_github(workspace: &str) -> bool {
+    crate::github::discover_repository(Path::new(workspace)).is_some()
+}
+
 const MAX_COMPOSER_ATTACHMENTS: usize = 12;
 const MAX_COMPOSER_ATTACHMENT_PATH_BYTES: usize = 2_048;
 const MAX_COMPOSER_PROJECTS: usize = 12;
@@ -6631,6 +6636,7 @@ impl AgentsWindow {
             workspace: workspace.clone(),
             workspace_draft: workspace.clone(),
             project_branch: project_branch_for_workspace(&workspace),
+            project_on_github: project_on_github(&workspace),
             composer_branches: Default::default(),
             prompt: String::new(),
             composer_attachments: Vec::new(),
@@ -12208,6 +12214,7 @@ impl AgentsWindow {
                     self.reset_marketplace_workspace();
                     self.view.composer_branches = Default::default();
                     self.view.project_branch = project_branch_for_workspace(&self.view.workspace);
+                    self.view.project_on_github = project_on_github(&self.view.workspace);
                     self.invalidate_workspace_files();
                     self.refresh_mcp_settings();
                     self.refresh_native_skills();
@@ -16317,6 +16324,7 @@ impl AgentsWindow {
         self.refresh_mcp_settings();
         self.refresh_native_skills();
         self.view.project_branch = project_branch_for_workspace(&self.view.workspace);
+        self.view.project_on_github = project_on_github(&self.view.workspace);
         self.view.composer_project_menu_open = false;
         self.refresh_composer_projects();
         self.refresh_automation_view();
