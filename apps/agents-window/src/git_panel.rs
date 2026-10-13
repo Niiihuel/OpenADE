@@ -946,10 +946,10 @@ fn detail_content(detail: &ReviewDetailView, width: f32) -> Element {
 /// its sidebar, so there a diff is a document on its own.
 fn detail_view(detail: &ReviewDetailView, width: f32, back: bool, panel: &GitPanelView) -> Element {
     let viewed = &panel.viewed;
-    let stage = if detail.stage == DiffStage::Staged {
-        "Preparado"
-    } else {
-        "Local"
+    let stage = match detail.stage {
+        DiffStage::Staged => "Preparado",
+        DiffStage::Unstaged => "Local",
+        DiffStage::Branch => "Rama",
     };
     let summary = match &detail.content {
         Some(Ok(Some(diff))) => format!(

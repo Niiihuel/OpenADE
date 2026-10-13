@@ -1071,6 +1071,7 @@ fn export_environment_visual_review() {
             files: 12,
             additions: 380,
             deletions: 44,
+            ..Default::default()
         });
         state.environment.workflow.compare_url =
             Some("https://github.com/example/openade/compare/main...codex/update-controls".into());

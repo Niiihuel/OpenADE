@@ -223,6 +223,15 @@ de 5» con el encabezado `@@` del bloque, flechas para recorrerlos y
 lo ya preparado no se tocan. Un cambio preparado, uno binario o uno cuya vista
 quedó parcial por tamaño no ofrecen bloques.
 
+### La rama contra otra
+
+**Comparar cambios**, en Entorno, ya decía cuántos commits y líneas separan la
+rama de otra. Ahora lista los archivos que la rama cambió (hasta 300, con sus
+líneas) y cada uno abre en la pestaña Repositorio su diff contra el punto
+donde la rama se separó (`git diff base...HEAD`, `load_branch_file_diff`),
+marcado «Rama». Es de sólo lectura: no ofrece preparar ni descartar bloques, y
+lo que no está commiteado no forma parte.
+
 ### Archivos del chat y capturas
 
 Abrir un archivo desde una actividad resuelve nuevamente la fila original del

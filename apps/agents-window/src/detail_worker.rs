@@ -18,7 +18,8 @@ pub const PREVIEW_PAGE_LINES: usize = 120;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DetailKind {
     Preview { path: PathBuf, page: usize },
-    Diff { path: PathBuf, stage: DiffStage },
+    /// `base` is the commit a branch diff starts from; no other stage has one.
+    Diff { path: PathBuf, stage: DiffStage, base: Option<String> },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -92,8 +93,13 @@ fn run_worker(request_rx: Receiver<DetailRequest>, result_tx: Sender<DetailRespo
                 read_text_preview_page(&request.workspace, path, *page, PREVIEW_PAGE_LINES)
                     .map_err(|error| error.to_string()),
             ),
-            DetailKind::Diff { path, stage } => DetailResult::Diff(
-                load_file_diff(&request.workspace, path, *stage).map_err(|error| error.to_string()),
+            DetailKind::Diff { path, stage, base } => DetailResult::Diff(
+                match (stage, base) {
+                    (DiffStage::Branch, Some(base)) => crate::git_review::load_branch_file_diff(&request.workspace, base, path),
+                    (DiffStage::Branch, None) => Err(std::io::Error::other("Elegí con qué rama comparar")),
+                    _ => load_file_diff(&request.workspace, path, *stage),
+                }
+                .map_err(|error| error.to_string()),
             ),
         };
         if result_tx

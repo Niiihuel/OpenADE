@@ -342,6 +342,27 @@ impl AgentsWindow {
                             !self.view.environment.details_expanded
                     }
                     "environment_git_commit_generate" => self.generate_commit_message(),
+                    _ if id.starts_with("environment_git_compare_file:") => {
+                        // The file as the comparison in view lists it, opened
+                        // in the repository tab against the branch's base.
+                        let path = id
+                            .strip_prefix("environment_git_compare_file:")
+                            .and_then(|index| index.parse::<usize>().ok())
+                            .and_then(|index| {
+                                let comparison = self.view.environment.workflow.comparison.as_ref()?;
+                                Some(comparison.changed.get(index)?.path.clone())
+                            });
+                        if let Some(path) = path.filter(|_| self.environment_git_workspace.as_deref() == Some(Path::new(&self.view.workspace))) {
+                            self.view.review_detail = Some(crate::view::ReviewDetailView {
+                                path,
+                                stage: crate::git_review::DiffStage::Branch,
+                                page_index: 0,
+                                content: None,
+                            });
+                            self.request_review_detail();
+                            self.apply_action(UiAction::Clicked { id: "dock_open:review".into() }, ctx);
+                        }
+                    }
                     "environment_progress_toggle" => {
                         self.view.environment.progress_expanded =
                             !self.view.environment.progress_expanded
