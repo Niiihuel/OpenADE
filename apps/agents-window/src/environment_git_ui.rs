@@ -35,6 +35,8 @@ pub(crate) struct EnvironmentGitUiState {
     pub notice: Option<String>,
     pub panel: EnvironmentGitPanel,
     pub commit_message: String,
+    /// A model is writing the commit message.
+    pub generating: bool,
     pub push_remote: String,
     pub push_branch: String,
     pub compare_reference: String,
@@ -269,6 +271,19 @@ fn commit_view(state: &EnvironmentGitUiState, width: f32, locked: bool, sidebar:
             .enabled(enabled)
             .render(),
         ];
+        commit.push(
+            Button::new(
+                "environment_git_commit_generate",
+                if state.generating { "Generando mensaje…" } else { "Generar mensaje" },
+                crate::environment_ui::card_button_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Compact)
+            .enabled(enabled && snapshot.staged > 0 && !state.generating)
+            .tooltip("Escribe el mensaje a partir de los cambios preparados, con el modelo elegido para revisiones. Podés corregirlo antes de crear el commit.")
+            .width(inner)
+            .render(),
+        );
         if let Some(reason) = &reason {
             commit.push(
                 Text::new(reason, theme::component_palette())
@@ -796,11 +811,18 @@ mod tests {
             ..Default::default()
         };
         assert!(!has_button(&state, "environment_git_commit", false));
+        // With something staged a model can be asked for the message, once at a time.
+        assert!(has_button(&state, "environment_git_commit_generate", false));
+        assert!(!has_button(&state, "environment_git_commit_generate", true));
+        state.generating = true;
+        assert!(!has_button(&state, "environment_git_commit_generate", false));
+        state.generating = false;
         state.commit_message = "Fix selected change".into();
         assert!(has_button(&state, "environment_git_commit", false));
         assert!(!has_button(&state, "environment_git_commit", true));
         state.snapshot.as_mut().unwrap().staged = 0;
         assert!(!has_button(&state, "environment_git_commit", false));
+        assert!(!has_button(&state, "environment_git_commit_generate", false));
         state.snapshot.as_mut().unwrap().staged = 1;
         state.snapshot.as_mut().unwrap().conflicts = 1;
         assert!(!has_button(&state, "environment_git_commit", false));

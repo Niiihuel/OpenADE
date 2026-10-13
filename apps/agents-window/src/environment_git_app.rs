@@ -69,9 +69,68 @@ impl AgentsWindow {
         ctx.request_repaint_after(Duration::from_millis(50));
     }
 
+    /// Asks the model chosen for reviews to write the commit message of the
+    /// staged changes. The answer goes to the form, never straight to a commit.
+    fn generate_commit_message(&mut self) {
+        if self.commit_generation.is_some() {
+            return;
+        }
+        let model = (|| {
+            let current = self.native_settings();
+            let settings = self
+                .review_model_settings
+                .resolve(&current, self.view.catalog.as_deref())?
+                .unwrap_or(current);
+            let connection = settings
+                .resolve_at(&self.data_root)
+                .map_err(|error| format!("Elegí un modelo de un proveedor conectado para generar el mensaje. {error}"))?;
+            if !self.provider_ready_for_turn(&settings.provider_id, &connection) {
+                return Err("Conectá el proveedor del modelo para generar el mensaje.".to_owned());
+            }
+            native_model_backend(
+                connection,
+                &settings.provider_id,
+                None,
+                None,
+                &self.data_root,
+                self.view.catalog.as_deref(),
+                &self.model_discoveries,
+            )
+        })();
+        let started = model.and_then(|model| {
+            crate::commit_message::Generation::start(model, PathBuf::from(&self.view.workspace))
+        });
+        let workflow = &mut self.view.environment.workflow;
+        match started {
+            Ok(generation) => {
+                self.commit_generation = Some(generation);
+                workflow.generating = true;
+                workflow.error = None;
+            }
+            Err(error) => workflow.error = Some(error),
+        }
+    }
+
     pub(super) fn poll_environment_git(&mut self, ctx: &egui::Context) -> bool {
         let workspace = PathBuf::from(&self.view.workspace);
         let mut changed = false;
+        if let Some(answer) = self.commit_generation.as_ref().and_then(|generation| generation.poll()) {
+            let asked_here = self.commit_generation.take().is_some_and(|generation| generation.workspace == workspace);
+            let workflow = &mut self.view.environment.workflow;
+            workflow.generating = false;
+            // An answer for another project is not this form's message.
+            match answer {
+                Ok(message) if asked_here => {
+                    self.tree.set_input_value("environment_git_commit_message", &message);
+                    workflow.commit_message = message;
+                }
+                Err(error) if asked_here => workflow.error = Some(error),
+                _ => {}
+            }
+            changed = true;
+        } else if self.commit_generation.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(100));
+        }
         if self
             .environment_git_workspace
             .as_ref()
@@ -282,6 +341,7 @@ impl AgentsWindow {
                         self.view.environment.details_expanded =
                             !self.view.environment.details_expanded
                     }
+                    "environment_git_commit_generate" => self.generate_commit_message(),
                     "environment_progress_toggle" => {
                         self.view.environment.progress_expanded =
                             !self.view.environment.progress_expanded

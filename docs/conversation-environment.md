@@ -106,7 +106,13 @@ runtime que los implemente.
 **Commit o push** muestra los archivos preparados, sin preparar, nuevos y en
 conflicto. El acceso **Revisar y preparar archivos** abre Repositorio para
 revisar y preparar los cambios. Crear commit exige archivos ya preparados y
-un mensaje; no prepara archivos automáticamente. Publicar exige un remoto
+un mensaje; no prepara archivos automáticamente. **Generar mensaje** le
+pide el mensaje a un modelo a partir de los cambios preparados (su resumen, su
+diff hasta 48 KiB y los asuntos de los últimos commits, para seguir su idioma
+y estilo) y lo deja en el campo: nada se commitea sin que el usuario lo lea.
+Usa el modelo elegido para revisiones en Ajustes → Agente, o el del
+compositor si esa preferencia es «el mismo»; necesita un proveedor nativo
+conectado. Publicar exige un remoto
 conocido y una rama de destino explícita. El remoto de seguimiento o el único
 remoto disponible se puede preseleccionar; varios remotos sin seguimiento
 requieren selección. El push es normal, sin force. Los conflictos y las
