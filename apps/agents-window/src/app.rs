@@ -8344,7 +8344,12 @@ impl AgentsWindow {
                 state.screen = AutomationScreen::History;
             }
         } else if let Some(selected_id) = id.strip_prefix("automation_delete_request:") {
-            state.pending_delete_id = Some(selected_id.to_owned());
+            // A run in course still writes its outcome to the task's history.
+            if state.busy_ids.iter().any(|busy| busy == selected_id) {
+                state.error = Some("Esta tarea se está ejecutando. Esperá a que termine para eliminarla.".to_owned());
+            } else {
+                state.pending_delete_id = Some(selected_id.to_owned());
+            }
         } else if let Some(selected_id) = id.strip_prefix("automation_delete_confirm:") {
             if state.pending_delete_id.as_deref() != Some(selected_id) {
                 return;

@@ -3959,7 +3959,7 @@ fn confirmation_dialog(state: &ViewState, base: Element, viewport_width: f32) ->
             .map(|item| {
                 (
                     format!("¿Eliminar «{}»?", item.title),
-                    "Se eliminará esta automatización y su programación. Esta acción no se puede deshacer.".to_owned(),
+                    "Se eliminarán esta automatización, su programación y su historial de ejecuciones. Las conversaciones de cada ejecución se conservan. Esta acción no se puede deshacer.".to_owned(),
                     format!("automation_delete_confirm:{id}"),
                     "automation_delete_cancel".to_owned(),
                     "Eliminar".to_owned(),
