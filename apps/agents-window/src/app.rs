@@ -17896,6 +17896,22 @@ impl AgentsWindow {
                     ctx.open_url(egui::OpenUrl::new_tab(url));
                 }
             }
+            UiAction::Clicked { id } if id.starts_with("marketplace_try:") => {
+                // A new task whose first words ask for the skill: the index
+                // the agent already gets tells it where the skill is.
+                let name = self
+                    .view
+                    .marketplace
+                    .find_item(id.trim_start_matches("marketplace_try:"))
+                    .map(|item| item.name.clone());
+                if let Some(name) = name {
+                    self.apply_action(UiAction::Clicked { id: "new_session".into() }, ctx);
+                    let text = format!("Usá la skill «{name}» para ");
+                    self.view.prompt.clone_from(&text);
+                    self.tree.set_input_value("prompt", &text);
+                    self.apply_action(UiAction::InputChanged { id: "prompt".into(), value: text }, ctx);
+                }
+            }
             UiAction::Clicked { id } if id.starts_with("marketplace_") => {
                 self.handle_marketplace_action(&id);
             }

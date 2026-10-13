@@ -74,6 +74,7 @@ impl AgentsWindow {
             MarketplaceOperation::InstallRemote(skill, _) => Some(skill.id.clone()),
             _ => None,
         };
+        self.view.marketplace.busy_update = matches!(operation, MarketplaceOperation::Update(_));
         self.view.marketplace.update_checking = check_updates;
         self.view.marketplace.status_error = false;
         if check_updates {
@@ -246,8 +247,9 @@ impl AgentsWindow {
                 if let Some(id) = result.updated_item {
                     state.updates.remove(&id);
                 }
+                // A refresh that left sources behind did not go well.
+                state.status_error = result.message.starts_with("Actualización parcial");
                 state.status = Some(result.message);
-                state.status_error = false;
                 state.add_source_kind = None;
                 state.source_draft.clear();
                 state.add_menu_open = false;
@@ -423,9 +425,14 @@ impl AgentsWindow {
     pub(super) fn set_marketplace_query(&mut self, value: String) {
         let state = &mut self.view.marketplace;
         state.visible = GROUP_STEP;
+        state.visible_by.clear();
         if state.explore.query != value.trim() {
             self.marketplace_remote.invalidate();
             state.explore = Default::default();
+            // Its results left: so does the one of them that was open.
+            if state.selected_item_id.as_deref().is_some_and(|id| state.find_item(id).is_none()) {
+                state.selected_item_id = None;
+            }
         }
         state.query = value;
         self.sync_marketplace_query_inputs();
@@ -436,6 +443,7 @@ impl AgentsWindow {
         state.filter = filter;
         state.filter_menu_open = false;
         state.visible = GROUP_STEP;
+        state.visible_by.clear();
     }
 
     fn install_marketplace_item(&mut self, item: &str, scope: InstallScope) {
@@ -517,6 +525,7 @@ impl AgentsWindow {
                 self.set_marketplace_filter(MarketplaceFilter::All);
             }
             "marketplace_more" => state.visible += GROUP_STEP,
+            "marketplace_status_dismiss" => state.status = None,
             "marketplace_explore_search" => self.request_marketplace_search(false),
             "marketplace_explore_retry" => self.request_marketplace_search(true),
             "marketplace_check_updates" => {
@@ -576,12 +585,20 @@ impl AgentsWindow {
                     state.category = (category != "all").then(|| category.to_owned());
                     state.filter_menu_open = false;
                     state.visible = GROUP_STEP;
+                    state.visible_by.clear();
                 } else if let Some(item) = id.strip_prefix("marketplace_update:") {
                     if state.updates.contains_key(item) {
                         self.marketplace_operation(MarketplaceOperation::Update(item.to_owned()));
                     }
+                } else if let Some(group) = id.strip_prefix("marketplace_more:") {
+                    // Only the group that was asked grows.
+                    *state.visible_by.entry(group.to_owned()).or_insert(state.visible) += GROUP_STEP;
                 } else if let Some(item) = id.strip_prefix("marketplace_details:") {
                     if state.find_item(item).is_some() {
+                        // What was said about another item is not this one's.
+                        if state.selected_item_id.as_deref() != Some(item) && !state.busy {
+                            state.status = None;
+                        }
                         state.selected_item_id = Some(item.to_owned());
                     }
                 } else if let Some(item) = id.strip_prefix("marketplace_install_user:") {
@@ -946,6 +963,13 @@ mod tests {
         let (_root, mut app) = fixture();
         app.handle_marketplace_action("marketplace_more");
         assert_eq!(app.view.marketplace.visible, 2 * GROUP_STEP);
+        // Asked of one group, only that one grows; a new filter forgets it.
+        app.handle_marketplace_action("marketplace_more:curated");
+        assert_eq!(app.view.marketplace.visible_by.get("curated"), Some(&(3 * GROUP_STEP)));
+        assert_eq!(app.view.marketplace.visible, 2 * GROUP_STEP);
+        app.set_marketplace_filter(MarketplaceFilter::All);
+        assert!(app.view.marketplace.visible_by.is_empty());
+        app.view.marketplace.visible = 2 * GROUP_STEP;
         app.handle_marketplace_action("marketplace_category:Datos");
         assert_eq!(app.view.marketplace.category.as_deref(), Some("Datos"));
         assert_eq!(app.view.marketplace.visible, GROUP_STEP);
