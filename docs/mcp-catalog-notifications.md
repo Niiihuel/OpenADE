@@ -46,6 +46,20 @@ ejecuciones y se olvida cuando la configuración de ese servidor cambia. Las
 conexiones siguen siendo por turno: esto dice lo último que se vio, no una
 conexión abierta.
 
+## Importar de otros agentes
+
+**Importar de otros agentes** lee los servidores MCP que Codex
+(`~/.codex/config.toml`, `[mcp_servers.*]`) y Claude Code (`~/.claude.json`,
+sus `mcpServers` y los del proyecto, y `.mcp.json` del proyecto) tienen
+configurados, y agrega los que no están ya en la lista por su id
+(`mcp_import.rs`). Entran **deshabilitados**, para revisarlos antes de que un
+turno los inicie. Se toma el programa, sus argumentos, la URL y los *nombres*
+de variables de entorno (`env`, `env_vars`, `bearer_token_env_var`,
+`env_http_headers`); nunca un valor escrito en esos archivos, ni un encabezado
+literal. Un servidor con un nombre que no sirve de id o con el transporte SSE
+antiguo no se importa y se cuenta en el aviso. Los archivos de los otros
+agentes no se modifican.
+
 La inspección carga la configuración guardada antes de iniciar y vuelve a
 validarla al recibir el resultado. Un cambio del servidor, una configuración
 ilegible o un cambio de proyecto descarta el informe; un resultado de una

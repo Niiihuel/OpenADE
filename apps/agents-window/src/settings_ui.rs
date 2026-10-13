@@ -1430,10 +1430,18 @@ fn mcp_page(state: &ViewState, compact: bool) -> Vec<Element> {
     let mut servers = vec![settings_parts::settings_row(
         "Servidores guardados",
         format!("{} configurados en este equipo", state.mcp_servers.len()),
-        outline("mcp_new", "Nuevo servidor")
-            .icon(Icon::Add)
-            .enabled(editable)
-            .render(),
+        Element::row(vec![
+            outline("mcp_import", "Importar de otros agentes")
+                .icon(Icon::ArrowRight)
+                .enabled(editable)
+                .tooltip("Trae los servidores MCP que Codex y Claude Code tienen configurados en este equipo y en este proyecto. Entran deshabilitados, para revisarlos. No se copian valores de variables ni de encabezados: sólo sus nombres.")
+                .render(),
+            outline("mcp_new", "Nuevo servidor")
+                .icon(Icon::Add)
+                .enabled(editable)
+                .render(),
+        ])
+        .gap(8.0),
         compact,
     )];
     if state.mcp_servers.is_empty() {
