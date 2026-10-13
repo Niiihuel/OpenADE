@@ -24,6 +24,8 @@ mod mcp;
 mod mcp_http;
 mod mcp_identity;
 mod mcp_oauth;
+#[cfg(unix)]
+mod mcp_oauth_file;
 #[cfg(windows)]
 mod mcp_oauth_windows;
 mod mcp_tools;
@@ -112,6 +114,8 @@ pub use mcp_oauth::{
     MemoryTokenStore, OAuthConfig, OAuthError, OAuthRegistration, OAuthSession, OAuthTokens,
     PendingAuthorization, TokenKey, TokenStore,
 };
+#[cfg(unix)]
+pub use mcp_oauth_file::FileTokenStore;
 #[cfg(windows)]
 pub use mcp_oauth_windows::WindowsCredentialTokenStore;
 pub use mcp_tools::{McpCompositeTools, McpServerBinding, McpToolAdapterError, McpToolClient};

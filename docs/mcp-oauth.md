@@ -16,7 +16,17 @@ can be cancelled. OAuth issuer and endpoint URLs require HTTPS; HTTP loopback
 authorization servers are allowed only in unit tests.
 
 `TokenStore` is the storage boundary. `MemoryTokenStore` keeps tokens only for
-the current process and is **not durable secure storage**. On Windows,
+the current process and is **not durable secure storage**. On Unix,
+`FileTokenStore` keeps each grant in a file of its own under `mcp-oauth/` in
+the application's data: the directory is `0700`, each file `0600`, written
+whole and renamed into place, and every read or change holds one `flock`, so a
+refresh in one process cannot interleave with another's. A file that others
+can read, that is not a plain file, or that names another resource, issuer or
+client is refused. Its grant revision changes with each authorization and not
+with a refresh, which makes its grants eligible for resume identity. This is
+private-file storage, not an encrypted vault: whoever can read the user's
+files can read the tokens, as with the provider credentials the app already
+keeps the same way. On Windows,
 `WindowsCredentialTokenStore` stores a generic credential for the current user
 with local-machine persistence. Its target name contains a SHA-256 hash of
 resource, issuer, and client ID; the token blob is limited to 2560 bytes.
@@ -41,13 +51,14 @@ resource URL, issuer, or client ID, or when removing a server. Disabling a
 server or editing scopes retains the credential. If deletion fails, the app
 keeps the original registration and reports the error.
 
-The Windows app persists only the public client ID, exact HTTPS issuer, and
+The app persists only the public client ID, exact HTTPS issuer, and
 requested scope names in MCP settings. Its Settings page starts authorization,
 shows the temporary browser URL and progress, and opens that URL only when the
 user clicks the button. A bounded, read-only Streamable HTTP GET collects a
 `WWW-Authenticate` Bearer challenge from a 401 before metadata discovery; a
 405 or response without a challenge uses the well-known metadata paths. The
-loopback callback saves tokens in Credential Manager. At runner startup an
+loopback callback saves tokens in Credential Manager on Windows and in the
+file store on Unix. At runner startup an
 OAuth server requires a stored usable token; otherwise it reports that the user
 must authorize in Settings. No auth flow is launched by the agent run.
 
@@ -79,9 +90,9 @@ not enabled when that harness is a dependency of the desktop tests.
 
 Remaining work:
 
-- A credential-store implementation for other supported operating systems.
-  The Windows adapter has format and key tests but no automated test that writes
-  to a user's vault.
+- An encrypted vault on Unix (Secret Service, Keychain) in place of private
+  files, and a store for macOS's own keychain. The Windows adapter has format
+  and key tests but no automated test that writes to a user's vault.
 - Reauthorization or explicit revocation after a runtime 401. A dispatched
   `tools/call` must remain effect-uncertain and must never be retried
   automatically. The app deletes credentials when a registration is changed

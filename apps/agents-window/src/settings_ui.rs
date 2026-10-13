@@ -1557,21 +1557,10 @@ fn mcp_page(state: &ViewState, compact: bool) -> Vec<Element> {
             oauth_controls.push(
                 outline(format!("mcp_oauth_authorize:{}", server.id), "Autorizar")
                     .icon(Icon::ArrowRight)
-                    .enabled(editable && cfg!(windows) && !oauth_busy)
+                    .enabled(editable && !oauth_busy)
                     .loading(oauth_busy)
                     .render(),
             );
-            if !cfg!(windows) {
-                server_content.push(
-                    Text::new(
-                        "OAuth MCP requiere Credential Manager en Windows.",
-                        theme::component_palette(),
-                    )
-                    .role(TextRole::Small)
-                    .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
-                    .render(),
-                );
-            }
             if let Some(status) = state
                 .mcp_oauth_status
                 .as_ref()
@@ -1608,7 +1597,7 @@ fn mcp_page(state: &ViewState, compact: bool) -> Vec<Element> {
                                 .render(),
                         );
                     }
-                    McpOAuthViewPhase::Authorized => server_content.push(Text::new("Autorización guardada en Credential Manager. El próximo turno usará esta credencial.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render()),
+                    McpOAuthViewPhase::Authorized => server_content.push(Text::new("Autorización guardada. El próximo turno usará esta credencial.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render()),
                     McpOAuthViewPhase::Failed(message) => server_content.push(
                         settings_parts::feedback_banner(message, FeedbackTone::Error, None, compact),
                     ),
@@ -2157,7 +2146,6 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
                         .render(),
                     outline("mcp_auth:oauth", "OAuth 2.1")
                         .active(state.mcp_draft_oauth_enabled)
-                        .enabled(cfg!(windows) || state.mcp_draft_oauth_enabled)
                         .render(),
                 ])
                 .stacked(width < 420.0)
@@ -2186,7 +2174,7 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
                 )
                 .hint("Uno por línea. Se unen con los scopes requeridos por el servidor; no son valores secretos.")
                 .rows(),
-                vec![Text::new("Los tokens se guardan en Credential Manager del usuario en Windows, fuera de Settings y del journal. Para usar el servidor, guardá y elegí Autorizar.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render()],
+                vec![Text::new("Los tokens se guardan fuera de Settings y del journal, en el almacén de credenciales del sistema o en archivos privados del usuario. Para usar el servidor, guardá y elegí Autorizar.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render()],
             ].into_iter().flatten());
         } else {
             fields.extend(
