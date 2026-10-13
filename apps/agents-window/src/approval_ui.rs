@@ -30,6 +30,8 @@ pub(crate) struct ApprovalSummary {
     pub icon: Icon,
     /// A text action of the card, as (action, label).
     pub link: Option<(&'static str, &'static str)>,
+    /// The site a browser action is on, when the user can allow the site.
+    pub site: Option<String>,
 }
 
 impl ApprovalTarget {
@@ -316,6 +318,7 @@ pub(crate) fn summary(tool_name: &str, arguments: &str) -> ApprovalSummary {
         target,
         icon,
         link: None,
+        site: None,
     }
 }
 
@@ -422,9 +425,13 @@ fn notice(
     .target(summary.target)
     .status(status)
     .icon(summary.icon);
-    match summary.link {
-        Some((action, label)) => request.link(action, label),
-        None => request,
+    match (summary.link, summary.site) {
+        (Some((action, label)), _) => request.link(action, label),
+        (None, Some(site)) => request.link(
+            target.decision_action("allow_site"),
+            format!("Permitir siempre en {}", site.split_once("://").map_or(site.as_str(), |(_, host)| host)),
+        ),
+        (None, None) => request,
     }
     .render()
 }
@@ -436,9 +443,11 @@ pub(crate) fn inline_root(permission: &PermissionView, state: &ViewState, compac
         &permission.arguments,
         &state.browser_refs,
     );
+    let mut summary = with_image(summary, &permission.tool_name, &permission.arguments, state);
+    summary.site = crate::browser_sites::site_of_call(&permission.tool_name, &permission.arguments, &state.agent_page_url);
     notice(
         &root_target(permission, state),
-        with_image(summary, &permission.tool_name, &permission.arguments, state),
+        summary,
         "Aprobación pendiente".into(),
         compact,
     )
@@ -757,6 +766,31 @@ mod tests {
         state.pending_permissions[0].arguments = json!({"ref":"e12"}).to_string();
         let frame = UiTree::new(inline_root(&state.pending_permissions[0], &state, false)).layout(Size::new(900.0, 600.0));
         assert!(texts(&frame).contains("botón \"Guardar\" (e12)"), "{}", texts(&frame));
+    }
+
+    #[test]
+    fn a_browser_action_offers_to_allow_its_site_and_nothing_else_does() {
+        let mut state = fixture();
+        let offered = |state: &ViewState| {
+            let frame = UiTree::new(inline_root(&state.pending_permissions[0], state, false)).layout(Size::new(900.0, 600.0));
+            let action = root_target(&state.pending_permissions[0], state).decision_action("allow_site");
+            (frame.regions.iter().any(|region| region.id == action), texts(&frame))
+        };
+        state.agent_page_url = "https://tienda.example/carrito".into();
+        // Not a tool of the browser: the page it happens to show says nothing about it.
+        assert!(!offered(&state).0);
+        state.pending_permissions[0].tool_name = "mcp__openide_browser__browser_click".into();
+        state.pending_permissions[0].arguments = json!({"ref":"e12"}).to_string();
+        let (link, said) = offered(&state);
+        assert!(link && said.contains("Permitir siempre en tienda.example"), "{said}");
+        // Where it is told to go is the site, not where it is.
+        state.pending_permissions[0].tool_name = "mcp__openide_browser__browser_navigate".into();
+        state.pending_permissions[0].arguments = json!({"url":"http://localhost:3000/x"}).to_string();
+        assert!(offered(&state).1.contains("Permitir siempre en localhost:3000"));
+        // A page that is not of the web is no site to allow.
+        state.pending_permissions[0].tool_name = "mcp__openide_browser__browser_click".into();
+        state.agent_page_url = "about:blank".into();
+        assert!(!offered(&state).0);
     }
 
     #[test]

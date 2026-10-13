@@ -2488,6 +2488,52 @@ fn additional_page(state: &ViewState, page: SettingsPage, compact: bool) -> Vec<
                     compact,
                 ),
             ]));
+            // What the agent may do on a site without asking. Only the sites
+            // with a permission of their own are listed.
+            let mut sites = vec![settings_parts::settings_row(
+                "Predeterminado",
+                "En un sitio que no está en la lista, el agente lee la página sin preguntar y pide aprobación para cada acción, según sus permisos.",
+                Text::new("Requiere aprobación", theme::component_palette()).role(TextRole::Small).muted().render(),
+                compact,
+            )];
+            for (index, site) in state.browser_sites.iter().enumerate() {
+                sites.push(settings_parts::settings_row(
+                    &site.origin,
+                    match site.access {
+                        crate::browser_sites::SiteAccess::Allow => "El agente actúa en este sitio sin preguntar.",
+                        crate::browser_sites::SiteAccess::Ask => "Cada acción del agente en este sitio pide aprobación.",
+                        crate::browser_sites::SiteAccess::Block => "Las acciones del agente en este sitio se rechazan sin preguntar.",
+                    },
+                    Element::row(vec![
+                        outline(format!("browser_site_cycle:{index}"), site.access.label()).render(),
+                        UiIconButton::new(format!("browser_site_remove:{index}"), Icon::Close, control_palette())
+                            .variant(ButtonVariant::Ghost)
+                            .size(ControlSize::Compact)
+                            .tooltip(format!("Quitar el permiso propio de {}", site.origin))
+                            .render(),
+                    ])
+                    .gap(6.0),
+                    compact,
+                ));
+            }
+            sites.push(settings_parts::settings_row(
+                "Agregar permiso para un sitio",
+                "Un origen como https://example.com. Se agrega con «Permitir siempre»; tocá su valor para cambiarlo.",
+                Element::row(vec![
+                    Element::text_input("browser_site_draft", &state.browser_site_draft, "https://example.com")
+                        .background(theme::INPUT)
+                        .foreground(theme::FOREGROUND)
+                        .border(theme::BORDER, 1.0)
+                        .radius(6.0)
+                        .font_size(12.0)
+                        .padding(4.0)
+                        .size(Some(220.0), Some(28.0)),
+                    outline("browser_site_add", "Agregar").render(),
+                ])
+                .gap(6.0),
+                compact,
+            ));
+            content.push(settings_parts::settings_group("Permisos por sitio", sites));
             content.push(settings_parts::settings_group("Vista previa", vec![
                 settings_parts::settings_row(
                     "Abrir la vista previa de los servidores que inicia el agente",

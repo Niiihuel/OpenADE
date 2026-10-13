@@ -407,6 +407,28 @@ valiendo aunque la pestaña se cierre y se abra de nuevo. Una solicitud de
 permiso no vence: espera la respuesta del usuario o el fin del turno. En modo
 Plan las herramientas MCP no se anuncian.
 
+### Permisos por sitio
+
+Un sitio es un origen: esquema, host y puerto (`https://example.com`,
+`http://localhost:3000`). Cada uno puede tener un permiso propio, guardado en
+`browser-sites.json` (`browser_sites.rs`):
+
+| Valor | Qué pasa con una acción del agente en ese sitio |
+| --- | --- |
+| Permitir siempre | Se ejecuta sin preguntar |
+| Requiere aprobación | Se pregunta, como en un sitio sin permiso propio |
+| Bloquear | Se rechaza sin preguntar |
+
+El sitio de una llamada es adonde va (`browser_navigate`, `browser_tab_new`
+con `url`) o la página en la que está el navegador del agente; nunca la de una
+CLI ni la de otra conversación. La tarjeta de aprobación de una acción del
+navegador ofrece **Permitir siempre en ‹sitio›**, que guarda el permiso y
+aprueba esa acción. La lista se ve y se edita en Ajustes → Navegador →
+Permisos por sitio: cada fila cambia de valor o se quita, y se agregan sitios
+a mano. El permiso se aplica a la conversación que está a la vista y con un
+turno en curso; en cualquier otro caso la acción se pregunta. Las herramientas
+que sólo leen no preguntan en ningún sitio, tampoco en uno bloqueado.
+
 ## El puntero del agente
 
 Cuando el agente hace clic, pasa por encima, escribe en un campo, elige una
