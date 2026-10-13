@@ -437,7 +437,7 @@ pub const DOCK_TOOL: RowSizing = RowSizing {
 
 /// A turn's heading in the Activity log, at the pitch of its rows.
 pub const DOCK_TURN: SectionSizing = SectionSizing {
-    height: 40.0,
+    height: 32.0,
     padding: 6.0,
     gap: 6.0,
     title_size: 12.0,
