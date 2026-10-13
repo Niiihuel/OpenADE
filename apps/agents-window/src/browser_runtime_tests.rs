@@ -711,6 +711,10 @@ fn every_tool_maps_to_a_command_classified_as_reading_or_changing_the_page() {
     };
     assert_eq!(wire("browser_click", json!({"ref":"f1e3"}))["ref"], "f1e3");
     assert_eq!(wire("browser_click", json!({"ref":"f1e3"}))["type"], "click_locator");
+    let right = wire("browser_click", json!({"ref":"e3","button":"right","doubleClick":true,"modifiers":["Shift","Control"]}));
+    assert_eq!((&right["button"], &right["doubleClick"], &right["modifiers"]), (&json!("right"), &json!(true), &json!(["Shift","Control"])));
+    assert_eq!(wire("browser_click", json!({"x":4,"y":5,"button":"middle"}))["type"], "click");
+    assert!(browser_tool_command("browser_click", json!({"ref":"e3","modifiers":["Hyper"]})).is_err());
     assert_eq!(wire("browser_select_option", json!({"ref":"e9","values":["g"]}))["type"], "select_option");
     assert_eq!(wire("browser_drag", json!({"from":{"ref":"e2"},"to":{"ref":"e3"}}))["to"]["ref"], "e3");
     assert_eq!(wire("browser_take_screenshot", json!({"full_page":true}))["full_page"], true);
@@ -1353,7 +1357,7 @@ fn modifier_keys_reach_the_page_with_the_window_s_pointer_and_wheel_and_with_not
         finish(runtime.submit_ui(command).unwrap()).unwrap();
     }
     // What the agent does next holds none of them.
-    finish(runtime.handle.submit(BrowserCommand::Click { x: 1.0, y: 2.0 }).unwrap()).unwrap();
+    finish(runtime.handle.submit(BrowserCommand::Click { x: 1.0, y: 2.0, button: Default::default(), double_click: false, modifiers: Vec::new() }).unwrap()).unwrap();
     let held: Vec<_> = endpoint
         .asked("Input.dispatchMouseEvent")
         .iter()
@@ -1521,7 +1525,7 @@ fn pointer_input_is_bounded_like_a_click_and_the_launch_scale_like_a_display() {
     assert!(BrowserCommand::PointerMove { x: 1.0, y: 1.0, modifiers: 0 }.quiet());
     assert!(BrowserCommand::Scroll { dx: 0.0, dy: 1.0, modifiers: 0 }.quiet());
     assert!(!BrowserCommand::PointerDown { x: 1.0, y: 1.0, button, clicks, modifiers: 0 }.quiet());
-    assert!(!BrowserCommand::Click { x: 1.0, y: 1.0 }.quiet());
+    assert!(!BrowserCommand::Click { x: 1.0, y: 1.0, button: Default::default(), double_click: false, modifiers: Vec::new() }.quiet());
     // The agent's catalog does not reach the window's pointer.
     assert!(browser_tool_command("browser_pointer_move", json!({"x":1,"y":1})).is_err());
     assert!(browser_tool_command("browser_pointer_down", json!({"x":1,"y":1,"button":"left","clicks":1})).is_err());

@@ -845,6 +845,15 @@ fn real_cef_driver_raw_pointer_and_keyboard_input_reach_the_page_as_the_users_ow
     driver.pointer_up(later.0, later.1, MouseButton::Left, 1).unwrap();
     assert_eq!(evaluate(&mut driver, "out.textContent"), "\"A pulsado\"");
 
+    // A click twice in a row, with another button, and with a key held.
+    evaluate(&mut driver, "(() => { window.seen = []; const a = document.querySelector('#a'); a.addEventListener('dblclick', () => seen.push('dbl')); a.addEventListener('contextmenu', event => { event.preventDefault(); seen.push('menu'); }); a.addEventListener('click', event => seen.push(event.shiftKey ? 'shift' : 'plain')); return 0; })()");
+    driver.click_with(&Target::Selector("#a"), MouseButton::Left, 2).unwrap();
+    driver.click_with(&Target::Selector("#a"), MouseButton::Right, 1).unwrap();
+    driver.hold_modifiers(openide_browser::modifiers::SHIFT);
+    driver.click(&Target::Selector("#a")).unwrap();
+    driver.hold_modifiers(0);
+    assert_eq!(evaluate(&mut driver, "seen.join()"), "\"plain,plain,dbl,menu,shift\"");
+
     // Dragging over text selects it.
     let heading = evaluate(&mut driver, "(() => { const r = document.querySelector('h1').getBoundingClientRect(); return [r.left, r.top + r.height / 2, r.right]; })()");
     let heading: Vec<f64> = serde_json::from_str(&heading).unwrap();

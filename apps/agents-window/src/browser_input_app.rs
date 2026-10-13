@@ -356,7 +356,7 @@ mod tests {
                 .unwrap();
         }
         queue
-            .push(BrowserCommand::Click { x: 2.0, y: 3.0 })
+            .push(BrowserCommand::Click { x: 2.0, y: 3.0, button: Default::default(), double_click: false, modifiers: Vec::new() })
             .unwrap();
         queue
             .push(BrowserCommand::Scroll { dx: 4.0, dy: 5.0, modifiers: 0 })

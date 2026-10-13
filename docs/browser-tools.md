@@ -27,7 +27,7 @@ o `selector` (un selector que identifique un único elemento).
 | `browser_snapshot` | `interactive_only`, `max_depth`, `selector`, los tres opcionales | Lectura |
 | `browser_navigate` | `url` (HTTP/HTTPS) | Modifica |
 | `browser_back`, `browser_forward`, `browser_reload` | — | Modifica |
-| `browser_click` | destino, o `x` + `y` del viewport | Modifica |
+| `browser_click` | destino, o `x` + `y` del viewport; opcionales `button` (`left`, `middle`, `right`), `doubleClick` y `modifiers` (`Alt`, `Control`, `Meta`, `Shift`) | Modifica |
 | `browser_fill` | destino, `text` | Modifica |
 | `browser_type` | `text` (en el campo con foco) | Modifica |
 | `browser_press` | `key` | Modifica |
@@ -450,7 +450,7 @@ del modelo con la que se verifican y reanudan turnos guardados.
 | Sesiones (`--session`) | El aislamiento ya es por conversación. |
 | `run-code` | Ejecuta código de Playwright en Node; `browser_evaluate` se limita a la página. |
 | `open`, `close`, `--headed` | El ciclo de vida de la página es del panel del usuario. |
-| `dblclick`, `uncheck` | No hay herramienta dedicada de doble clic; desmarcar es `browser_check` con `checked: false`. |
+| `dblclick`, `uncheck` | El doble clic es `browser_click` con `doubleClick: true`; desmarcar es `browser_check` con `checked: false`. |
 
 ## Validación
 
