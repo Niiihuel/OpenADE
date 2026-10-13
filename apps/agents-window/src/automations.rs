@@ -75,7 +75,15 @@ pub enum AutomationSchedule {
     EveryMinutes { interval: u32, anchor_ms: i64 },
     Daily { hour: u8, minute: u8 },
     Weekly { weekday: u8, hour: u8, minute: u8 },
+    /// Several days of the week: bit 0 is Monday, bit 6 Sunday.
+    Weekdays { days: u8, hour: u8, minute: u8 },
+    /// A day of every month; a month without that day is passed over.
+    Monthly { day: u8, hour: u8, minute: u8 },
 }
+
+const DAY_NAMES: [&str; 7] = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
+/// Monday to Friday, as [`AutomationSchedule::Weekdays`] counts them.
+pub const WORKDAYS: u8 = 0b001_1111;
 
 impl AutomationSchedule {
     pub fn validate(&self) -> Result<(), AutomationError> {
@@ -91,6 +99,8 @@ impl AutomationSchedule {
                 hour,
                 minute,
             } => *weekday < 7 && *hour < 24 && *minute < 60,
+            Self::Weekdays { days, hour, minute } => *days != 0 && *days < 128 && *hour < 24 && *minute < 60,
+            Self::Monthly { day, hour, minute } => (1..=31).contains(day) && *hour < 24 && *minute < 60,
         };
         if valid {
             Ok(())
@@ -118,15 +128,24 @@ impl AutomationSchedule {
                     .max(1);
                 anchor_ms.checked_add(steps.checked_mul(step)?)
             }
-            Self::Daily { hour, minute } | Self::Weekly { hour, minute, .. } => {
+            Self::Daily { hour, minute }
+            | Self::Weekly { hour, minute, .. }
+            | Self::Weekdays { hour, minute, .. }
+            | Self::Monthly { hour, minute, .. } => {
                 let from = Local.timestamp_millis_opt(after_ms).single()?;
                 let start = from.date_naive();
-                for offset in 0..=15 {
+                // Far enough for a 31st, which two months in a row may lack.
+                for offset in 0..=95 {
                     let date = start.checked_add_signed(Duration::days(offset))?;
-                    if let Self::Weekly { weekday, .. } = self {
-                        if date.weekday().num_days_from_monday() != u32::from(*weekday) {
-                            continue;
-                        }
+                    let weekday = date.weekday().num_days_from_monday();
+                    let wanted = match self {
+                        Self::Weekly { weekday: day, .. } => weekday == u32::from(*day),
+                        Self::Weekdays { days, .. } => days & (1 << weekday) != 0,
+                        Self::Monthly { day, .. } => date.day() == u32::from(*day),
+                        _ => true,
+                    };
+                    if !wanted {
+                        continue;
                     }
                     if let Some(candidate) = local_candidate(date, *hour, *minute, after_ms) {
                         return Some(candidate);
@@ -152,17 +171,17 @@ impl AutomationSchedule {
                 hour,
                 minute,
             } => {
-                let day = [
-                    "lunes",
-                    "martes",
-                    "miércoles",
-                    "jueves",
-                    "viernes",
-                    "sábado",
-                    "domingo",
-                ][usize::from(*weekday)];
+                let day = DAY_NAMES[usize::from(*weekday)];
                 format!("Cada {day} a las {hour:02}:{minute:02}")
             }
+            Self::Weekdays { days, hour, minute } if *days == WORKDAYS => {
+                format!("Días hábiles a las {hour:02}:{minute:02}")
+            }
+            Self::Weekdays { days, hour, minute } => {
+                let named: Vec<&str> = (0..7).filter(|day| days & (1 << day) != 0).map(|day| DAY_NAMES[day]).collect();
+                format!("Cada {} a las {hour:02}:{minute:02}", named.join(", "))
+            }
+            Self::Monthly { day, hour, minute } => format!("El día {day} de cada mes a las {hour:02}:{minute:02}"),
         }
     }
 }
@@ -1064,6 +1083,37 @@ pub(crate) mod tests {
             backend: "codex".to_owned(),
             native_provider: None,
             schedule,
+        }
+    }
+
+    #[test]
+    fn several_days_of_the_week_and_a_day_of_the_month_find_their_next_run() {
+        use chrono::{Datelike, TimeZone, Timelike};
+        // A Wednesday at noon, local time.
+        let from = Local.with_ymd_and_hms(2026, 1, 7, 12, 0, 0).single().unwrap().timestamp_millis();
+        let at = |ms: i64| Local.timestamp_millis_opt(ms).single().unwrap();
+        let work = AutomationSchedule::Weekdays { days: WORKDAYS, hour: 9, minute: 30 };
+        let next = at(work.next_after(from).unwrap());
+        assert_eq!((next.day(), next.hour(), next.minute()), (8, 9, 30));
+        // From Friday after the hour, the weekend is passed over.
+        let friday = Local.with_ymd_and_hms(2026, 1, 9, 10, 0, 0).single().unwrap().timestamp_millis();
+        assert_eq!(at(work.next_after(friday).unwrap()).day(), 12);
+        assert_eq!(work.summary(), "Días hábiles a las 09:30");
+        let two = AutomationSchedule::Weekdays { days: 0b100_0001, hour: 8, minute: 0 };
+        assert_eq!(two.summary(), "Cada lunes, domingo a las 08:00");
+        assert_eq!(at(two.next_after(from).unwrap()).day(), 11);
+        // A month without the day is passed over, not moved.
+        let last = AutomationSchedule::Monthly { day: 31, hour: 7, minute: 0 };
+        let february = Local.with_ymd_and_hms(2026, 2, 1, 0, 0, 0).single().unwrap().timestamp_millis();
+        let next = at(last.next_after(february).unwrap());
+        assert_eq!((next.month(), next.day()), (3, 31));
+        for invalid in [
+            AutomationSchedule::Weekdays { days: 0, hour: 9, minute: 0 },
+            AutomationSchedule::Weekdays { days: 128, hour: 9, minute: 0 },
+            AutomationSchedule::Monthly { day: 0, hour: 9, minute: 0 },
+            AutomationSchedule::Monthly { day: 32, hour: 9, minute: 0 },
+        ] {
+            assert!(invalid.validate().is_err());
         }
     }
 

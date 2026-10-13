@@ -7536,6 +7536,14 @@ impl AgentsWindow {
                         .cloned()
                 })
                 .collect();
+            self.view.automations.models = self
+                .view
+                .composer_routes
+                .iter()
+                .map(|route| {
+                    (route.provider_id.clone(), route.model_id.clone(), format!("{} · {}", route.provider_name, route.model_name))
+                })
+                .collect();
             self.view.automations.busy_ids = self
                 .background_automation_runs
                 .iter()
@@ -8113,6 +8121,7 @@ impl AgentsWindow {
             ("automation_once_date", once_date),
             ("automation_once_time", once_time),
             ("automation_interval", form.interval_minutes.as_str()),
+            ("automation_month_day", form.month_day.as_str()),
             ("automation_time", form.time.as_str()),
         ] {
             self.tree.set_input_value(id, value);
@@ -8174,8 +8183,16 @@ impl AgentsWindow {
             .and_then(|day| day.parse::<u8>().ok())
         {
             if day < 7 {
-                state.form.weekday = day;
+                // A day is added or taken out; the last one stays.
+                let toggled = state.form.weekdays ^ (1 << day);
+                if toggled != 0 {
+                    state.form.weekdays = toggled;
+                }
             }
+            return;
+        }
+        if id == "automation_weekdays_work" {
+            state.form.weekdays = crate::automations::WORKDAYS;
             return;
         }
         if let Some(backend) = id.strip_prefix("automation_backend:") {
@@ -8189,6 +8206,20 @@ impl AgentsWindow {
         }
         if id == "automation_native_current" {
             state.form.native_provider = Some(current_native);
+            return;
+        }
+        if let Some((provider, model, _)) = id
+            .strip_prefix("automation_model:")
+            .and_then(|index| state.models.get(index.parse::<usize>().ok()?))
+        {
+            // Its own endpoint goes with the provider it was written for.
+            let custom_endpoint =
+                if *provider == current_native.provider_id { current_native.custom_endpoint } else { String::new() };
+            state.form.native_provider = Some(crate::native_provider::NativeProviderSettings {
+                provider_id: provider.clone(),
+                model_id: model.clone(),
+                custom_endpoint,
+            });
             return;
         }
         match id {
@@ -21135,6 +21166,7 @@ impl AgentsWindow {
                 }
                 "automation_once_time" => self.view.automations.form.set_once_time(&value),
                 "automation_interval" => self.view.automations.form.interval_minutes = value,
+                "automation_month_day" => self.view.automations.form.month_day = value,
                 "automation_time" => self.view.automations.form.time = value,
                 "marketplace_search" => self.set_marketplace_query(value),
                 "marketplace_source_draft" => self.view.marketplace.source_draft = value,

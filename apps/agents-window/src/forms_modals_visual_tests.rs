@@ -67,7 +67,7 @@ fn automation(step: AutomationEditorStep, frequency: AutomationFrequency) -> Aut
     state.form.title = "Resumen diario".into();
     state.form.frequency = frequency;
     state.form.once_at = "2026-03-14T09:30".into();
-    state.form.weekday = 2;
+    state.form.weekdays = 1 << 2;
     state
 }
 

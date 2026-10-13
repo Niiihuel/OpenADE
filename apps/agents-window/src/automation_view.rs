@@ -120,6 +120,7 @@ pub enum AutomationFrequency {
     #[default]
     Daily,
     Weekly,
+    Monthly,
 }
 
 impl AutomationFrequency {
@@ -129,6 +130,7 @@ impl AutomationFrequency {
             Self::EveryMinutes => "automation_frequency:interval",
             Self::Daily => "automation_frequency:daily",
             Self::Weekly => "automation_frequency:weekly",
+            Self::Monthly => "automation_frequency:monthly",
         }
     }
 
@@ -138,6 +140,7 @@ impl AutomationFrequency {
             "automation_frequency:interval" => Some(Self::EveryMinutes),
             "automation_frequency:daily" => Some(Self::Daily),
             "automation_frequency:weekly" => Some(Self::Weekly),
+            "automation_frequency:monthly" => Some(Self::Monthly),
             _ => None,
         }
     }
@@ -148,6 +151,7 @@ impl AutomationFrequency {
             Self::EveryMinutes => "Intervalo",
             Self::Daily => "Diaria",
             Self::Weekly => "Semanal",
+            Self::Monthly => "Mensual",
         }
     }
 }
@@ -163,8 +167,9 @@ pub struct AutomationForm {
     pub once_at: String,
     pub interval_minutes: String,
     pub time: String,
-    /// Monday = 0, as in [`AutomationSchedule::Weekly`].
-    pub weekday: u8,
+    /// The days of a weekly task: bit 0 is Monday. Never empty.
+    pub weekdays: u8,
+    pub month_day: String,
     /// The schedule of the task being edited: left as it is, it needs no
     /// future run, so a one-off that already ran can still be renamed.
     pub kept_schedule: Option<AutomationSchedule>,
@@ -181,7 +186,8 @@ impl AutomationForm {
             once_at: String::new(),
             interval_minutes: "60".to_owned(),
             time: "09:00".to_owned(),
-            weekday: 0,
+            weekdays: 1,
+            month_day: "1".to_owned(),
             kept_schedule: None,
         }
     }
@@ -215,7 +221,17 @@ impl AutomationForm {
                 minute,
             } => {
                 form.frequency = AutomationFrequency::Weekly;
-                form.weekday = *weekday;
+                form.weekdays = 1 << *weekday;
+                form.time = format!("{hour:02}:{minute:02}");
+            }
+            AutomationSchedule::Weekdays { days, hour, minute } => {
+                form.frequency = AutomationFrequency::Weekly;
+                form.weekdays = *days;
+                form.time = format!("{hour:02}:{minute:02}");
+            }
+            AutomationSchedule::Monthly { day, hour, minute } => {
+                form.frequency = AutomationFrequency::Monthly;
+                form.month_day = day.to_string();
                 form.time = format!("{hour:02}:{minute:02}");
             }
         }
@@ -259,11 +275,19 @@ impl AutomationForm {
             }
             AutomationFrequency::Weekly => {
                 let (hour, minute) = parse_time(&self.time)?;
-                AutomationSchedule::Weekly {
-                    weekday: self.weekday,
-                    hour,
-                    minute,
+                // One day keeps the shape tasks have always been saved in.
+                if self.weekdays.count_ones() == 1 {
+                    AutomationSchedule::Weekly { weekday: self.weekdays.trailing_zeros() as u8, hour, minute }
+                } else {
+                    AutomationSchedule::Weekdays { days: self.weekdays, hour, minute }
                 }
+            }
+            AutomationFrequency::Monthly => {
+                let (hour, minute) = parse_time(&self.time)?;
+                let day = self.month_day.trim().parse().map_err(|_| {
+                    AutomationError::Invalid("El día del mes debe ser un número del 1 al 31".to_owned())
+                })?;
+                AutomationSchedule::Monthly { day, hour, minute }
             }
         };
         schedule.validate()?;
@@ -358,6 +382,9 @@ pub struct AutomationViewState {
     pub query: String,
     /// The tasks running or waiting for a worker.
     pub busy_ids: Vec<String>,
+    /// The models a native task can be given: provider, model and how the
+    /// pair is shown.
+    pub models: Vec<(String, String, String)>,
     pub pending_delete_id: Option<String>,
     pub notice: Option<String>,
     pub error: Option<String>,
@@ -388,6 +415,7 @@ impl AutomationViewState {
             filter: AutomationFilter::All,
             query: String::new(),
             busy_ids: Vec::new(),
+            models: Vec::new(),
             pending_delete_id: None,
             notice: None,
             error: None,
@@ -560,7 +588,7 @@ pub fn template_form(id: &str, backend: impl Into<String>) -> Option<AutomationF
     form.prompt = template.prompt.to_owned();
     form.frequency = template.frequency;
     form.time = template.time.to_owned();
-    form.weekday = template.weekday;
+    form.weekdays = 1 << template.weekday;
     Some(form)
 }
 
@@ -897,6 +925,7 @@ fn frequency_control(form: &AutomationForm, available_width: f32) -> Element {
         AutomationFrequency::EveryMinutes,
         AutomationFrequency::Daily,
         AutomationFrequency::Weekly,
+        AutomationFrequency::Monthly,
     ];
     // `fill_width` sets each tab's width; the one given here is replaced.
     let tabs: Vec<_> = frequencies
@@ -916,7 +945,7 @@ fn frequency_control(form: &AutomationForm, available_width: f32) -> Element {
     if available_width < 390.0 {
         let mut tabs = tabs.into_iter();
         Element::column(vec![
-            track("automation_frequency_primary", tabs.by_ref().take(2).collect()),
+            track("automation_frequency_primary", tabs.by_ref().take(3).collect()),
             track("automation_frequency_secondary", tabs.collect()),
         ])
         .gap(4.0)
@@ -963,12 +992,12 @@ fn schedule_editor(state: &AutomationViewState, content_width: f32) -> Vec<Eleme
         AutomationFrequency::Weekly => {
             let days = ["L", "M", "X", "J", "V", "S", "D"];
             rows.extend(field(
-                "Día de la semana",
+                "Días de la semana",
                 Element::row(
                     days.into_iter()
                         .enumerate()
                         .map(|(index, day)| {
-                            let selected = usize::from(form.weekday) == index;
+                            let selected = form.weekdays & (1 << index) != 0;
                             Button::new(
                                 format!("automation_weekday:{index}"),
                                 day,
@@ -987,6 +1016,24 @@ fn schedule_editor(state: &AutomationViewState, content_width: f32) -> Vec<Eleme
                         .collect(),
                 )
                 .gap(4.0),
+            ));
+            rows.push(
+                Button::new("automation_weekdays_work", "Días hábiles", theme::component_palette())
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Compact)
+                    .render(),
+            );
+            rows.extend(field(
+                "Hora local",
+                TimePicker::new("automation_time", &form.time, theme::component_palette()).render(),
+            ));
+        }
+        AutomationFrequency::Monthly => {
+            rows.extend(field(
+                "Día del mes",
+                TextField::new("automation_month_day", &form.month_day, "1", theme::component_palette())
+                    .size(ControlSize::Regular)
+                    .render(),
             ));
             rows.extend(field(
                 "Hora local",
@@ -1071,6 +1118,23 @@ fn editor_agent_step(state: &AutomationViewState, content_width: f32) -> Element
             .size(ControlSize::Regular)
             .render(),
         );
+        // Or any other the connected providers offer, kept with the task.
+        if !state.models.is_empty() {
+            let chosen = state.form.native_provider.as_ref().map(|settings| (settings.provider_id.as_str(), settings.model_id.as_str()));
+            let models = state.models.clone();
+            let picked: Vec<bool> = models.iter().map(|(provider, model, _)| chosen == Some((provider.as_str(), model.as_str()))).collect();
+            let width = content_width;
+            backend_rows.push(
+                openide_ui::ScrollArea::uniform_list("automation_models", models.len(), 30.0, move |index| {
+                    openide_ui::ListRow::new(format!("automation_model:{index}"), &models[index].2, theme::component_palette())
+                        .trailing_icon(if picked[index] { Icon::Check } else { Icon::ChevronRight })
+                        .width(width - 8.0)
+                        .render()
+                })
+                .render()
+                .size(Some(content_width), Some((state.models.len() as f32 * 30.0).min(150.0))),
+            );
+        }
     } else {
         backend_rows.push(
             Text::new(
@@ -1599,7 +1663,7 @@ mod tests {
         form.title = "Resumen".into();
         form.prompt = "Resume cambios".into();
         form.frequency = AutomationFrequency::Weekly;
-        form.weekday = 4;
+        form.weekdays = 1 << 4;
         form.time = "16:30".into();
         assert_eq!(
             form.to_draft(1_000_000).unwrap().schedule,
