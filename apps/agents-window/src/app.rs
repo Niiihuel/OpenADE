@@ -10078,7 +10078,7 @@ impl AgentsWindow {
         use crate::mcp_inspection::{
             McpInspectionController, McpInspectionPhase, McpInspectionUiState,
         };
-        if !self.view.show_settings || self.view.settings_page != SettingsPage::Mcp {
+        if !self.view.shows(SettingsPage::Mcp) {
             return;
         }
         if self.view.running || self.active_resume.is_some() || self.active_mcp_inspection.is_some()
@@ -10135,8 +10135,7 @@ impl AgentsWindow {
     fn poll_mcp_inspection(&mut self) -> bool {
         use crate::mcp_inspection::McpInspectionPhase;
         let Some(controller) = self.active_mcp_inspection.as_mut() else {
-            if self.view.show_settings
-                && self.view.settings_page == SettingsPage::Mcp
+            if self.view.shows(SettingsPage::Mcp)
                 && matches!(
                     self.view.mcp_inspection.phase,
                     McpInspectionPhase::Completed | McpInspectionPhase::Failed
@@ -21628,9 +21627,7 @@ impl eframe::App for AgentsWindow {
             || (self.view.show_settings
                 && self.view.settings_page == SettingsPage::Providers
                 && self.view.catalog_expanded_model.is_some())
-            || (self.view.show_settings
-                && self.view.settings_page == SettingsPage::Mcp
-                && self.view.mcp_editor_open)
+            || (self.view.shows(SettingsPage::Mcp) && self.view.mcp_editor_open)
             // The window behind a tour's bubble takes no input of its own.
             || self.tour_showing();
         // A focused tree row takes its keys before the workbench keymap does.

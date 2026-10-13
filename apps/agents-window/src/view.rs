@@ -1026,6 +1026,22 @@ impl SessionRowContext {
     }
 }
 
+impl ViewState {
+    /// Whether one of the pages Settings holds is the one in view: there,
+    /// or as a tab of the add-ons section.
+    pub(crate) fn shows(&self, page: SettingsPage) -> bool {
+        use marketplace_view::MarketplaceTab;
+        if self.show_settings {
+            return self.settings_page == page;
+        }
+        self.main_page == MainPage::Marketplace
+            && matches!(
+                (self.marketplace.tab, page),
+                (MarketplaceTab::Plugins, SettingsPage::Plugins) | (MarketplaceTab::Mcp, SettingsPage::Mcp)
+            )
+    }
+}
+
 impl From<&ViewState> for SessionRowContext {
     fn from(state: &ViewState) -> Self {
         Self {
@@ -3427,11 +3443,23 @@ pub(crate) fn build_view_sized(state: &ViewState, viewport_width: f32, viewport_
     let center = if !state.show_settings && state.main_page == MainPage::Automations {
         automation_view::build_automations(&state.automations, center_width)
     } else if !state.show_settings && state.main_page == MainPage::Marketplace {
-        marketplace_view::marketplace_page_with_navigation(
-            &state.marketplace,
-            center_width,
-            (!left_visible).then(|| sidebar_reopen_control(theme::BACKGROUND)),
-        )
+        use marketplace_view::MarketplaceTab;
+        let tab = state.marketplace.tab;
+        // The pages Settings also shows, in a page of this section.
+        let settings = |id: &str, rows: Vec<Element>| {
+            openide_ui::PageColumn::new(id, center_width, theme::component_palette()).min_width(240.0).children(rows).render()
+        };
+        let content = match tab {
+            MarketplaceTab::Skills => marketplace_view::marketplace_page_with_navigation(&state.marketplace, center_width, None),
+            MarketplaceTab::Plugins => settings("marketplace_plugins", crate::plugins_ui::page(state, compact)),
+            MarketplaceTab::Mcp => settings("marketplace_mcp", settings_ui::mcp_page(state, compact)),
+            MarketplaceTab::Sources => marketplace_view::landing(&state.marketplace, center_width, "marketplace_details:", None),
+        };
+        Element::column(vec![
+            marketplace_view::section_tabs(tab, (!left_visible).then(|| sidebar_reopen_control(theme::BACKGROUND))),
+            content.flex(1.0),
+        ])
+        .gap(0.0)
     } else if is_home {
         home::build_home_sized(state, center_width, session_height)
     } else if is_session && cli_task_in_center(state) {

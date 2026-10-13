@@ -189,7 +189,7 @@ impl AgentsWindow {
             }
             _ => {}
         }
-        let visible = self.view.show_settings && self.view.settings_page == SettingsPage::Plugins;
+        let visible = self.view.shows(SettingsPage::Plugins);
         if visible
             && self.view.plugins.workspace != self.view.workspace
             && self.plugin_response.is_none()
@@ -216,7 +216,7 @@ impl AgentsWindow {
             self.view.plugins.close_dialogs();
             return true;
         }
-        if !self.view.show_settings || self.view.settings_page != SettingsPage::Plugins {
+        if !self.view.shows(SettingsPage::Plugins) {
             return true;
         }
         if self.view.plugins.workspace != self.view.workspace {
