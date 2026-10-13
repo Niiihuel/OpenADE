@@ -81,10 +81,10 @@ fn real_cef_that_cannot_start_says_why_and_leaves_a_running_application() {
     let said = String::from_utf8_lossy(&output.stderr);
     // The probe ends by itself, saying so: nothing killed it.
     assert_eq!(output.status.code(), Some(1), "{said}");
-    assert!(said.contains("OpenIDE: el navegador embebido (CEF) no pudo iniciarse. Falta icudtl.dat junto a "), "{said}");
+    assert!(said.contains("openADE: el navegador embebido (CEF) no pudo iniciarse. Falta icudtl.dat junto a "), "{said}");
     // There is no other browser to start: the context failed, with what its
     // tab says in the reason's place and how CEF may be tried again.
     let told = said.lines().last().unwrap_or_default();
     assert!(told.starts_with("Falta icudtl.dat junto a "), "{said}");
-    assert!(told.ends_with("se inicia una sola vez por ejecución: cerrá OpenIDE y volvé a abrirlo para reintentar."), "{said}");
+    assert!(told.ends_with("se inicia una sola vez por ejecución: cerrá openADE y volvé a abrirlo para reintentar."), "{said}");
 }

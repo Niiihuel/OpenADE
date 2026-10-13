@@ -13,7 +13,7 @@ fn plugin(id: &str, enabled: bool) -> InstalledPlugin {
             name: if id == "echo" { "Echo local" } else { "Documentación del proyecto" }.into(),
             version: "1.2.0".into(),
             description: "Consulta información del proyecto mediante herramientas locales. La activación se aplica al proyecto actual y conserva los permisos de cada llamada.".into(),
-            publisher: if id == "echo" { "OpenIDE fixtures" } else { "Equipo de documentación" }.into(),
+            publisher: if id == "echo" { "openADE fixtures" } else { "Equipo de documentación" }.into(),
             program: "python3".into(),
             entrypoint: Some("src/server.py".into()),
             args: vec!["--workspace-mode".into(), "read-only".into()],
@@ -181,7 +181,7 @@ fn plugins_filter_matches_metadata_and_disabled_actions_never_dispatch() {
     for width in [360.0, 620.0, 1300.0] {
         let viewport = Size::new(width, 840.0);
         let mut state = state(true);
-        for query in ["echo", "OPENIDE FIXTURES", "   Echo local   "] {
+        for query in ["echo", "OPENADE FIXTURES", "   Echo local   "] {
             state.plugins.query = query.into();
             let mut fixture = NativeFixture::new(&state, viewport);
             let frame = fixture.tree.layout(viewport);

@@ -324,7 +324,7 @@ fn agent_home(state: &ViewState, width: f32, height: f32) -> Element {
             content_width,
             false,
             None,
-            "Pregúntale a OpenIDE",
+            "Pregúntale a openADE",
             None,
         ),
         Some((height - 52.0).max(0.0)),
@@ -425,7 +425,7 @@ fn agent_new_menu(state: &ViewState) -> Element {
     .render();
     let mut entries = vec![
         DropdownMenuEntry::Heading("Nueva tarea con".into()),
-        DropdownMenuItem::new("new_session_header", "OpenIDE")
+        DropdownMenuItem::new("new_session_header", "openADE")
             .icon(Icon::Chat)
             .into(),
     ];
@@ -1245,7 +1245,7 @@ mod tests {
                             rect, icon: drawn, ..
                         } if Some(*drawn) == icon => Some(*rect),
                         DrawCommand::RasterImage { rect, image, .. }
-                            if icon.is_none() && image.alt() == "OpenIDE" =>
+                            if icon.is_none() && image.alt() == "openADE" =>
                         {
                             Some(*rect)
                         }

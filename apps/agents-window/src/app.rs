@@ -1649,7 +1649,7 @@ fn data_root() -> PathBuf {
         }
     }
     if let Some(base) = std::env::var_os("APPDATA") {
-        return PathBuf::from(base).join("OpenIDE");
+        return PathBuf::from(base).join("openADE");
     }
     if let Some(base) = std::env::var_os("XDG_DATA_HOME") {
         return PathBuf::from(base).join("openide");
@@ -3359,13 +3359,13 @@ impl AgentsWindow {
                 return Err("Espera a que termine la ejecución".into());
             }
             if self.view.selected_backend != "native" {
-                return Err("Selecciona una conversación nativa de OpenIDE".into());
+                return Err("Selecciona una conversación nativa de openADE".into());
             }
             let id = self
                 .view
                 .selected_session
                 .as_deref()
-                .ok_or_else(|| "Selecciona una conversación nativa de OpenIDE".to_owned())?;
+                .ok_or_else(|| "Selecciona una conversación nativa de openADE".to_owned())?;
             let store = self
                 .store
                 .as_ref()
@@ -20710,9 +20710,9 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id == "external_agents_enabled" => {
                 let mut next = self.external_agent_settings;
                 let message = if next.toggle_enabled() {
-                    "Herramientas de OpenIDE ofrecidas a las CLIs externas"
+                    "Herramientas de openADE ofrecidas a las CLIs externas"
                 } else {
-                    "Herramientas de OpenIDE cerradas para las CLIs externas"
+                    "Herramientas de openADE cerradas para las CLIs externas"
                 };
                 self.commit_external_agent_settings(next, message);
             }
@@ -20738,10 +20738,10 @@ impl AgentsWindow {
                     next.set_permission_mode(mode);
                     let message = match mode {
                         ExternalPermissionMode::MirrorCli => {
-                            "Las herramientas de OpenIDE siguen el modo de permisos de la CLI"
+                            "Las herramientas de openADE siguen el modo de permisos de la CLI"
                         }
                         ExternalPermissionMode::AlwaysAsk => {
-                            "OpenIDE pedirá aprobación en cada llamada externa"
+                            "openADE pedirá aprobación en cada llamada externa"
                         }
                     };
                     self.commit_external_agent_settings(next, message);

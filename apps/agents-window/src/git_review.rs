@@ -1381,7 +1381,7 @@ mod tests {
             dir,
             &["config", "user.email", "openide-test@example.invalid"],
         );
-        git(dir, &["config", "user.name", "OpenIDE Test"]);
+        git(dir, &["config", "user.name", "openADE Test"]);
         fs::write(dir.join("a.txt"), "first\n").unwrap();
         git(dir, &["add", "a.txt"]);
         git(dir, &["commit", "-qm", "initial"]);
@@ -1442,7 +1442,7 @@ mod tests {
             dir,
             &["config", "user.email", "openide-test@example.invalid"],
         );
-        git(dir, &["config", "user.name", "OpenIDE Test"]);
+        git(dir, &["config", "user.name", "openADE Test"]);
         fs::write(dir.join("old name-é.txt"), "old\n").unwrap();
         fs::write(dir.join("delete me.txt"), "gone\n").unwrap();
         git(dir, &["add", "."]);
@@ -1473,7 +1473,7 @@ mod tests {
             dir,
             &["config", "user.email", "openide-test@example.invalid"],
         );
-        git(dir, &["config", "user.name", "OpenIDE Test"]);
+        git(dir, &["config", "user.name", "openADE Test"]);
         fs::write(dir.join("large.txt"), "before\n").unwrap();
         git(dir, &["add", "large.txt"]);
         git(dir, &["commit", "-qm", "initial"]);
@@ -1533,7 +1533,7 @@ mod tests {
             dir,
             &["config", "user.email", "openide-test@example.invalid"],
         );
-        git(dir, &["config", "user.name", "OpenIDE Test"]);
+        git(dir, &["config", "user.name", "openADE Test"]);
         fs::write(dir.join("a.txt"), "first\n").unwrap();
         git(dir, &["add", "a.txt"]);
         git(dir, &["commit", "-qm", "initial"]);
@@ -1652,7 +1652,7 @@ mod tests {
             &work,
             &["config", "user.email", "openide-test@example.invalid"],
         );
-        git(&work, &["config", "user.name", "OpenIDE Test"]);
+        git(&work, &["config", "user.name", "openADE Test"]);
         fs::write(work.join("a.txt"), "first\n").unwrap();
         git(&work, &["add", "a.txt"]);
         git(&work, &["commit", "-qm", "first"]);

@@ -1758,7 +1758,7 @@ mod tests {
                     IdeStatusView::default()
                 };
                 let root = Element::column(vec![
-                    Element::text("fn main() {\n    println!(\"OpenIDE\");\n}")
+                    Element::text("fn main() {\n    println!(\"openADE\");\n}")
                         .font_family(FontFamily::Monospace)
                         .font_size(14.0)
                         .foreground(theme::FOREGROUND)

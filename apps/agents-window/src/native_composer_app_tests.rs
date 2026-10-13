@@ -362,7 +362,7 @@ fn codex_usage_failures_have_distinct_notices_live_and_after_reopen() {
     for (code, expected_notice) in [
         (
             "subscription_sharing_usage_limit_exceeded",
-            "Se alcanzó un límite de uso de ChatGPT en OpenIDE. Revisa los límites de esta app en ChatGPT → Configuración → Uso; abre esa página desde Configuración de proveedores → Ver uso.",
+            "Se alcanzó un límite de uso de ChatGPT en openADE. Revisa los límites de esta app en ChatGPT → Configuración → Uso; abre esa página desde Configuración de proveedores → Ver uso.",
         ),
         (
             "subscription_sharing_usage_unavailable",

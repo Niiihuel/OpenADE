@@ -846,7 +846,7 @@ mod tests {
 
     fn configure_identity(root: &Path) {
         for (key, value) in [
-            ("user.name", "OpenIDE Test"),
+            ("user.name", "openADE Test"),
             ("user.email", "openide-test@example.invalid"),
             ("commit.gpgsign", "false"),
             ("core.hooksPath", "/dev/null"),

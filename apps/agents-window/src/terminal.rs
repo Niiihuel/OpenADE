@@ -553,7 +553,7 @@ impl TerminalSession {
         command.cwd(&workspace);
         command.env("TERM", "xterm-256color");
         command.env("COLORTERM", "truecolor");
-        command.env("TERM_PROGRAM", "OpenIDE");
+        command.env("TERM_PROGRAM", "openADE");
         command.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
         for (key, value) in env {
             command.env(key, value);

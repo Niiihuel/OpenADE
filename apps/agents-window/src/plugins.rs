@@ -931,7 +931,7 @@ mod tests {
             name: "Fixture tools".into(),
             version: "1.0.0".into(),
             description: "Local fixture tools".into(),
-            publisher: "OpenIDE tests".into(),
+            publisher: "openADE tests".into(),
             program: "python3".into(),
             entrypoint: Some("server.py".into()),
             args: vec!["${workspace}".into()],

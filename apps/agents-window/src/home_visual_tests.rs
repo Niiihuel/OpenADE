@@ -33,7 +33,7 @@ fn routes() -> [ModelRouteOption; 1] {
 fn fixture<'a>(prompt: &'a str, width: f32, routes: &'a [ModelRouteOption]) -> ComposerProps<'a> {
     let mut state = props(prompt, width);
     state.home = true;
-    state.placeholder = "Pregúntale a OpenIDE";
+    state.placeholder = "Pregúntale a openADE";
     state.workspace = "/projects/openADE";
     state.project_action = Some("home_workspace_settings");
     state.project_branch = Some("main");

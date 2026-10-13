@@ -345,12 +345,12 @@ fn oauth(
             } else {
                 query
                     .append_pair("client_id", "dynamic_agent_client")
-                    .append_pair("agent_name_hint", "OpenIDE");
+                    .append_pair("agent_name_hint", "openADE");
             }
         } else {
             query
                 .append_pair("callback_url", &redirect)
-                .append_pair("key_label", "OpenIDE");
+                .append_pair("key_label", "openADE");
         }
     }
     sender
@@ -401,7 +401,7 @@ fn oauth(
             .filter(|id| {
                 id.starts_with("oaiapp_") && id.len() <= 256 && !id.chars().any(char::is_whitespace)
             })
-            .ok_or("ChatGPT no devolvió un registro válido para OpenIDE")?;
+            .ok_or("ChatGPT no devolvió un registro válido para openADE")?;
         if prior_client.is_some_and(|client| client != issued) {
             return Err("La cuenta devolvió un registro diferente. Vuelve a conectar.".into());
         }
@@ -469,7 +469,7 @@ fn oauth(
 }
 
 fn respond(stream: &mut TcpStream, status: &str, text: &str) {
-    let body = format!("<!doctype html><html lang=es><meta charset=utf-8><meta name=viewport content='width=device-width'><title>OpenIDE</title><body style='background:#1e1e1e;color:#eee;font:18px system-ui;padding:48px'><h1>OpenIDE</h1><p>{text}</p></body></html>");
+    let body = format!("<!doctype html><html lang=es><meta charset=utf-8><meta name=viewport content='width=device-width'><title>openADE</title><body style='background:#1e1e1e;color:#eee;font:18px system-ui;padding:48px'><h1>openADE</h1><p>{text}</p></body></html>");
     let _ = write!(stream, "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nContent-Security-Policy: default-src 'none'; style-src 'unsafe-inline'\r\nConnection: close\r\n\r\n{body}", body.len());
 }
 fn wait_callback(
@@ -553,7 +553,7 @@ fn wait_callback(
         respond(
             &mut stream,
             "200 OK",
-            "Autorización recibida. Vuelve a OpenIDE para continuar; puedes cerrar esta pestaña.",
+            "Autorización recibida. Vuelve a openADE para continuar; puedes cerrar esta pestaña.",
         );
         return Ok(values);
     }

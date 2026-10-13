@@ -198,7 +198,7 @@ pub(crate) fn selector(props: ComposerPermissionsProps<'_>) -> Element {
         }
     };
     let tooltip_description = if !native {
-        "Este proveedor administra sus permisos. Los ajustes del motor de OpenIDE no se aplican a su CLI.".to_owned()
+        "Este proveedor administra sus permisos. Los ajustes del motor de openADE no se aplican a su CLI.".to_owned()
     } else if props.running {
         format!(
             "{}El turno en curso conserva sus permisos. Tu selección se aplicará al terminar, para el próximo mensaje.",
@@ -211,7 +211,7 @@ pub(crate) fn selector(props: ComposerPermissionsProps<'_>) -> Element {
     } else if planning {
         format!("Permisos: {}. Inspeccionar y planificar con las lecturas habilitadas, sin editar archivos ni ejecutar comandos. Desmarcar Plan o usar /agent vuelve al modo de trabajo con estos permisos.", selected.label())
     } else {
-        "Modo y permisos del motor de OpenIDE para los próximos turnos. Las herramientas externas piden aprobación por separado.".to_owned()
+        "Modo y permisos del motor de openADE para los próximos turnos. Las herramientas externas piden aprobación por separado.".to_owned()
     };
     let compact = props.width < 640.0;
     let trigger_label = if compact { "" } else { label };

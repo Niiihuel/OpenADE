@@ -210,7 +210,7 @@ fn main() -> eframe::Result {
             .unwrap_or(eframe::wgpu::PowerPreference::LowPower);
     }
     eframe::run_native(
-        "OpenIDE",
+        "openADE",
         options,
         Box::new(|creation| {
             fonts::install(&creation.egui_ctx);

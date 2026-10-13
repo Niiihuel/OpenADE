@@ -711,10 +711,10 @@ fn export_dock_visual_review() {
         untracked: vec!["docs/right-dock.md".into()],
         github: crate::github::GithubStatus::Ready(crate::github::GithubOverview {
             repository: crate::github::GithubRepository {
-                owner: "OpenIDE".into(),
+                owner: "openADE".into(),
                 name: "example-workspace".into(),
                 remote_name: "origin".into(),
-                head_owner: "OpenIDE".into(),
+                head_owner: "openADE".into(),
             },
             branch: "codex/ui-component-quality".into(),
             pulls: vec![],
@@ -861,7 +861,7 @@ fn environment_visual_fixture() -> (tempfile::TempDir, ViewState) {
         let output = crate::child_process::command_no_window("git")
             .args([
                 "-c",
-                "user.name=OpenIDE visual fixture",
+                "user.name=openADE visual fixture",
                 "-c",
                 "user.email=fixture@example.invalid",
                 "-c",
@@ -1259,7 +1259,7 @@ fn export_session_rows_visual_review() {
         ),
         (
             "pinned",
-            "Integración del panel derecho de OpenIDE",
+            "Integración del panel derecho de openADE",
             true,
             false,
         ),

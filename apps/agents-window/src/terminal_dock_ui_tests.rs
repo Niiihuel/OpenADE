@@ -23,7 +23,7 @@ fn fixture() -> ViewState {
             "    Finished dev profile in 1.42s",
             TerminalColor::Indexed(2),
         ),
-        ("     Running OpenIDE", TerminalColor::Indexed(6)),
+        ("     Running openADE", TerminalColor::Indexed(6)),
         ("$ ", TerminalColor::Default),
     ];
     state.terminal_snapshot = Some(TerminalSnapshot {

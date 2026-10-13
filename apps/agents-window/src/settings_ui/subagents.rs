@@ -18,7 +18,7 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
         .filter(|child| child.status == openide_harness::SubagentStatus::Running)
         .count();
     let mut content = vec![settings_parts::settings_group(
-        "Subagentes nativos de OpenIDE",
+        "Subagentes nativos de openADE",
         vec![
             settings_parts::value_row(
                 "Conversación seleccionada",
@@ -63,7 +63,7 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
         vec![
             settings_parts::settings_row(
                 "Herramientas de los hijos",
-                "Los hijos nativos usan la política de herramientas configurada por OpenIDE. Cada aprobación y permiso de sesión conserva su propio alcance.",
+                "Los hijos nativos usan la política de herramientas configurada por openADE. Cada aprobación y permiso de sesión conserva su propio alcance.",
                 outline("settings_page:agent", "Ver permisos").icon(Icon::ArrowRight).render(),
                 compact,
             ),

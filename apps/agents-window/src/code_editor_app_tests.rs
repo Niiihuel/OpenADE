@@ -330,7 +330,7 @@ fn export_native_editor_visual_review() {
         .unwrap_or_else(|| PathBuf::from("/tmp/openide-editor-visual-qa"));
     std::fs::create_dir_all(&directory).unwrap();
     let (_, host) = fixture(
-        "// Editor propio de OpenIDE\nfn main() {\n    let saludo = \"Hola, mundo 🌎\";\n    println!(\"{}\", saludo);\n}\n",
+        "// Editor propio de openADE\nfn main() {\n    let saludo = \"Hola, mundo 🌎\";\n    println!(\"{}\", saludo);\n}\n",
     );
     for width in [320.0, 360.0, 900.0] {
         let mut tree = UiTree::new(code_editor_ui::build(

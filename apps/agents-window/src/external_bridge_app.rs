@@ -186,7 +186,7 @@ impl ExternalBridgeHost {
         let mut tools = vec![HostTool {
             name: "review_changes".into(),
             group: ExternalTool::GitReview.name(),
-            description: "Devuelve los cambios sin confirmar del proyecto tal como los muestra la revisión de OpenIDE: rama, archivos y diff por sección.".into(),
+            description: "Devuelve los cambios sin confirmar del proyecto tal como los muestra la revisión de openADE: rama, archivos y diff por sección.".into(),
             input_schema: serde_json::json!({ "type": "object", "properties": {} }),
             run: Arc::new(|grant, _| review_changes(grant).map(openide_bridge::text)),
         }];

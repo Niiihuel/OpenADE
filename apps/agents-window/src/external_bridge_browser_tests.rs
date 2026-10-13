@@ -312,7 +312,7 @@ fn a_browser_call_asks_under_a_normal_grant_and_follows_the_settings_under_accep
         let ((content, error), asked) =
             fixture.run_answering(&normal, "browser_navigate", navigate(), answer);
         assert!(error && asked == 1);
-        assert_eq!(content[0]["text"], "El usuario no aprobó esta llamada en OpenIDE.");
+        assert_eq!(content[0]["text"], "El usuario no aprobó esta llamada en openADE.");
         assert!(fixture.cli_tabs().is_empty() && fixture.ran.is_empty());
     }
     // Allowed: the browser starts and the page gets the command.

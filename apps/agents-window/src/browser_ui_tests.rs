@@ -181,7 +181,7 @@ fn initial_blank_loading_and_failed_start_states_have_no_clickable_page() {
 
 #[test]
 fn an_embedded_browser_that_cannot_start_says_so_with_its_reason_and_offers_no_retry() {
-    const REASON: &str = "Falta icudtl.dat junto a libcef.so. El navegador embebido se inicia una sola vez por ejecución: cerrá OpenIDE y volvé a abrirlo para reintentar.";
+    const REASON: &str = "Falta icudtl.dat junto a libcef.so. El navegador embebido se inicia una sola vez por ejecución: cerrá openADE y volvé a abrirlo para reintentar.";
     for width in [240.0, 320.0, 640.0] {
         let mut state = state();
         state.browser.started = false;
@@ -199,8 +199,8 @@ fn an_embedded_browser_that_cannot_start_says_so_with_its_reason_and_offers_no_r
             assert!(!frame.regions.iter().any(|region| region.id == absent), "{absent} at {width}");
         }
         // The same failure for another reason is told the same way.
-        state.browser.error = Some("Esta versión de OpenIDE sólo incluye su navegador embebido para Linux.".into());
-        assert_eq!(error_copy(&state.browser).1, "Esta versión de OpenIDE sólo incluye su navegador embebido para Linux.");
+        state.browser.error = Some("Esta versión de openADE sólo incluye su navegador embebido para Linux.".into());
+        assert_eq!(error_copy(&state.browser).1, "Esta versión de openADE sólo incluye su navegador embebido para Linux.");
     }
 }
 
