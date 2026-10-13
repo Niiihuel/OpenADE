@@ -213,12 +213,14 @@ impl NativeSteeringContext<'_> {
             let sequence = sink.sequence.checked_add(1).ok_or_else(|| {
                 AgentError::Limit("event sequence exceeded the supported range".into())
             })?;
-            let event = self
-                .store
-                .ack_native_steer(self.lease, &self.turn_id, &input.input_id, sequence)
-                .map_err(|error| {
-                    AgentError::Runtime(format!("steering acknowledgement: {error}"))
-                })?;
+            let event = match self.store.ack_native_steer(self.lease, &self.turn_id, &input.input_id, sequence) {
+                Ok(event) => event,
+                // The user took it back after it was read here: nothing to deliver.
+                Err(StoreError::NativeSteerNotQueued(_)) => continue,
+                Err(error) => {
+                    return Err(AgentError::Runtime(format!("steering acknowledgement: {error}")));
+                }
+            };
             let message = match &event.kind {
                 AgentEventKind::TurnSteered { text, .. } => AgentMessage::user(text.clone()),
                 AgentEventKind::TurnSteeredWithImages { text, images, .. } => {

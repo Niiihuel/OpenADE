@@ -1094,9 +1094,12 @@ impl ResumeEngine {
                 .map_or(replay.last_sequence, |event| event.sequence)
                 .checked_add(1)
                 .ok_or(ResumeError::SequenceExhausted)?;
-            let event =
-                self.sessions
-                    .ack_native_steer(lease, turn_id, &input.input_id, sequence)?;
+            let event = match self.sessions.ack_native_steer(lease, turn_id, &input.input_id, sequence) {
+                Ok(event) => event,
+                // The user took it back after it was read here: nothing to deliver.
+                Err(openide_core::StoreError::NativeSteerNotQueued(_)) => continue,
+                Err(error) => return Err(error.into()),
+            };
             let message = match &event.kind {
                 AgentEventKind::TurnSteered { text, .. } => AgentMessage::user(text.clone()),
                 AgentEventKind::TurnSteeredWithImages { text, images, .. } => {
