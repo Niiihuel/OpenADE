@@ -298,6 +298,8 @@ pub struct TranscriptProjection {
     unfinished_tool_calls: HashSet<String>,
     tool_output_rows: HashMap<String, usize>,
     tool_media_rows: HashMap<String, usize>,
+    /// Calls whose permission was denied or expired, with what their row says.
+    refused_calls: HashMap<String, &'static str>,
     hook_rows: HashMap<(String, String, String), usize>,
     // Text only merges with the adjacent live text row. A model response may
     // alternate text with reasoning or a tool preview; retain all its rows
@@ -1076,15 +1078,24 @@ impl TranscriptProjection {
                     }
                     return true;
                 }
-                let (message, is_error) = match resolution {
-                    PermissionResolution::Allowed => ("Permiso concedido", false),
-                    PermissionResolution::Denied => ("Permiso denegado", true),
-                    PermissionResolution::TimedOut => ("Permiso vencido", true),
-                    PermissionResolution::Cancelled => ("Permiso cancelado", false),
+                let message = match resolution {
+                    PermissionResolution::Allowed => "Permiso concedido",
+                    PermissionResolution::Cancelled => "Permiso cancelado",
+                    // The call's own row fails and says why: one error, not
+                    // a second card under it.
+                    PermissionResolution::Denied => {
+                        self.refused_calls.insert(tool_call_id.clone(), "Permiso denegado");
+                        return true;
+                    }
+                    PermissionResolution::TimedOut => {
+                        self.refused_calls
+                            .insert(tool_call_id.clone(), "El permiso venció sin respuesta");
+                        return true;
+                    }
                 };
                 self.items.push(TranscriptItem::Notice {
                     message: message.to_owned(),
-                    is_error,
+                    is_error: false,
                 });
                 true
             }
@@ -1096,6 +1107,10 @@ impl TranscriptProjection {
                 self.unfinished_tool_calls.remove(tool_call_id);
                 self.tool_output_rows.remove(tool_call_id);
                 self.tool_media_rows.remove(tool_call_id);
+                // A call that was not allowed says so in the user's words,
+                // not in the runner's message with the tool's internal name.
+                let refused = self.refused_calls.remove(tool_call_id).filter(|_| *is_error);
+                let output = &refused.map_or_else(|| output.clone(), str::to_owned);
                 for ((call_id, _, _), index) in &self.hook_rows {
                     if call_id == tool_call_id {
                         if let TranscriptItem::Hook(hook) = &mut self.items[*index] {
