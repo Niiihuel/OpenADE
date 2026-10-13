@@ -29,6 +29,7 @@ impl AgentsWindow {
             || !self.subagent_bridge.active_child_ids().is_empty()
             || !self.subagent_dispatches.is_empty()
             || !self.background_automation_runs.is_empty()
+            || !self.background_resumes.is_empty()
     }
 
     pub(super) fn plugin_operation(&mut self, operation: PluginOperation) {

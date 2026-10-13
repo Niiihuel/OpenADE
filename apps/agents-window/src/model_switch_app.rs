@@ -297,7 +297,7 @@ impl AgentsWindow {
             .as_ref()
             .map(|link| link.parent_session_id.clone())
             .ok_or("La sesión no es un subagente")?;
-        let request = self.child_worker_request(&stored)?;
+        let request = self.child_worker_request(&stored, false)?;
         let parent_lease = store
             .try_acquire_native_lease(&parent_id)
             .map_err(|error| format!("La sesión padre está en uso: {error}"))?;

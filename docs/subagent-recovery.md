@@ -15,6 +15,12 @@ catálogo, permisos, límites, presupuesto y hooks. El lease del hijo permanece
 tomado durante la recuperación. Nunca se admite otro turno para continuar el
 anterior.
 
+El catálogo que verifica la recuperación es el que ofrece su propio ejecutor,
+en el orden del ejecutor: el mismo que confirmó el turno en vivo. La identidad
+de la reserva (`request_digest`) conserva el orden de `catalog_for_mode`. Los
+dos órdenes difieren cuando el hijo tiene a la vez herramientas de goals y de
+subagentes, que es lo que el desktop da a cada hijo.
+
 La recuperación avanza hasta un evento terminal confirmado o devuelve una
 pausa tipada:
 
