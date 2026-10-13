@@ -137,7 +137,8 @@ impl NotificationSettings {
 pub fn notify_system(title: &str, detail: &str) {
     #[cfg(not(test))]
     {
-        let (title, detail) = (title.to_owned(), detail.to_owned());
+        let title = crate::i18n::text(title).unwrap_or_else(|| title.to_owned());
+        let detail = crate::i18n::text(detail).unwrap_or_else(|| detail.to_owned());
         let _ = std::thread::Builder::new()
             .name("desktop-notification".into())
             .spawn(move || {

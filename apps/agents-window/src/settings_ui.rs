@@ -2297,6 +2297,14 @@ fn appearance_page(state: &ViewState, compact: bool) -> Vec<Element> {
             "Interfaz",
             vec![
                 settings_parts::switch_row(
+                    "settings_language_english",
+                    "English",
+                    "Muestra la interfaz en inglés. Lo que todavía no tiene traducción se ve en español.",
+                    crate::i18n::english(),
+                    true,
+                    compact,
+                ),
+                settings_parts::switch_row(
                     "settings_reduced_motion",
                     "Reducir movimiento",
                     "Usa transiciones mínimas al cambiar de panel o abrir superficies.",

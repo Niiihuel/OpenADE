@@ -1280,7 +1280,7 @@ fn relayout_after_updates(
             current
         };
     }
-    tree.set_root(rebuild());
+    tree.set_root(crate::i18n::localized(rebuild()));
     tree.layout(viewport)
 }
 
@@ -6630,7 +6630,7 @@ impl AgentsWindow {
 
     fn with_data_root(root: PathBuf) -> Self {
         // limn speaks English unless told otherwise; this window is Spanish.
-        openide_ui::set_labels(openide_ui::Labels::SPANISH);
+        crate::i18n::load(&root);
         let settings_preferences = SettingsPreferences::load(&root);
         let ide = crate::ide_workspace::IdeWorkspaceState::load(&root);
         let (agent_tool_settings, agent_tool_settings_error) = match AgentToolSettings::load(&root)
@@ -14530,11 +14530,11 @@ impl AgentsWindow {
 
     fn layout_workspace_frame(&mut self, viewport: Size) -> UiFrame {
         self.preserve_streaming_tail_before_layout();
-        self.tree.set_root(crate::view::build_window_view(
+        self.tree.set_root(crate::i18n::localized(crate::view::build_window_view(
             &self.view,
             viewport.width,
             viewport.height,
-        ));
+        )));
         let frame = self.tree.layout(viewport);
         self.workspace_frame_size = Some(viewport);
         self.workspace_frame_built_at = Some(Instant::now());
@@ -20121,6 +20121,15 @@ impl AgentsWindow {
                     self.view.pending_mcp_delete_id = None;
                 }
             }
+            UiAction::Clicked { id } if id == "settings_language_english" => {
+                // The whole window is drawn again in the other language from
+                // the next frame; both windows are this one process.
+                let english = !crate::i18n::english();
+                match crate::i18n::save(&self.data_root, english) {
+                    Ok(()) => crate::i18n::set_english(english),
+                    Err(error) => self.view.status = format!("No se pudo guardar el idioma: {error}"),
+                }
+            }
             UiAction::Clicked { id } if id == "settings_reduced_motion" => {
                 let mut next = self.settings_preferences.clone();
                 next.reduced_motion = !next.reduced_motion;
@@ -21822,7 +21831,7 @@ impl eframe::App for AgentsWindow {
                 self.move_command_selection(false);
             }
             self.command_tree
-                .set_root(build_command_center(&self.view, modal_width, modal_height));
+                .set_root(crate::i18n::localized(build_command_center(&self.view, modal_width, modal_height)));
             command_frame = Some(
                 self.command_tree
                     .layout(Size::new(modal_width, modal_height)),
@@ -22079,11 +22088,11 @@ impl eframe::App for AgentsWindow {
             ui.painter()
                 .rect_filled(area, 0.0, egui::Color32::from_black_alpha(180));
             if needs_relayout || command_frame.is_none() {
-                self.command_tree.set_root(build_command_center(
+                self.command_tree.set_root(crate::i18n::localized(build_command_center(
                     &self.view,
                     modal_width,
                     modal_height,
-                ));
+                )));
                 command_frame = Some(
                     self.command_tree
                         .layout(Size::new(modal_width, modal_height)),
