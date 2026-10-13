@@ -10,7 +10,7 @@
 
 mod page;
 
-pub use page::{Cursor, Page, Paint};
+pub use page::{Cursor, Page, Paint, ALT_DOWN, COMMAND_DOWN, CONTROL_DOWN, SHIFT_DOWN};
 
 use cef::*;
 use openide_browser::PrivateDirectory;
@@ -50,6 +50,10 @@ const SWITCHES: &[&str] = &[
     "disable-renderer-backgrounding",
     // History navigation always loads a document, so its events are uniform.
     "disable-back-forward-cache",
+    // A turn of the wheel moves the page at once. The window eases a notch
+    // itself and a touchpad's deltas stay with the fingers; Chromium's own
+    // animation of each would come after both.
+    "disable-smooth-scrolling",
 ];
 const VALUED_SWITCHES: &[(&str, &str)] = &[
     // No connection to the display server and no DRM device opened: nothing

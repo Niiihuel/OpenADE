@@ -128,6 +128,8 @@ struct Canvas {
     popup: Option<Popup>,
     /// Where the window's pointer last was on the page, in CSS pixels.
     pointer: (f64, f64),
+    /// What a turn of the wheel left unsent: less than a pixel per axis.
+    wheel_rest: (f64, f64),
 }
 
 struct Popup {
@@ -550,6 +552,39 @@ impl Embedded {
         if let Some(page) = &*self.page() {
             page.wheel(x, y, 0, dy);
         }
+    }
+
+    /// The window's wheel, turned by CSS pixel deltas at its pointer with
+    /// `modifiers` held (`openide_browser::modifiers`). It goes to Chromium
+    /// itself: the driver's event returns only once the page has answered
+    /// it, a frame later, and the next turn waits for that. Chromium takes
+    /// whole pixels; the rest waits for the next turn. False with no page.
+    pub(super) fn wheel(&self, dx: f64, dy: f64, modifiers: u8) -> bool {
+        use openide_browser::modifiers::{ALT, CONTROL, META, SHIFT};
+        let mut canvas = self.canvas();
+        let (x, y) = canvas.pointer;
+        let total = (canvas.wheel_rest.0 + dx, canvas.wheel_rest.1 + dy);
+        let whole = (total.0.trunc(), total.1.trunc());
+        canvas.wheel_rest = (total.0 - whole.0, total.1 - whole.1);
+        drop(canvas);
+        let page = self.page();
+        let Some(page) = &*page else {
+            return false;
+        };
+        if whole != (0.0, 0.0) {
+            let held = [
+                (SHIFT, openide_cef::SHIFT_DOWN),
+                (CONTROL, openide_cef::CONTROL_DOWN),
+                (ALT, openide_cef::ALT_DOWN),
+                (META, openide_cef::COMMAND_DOWN),
+            ]
+            .into_iter()
+            .filter(|(key, _)| modifiers & key != 0)
+            .fold(0, |flags, (_, flag)| flags | flag);
+            // CEF counts a turn towards the user as negative.
+            page.wheel_held(x as i32, y as i32, -whole.0 as i32, -whole.1 as i32, held);
+        }
+        true
     }
 
     /// The window's pointer on a widget Chromium paints apart: the driver's

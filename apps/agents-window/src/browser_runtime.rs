@@ -1473,9 +1473,13 @@ fn execute(
         }
         ConfirmCut { token } => driver.confirm_cut(token)?,
         Scroll { dx, dy, modifiers } => {
+            // The window's wheel does not wait for the page: neither for it
+            // to answer the event, which Chromium takes directly, nor for
+            // its state, whose reading after every step would pace the wheel.
+            if !agent && view.embedded.wheel(*dx, *dy, *modifiers) {
+                return Ok(reply);
+            }
             held(driver, *modifiers, |driver| driver.scroll(*dx, *dy))?;
-            // The window's wheel does not wait for page state either: reading
-            // it after every step would pace the wheel.
             if !agent {
                 return Ok(reply);
             }
@@ -2434,6 +2438,9 @@ mod cef {
         pub(super) fn interrupt(&self) {}
         pub(super) fn close(&self) {}
         pub(super) fn takes_pointer(&self, _: &BrowserCommand) -> bool {
+            false
+        }
+        pub(super) fn wheel(&self, _: f64, _: f64, _: u8) -> bool {
             false
         }
         pub(super) fn cursor(&self) -> Option<eframe::egui::CursorIcon> {
