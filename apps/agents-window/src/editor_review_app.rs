@@ -94,6 +94,7 @@ impl AgentsWindow {
                 || self.view.background_run_selected
                 || self.active_run.is_some()
                 || !self.background_automation_runs.is_empty()
+                || !self.background_resumes.is_empty()
                 || !self.subagent_dispatches.is_empty(),
         })
     }

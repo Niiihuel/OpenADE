@@ -145,6 +145,8 @@ mod native_settings_choice_app_tests;
 mod native_streaming_app_tests;
 #[path = "model_switch_app.rs"]
 mod model_switch_app;
+#[path = "background_resume_app.rs"]
+mod background_resume_app;
 #[cfg(test)]
 #[path = "pause_app_tests.rs"]
 mod pause_app_tests;
@@ -1347,6 +1349,8 @@ pub struct AgentsWindow {
     automation_stores: Vec<AutomationStore>,
     automation_last_poll: Instant,
     background_automation_runs: Vec<BackgroundAutomationRun>,
+    /// Paused trees the clock is continuing while they are not on screen.
+    background_resumes: Vec<background_resume_app::BackgroundResume>,
     native_automation_result_errors: HashMap<(PathBuf, String), String>,
     automation_queue: VecDeque<(usize, AutomationDispatch)>,
     marketplace_response: Option<Receiver<MarketplaceResponse>>,
@@ -7005,6 +7009,7 @@ impl AgentsWindow {
             automation_stores: Vec::new(),
             automation_last_poll: Instant::now() - Duration::from_secs(31),
             background_automation_runs: Vec::new(),
+            background_resumes: Vec::new(),
             native_automation_result_errors: HashMap::new(),
             automation_queue: VecDeque::new(),
             marketplace_response: None,
@@ -7806,7 +7811,8 @@ impl AgentsWindow {
                 index += 1;
             }
         }
-        while self.background_automation_runs.len() < 2 && !self.view.composer_branches.switching()
+        while self.background_automation_runs.len() + self.background_resumes.len() < 2
+            && !self.view.composer_branches.switching()
         {
             let Some((store_index, dispatch)) = self.automation_queue.pop_front() else {
                 break;
@@ -7823,15 +7829,21 @@ impl AgentsWindow {
 
     fn sync_background_selected(&mut self) -> bool {
         let selected = self.view.selected_session.as_deref();
-        let running = selected.is_some_and(|selected| {
+        let automation = selected.is_some_and(|selected| {
             self.background_automation_runs
                 .iter()
                 .any(|run| run.session_id == selected)
         });
+        let running = automation
+            || selected.is_some_and(|selected| {
+                self.background_resumes.iter().any(|resume| resume.holds(selected))
+            });
         let changed = self.view.background_run_selected != running;
         self.view.background_run_selected = running;
-        if changed && running {
+        if changed && automation {
             self.view.status = "Automatización en curso".to_owned();
+        } else if changed && running {
+            self.view.status = "El turno en pausa continúa".to_owned();
         } else if changed && !running && self.view.status == "Automatización en curso" {
             self.view.status = "Automatización finalizada".to_owned();
         }
@@ -8163,10 +8175,8 @@ impl AgentsWindow {
                             let selected_running = self.view.running
                                 && self.view.selected_session.as_deref()
                                     == Some(record.session.id.as_str());
-                            let background_running = self
-                                .background_automation_runs
-                                .iter()
-                                .any(|run| run.session_id == record.session.id);
+                            let background_running =
+                                self.off_screen_busy(&record.session.id).is_some();
                             let child_running = record.session.subagent.is_some()
                                 && live_children.contains(&record.session.id);
                             if !selected_running && !background_running && !child_running {
@@ -8484,7 +8494,7 @@ impl AgentsWindow {
             if replay_stored_native(&self.data_root, &stored)?.recovery != ReplayRecovery::Idle {
                 return Err("El journal necesita recuperación antes de procesar la cola".into());
             }
-            let request = self.child_worker_request(&stored)?;
+            let request = self.child_worker_request(&stored, false)?;
             crate::subagent_dispatch_worker::SubagentDispatchHandle::start(request)
         })();
         match result {
@@ -8739,7 +8749,8 @@ impl AgentsWindow {
             || self.active_child_recovery.is_some()
             || !self.view.active_subagents.is_empty()
             || !self.subagent_dispatches.is_empty()
-            || !self.background_automation_runs.is_empty())
+            || !self.background_automation_runs.is_empty()
+            || !self.background_resumes.is_empty())
         .then_some("Espera a que termine el agente para cambiar de rama.")
     }
 
@@ -9055,46 +9066,25 @@ impl AgentsWindow {
             && self.active_compact.is_none()
     }
 
-    /// The selected session's limit renewed: continue its paused tree. Only
-    /// the selected session, because a resume uses the composer's route.
+    /// A limit renewed: continue the paused tree it held. The selected
+    /// session's takes the window's own turn; one that is not on screen
+    /// continues off screen, on what its own journal committed.
     fn arm_auto_resume(&mut self) -> bool {
+        let elsewhere = self.arm_background_resumes();
         if !self.pause_idle() || !self.pause_resume_queue.is_empty() {
-            return false;
-        }
-        // A session that is not on screen cannot be continued behind the
-        // person's back by this window: its limit renewing is announced once.
-        let elsewhere: Vec<(String, u64)> = self
-            .view
-            .pause
-            .sessions
-            .iter()
-            .filter(|(id, pause)| {
-                pause.parent.is_none()
-                    && self.view.selected_session.as_deref() != Some(id.as_str())
-                    && matches!(self.view.pause.plan(id, pause),
-                        crate::pause::AutoResume::At(due) if self.view.pause.clock_ms >= due)
-            })
-            .map(|(id, pause)| (id.clone(), pause.paused_at_ms))
-            .collect();
-        for (id, paused_at_ms) in elsewhere {
-            self.view.pause.auto_attempted.insert(id.clone(), paused_at_ms);
-            self.notify_session(
-                crate::notifications::Event::TurnCompleted,
-                "Límite renovado: abrí la tarea para continuar",
-                &id,
-            );
+            return elsewhere;
         }
         let Some(session_id) = self.view.selected_session.clone() else {
-            return false;
+            return elsewhere;
         };
         let Some(pause) = self.view.pause.sessions.get(&session_id) else {
-            return false;
+            return elsewhere;
         };
         let crate::pause::AutoResume::At(due) = self.view.pause.plan(&session_id, pause) else {
-            return false;
+            return elsewhere;
         };
         if self.view.pause.clock_ms < due {
-            return false;
+            return elsewhere;
         }
         let paused_at_ms = pause.paused_at_ms;
         self.view
@@ -12042,6 +12032,11 @@ impl AgentsWindow {
         {
             return Some("Espera a que termine la automatización antes de eliminar esta tarea");
         }
+        // A tree continuing off screen holds one lease at a time, not every
+        // session's: none of its journals may go before it is through.
+        if self.background_resumes.iter().any(|resume| resume.holds(session_id)) {
+            return Some("Espera a que termine la continuación automática antes de eliminar esta tarea");
+        }
         None
     }
 
@@ -12529,6 +12524,13 @@ impl AgentsWindow {
                 {
                     run.run.cancel();
                     self.view.status = "Cancelando automatización…".to_owned();
+                } else if let Some(resume) = self
+                    .background_resumes
+                    .iter_mut()
+                    .find(|resume| resume.holds(selected))
+                {
+                    resume.stop_by_user();
+                    self.view.status = "Cancelando la continuación…".to_owned();
                 }
             }
         } else if self.view.running {
@@ -12599,17 +12601,13 @@ impl AgentsWindow {
             self.view.status = "Espera a que termine la compactación".to_owned();
             return;
         }
-        if self
+        if let Some(busy) = self
             .view
             .selected_session
             .as_deref()
-            .is_some_and(|selected| {
-                self.background_automation_runs
-                    .iter()
-                    .any(|run| run.session_id == selected)
-            })
+            .and_then(|selected| self.off_screen_busy(selected))
         {
-            self.view.status = "Espera a que termine la automatización de esta sesión".to_owned();
+            self.view.status = format!("{busy} de esta sesión");
             return;
         }
         if self.active_run.is_some() {
@@ -13941,12 +13939,8 @@ impl AgentsWindow {
             self.view.status = "Selecciona una sesión nativa para reanudar".to_owned();
             return;
         };
-        if self
-            .background_automation_runs
-            .iter()
-            .any(|run| run.session_id == session_id)
-        {
-            self.view.status = "Espera a que termine la automatización".to_owned();
+        if let Some(busy) = self.off_screen_busy(&session_id) {
+            self.view.status = busy.to_owned();
             return;
         }
         let Some(store) = self.store.clone() else {
@@ -14048,203 +14042,8 @@ impl AgentsWindow {
             self.start_native_automation_resume(&stored.session, frozen);
             return;
         }
-        // An interrupted turn continues on the route it was admitted on,
-        // whatever the composer shows now: the selection is for the next turn.
-        let resume_settings = match replay.active_model_route.as_ref() {
-            Some(route) => NativeProviderSettings {
-                provider_id: route.provider_id.clone(),
-                model_id: route.model_id.clone(),
-                custom_endpoint: self.view.endpoint.clone(),
-            },
-            None => self.native_settings(),
-        };
-        let connection = match resume_settings.resolve_at(&self.data_root) {
-            Ok(connection) => connection,
-            Err(error) => {
-                self.view.status = error;
-                return;
-            }
-        };
-        let model_id = connection.model_id.clone();
-        let endpoint = connection.endpoint.clone();
-        let provider_id = resume_settings.provider_id.clone();
-        let wire_api = connection.wire_api;
-        let compatibility = native_checkpoint_compatibility(&provider_id, &model_id, wire_api);
-        if replay
-            .checkpoint
-            .as_ref()
-            .is_some_and(|checkpoint| checkpoint.compatibility != compatibility)
-        {
-            self.view.status = "El checkpoint pertenece a otro proveedor o modelo".to_owned();
-            return;
-        }
-        if replay
-            .active_turn
-            .as_ref()
-            .and_then(|turn| turn.model.as_deref())
-            .is_some_and(|admitted_model| admitted_model != model_id)
-        {
-            self.view.status = "Selecciona el modelo del turno interrumpido".to_owned();
-            return;
-        }
-        // A model without a verified window can still resume. It follows the
-        // same no-auto-compaction behavior as its original native run.
-        let budget_policy = self.token_budget_for_native_model(&provider_id, &model_id);
-        let child_identity_budget = self.identity_budget_for_native_model(&provider_id, &model_id);
-        if !self.provider_ready_for_turn(&provider_id, &connection) {
-            self.view.status = "Falta la clave API del proveedor nativo".to_owned();
-            return;
-        }
-        let model = match native_model_backend(
-            connection,
-            &provider_id,
-            Some(&self.view.composer_effort),
-            self.view.hosted_web_search_mode,
-            &self.data_root,
-            self.view.catalog.as_deref(),
-            &self.model_discoveries,
-        ) {
-            Ok(model) => model,
-            Err(error) => {
-                self.view.status = error;
-                return;
-            }
-        };
-        let workspace = &stored.session.workspace;
-        let goal_key = (
-            workspace.to_string_lossy().into_owned(),
-            Some(session_id.clone()),
-        );
-        let pre_context_instructions = if replay.active_system_instructions.is_none()
-            && replay.active_model_context_digest.is_none()
-        {
-            match native_workspace_instructions(&self.data_root, workspace) {
-                Ok(project) => Some((project, self.composer_goals.get(&goal_key).cloned())),
-                Err(error) => {
-                    self.view.status = error;
-                    return;
-                }
-            }
-        } else {
-            None
-        };
-        let system_instructions = match &pre_context_instructions {
-            Some((project, legacy)) => {
-                system_instructions_with_goal(project.clone(), legacy.as_deref())
-            }
-            None => {
-                match native_resume_instructions(
-                    &self.data_root,
-                    workspace,
-                    self.composer_goals.get(&goal_key).map(String::as_str),
-                    replay.active_system_instructions.as_deref(),
-                ) {
-                    Ok(instructions) => instructions,
-                    Err(error) => {
-                        self.view.status = error;
-                        return;
-                    }
-                }
-            }
-        };
-        let tool_preparation = if replay
-            .active_turn
-            .as_ref()
-            .is_some_and(|turn| turn.mode == TurnMode::Build)
-        {
-            match McpSettings::load(&self.data_root, workspace) {
-                Ok(settings) => Some(
-                    Arc::new(
-                        crate::environment_runtime::EnvironmentToolPreparation::new(
-                            store.storage_root().to_path_buf(),
-                            session_id.clone(),
-                            Arc::new(stored.events.clone()),
-                            settings.servers,
-                            self.browser_client_for_current_scope(),
-                        )
-                        .with_plugins(self.data_root.clone())
-                        .with_image_generation(self.image_client_for(workspace)),
-                    ) as Arc<dyn openide_harness::ToolPreparation>,
-                ),
-                Err(error) => {
-                    self.view.status = error;
-                    return;
-                }
-            }
-        } else {
-            None
-        };
-        let checkpoints = match CheckpointFileStore::new(self.data_root.join("sessions")) {
-            Ok(checkpoints) => Arc::new(checkpoints),
-            Err(error) => {
-                self.view.status = format!("No se pudo abrir checkpoints: {error}");
-                return;
-            }
-        };
-        let command_hooks = match NativeHookSettings::load(&self.data_root).and_then(|settings| {
-            settings.registry_for(
-                &self.data_root,
-                Path::new(&self.view.workspace),
-                self.compat_hook_source.as_deref(),
-            )
-        }) {
-            Ok(hooks) => Arc::new(hooks),
-            Err(error) => {
-                self.view.status = error;
-                return;
-            }
-        };
-        let base_tools = match self.native_parent_tools(&session_id, workspace) {
-            Ok(tools) => tools,
-            Err(error) => {
-                self.view.status = error;
-                return;
-            }
-        };
-        let permission_policy = match self.native_permission_policy() {
-            Ok(policy) => policy,
-            Err(error) => {
-                self.view.status = error;
-                return;
-            }
-        };
-        let request = ResumeWorkerRequest {
-            native_automation: None,
-            session_id,
-            sessions: store,
-            checkpoints,
-            compatibility,
-            model,
-            provider: provider_id,
-            endpoint,
-            base_tools,
-            child_tools: match self.native_local_tools(workspace) {
-                Ok(tools) => Arc::new(tools),
-                Err(error) => { self.view.status = error; return; }
-            },
-            child_command_profile: match self.native_command_sessions.command_profile(
-                self.agent_tool_settings.command_isolation(),
-                self.agent_tool_settings.permissions().run_command,
-            ) {
-                Ok(profile) => profile,
-                Err(error) => {
-                    self.view.status = error;
-                    return;
-                }
-            },
-            event_bridge: Some(self.subagent_bridge.clone()),
-            tool_preparation,
-            permission_policy,
-            command_isolation: self.agent_tool_settings.command_isolation(),
-            command_hooks,
-            budget_policy,
-            child_identity_budget: Some(child_identity_budget),
-            system_instructions,
-            pre_context_instructions,
-            limits: RunLimits::default(),
-        };
-        let command_actor = match self.native_command_actor_for(&request.session_id) {
-            Ok(actor) => actor,
+        let (request, command_actor) = match self.root_resume_request(&stored, &replay, false) {
+            Ok(request) => request,
             Err(error) => {
                 self.view.status = error;
                 return;
@@ -14264,6 +14063,212 @@ impl AgentsWindow {
             }
             Err(error) => self.view.status = error,
         }
+    }
+
+    /// What continuing a root's interrupted turn needs. On screen it takes
+    /// the composer's effort, and a journal older than routes falls back to
+    /// its selection. `off_screen` reads nothing the composer or the
+    /// conversation on screen holds: the route is the journal's own, its
+    /// effort is found from the journaled profile, the hooks are those of
+    /// the session's workspace and no browser tab is lent.
+    fn root_resume_request(
+        &mut self,
+        stored: &StoredSession,
+        replay: &NativeReplay,
+        off_screen: bool,
+    ) -> Result<(ResumeWorkerRequest, Arc<openide_harness::NativeManualCommandActor>), String> {
+        let session_id = stored.session.id.clone();
+        let store = self.store.clone().ok_or("El historial no está disponible")?;
+        // An interrupted turn continues on the route it was admitted on,
+        // whatever the composer shows now: the selection is for the next turn.
+        let journaled = replay.active_model_route.as_ref();
+        let resume_settings = match journaled {
+            Some(route) => NativeProviderSettings {
+                provider_id: route.provider_id.clone(),
+                model_id: route.model_id.clone(),
+                custom_endpoint: self.view.endpoint.clone(),
+            },
+            None if off_screen => return Err("El turno no registró la ruta de su modelo".into()),
+            None => self.native_settings(),
+        };
+        let connection = resume_settings.resolve_at(&self.data_root)?;
+        let model_id = connection.model_id.clone();
+        let endpoint = connection.endpoint.clone();
+        let provider_id = resume_settings.provider_id.clone();
+        let wire_api = connection.wire_api;
+        let compatibility = native_checkpoint_compatibility(&provider_id, &model_id, wire_api);
+        if replay
+            .checkpoint
+            .as_ref()
+            .is_some_and(|checkpoint| checkpoint.compatibility != compatibility)
+        {
+            return Err("El checkpoint pertenece a otro proveedor o modelo".into());
+        }
+        if replay
+            .active_turn
+            .as_ref()
+            .and_then(|turn| turn.model.as_deref())
+            .is_some_and(|admitted_model| admitted_model != model_id)
+        {
+            return Err("Selecciona el modelo del turno interrumpido".into());
+        }
+        // A model without a verified window can still resume. It follows the
+        // same no-auto-compaction behavior as its original native run.
+        let budget_policy = self.token_budget_for_native_model(&provider_id, &model_id);
+        let child_identity_budget = self.identity_budget_for_native_model(&provider_id, &model_id);
+        if !self.provider_ready_for_turn(&provider_id, &connection) {
+            return Err("Falta la clave API del proveedor nativo".into());
+        }
+        let model = match journaled.filter(|_| off_screen) {
+            Some(route) => self.journaled_route_backend(&connection, route)?,
+            None => native_model_backend(
+                connection,
+                &provider_id,
+                Some(&self.view.composer_effort),
+                self.view.hosted_web_search_mode,
+                &self.data_root,
+                self.view.catalog.as_deref(),
+                &self.model_discoveries,
+            )?,
+        };
+        let workspace = &stored.session.workspace;
+        let goal_key = (
+            workspace.to_string_lossy().into_owned(),
+            Some(session_id.clone()),
+        );
+        let pre_context_instructions = if replay.active_system_instructions.is_none()
+            && replay.active_model_context_digest.is_none()
+        {
+            let project = native_workspace_instructions(&self.data_root, workspace)?;
+            Some((project, self.composer_goals.get(&goal_key).cloned()))
+        } else {
+            None
+        };
+        let system_instructions = match &pre_context_instructions {
+            Some((project, legacy)) => {
+                system_instructions_with_goal(project.clone(), legacy.as_deref())
+            }
+            None => native_resume_instructions(
+                &self.data_root,
+                workspace,
+                self.composer_goals.get(&goal_key).map(String::as_str),
+                replay.active_system_instructions.as_deref(),
+            )?,
+        };
+        let tool_preparation = if replay
+            .active_turn
+            .as_ref()
+            .is_some_and(|turn| turn.mode == TurnMode::Build)
+        {
+            let settings = McpSettings::load(&self.data_root, workspace)?;
+            // The browser tab on screen belongs to the conversation on screen.
+            let browser = if off_screen { None } else { self.browser_client_for_current_scope() };
+            Some(
+                Arc::new(
+                    crate::environment_runtime::EnvironmentToolPreparation::new(
+                        store.storage_root().to_path_buf(),
+                        session_id.clone(),
+                        Arc::new(stored.events.clone()),
+                        settings.servers,
+                        browser,
+                    )
+                    .with_plugins(self.data_root.clone())
+                    .with_image_generation(self.image_client_for(workspace)),
+                ) as Arc<dyn openide_harness::ToolPreparation>,
+            )
+        } else {
+            None
+        };
+        let checkpoints = Arc::new(
+            CheckpointFileStore::new(self.data_root.join("sessions"))
+                .map_err(|error| format!("No se pudo abrir checkpoints: {error}"))?,
+        );
+        let hook_workspace = if off_screen {
+            workspace.as_path()
+        } else {
+            Path::new(&self.view.workspace)
+        };
+        let command_hooks = Arc::new(NativeHookSettings::load(&self.data_root)?.registry_for(
+            &self.data_root,
+            hook_workspace,
+            self.compat_hook_source.as_deref(),
+        )?);
+        let base_tools = self.native_parent_tools(&session_id, workspace)?;
+        let permission_policy = self.native_permission_policy()?;
+        let request = ResumeWorkerRequest {
+            native_automation: None,
+            session_id,
+            sessions: store,
+            checkpoints,
+            compatibility,
+            model,
+            provider: provider_id,
+            endpoint,
+            base_tools,
+            child_tools: Arc::new(self.native_local_tools(workspace)?),
+            child_command_profile: self.native_command_sessions.command_profile(
+                self.agent_tool_settings.command_isolation(),
+                self.agent_tool_settings.permissions().run_command,
+            )?,
+            event_bridge: Some(self.subagent_bridge.clone()),
+            tool_preparation,
+            permission_policy,
+            command_isolation: self.agent_tool_settings.command_isolation(),
+            command_hooks,
+            budget_policy,
+            child_identity_budget: Some(child_identity_budget),
+            system_instructions,
+            pre_context_instructions,
+            limits: RunLimits::default(),
+        };
+        let command_actor = self.native_command_actor_for(&request.session_id)?;
+        Ok((request, command_actor))
+    }
+
+    /// The backend of a route exactly as the journal committed it. The
+    /// effort is journaled only inside the request profile, so each one the
+    /// model offers is tried against that digest: the composer is not read.
+    fn journaled_route_backend(
+        &self,
+        connection: &RuntimeConnection,
+        route: &openide_core::ModelRouteSnapshot,
+    ) -> Result<Arc<dyn ModelBackend>, String> {
+        let adapter = native_provider::adapter_for_model_at(
+            &self.data_root,
+            &route.provider_id,
+            &connection.model_id,
+        )?
+        .ok_or_else(|| format!("Proveedor nativo no registrado: {}", route.provider_id))?;
+        let efforts = native_request_capabilities(
+            &adapter,
+            &connection.model_id,
+            self.view.catalog.as_deref(),
+            &self.model_discoveries,
+        )
+        .reasoning_efforts;
+        for effort in std::iter::once("default").chain(efforts.iter().map(String::as_str)) {
+            let model = native_model_backend(
+                connection.clone(),
+                &route.provider_id,
+                Some(effort),
+                self.view.hosted_web_search_mode,
+                &self.data_root,
+                self.view.catalog.as_deref(),
+                &self.model_discoveries,
+            )?;
+            let current = model.request_profile_fingerprint().and_then(|profile| {
+                openide_core::ModelRouteSnapshot::new(
+                    &route.provider_id,
+                    &connection.model_id,
+                    &connection.endpoint,
+                    profile,
+                )
+            });
+            if current.as_ref() == Some(route) {
+                return Ok(model);
+            }
+        }
+        Err("La ruta del modelo cambió desde que el turno quedó en pausa".into())
     }
 
     fn start_registered_native_automation(
@@ -14325,46 +14330,53 @@ impl AgentsWindow {
         self.refresh_sessions();
     }
 
+    /// The worker that continues an automation's interrupted turn, built
+    /// from its frozen authority and nothing of the current settings.
+    fn native_automation_resume_handle(
+        &self,
+        session: &openide_core::Session,
+        frozen: crate::native_automation::FrozenNativeAutomationAuthorityV1,
+    ) -> Result<ResumeWorkerHandle, String> {
+        let sessions = self
+            .store
+            .clone()
+            .ok_or("El historial no está disponible")?;
+        let checkpoints = Arc::new(
+            CheckpointFileStore::new(self.data_root.join("sessions"))
+                .map_err(|error| error.to_string())?,
+        );
+        let request = ResumeWorkerRequest {
+            session_id: session.id.clone(),
+            model: frozen.model()?,
+            provider: frozen.provider_id().to_owned(),
+            endpoint: frozen.endpoint().to_owned(),
+            compatibility: frozen.compatibility(),
+            base_tools: frozen.tools(),
+            child_tools: frozen.tools(),
+            child_command_profile: None,
+            event_bridge: None,
+            tool_preparation: None,
+            permission_policy: frozen.policy(),
+            command_isolation: CommandIsolation::HostUnrestricted,
+            command_hooks: Arc::new(CommandHooks::default()),
+            budget_policy: frozen.budget(),
+            child_identity_budget: None,
+            system_instructions: frozen.instructions().to_owned(),
+            pre_context_instructions: None,
+            limits: frozen.limits(),
+            native_automation: Some(frozen),
+            sessions,
+            checkpoints,
+        };
+        ResumeWorkerHandle::start_with_command_actor(request, None)
+    }
+
     fn start_native_automation_resume(
         &mut self,
         session: &openide_core::Session,
         frozen: crate::native_automation::FrozenNativeAutomationAuthorityV1,
     ) {
-        let result = (|| -> Result<ResumeWorkerHandle, String> {
-            let sessions = self
-                .store
-                .clone()
-                .ok_or("El historial no está disponible")?;
-            let checkpoints = Arc::new(
-                CheckpointFileStore::new(self.data_root.join("sessions"))
-                    .map_err(|error| error.to_string())?,
-            );
-            let request = ResumeWorkerRequest {
-                session_id: session.id.clone(),
-                model: frozen.model()?,
-                provider: frozen.provider_id().to_owned(),
-                endpoint: frozen.endpoint().to_owned(),
-                compatibility: frozen.compatibility(),
-                base_tools: frozen.tools(),
-                child_tools: frozen.tools(),
-                child_command_profile: None,
-                event_bridge: None,
-                tool_preparation: None,
-                permission_policy: frozen.policy(),
-                command_isolation: CommandIsolation::HostUnrestricted,
-                command_hooks: Arc::new(CommandHooks::default()),
-                budget_policy: frozen.budget(),
-                child_identity_budget: None,
-                system_instructions: frozen.instructions().to_owned(),
-                pre_context_instructions: None,
-                limits: frozen.limits(),
-                native_automation: Some(frozen),
-                sessions,
-                checkpoints,
-            };
-            ResumeWorkerHandle::start_with_command_actor(request, None)
-        })();
-        match result {
+        match self.native_automation_resume_handle(session, frozen) {
             Ok(handle) => {
                 self.active_resume = Some(handle);
                 self.view.running = true;
@@ -14380,9 +14392,12 @@ impl AgentsWindow {
         }
     }
 
+    /// `off_screen`: the subagent continues on the route its own journal
+    /// committed, as `root_resume_request` does, not on the composer's.
     fn child_worker_request(
         &self,
         stored: &StoredSession,
+        off_screen: bool,
     ) -> Result<SubagentRecoveryRequest, String> {
         let child_id = stored.session.id.clone();
         let link = stored
@@ -14432,8 +14447,25 @@ impl AgentsWindow {
         if spawn_id != link.spawn_id {
             return Err("El turno admitido no coincide con el spawn del subagente".into());
         }
-        let connection = self.native_settings().resolve_at(&self.data_root)?;
-        let provider = self.view.native_provider_id.clone();
+        let journaled = if off_screen {
+            Some(
+                replay_stored_native(&self.data_root, stored)?
+                    .active_model_route
+                    .ok_or("El subagente no registró la ruta de su modelo")?,
+            )
+        } else {
+            None
+        };
+        let settings = match &journaled {
+            Some(route) => NativeProviderSettings {
+                provider_id: route.provider_id.clone(),
+                model_id: route.model_id.clone(),
+                custom_endpoint: self.view.endpoint.clone(),
+            },
+            None => self.native_settings(),
+        };
+        let connection = settings.resolve_at(&self.data_root)?;
+        let provider = settings.provider_id;
         let model_id = connection.model_id.clone();
         let endpoint = connection.endpoint.clone();
         let wire_api = connection.wire_api;
@@ -14454,15 +14486,18 @@ impl AgentsWindow {
         if !self.provider_ready_for_turn(&provider, &connection) {
             return Err("Falta la clave API del proveedor nativo".into());
         }
-        let model = native_model_backend(
-            connection,
-            &provider,
-            Some(&self.view.composer_effort),
-            self.view.hosted_web_search_mode,
-            &self.data_root,
-            self.view.catalog.as_deref(),
-            &self.model_discoveries,
-        )?;
+        let model = match &journaled {
+            Some(route) => self.journaled_route_backend(&connection, route)?,
+            None => native_model_backend(
+                connection,
+                &provider,
+                Some(&self.view.composer_effort),
+                self.view.hosted_web_search_mode,
+                &self.data_root,
+                self.view.catalog.as_deref(),
+                &self.model_discoveries,
+            )?,
+        };
         let parent_id = link.parent_session_id.clone();
         let frozen_instructions = stored.events.iter().find_map(|event| match &event.kind {
             AgentEventKind::SystemInstructionsCommitted { content, .. } => Some(content.as_str()),
@@ -14545,7 +14580,7 @@ impl AgentsWindow {
             self.view.status = "Espera a que termine el cambio de rama".to_owned();
             return;
         }
-        let request = match self.child_worker_request(&stored) {
+        let request = match self.child_worker_request(&stored, false) {
             Ok(request) => request,
             Err(error) => {
                 self.view.status = error;
@@ -15050,12 +15085,8 @@ impl AgentsWindow {
             self.view.status = "Selecciona una sesión nativa para compactar".to_owned();
             return;
         };
-        if self
-            .background_automation_runs
-            .iter()
-            .any(|run| run.session_id == session_id)
-        {
-            self.view.status = "Espera a que termine la automatización".to_owned();
+        if let Some(busy) = self.off_screen_busy(&session_id) {
+            self.view.status = busy.to_owned();
             return;
         }
         let Some(store) = self.store.clone() else {
@@ -20551,6 +20582,8 @@ impl eframe::App for AgentsWindow {
         for run in self.background_automation_runs.drain(..) {
             run.run.cancel();
         }
+        // Dropping a continuation's worker cancels it.
+        self.background_resumes.clear();
         let now_ms = chrono::Utc::now().timestamp_millis();
         for (store_index, dispatch) in self.automation_queue.drain(..) {
             let _ = self.automation_stores[store_index].complete_run(
@@ -20612,6 +20645,7 @@ impl eframe::App for AgentsWindow {
             | self.poll_subagent_events()
             | self.poll_subagent_sessions()
             | self.poll_automations()
+            | self.poll_background_resumes()
             | self.poll_compact()
             | self.poll_resume()
             | self.poll_child_recovery()
@@ -21177,6 +21211,7 @@ impl eframe::App for AgentsWindow {
             ctx.request_repaint_after(Duration::from_millis(150));
         }
         if !self.background_automation_runs.is_empty()
+            || !self.background_resumes.is_empty()
             || !self.automation_queue.is_empty()
             || self.active_mcp_oauth.is_some()
             || self.active_mcp_inspection.is_some()
@@ -24716,7 +24751,7 @@ mod tests {
             assert!(!reopened.poll_subagent_dispatches());
             let stored = sessions.load(&child_id).unwrap().unwrap();
             assert_eq!(stored.events.iter().filter(|event| matches!(&event.kind, AgentEventKind::TurnAdmitted {turn_id,..} if turn_id == "queued-startup")).count(), 1);
-            let request = reopened.child_worker_request(&stored).unwrap();
+            let request = reopened.child_worker_request(&stored, false).unwrap();
             assert_eq!(request.spawn_id, spawn_id);
             assert_eq!(request.prompt, "first");
             reopened.open_session(&parent.id);

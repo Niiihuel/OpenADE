@@ -74,6 +74,18 @@ instrucciones, catálogo, presupuesto, política y límites antes de preparar
 servicios o pedir al modelo. No instala wrappers de goals/subagentes, MCP,
 hooks, actor de comandos ni grants de los ajustes interactivos.
 
+Una ejecución que quedó en pausa por un límite del proveedor continúa sola
+cuando el límite se renueva, fuera de pantalla y con las reglas de
+[native-pauses.md](native-pauses.md): el ajuste que lo habilita, un intento por
+pausa, el tope de rearmados y `Ask`/`Manual` que nunca continúan solos. El
+worker sale de `native_automation_resume_handle`, el mismo camino que la
+recuperación explícita: sólo el snapshot congelado, con las comprobaciones de
+arriba, aunque el modelo seleccionado o los permisos interactivos hayan
+cambiado desde el despacho. Cuenta como uno de los dos workers fuera de
+pantalla que comparten automatizaciones y continuaciones. Si llega a un permiso
+o a una herramienta de resultado incierto se detiene y avisa; no aprueba ni
+deniega por la persona.
+
 La verificación manual de una herramienta incierta conserva el gate humano y
 usa el límite original. Descartar un lote no autoriza un pedido nuevo en esa
 sesión. Compactar una automatización terminada usa su modelo, presupuesto y

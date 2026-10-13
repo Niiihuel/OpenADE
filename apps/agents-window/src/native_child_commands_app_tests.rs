@@ -333,7 +333,7 @@ async fn child_commands_share_host_controls_across_model_wait_followup_cancel_an
     let stored = sessions.load(&child_id).unwrap().unwrap();
     // Rebuild the follow-up worker through the production desktop path rather
     // than keeping the original worker's tool executor or temporary runtime.
-    let request = app.child_worker_request(&stored).unwrap();
+    let request = app.child_worker_request(&stored, false).unwrap();
     let parent_lease = Arc::new(sessions.try_acquire_native_lease(&parent.id).unwrap());
     let sender = SubagentToolExecutor::new(
         local,

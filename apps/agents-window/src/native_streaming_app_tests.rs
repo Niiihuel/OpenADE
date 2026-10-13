@@ -3053,3 +3053,7 @@ fn notifications_e2e_a_turn_that_ends_unwatched_is_recorded_and_opens_its_task()
 #[cfg(unix)]
 #[path = "model_switch_app_tests.rs"]
 mod model_switch_app_tests;
+
+#[cfg(unix)]
+#[path = "background_resume_app_tests.rs"]
+mod background_resume_app_tests;
