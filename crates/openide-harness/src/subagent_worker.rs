@@ -955,7 +955,6 @@ impl SubagentWorker {
         &self,
         run_lease: &SubagentRunLease,
         mode: TurnMode,
-        depth: u8,
     ) -> Result<ResumeEngine, SubagentWorkerError> {
         let child_id = run_lease.session_id();
         let record = self
@@ -1034,13 +1033,18 @@ impl SubagentWorker {
             }
             None => self.instructions.clone(),
         };
+        // The interrupted turn froze what its executor offered, in the
+        // executor's order. `catalog_for_mode` lists the same tools in the
+        // reservation's order, which differs once a child has both goal and
+        // subagent tools.
+        let catalog = ToolCatalog::from_executor(tools.as_ref())?;
         let mut engine = ResumeEngine::new(
             self.sessions.clone(),
             checkpoints,
             compatibility,
             self.model.clone(),
             tools,
-            self.catalog_for_mode(mode, depth)?,
+            catalog,
             self.permission_policy.clone(),
             self.token_budget,
         )
@@ -1169,17 +1173,11 @@ impl SubagentWorker {
             }
             _ => return Err(SubagentWorkerError::NeedsRecovery(child_id.to_owned())),
         }
-        let depth = child
-            .session
-            .subagent
-            .as_ref()
-            .expect("prepared child has lineage")
-            .depth;
         let run = worker
             .coordinator
             .resume_child_control(&control, child_id)?;
         let result = (|| {
-            let engine = worker.recovery_engine_for_claimed_turn(&run, mode, depth)?;
+            let engine = worker.recovery_engine_for_claimed_turn(&run, mode)?;
             engine.resolve_permission(
                 run.native_lease(),
                 request_id,
@@ -1235,12 +1233,6 @@ impl SubagentWorker {
         let child =
             self.coordinator
                 .prepared_child(&control, &child_id, &spawn_id, &request_digest)?;
-        let depth = child
-            .session
-            .subagent
-            .as_ref()
-            .expect("prepared direct child has lineage")
-            .depth;
         let legacy_ready = child.status == SubagentStatus::Ready;
         match child.status {
             SubagentStatus::Completed | SubagentStatus::Failed => {
@@ -1459,7 +1451,7 @@ impl SubagentWorker {
         } else {
             self.coordinator.resume_child_control(&control, &child_id)?
         };
-        let engine = match self.recovery_engine_for_claimed_turn(&run_lease, mode, depth) {
+        let engine = match self.recovery_engine_for_claimed_turn(&run_lease, mode) {
             Ok(engine) => engine,
             Err(error) => {
                 self.coordinator.pause_child(&run_lease)?;
@@ -3516,6 +3508,34 @@ mod tests {
             .unwrap()
             .iter()
             .any(|child| child.session.id == child_id && child.status == SubagentStatus::Completed));
+    }
+
+    #[tokio::test]
+    async fn a_paused_child_with_goal_and_subagent_tools_resumes_on_the_catalog_it_was_offered() {
+        let root = tempfile::tempdir().unwrap();
+        let model = Arc::new(LimitedChildModel { failures: 1, calls: AtomicUsize::new(0) });
+        let tools = Arc::new(CountingTools(AtomicUsize::new(0)));
+        let (sessions, _, worker) = reopened_worker(root.path(), model.clone(), tools);
+        // What the desktop gives every subagent: both sets of tools at once.
+        let worker = worker
+            .with_nested_subagents(SubagentToolLimits::default())
+            .with_native_goals();
+        let parent = sessions.create(root.path(), "native").unwrap();
+        let parent_lease = Arc::new(sessions.try_acquire_native_lease(&parent.id).unwrap());
+        let paused = worker
+            .run(parent_lease.clone(), "spawn-both".into(), "Work".into(), TurnMode::Build, CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(paused.status, SubagentStatus::Interrupted);
+        let resumed = worker
+            .resume(parent_lease, paused.child_session_id, "spawn-both".into(), "Work".into(), TurnMode::Build, CancellationToken::new())
+            .await
+            .unwrap();
+        assert!(matches!(
+            resumed,
+            SubagentRecoveryState::Terminal(SubagentTurnResult { status: SubagentStatus::Completed, .. })
+        ));
+        assert_eq!(model.calls.load(Ordering::SeqCst), 2);
     }
 
     /// Calls `effect` once, then hits its limit forever.
