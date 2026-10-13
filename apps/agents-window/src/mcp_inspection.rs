@@ -458,7 +458,7 @@ async fn connect(
     } else {
         let mut config = server.runtime_config(&scope.workspace)?;
         config.request_timeout = limits.request_timeout;
-        for name in &server.credential_env_names {
+        for name in server.credential_env_names.iter().chain(server.env.keys()) {
             if let Some(value) = config.env.get(std::ffi::OsStr::new(name)) {
                 secrets.add(value.to_string_lossy().into_owned());
             }

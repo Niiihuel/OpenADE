@@ -1,13 +1,14 @@
 //! Strict, atomic preferences for explicitly configured local MCP servers.
 //!
-//! The document stores environment variable *names*, never credential values.
-//! Literal command arguments remain user-authored text, so the UI must steer
-//! users to pass credentials through `credential_env_names` instead of args.
+//! Credentials are stored as environment variable *names*, never as values.
+//! Literal command arguments and the literal variables of `env` remain
+//! user-authored text kept in this file, so the UI must steer users to pass
+//! credentials through `credential_env_names` instead of either.
 
 use openide_harness::{McpHttpConfig, McpStdioConfig, OAuthConfig, OAuthRegistration};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
@@ -54,6 +55,10 @@ pub(crate) struct McpServerSettings {
     pub cwd: Option<PathBuf>,
     /// Only names are persisted. Values are read from the environment at launch.
     pub credential_env_names: Vec<String>,
+    /// Variables given to the process with the value written here: settings
+    /// of the server, not credentials.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
     /// If present, use MCP 2026-07-28 Streamable HTTP instead of stdio.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
@@ -192,6 +197,9 @@ impl McpServerSettings {
             let value = resolve_env(name)
                 .ok_or_else(|| format!("Falta la variable de credenciales MCP {name}"))?;
             config.env.insert(OsString::from(name), value);
+        }
+        for (name, value) in &self.env {
+            config.env.insert(OsString::from(name), OsString::from(value));
         }
         Ok(config)
     }
@@ -388,7 +396,13 @@ impl McpSettings {
                 }
                 validate_program(&server.program, &server.id)?;
                 validate_args(&server.args, &server.id)?;
-                validate_env_names(&server.credential_env_names, &server.id)?;
+                // One list: a name is passed through or written here, not both.
+                let names: Vec<String> =
+                    server.credential_env_names.iter().chain(server.env.keys()).cloned().collect();
+                validate_env_names(&names, &server.id)?;
+                if server.env.values().any(|value| value.len() > MAX_ARG_BYTES || value.contains('\0')) {
+                    return Err(format!("Valor de variable MCP no válido en {}", server.id));
+                }
                 if let Some(cwd) = &server.cwd {
                     validate_cwd_syntax(cwd, &server.id)?;
                 }
@@ -641,6 +655,7 @@ mod tests {
             ],
             cwd: Some(PathBuf::from("repo")),
             credential_env_names: vec!["MCP_API_KEY".to_owned()],
+            env: Default::default(),
             url: None,
             http_bearer_token_env_name: None,
             http_oauth: None,
@@ -656,6 +671,7 @@ mod tests {
             args: Vec::new(),
             cwd: None,
             credential_env_names: Vec::new(),
+            env: Default::default(),
             url: Some(url.to_owned()),
             http_bearer_token_env_name: Some("MCP_HTTP_TOKEN".to_owned()),
             http_oauth: None,
@@ -938,6 +954,26 @@ mod tests {
                 .runtime_config_with(workspace.path(), |_| Some(OsString::from("present")))
                 .is_err());
         }
+    }
+
+    #[test]
+    fn a_variable_written_here_reaches_the_process_and_one_name_is_not_both() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = tempfile::tempdir().unwrap();
+        fs::create_dir(workspace.path().join("repo")).unwrap();
+        let mut settings = McpSettings { servers: vec![server()] };
+        settings.servers[0].env.insert("LOG_LEVEL".to_owned(), "debug".to_owned());
+        settings.save(root.path(), workspace.path()).unwrap();
+        assert_eq!(McpSettings::load(root.path(), workspace.path()).unwrap(), settings);
+        let runtime = settings.servers[0]
+            .runtime_config_with(workspace.path(), |_| Some(OsString::from("present")))
+            .unwrap();
+        assert_eq!(runtime.env[&OsString::from("LOG_LEVEL")], OsString::from("debug"));
+
+        settings.servers[0].env.insert("MCP_API_KEY".to_owned(), "x".to_owned());
+        assert!(settings.validate(workspace.path()).is_err());
+        settings.servers[0].env = [("lower".to_owned(), "x".to_owned())].into();
+        assert!(settings.validate(workspace.path()).is_err());
     }
 
     #[test]

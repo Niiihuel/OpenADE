@@ -39,6 +39,7 @@ fn manual_server(id: &str) -> McpServerSettings {
         args: Vec::new(),
         cwd: None,
         credential_env_names: Vec::new(),
+        env: Default::default(),
         url: None,
         http_bearer_token_env_name: None,
         http_oauth: None,

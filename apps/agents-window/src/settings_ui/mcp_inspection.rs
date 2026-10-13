@@ -225,6 +225,7 @@ mod tests {
             args: vec![],
             cwd: None,
             credential_env_names: vec![],
+            env: Default::default(),
             url: Some("http://127.0.0.1:7777/mcp".into()),
             http_bearer_token_env_name: None,
             http_oauth: None,

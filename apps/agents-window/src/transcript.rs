@@ -3651,6 +3651,10 @@ pub(crate) fn host_notice_text(code: &str, detail: &str) -> String {
         openide_core::NOTICE_CONTEXT_LIMIT => format!(
             "El proveedor informó su límite de contexto: {detail} tokens. Se usa desde ahora para este modelo"
         ),
+        openide_core::NOTICE_MCP_UNAVAILABLE => format!(
+            "{}. El turno sigue sin ese servidor",
+            detail.split_once('\n').map_or(detail, |(_, why)| why)
+        ),
         _ => detail.to_owned(),
     }
 }

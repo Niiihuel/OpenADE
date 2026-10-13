@@ -442,6 +442,7 @@ mod tests {
             args: Vec::new(),
             cwd: None,
             credential_env_names: Vec::new(),
+            env: Default::default(),
             url: Some("https://mcp.example.test".into()),
             http_bearer_token_env_name: None,
             http_oauth: Some(McpHttpOAuthSettings {
