@@ -42,6 +42,7 @@ o `selector` (un selector que identifique un único elemento).
 | `browser_network_requests` | — | Lectura |
 | `browser_take_screenshot` | `full_page` o destino, ambos opcionales | Lectura |
 | `browser_handle_dialog` | `accept`, `prompt_text` opcional | Modifica |
+| `browser_file_upload` | `paths`: de 1 a 16 rutas absolutas | Modifica |
 | `open_preview` | `url` opcional (sólo de este equipo) | Modifica |
 
 «Modifica» es la clasificación de `BrowserCommand::mutating()`: la vista marca
@@ -269,6 +270,24 @@ aparezca un diálogo, para que no alcance a una página distinta. Cada diálogo
 queda en la consola con nivel `warning`, tipo `dialog`, su clase (`dialog`), su
 mensaje y cómo se respondió (`action`: `accepted` o `dismissed`).
 
+### Subir archivos
+
+Ningún selector de archivos se abre en el escritorio. `browser_file_upload`
+decide qué archivos recibe el **próximo** selector que abra la página y, como
+con los diálogos, se llama antes del clic que lo abre:
+
+```text
+browser_file_upload {"paths":["/home/ana/informe.pdf"]}
+browser_click {"ref":"e21"}
+```
+
+Las rutas son absolutas y de archivos que existen; más de una sólo si el campo
+acepta varios. Los archivos se usan una vez y se olvidan si la página navega
+antes. Sin indicación el selector queda cerrado y la página no recibe nada.
+Cada selector queda en la consola con tipo `filechooser` y `action`
+`accepted` o `dismissed`. La aprobación muestra las rutas: es el usuario quien
+decide qué archivos salen del equipo.
+
 ## Capturas
 
 `browser_take_screenshot` devuelve un PNG a escala CSS: el viewport, la página
@@ -443,7 +462,6 @@ del modelo con la que se verifican y reanudan turnos guardados.
 | --- | --- |
 | Pestañas (`tab-new`, `tab-select`…) | Hay una única página autoritativa por contexto, compartida con el usuario. Un clic sobre un enlace que pide otra pestaña la abre en esa misma página, y la respuesta del clic ya es la página nueva; lo que una página intenta abrir sola no abre nada. |
 | `resize` | El viewport pertenece al panel visible. |
-| `upload` | Requiere dar a la página acceso a archivos del usuario; necesita su propia política. |
 | `pdf` | Produce un archivo en disco; no hay destino acotado para artefactos. |
 | `tracing-start`/`tracing-stop` | Las trazas guardan capturas, DOM y red con cuerpos; contradicen los límites de esta página. |
 | `mousemove`, `mousedown`, `mouseup`, `keydown`, `keyup` | Primitivas con estado entre llamadas sobre una página que el usuario también maneja; `browser_click`, `browser_hover`, `browser_drag` y `browser_press` cubren las acciones completas. |

@@ -42,13 +42,13 @@ pub enum ConsoleLevel {
 pub struct ConsoleEntry {
     pub level: ConsoleLevel,
     /// The console method (`log`, `warning`, `error`…), `pageerror` for an
-    /// uncaught exception, or `dialog`.
+    /// uncaught exception, `dialog`, or `filechooser`.
     #[serde(rename = "type")]
     pub kind: String,
     /// For a dialog: `alert`, `confirm`, `prompt` or `beforeunload`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dialog: Option<String>,
-    /// For a dialog: `accepted` or `dismissed`.
+    /// For a dialog or a file chooser: `accepted` or `dismissed`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub action: Option<&'static str>,
     pub text: String,
@@ -172,6 +172,8 @@ pub(crate) struct State {
     pub console: Log<ConsoleEntry>,
     pub network: Log<NetworkEntry>,
     pub dialog_plan: Option<DialogPlan>,
+    /// The files the next file chooser gets. Used once.
+    pub upload_plan: Option<Vec<String>>,
     /// Out-of-process frames by the id of their root frame.
     pub children: HashMap<String, ChildSession>,
     /// The page's own script world of each frame, by session and frame id.
@@ -271,6 +273,25 @@ impl EventSink for Observer {
                     answer["promptText"] = Value::from(prompt);
                 }
                 let _ = client.post(session, "Page.handleJavaScriptDialog", answer);
+            }
+            "Page.fileChooserOpened" => {
+                // No chooser opens on the user's desktop: the page gets the
+                // files armed for it, or the chooser is left closed.
+                let node = params.get("backendNodeId").cloned();
+                let files = state.upload_plan.take().filter(|files| {
+                    node.is_some() && (files.len() == 1 || text(&params, "mode") == "selectMultiple")
+                });
+                state.console.record(ConsoleEntry {
+                    level: ConsoleLevel::Warning,
+                    kind: "filechooser".into(),
+                    dialog: None,
+                    action: Some(if files.is_some() { "accepted" } else { "dismissed" }),
+                    text: limited(text(&params, "mode"), 32).to_owned(),
+                    location: None,
+                });
+                if let Some(files) = files {
+                    let _ = client.post(session, "DOM.setFileInputFiles", json!({"files": files, "backendNodeId": node}));
+                }
             }
             "Page.frameNavigated" => {
                 let frame = &params["frame"];
@@ -375,9 +396,10 @@ impl EventSink for Observer {
 }
 
 /// What a session needs enabled to be observed like the page itself.
-pub(crate) fn child_setup() -> [(&'static str, Value); 6] {
+pub(crate) fn child_setup() -> [(&'static str, Value); 7] {
     [
         ("Page.enable", json!({})),
+        ("Page.setInterceptFileChooserDialog", json!({"enabled": true})),
         ("Runtime.enable", json!({})),
         ("Network.enable", json!({})),
         ("Log.enable", json!({})),
@@ -429,6 +451,7 @@ impl State {
             self.console.clear();
             self.network.clear();
             self.dialog_plan = None;
+            self.upload_plan = None;
         }
         let request = &params["request"];
         // An inline resource is not a request anyone made.

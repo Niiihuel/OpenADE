@@ -580,6 +580,7 @@ fn catalog() -> Vec<(&'static str, Value, bool)> {
         ("browser_network_requests", json!({}), false),
         ("browser_take_screenshot", json!({}), false),
         ("browser_handle_dialog", json!({"accept":true}), true),
+        ("browser_file_upload", json!({"paths":["/tmp/informe.pdf"]}), true),
     ]
 }
 
@@ -832,6 +833,10 @@ fn new_tools_reject_arguments_outside_their_bounds() {
     accepted("browser_handle_dialog", json!({"accept":false}));
     accepted("browser_handle_dialog", json!({"accept":true,"prompt_text":"x".repeat(4096)}));
     rejected("browser_handle_dialog", json!({}));
+    accepted("browser_file_upload", json!({"paths":["/tmp/a.txt","/tmp/b.txt"]}));
+    rejected("browser_file_upload", json!({"paths":[]}));
+    rejected("browser_file_upload", json!({"paths":["relativa.txt"]}));
+    rejected("browser_file_upload", json!({"paths":vec!["/tmp/a"; 17]}));
     rejected("browser_handle_dialog", json!({"accept":true,"prompt_text":"x".repeat(4097)}));
 }
 

@@ -108,6 +108,7 @@ let png = driver.screenshot(Capture::Viewport)?;
 | Acciones | `click`, `click_at`, `fill`, `type_text`, `press`, `scroll`, `hover`, `select_options`, `set_checked`, `drag` |
 | Esperas | `wait_for_text`, `wait_for_text_gone`, `wait_seconds` |
 | Diálogos | `handle_dialog` |
+| Subida de archivos | `upload_files` |
 | Portapapeles | `copy_selection`, `prepare_cut`, `confirm_cut` |
 | Entrada cruda | `pointer_move`, `pointer_down`, `pointer_up`, `wheel`, `hold_modifiers`, `key_down`, `key_up`, `insert_text` |
 
@@ -431,7 +432,7 @@ OPENIDE_BROWSER_RECORD=1 nix-shell --run \
 ## Lo que no se incluye
 
 Iniciar o buscar un navegador (la página la crea quien embebe), varias
-pestañas, descargas, subida de archivos, PDF, trazas, grabación, otros
+pestañas, descargas, PDF, trazas, grabación, otros
 motores, un transporte TCP o WebSocket, los cuadros de la vista y la forma del
 cursor, que el protocolo no informa: las dos últimas las da CEF.
 

@@ -425,6 +425,14 @@ fn meta(name: &str) -> Meta<'_> {
             Web,
             Icon::Globe,
         ),
+        "browser_file_upload" => (
+            "Archivos para la página",
+            "Preparando archivos",
+            "Archivos preparados",
+            &[],
+            Web,
+            Icon::Globe,
+        ),
         "skill_view" | "load_skill" => (
             "Lectura de skill",
             "Cargando skill",

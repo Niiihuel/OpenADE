@@ -26,6 +26,8 @@ pub const TIMEOUT: Duration = Duration::from_secs(10);
 const ATTACH_TIMEOUT: Duration = Duration::from_secs(20);
 /// Bytes of the accessibility snapshot.
 pub const MAX_ARIA_BYTES: usize = 64 * 1024;
+/// Files one file chooser can be given.
+pub const MAX_UPLOAD_FILES: usize = 16;
 /// Bytes of an evaluated value's JSON, and of the script that produces it.
 pub const MAX_EVALUATE_BYTES: usize = 16 * 1024;
 /// Bytes of a PNG returned by `screenshot`.
@@ -996,6 +998,23 @@ impl Driver {
             accept,
             prompt_text: prompt_text.map(str::to_owned),
         });
+        Ok(())
+    }
+
+    /// The files the next file chooser of the page gets, in place of a
+    /// chooser on the desktop. Used once, and forgotten if the page navigates
+    /// first. Without it a chooser the page opens stays closed.
+    pub fn upload_files(&self, paths: &[String]) -> Outcome<()> {
+        if paths.is_empty() || paths.len() > MAX_UPLOAD_FILES {
+            return Err(invalid(format!("Indicá entre 1 y {MAX_UPLOAD_FILES} archivos")));
+        }
+        for path in paths {
+            let file = std::path::Path::new(path);
+            if !file.is_absolute() || !file.is_file() {
+                return Err(invalid(format!("No es la ruta absoluta de un archivo: {}", limited(path, 256))));
+            }
+        }
+        self.shared.state().upload_plan = Some(paths.to_vec());
         Ok(())
     }
 
