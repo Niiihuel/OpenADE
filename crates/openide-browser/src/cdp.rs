@@ -45,36 +45,10 @@ impl fmt::Display for CdpError {
 
 impl std::error::Error for CdpError {}
 
-/// A `Page.screencastFrame`, borrowed from the message it arrived in so the
-/// image is decoded exactly once, by whoever consumes it.
-#[derive(Debug, Deserialize)]
-pub struct ScreencastFrame<'a> {
-    /// The encoded image, base64.
-    #[serde(borrow)]
-    pub data: Cow<'a, str>,
-    #[serde(default)]
-    pub metadata: ScreencastMetadata,
-    /// Identifies the frame in `Page.screencastFrameAck`.
-    #[serde(rename = "sessionId")]
-    pub ack: i64,
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct ScreencastMetadata {
-    #[serde(default)]
-    pub device_width: f64,
-    #[serde(default)]
-    pub device_height: f64,
-    #[serde(default)]
-    pub timestamp: f64,
-}
-
 /// Receives everything that is not a reply, on the reader thread. It must not
 /// block: use `Client::post` to answer the browser from here, never `call`.
 pub trait EventSink: Send {
     fn event(&mut self, client: &Client, session: &str, method: &str, params: Value);
-    fn screencast_frame(&mut self, client: &Client, session: &str, frame: ScreencastFrame<'_>);
     /// The transport ended. Called once, after every waiting request failed.
     fn closed(&mut self);
 }
@@ -156,7 +130,7 @@ impl Client {
     }
 
     /// Sends `method` without waiting for its result. This is how the reader
-    /// thread answers the browser (dialogs, frame acknowledgements).
+    /// thread answers the browser (a dialog, a link meant for another tab).
     pub fn post(&self, session: &str, method: &str, params: Value) -> Result<(), CdpError> {
         let id = self.inner.next_id.fetch_add(1, Ordering::Relaxed);
         self.write(id, session, method, params)
@@ -166,8 +140,7 @@ impl Client {
         self.inner.closed.load(Ordering::Acquire)
     }
 
-    /// Drops the sending half and fails every waiting request. With the pipe
-    /// transport the browser sees its command stream end and exits.
+    /// Drops the sending half and fails every waiting request.
     pub fn close(&self) {
         self.inner.closed.store(true, Ordering::Release);
         lock(&self.inner.sink).take();
@@ -201,13 +174,6 @@ impl Client {
 
     /// Everything that does not begin the way Chrome begins a reply.
     fn dispatch(&self, bytes: Vec<u8>, events: &mut dyn EventSink) {
-        if bytes.starts_with(SCREENCAST_PREFIX) {
-            if let Ok(message) = serde_json::from_slice::<ScreencastMessage>(&bytes) {
-                let session = message.session.as_deref().unwrap_or("");
-                events.screencast_frame(self, session, message.params);
-                return;
-            }
-        }
         let repaired;
         let message: Message = match serde_json::from_slice(&bytes) {
             Ok(message) => message,
@@ -258,18 +224,6 @@ fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, CdpError> {
         (None, Some(result)) => Ok(result),
         (None, None) => serde_json::from_value(Value::Null).map_err(invalid),
     }
-}
-
-/// How Chrome begins a screencast frame. Only a shortcut to the borrowed
-/// parse: a frame spelled differently is still delivered through `Message`.
-const SCREENCAST_PREFIX: &[u8] = b"{\"method\":\"Page.screencastFrame\"";
-
-#[derive(Deserialize)]
-struct ScreencastMessage<'a> {
-    #[serde(borrow)]
-    params: ScreencastFrame<'a>,
-    #[serde(borrow, rename = "sessionId")]
-    session: Option<Cow<'a, str>>,
 }
 
 #[derive(Deserialize)]
@@ -379,12 +333,6 @@ mod tests {
                     .unwrap();
             }
         }
-        fn screencast_frame(&mut self, _: &Client, session: &str, frame: ScreencastFrame<'_>) {
-            lock(&self.0).push(format!(
-                "{session}|frame {}|{}|{}",
-                frame.ack, frame.data, frame.metadata.device_width
-            ));
-        }
         fn closed(&mut self) {
             lock(&self.0).push("closed".into());
         }
@@ -484,11 +432,8 @@ mod tests {
         let (client, endpoint, recorder) = connect();
         endpoint.send("{\"method\":\"Page.frameNavigated\",\"params\":{\"n\":1},\"sessionId\":\"S\"}");
         endpoint.send("{\"method\":\"Page.javascriptDialogOpening\",\"params\":{},\"sessionId\":\"S\"}");
-        endpoint.send(
-            "{\"method\":\"Page.screencastFrame\",\"params\":{\"data\":\"QUJD\",\"metadata\":{\"deviceWidth\":640},\"sessionId\":7},\"sessionId\":\"S\"}",
-        );
-        // The same event spelled in another key order takes the generic path.
-        endpoint.send("{\"sessionId\":\"S\",\"method\":\"Target.targetCreated\",\"params\":null}");
+        // An event is one whatever the order of its keys.
+        endpoint.send("{\"sessionId\":\"S\",\"method\":\"Page.windowOpen\",\"params\":null}");
         let answer = endpoint.written.recv_timeout(WAIT).unwrap();
         assert_eq!(answer["method"], "Page.handleJavaScriptDialog");
         assert_eq!(answer["sessionId"], "S");
@@ -505,8 +450,7 @@ mod tests {
             [
                 "S|Page.frameNavigated|{\"n\":1}",
                 "S|Page.javascriptDialogOpening|{}",
-                "S|frame 7|QUJD|640",
-                "S|Target.targetCreated|null",
+                "S|Page.windowOpen|null",
             ]
         );
     }

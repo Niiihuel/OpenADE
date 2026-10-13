@@ -1,16 +1,14 @@
 //! What the page reports while nobody is asking: console output, requests,
-//! dialogs, navigations, child frames and screencast frames.
+//! dialogs, navigations and child frames.
 //!
 //! `Observer` runs on the client's reader thread and folds every event into
 //! bounded state the driver reads under a lock. Nothing is queued, so a page
 //! that logs or fetches without pause costs a fixed amount of memory. What
-//! must be answered at once (a dialog blocks the page until it is, a popup
-//! must not linger, a link meant for another tab opens in this one) is
-//! answered from here without waiting for a reply.
+//! must be answered at once (a dialog blocks the page until it is, a link
+//! meant for another tab opens in this one) is answered from here without
+//! waiting for a reply.
 
-use crate::cdp::{Client, EventSink, ScreencastFrame};
-use crate::stream::StreamSlot;
-use base64::Engine;
+use crate::cdp::{Client, EventSink};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::{HashMap, VecDeque};
@@ -155,7 +153,6 @@ pub(crate) struct ChildSession {
 #[derive(Debug, Default)]
 pub(crate) struct State {
     pub page_session: String,
-    pub page_target: String,
     pub main_frame: String,
     /// Where the main frame is, as the page itself reports it.
     pub url: String,
@@ -188,7 +185,6 @@ pub(crate) struct State {
 pub(crate) struct Shared {
     state: Mutex<State>,
     changed: Condvar,
-    pub stream: StreamSlot,
 }
 
 impl Shared {
@@ -199,7 +195,6 @@ impl Shared {
                 ..State::default()
             }),
             changed: Condvar::new(),
-            stream: StreamSlot::default(),
         })
     }
 
@@ -361,23 +356,6 @@ impl EventSink for Observer {
                     state.open_here(client, text(&params, "url"));
                 }
             }
-            "Target.targetCreated" => {
-                // One panel has one authoritative page. Another window is
-                // closed rather than left running where nobody observes it.
-                let info = &params["targetInfo"];
-                let popup = text(info, "type") == "page"
-                    && !state.page_target.is_empty()
-                    && text(info, "targetId") != state.page_target;
-                if popup {
-                    let _ = client.post("", "Target.closeTarget", json!({"targetId": text(info, "targetId")}));
-                    // A tab the browser itself made, for a link clicked with
-                    // Control, Shift or the middle button, says where it
-                    // goes. One a page's script made does not: it was
-                    // announced above. The browser makes neither without a
-                    // click behind it.
-                    state.open_here(client, text(info, "url"));
-                }
-            }
             "Inspector.targetCrashed" if session == state.page_session => {
                 state.gone = Some("La página del navegador dejó de funcionar.".into());
             }
@@ -387,22 +365,12 @@ impl EventSink for Observer {
         self.shared.changed.notify_all();
     }
 
-    fn screencast_frame(&mut self, client: &Client, session: &str, frame: ScreencastFrame<'_>) {
-        // The one decode of the image: from the message into the bytes the consumer takes.
-        let Ok(data) = base64::engine::general_purpose::STANDARD.decode(frame.data.as_bytes()) else {
-            let _ = client.post(session, "Page.screencastFrameAck", json!({"sessionId": frame.ack}));
-            return;
-        };
-        self.shared.stream.offer(client, session, data, frame.ack, frame.metadata.timestamp);
-    }
-
     fn closed(&mut self) {
         self.shared
             .state()
             .gone
             .get_or_insert_with(|| "El navegador se cerró.".into());
         self.shared.changed.notify_all();
-        self.shared.stream.close();
     }
 }
 

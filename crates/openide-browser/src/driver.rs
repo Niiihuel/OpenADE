@@ -1,4 +1,4 @@
-//! The driver: one isolated browser context, one authoritative page.
+//! The driver: the one authoritative page of a browser context.
 //!
 //! Every public method is one blocking request. It validates its arguments
 //! before anything reaches the browser, bounds everything the page returns
@@ -10,9 +10,8 @@ use crate::observer::{
 };
 use crate::scripts::LIBRARY;
 use crate::snapshot::{self, AxTree, DocumentKey, DomSnapshot, Frame as SnapshotFrame, RefTable, SnapshotOptions};
-use crate::stream::{Frame, FrameFormat, FrameStream, MAX_FRAME_BYTES};
 use crate::transport::Transport;
-use crate::{DriverError, ErrorKind, LaunchOptions};
+use crate::{DriverError, ErrorKind};
 use base64::Engine;
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
@@ -23,7 +22,8 @@ use std::time::{Duration, Instant};
 
 /// How long one action, wait or navigation may take.
 pub const TIMEOUT: Duration = Duration::from_secs(10);
-const LAUNCH_TIMEOUT: Duration = Duration::from_secs(20);
+/// How long attaching to the page may take.
+const ATTACH_TIMEOUT: Duration = Duration::from_secs(20);
 /// Bytes of the accessibility snapshot.
 pub const MAX_ARIA_BYTES: usize = 64 * 1024;
 /// Bytes of an evaluated value's JSON, and of the script that produces it.
@@ -233,8 +233,6 @@ struct PreparedCut {
 pub struct Driver {
     pub(crate) client: Client,
     pub(crate) shared: Arc<Shared>,
-    #[cfg(unix)]
-    chrome: Option<crate::chrome::Chrome>,
     /// The session of the page and the id of its main frame.
     pub(crate) session: String,
     pub(crate) main_frame: String,
@@ -264,110 +262,48 @@ impl std::fmt::Debug for Driver {
 }
 
 impl Driver {
-    /// Starts a private headless Chrome and opens its one page.
-    #[cfg(unix)]
-    pub fn launch(options: &LaunchOptions) -> Result<Self, DriverError> {
-        validate_viewport(options.width, options.height)?;
-        validate_scale(options.scale)?;
-        let (chrome, transport) = crate::chrome::Chrome::launch(options)?;
-        let mut driver = Self::attach(transport, options.width, options.height, options.scale, false).map_err(|error| {
-            // Chrome that dies while starting says why on its standard error.
-            let output = chrome.startup_output();
-            let detail = match error.kind {
-                ErrorKind::Closed if !output.is_empty() => limited(&output, 1024).to_owned(),
-                _ => error.message,
-            };
-            DriverError::new(ErrorKind::Launch, format!("El navegador no pudo iniciarse: {detail}"))
-        })?;
-        chrome.startup_output();
-        driver.chrome = Some(chrome);
-        Ok(driver)
-    }
-
-    /// There is no pipe transport for this platform yet; see `connect`.
-    #[cfg(not(unix))]
-    pub fn launch(_: &LaunchOptions) -> Result<Self, DriverError> {
-        Err(DriverError::new(
-            ErrorKind::Launch,
-            "Este sistema todavía no tiene un transporte para iniciar el navegador.",
-        ))
-    }
-
-    /// Drives a browser reached through `transport`: an embedded Chromium,
-    /// or any endpoint that exchanges DevTools messages. The caller owns the
-    /// browser's lifetime.
-    pub fn connect(transport: Transport, width: u32, height: u32, scale: f64) -> Result<Self, DriverError> {
-        validate_viewport(width, height)?;
-        Self::attach(transport, width, height, scale, false)
-    }
-
-    /// Drives the one page an embedder already created, when `transport`
-    /// reaches that page and not a browser: an embedded Chromium hands out
-    /// the DevTools endpoint of each page it makes. Its storage, its popups
-    /// and its downloads are the embedder's to isolate and refuse, and
-    /// `scale` is the one it draws the page at.
+    /// Drives the one page an embedder already created, which `transport`
+    /// reaches: an embedded Chromium hands out the DevTools endpoint of each
+    /// page it makes. The page's lifetime, its storage, its popups and its
+    /// downloads are the embedder's to keep, isolate and refuse, and `scale`
+    /// is the one it draws the page at.
     pub fn connect_to_page(transport: Transport, width: u32, height: u32, scale: f64) -> Result<Self, DriverError> {
         validate_viewport(width, height)?;
         validate_scale(scale)?;
-        Self::attach(transport, width, height, scale, true)
-    }
-
-    fn attach(transport: Transport, width: u32, height: u32, scale: f64, existing: bool) -> Outcome<Self> {
         let shared = Shared::new();
         let observer = Observer {
             shared: shared.clone(),
         };
-        let client = Client::connect(transport, Box::new(observer))
-            .map_err(|error| DriverError::new(ErrorKind::Launch, error.to_string()))?;
+        let client = Client::connect(transport, Box::new(observer)).map_err(|error| failed(error.to_string()))?;
         let mut driver = Self {
             client,
             shared,
-            #[cfg(unix)]
-            chrome: None,
             session: String::new(),
             main_frame: String::new(),
             width,
             height,
             scale,
             refs: RefTable::default(),
-            deadline: Instant::now() + LAUNCH_TIMEOUT,
+            deadline: Instant::now() + ATTACH_TIMEOUT,
             touched: Vec::new(),
             cut: None,
             pointer: (0.0, 0.0),
             buttons: 0,
             modifiers: 0,
         };
-        let target = if existing {
-            // The endpoint is the page, and names itself.
-            let info: Value = driver.call("", "Target.getTargetInfo", json!({}))?;
-            info["targetInfo"]["targetId"].as_str().unwrap_or_default().to_owned()
-        } else {
-            let context: Value = driver.call("", "Target.createBrowserContext", json!({"disposeOnDetach": true}))?;
-            let context = &context["browserContextId"];
-            // Nothing is ever written to the user's disk on the page's behalf.
-            let _: Outcome<Value> = driver.call(
-                "",
-                "Browser.setDownloadBehavior",
-                json!({"behavior": "deny", "browserContextId": context}),
-            );
-            let target: Value = driver.call(
-                "",
-                "Target.createTarget",
-                json!({"url": "about:blank", "browserContextId": context}),
-            )?;
-            target["targetId"].as_str().unwrap_or_default().to_owned()
-        };
-        // A session of its own for the page, also when the endpoint is that
-        // page: everything below addresses the page the same way either way.
+        // The endpoint is the page, and names itself.
+        let info: Value = driver.call("", "Target.getTargetInfo", json!({}))?;
+        let target = info["targetInfo"]["targetId"].as_str().unwrap_or_default().to_owned();
+        // A session of its own for the page: everything below addresses it
+        // as it addresses the frames of other sites, each with its session.
         let attached: Value = driver.call("", "Target.attachToTarget", json!({"targetId": target, "flatten": true}))?;
         driver.session = attached["sessionId"].as_str().unwrap_or_default().to_owned();
         if target.is_empty() || driver.session.is_empty() {
-            return Err(failed("El navegador no creó la página."));
+            return Err(failed("El navegador no entregó su página."));
         }
         {
             // A page's target id is the id of its main frame.
             let mut state = driver.shared.state();
-            state.page_target = target.clone();
             state.page_session = driver.session.clone();
             state.main_frame = target.clone();
         }
@@ -379,31 +315,12 @@ impl Driver {
         for (method, params) in child_setup() {
             driver.call::<Value>(&session, method, params)?;
         }
-        // An embedder presents its page itself, and its other targets are
-        // pages of other drivers: it refuses popups before they exist.
-        if existing {
-            return Ok(driver);
-        }
-        // A headless page that has never been presented may sit without
-        // producing frames: nothing animates and a screencast started now
-        // stays silent until some input arrives. Capturing one pixel makes
-        // Chrome present the first frame. Measured with Chrome 150: 6 of 60
-        // parallel launches stalled without this, none with it.
-        let pixel = json!({"x": 0, "y": 0, "width": 1, "height": 1, "scale": 1});
-        let _: Outcome<Value> = driver.call(
-            &session,
-            "Page.captureScreenshot",
-            json!({"format": "jpeg", "quality": 1, "clip": pixel}),
-        );
-        // From here on any other page is a popup, and is closed.
-        driver.call::<Value>("", "Target.setDiscoverTargets", json!({"discover": true}))?;
         Ok(driver)
     }
 
     fn apply_viewport(&mut self) -> Outcome<()> {
         let session = self.session.clone();
-        // A scale of zero keeps the one Chrome was started with, which is
-        // what makes frames of the live view come out at device size.
+        // A scale of zero keeps the one the embedder draws the page at.
         self.call::<Value>(
             &session,
             "Emulation.setDeviceMetricsOverride",
@@ -442,27 +359,6 @@ impl Driver {
             }
             other => other,
         }
-    }
-
-    /// Stops the browser and removes its private directory. Dropping the
-    /// driver does the same.
-    pub fn close(self) {}
-
-    /// The process id of the browser, when this driver started it.
-    pub fn process_id(&self) -> Option<u32> {
-        #[cfg(unix)]
-        return self.chrome.as_ref().map(crate::chrome::Chrome::process_id);
-        #[cfg(not(unix))]
-        None
-    }
-
-    /// The private directory holding the profile and temporary files of the
-    /// browser this driver started.
-    pub fn directory(&self) -> Option<&std::path::Path> {
-        #[cfg(unix)]
-        return self.chrome.as_ref().map(crate::chrome::Chrome::directory);
-        #[cfg(not(unix))]
-        None
     }
 
     pub fn resize(&mut self, width: u32, height: u32) -> Outcome<()> {
@@ -1289,90 +1185,11 @@ impl Driver {
             let _ = self.client.post(&prepared.session, "Runtime.releaseObjectGroup", json!({"objectGroup": CUT_GROUP}));
         }
     }
-
-    // ---- Frame stream for a live view ----
-
-    /// Starts the frame stream of the live view. Frames are the viewport at
-    /// device scale. `wake` is called, on the driver's reader thread, each
-    /// time a frame is ready to be taken; it must only signal.
-    pub fn start_stream(
-        &mut self,
-        format: FrameFormat,
-        wake: Option<Arc<dyn Fn() + Send + Sync>>,
-    ) -> Outcome<FrameStream> {
-        self.start_stream_within(format, None, wake)
-    }
-
-    /// The same stream, with every frame scaled down by Chrome to fit `limit`
-    /// device pixels of width and height: a view with a pixel budget asks for
-    /// frames it can show instead of discarding the ones it cannot.
-    pub fn start_stream_within(
-        &mut self,
-        format: FrameFormat,
-        limit: Option<(u32, u32)>,
-        wake: Option<Arc<dyn Fn() + Send + Sync>>,
-    ) -> Outcome<FrameStream> {
-        if limit.is_some_and(|(width, height)| width == 0 || height == 0) {
-            return Err(invalid("Tamaño máximo de cuadro no válido"));
-        }
-        self.run(TIMEOUT, |driver| {
-            let session = driver.session.clone();
-            driver.shared.stream.start(wake);
-            let mut params = match format {
-                FrameFormat::Jpeg { quality } => json!({"format": "jpeg", "quality": quality.min(100), "everyNthFrame": 1}),
-                FrameFormat::Png => json!({"format": "png", "everyNthFrame": 1}),
-            };
-            if let Some((width, height)) = limit {
-                params["maxWidth"] = Value::from(width);
-                params["maxHeight"] = Value::from(height);
-            }
-            if let Err(error) = driver.call::<Value>(&session, "Page.startScreencast", params) {
-                driver.shared.stream.stop(&driver.client);
-                return Err(error);
-            }
-            Ok(FrameStream {
-                shared: driver.shared.clone(),
-                client: driver.client.clone(),
-            })
-        })
-    }
-
-    /// Stops the stream, as when the view is hidden. Chrome stops encoding.
-    pub fn stop_stream(&mut self) -> Outcome<()> {
-        self.run(TIMEOUT, |driver| {
-            let session = driver.session.clone();
-            let stopped = driver.call::<Value>(&session, "Page.stopScreencast", json!({}));
-            driver.shared.stream.stop(&driver.client);
-            stopped.map(|_| ())
-        })
-    }
-
-    /// One lossless frame of the viewport at device scale, for a page that
-    /// has gone still.
-    pub fn capture_frame(&mut self) -> Outcome<Frame> {
-        self.run(TIMEOUT, |driver| {
-            let session = driver.session.clone();
-            let reply: Value = driver.call(&session, "Page.captureScreenshot", json!({"format": "png", "optimizeForSpeed": true}))?;
-            let encoded = reply["data"].as_str().unwrap_or_default();
-            if encoded.len() / 4 * 3 > MAX_FRAME_BYTES + 2 {
-                return Err(failed("El cuadro supera el límite de 16 MiB."));
-            }
-            let image = png(encoded)?;
-            Ok(Frame {
-                data: image.data,
-                width: image.width,
-                height: image.height,
-                timestamp: 0.0,
-                sequence: 0,
-            })
-        })
-    }
 }
 
 impl Drop for Driver {
     fn drop(&mut self) {
-        // Closing the command stream is what makes a browser on a pipe exit;
-        // the launched one is then killed and reaped by `Chrome`.
+        // Whoever still waits on the page is told it is over.
         self.client.close();
     }
 }
@@ -1430,8 +1247,10 @@ fn png(encoded: &str) -> Outcome<Png> {
     let data = base64::engine::general_purpose::STANDARD
         .decode(encoded)
         .map_err(|_| failed("Captura base64 no válida"))?;
-    match crate::stream::image_size(&data) {
-        Some((width, height)) if data.starts_with(b"\x89PNG") => Ok(Png { data, width, height }),
+    // A PNG says its size at a fixed place of its header.
+    let word = |at: usize| Some(u32::from_be_bytes(data.get(at..at + 4)?.try_into().ok()?));
+    match (data.starts_with(b"\x89PNG\r\n\x1a\n"), word(16), word(20)) {
+        (true, Some(width), Some(height)) => Ok(Png { data, width, height }),
         _ => Err(failed("Captura PNG no válida")),
     }
 }

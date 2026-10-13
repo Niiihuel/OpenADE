@@ -1,21 +1,13 @@
-//! Starts one private headless Chrome that speaks DevTools over a pipe.
-//!
-//! The browser gets a fresh profile inside a directory only this user can
-//! read, a reduced environment and its own process group. Dropping `Chrome`
-//! kills the group, reaps the browser and removes the directory. If this
-//! process dies instead, Chrome sees its command pipe close and exits, and the
-//! directory is collected by the next launch.
+//! A private directory for a browser's files: one only this user can read,
+//! short enough for the sockets Chromium creates below it. Dropping it
+//! removes it; if its owner dies instead, the next one made under the same
+//! root collects it.
 
-use crate::transport::Transport;
-use crate::{DriverError, ErrorKind, LaunchOptions};
 use std::fs::{self, File};
-use std::io::{self, Read};
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::io;
+use std::os::fd::AsRawFd;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
-use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 /// Chromium creates Unix sockets below its temporary root (about 45 more
@@ -24,202 +16,13 @@ use std::time::{Duration, SystemTime};
 const MAX_DIRECTORY_BYTES: usize = 48;
 const DIRECTORY_PREFIX: &str = "oid-";
 const LOCK_NAME: &str = "driver.lock";
-/// A directory younger than this may belong to a launch that has not locked
+/// A directory younger than this may belong to an owner that has not locked
 /// it yet, so the sweep leaves it alone.
 const SWEEP_MIN_AGE: Duration = Duration::from_secs(60);
-const STDERR_TAIL: usize = 2048;
-
-/// Everything Chrome needs to behave like the single, quiet page of a panel.
-/// The sandbox is never disabled.
-const SWITCHES: &[&str] = &[
-    "--remote-debugging-pipe",
-    "--headless",
-    "--no-first-run",
-    "--no-default-browser-check",
-    "--no-startup-window",
-    "--no-service-autorun",
-    "--enable-automation",
-    "--disable-background-networking",
-    "--disable-component-update",
-    "--disable-default-apps",
-    "--disable-extensions",
-    // Chrome's own background extensions (Hangouts, the network speech
-    // service) would each cost a process.
-    "--disable-component-extensions-with-background-pages",
-    "--disable-client-side-phishing-detection",
-    "--disable-search-engine-choice-screen",
-    "--disable-sync",
-    "--disable-breakpad",
-    "--disable-hang-monitor",
-    // Popup blocking stays on: a window a page opens with no click behind it
-    // is refused by Chrome itself.
-    "--disable-prompt-on-repost",
-    "--metrics-recording-only",
-    "--mute-audio",
-    "--hide-scrollbars",
-    "--password-store=basic",
-    "--use-mock-keychain",
-    "--force-color-profile=srgb",
-    // A desktop pointer, as a page's hover media queries would see on the user's screen.
-    "--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4",
-    // A page nobody is looking at still has to run for the agent.
-    "--disable-background-timer-throttling",
-    "--disable-backgrounding-occluded-windows",
-    "--disable-renderer-backgrounding",
-    // History navigation always loads a document, so its events are uniform.
-    "--disable-back-forward-cache",
-    "--disable-features=Translate,MediaRouter,OptimizationHints,AcceptCHFrame,DialMediaRouteProvider",
-    // Without it a viewport capture waits three frames instead of one.
-    "--enable-features=CDPScreenshotNewSurface",
-];
-
-/// What the browser inherits. Provider keys, startup hooks and broker tokens
-/// of the host never reach Chromium or the pages it runs.
-const ENVIRONMENT: &[&str] = &[
-    "PATH",
-    "HOME",
-    "USER",
-    "LOGNAME",
-    "LANG",
-    "LC_ALL",
-    "XDG_RUNTIME_DIR",
-];
-
-pub(crate) struct Chrome {
-    child: Child,
-    directory: PrivateDirectory,
-    stderr: Arc<Mutex<Option<Vec<u8>>>>,
-}
-
-impl Chrome {
-    pub(crate) fn launch(options: &LaunchOptions) -> Result<(Self, Transport), DriverError> {
-        let failed = |error: io::Error| DriverError::new(ErrorKind::Launch, error.to_string());
-        let directory = PrivateDirectory::create(options.temp_root.as_deref()).map_err(|_| {
-            DriverError::new(
-                ErrorKind::Launch,
-                "No se pudo crear el directorio temporal del navegador. Cerrá esta pestaña y volvé a abrirla.",
-            )
-        })?;
-        let (browser_reads, commands) = io::pipe().map_err(failed)?;
-        let (replies, browser_writes) = io::pipe().map_err(failed)?;
-        // Above the two descriptors the browser expects, so neither `dup2`
-        // below can overwrite the other end or be a no-op that keeps CLOEXEC.
-        let browser_reads = above_standard(browser_reads.into()).map_err(failed)?;
-        let browser_writes = above_standard(browser_writes.into()).map_err(failed)?;
-        let (read_fd, write_fd) = (browser_reads.as_raw_fd(), browser_writes.as_raw_fd());
-
-        let mut command = Command::new(&options.executable);
-        command
-            .args(SWITCHES)
-            .arg(format!("--user-data-dir={}", directory.path.join("profile").display()))
-            .arg(format!("--force-device-scale-factor={}", options.scale))
-            .arg(format!("--window-size={},{}", options.width, options.height))
-            .current_dir(&directory.path)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .env_clear()
-            .process_group(0);
-        for name in ENVIRONMENT {
-            if let Some(value) = std::env::var_os(name) {
-                command.env(name, value);
-            }
-        }
-        // The host may outlive the shell that started it: never hand its
-        // temporary directory, which can already be gone, to Chromium.
-        for name in ["TMPDIR", "TMP", "TEMP"] {
-            command.env(name, &directory.path);
-        }
-        // Only async-signal-safe calls between fork and exec.
-        unsafe {
-            command.pre_exec(move || {
-                if libc::dup2(read_fd, 3) < 0 || libc::dup2(write_fd, 4) < 0 {
-                    return Err(io::Error::last_os_error());
-                }
-                Ok(())
-            });
-        }
-        let mut child = command.spawn().map_err(|error| {
-            DriverError::new(
-                ErrorKind::Launch,
-                format!(
-                    "No se pudo iniciar el navegador {}: {error}",
-                    options.executable.display()
-                ),
-            )
-        })?;
-        // The browser holds its own copies; ours would hide its exit.
-        drop((browser_reads, browser_writes));
-
-        let stderr = Arc::new(Mutex::new(Some(Vec::new())));
-        if let Some(mut stream) = child.stderr.take() {
-            let tail = stderr.clone();
-            let _ = std::thread::Builder::new()
-                .name("browser-stderr".into())
-                .spawn(move || {
-                    let mut scratch = [0u8; 4096];
-                    while let Ok(count @ 1..) = stream.read(&mut scratch) {
-                        let mut tail = tail.lock().unwrap_or_else(|poison| poison.into_inner());
-                        // Kept only while starting; later output may quote page data.
-                        if let Some(tail) = tail.as_mut() {
-                            tail.extend_from_slice(&scratch[..count]);
-                            let extra = tail.len().saturating_sub(STDERR_TAIL);
-                            tail.drain(..extra);
-                        }
-                    }
-                });
-        }
-        Ok((
-            Self {
-                child,
-                directory,
-                stderr,
-            },
-            Transport::nul_delimited(
-                File::from(OwnedFd::from(commands)),
-                File::from(OwnedFd::from(replies)),
-            ),
-        ))
-    }
-
-    /// What Chrome printed while starting, for a launch that failed. Stops
-    /// the retention either way.
-    pub(crate) fn startup_output(&self) -> String {
-        let tail = self
-            .stderr
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-            .take();
-        String::from_utf8_lossy(&tail.unwrap_or_default())
-            .trim()
-            .to_owned()
-    }
-
-    pub(crate) fn directory(&self) -> &Path {
-        &self.directory.path
-    }
-
-    pub(crate) fn process_id(&self) -> u32 {
-        self.child.id()
-    }
-}
-
-impl Drop for Chrome {
-    fn drop(&mut self) {
-        // Not reaped yet, so the id still names this browser's group: the
-        // zygotes, renderers and GPU process go with it.
-        unsafe {
-            libc::kill(-(self.child.id() as i32), libc::SIGKILL);
-        }
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-        // The directory goes next, with the field that owns it.
-    }
-}
 
 impl Drop for PrivateDirectory {
     fn drop(&mut self) {
-        // A dying renderer may still be writing; give the group a moment.
+        // A dying renderer may still be writing; give it a moment.
         for _ in 0..50 {
             match fs::remove_dir_all(&self.path) {
                 Err(error) if error.kind() != io::ErrorKind::NotFound => {
@@ -229,14 +32,6 @@ impl Drop for PrivateDirectory {
             }
         }
     }
-}
-
-fn above_standard(descriptor: OwnedFd) -> io::Result<OwnedFd> {
-    let duplicate = unsafe { libc::fcntl(descriptor.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 10) };
-    if duplicate < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(unsafe { OwnedFd::from_raw_fd(duplicate) })
 }
 
 /// A directory only this user can read, short enough for the sockets
@@ -307,7 +102,7 @@ fn lock_file(path: &Path, create: bool) -> io::Result<File> {
     Ok(file)
 }
 
-/// Removes directories left by drivers of this user that died without
+/// Removes directories left by processes of this user that died without
 /// cleaning up. Only a directory carrying this crate's lock file, old enough
 /// and no longer locked by a living process, is touched.
 fn sweep(base: &Path) {
@@ -415,7 +210,7 @@ mod tests {
         fs::write(abandoned.join(LOCK_NAME), b"").unwrap();
         fs::create_dir(abandoned.join("profile")).unwrap();
         aged(&abandoned.join(LOCK_NAME));
-        // In use: old, but a living driver holds the lock.
+        // In use: old, but a living owner holds the lock.
         let live = base.join("oid-bbbbbb");
         fs::create_dir(&live).unwrap();
         let held = lock_file(&live.join(LOCK_NAME), true).unwrap();

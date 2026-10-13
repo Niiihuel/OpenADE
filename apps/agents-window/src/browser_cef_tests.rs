@@ -1,24 +1,15 @@
-//! The runtime against a real Chrome: the worker, the driver, the decoder,
-//! the broker and the proxy executable, short of the window and its GPU.
-//! Opt-in, because the central suite must not need a browser:
+//! The runtime on the embedded Chromium: the worker, the driver, the page's
+//! frames, the broker and the proxy executable, short of the window and its
+//! GPU. Opt-in, because the central suite does not start Chromium:
 //!
 //! ```sh
-//! OPENIDE_BROWSER_EXECUTABLE="$(command -v google-chrome-stable)" \
-//!   nix-shell --run "cargo test -p agents-window -- --ignored real_chrome"
+//! nix-shell --run "cargo test -p agents-window -- --ignored real_cef --test-threads=1"
 //! ```
 //!
-//! Chrome runs headless with a throwaway profile under a temporary data
-//! root and only visits the pages this file serves on a loopback port.
-//!
-//! With `--features cef` the same scenarios also run on the embedded
-//! Chromium, as `real_cef_…`. They need the application built with the
-//! feature, whose executable CEF starts its helper processes as, and never
-//! open a window or touch the GPU:
-//!
-//! ```sh
-//! nix-shell --run \
-//!   "cargo test -p agents-window --features cef -- --ignored real_cef --test-threads=1"
-//! ```
+//! CEF starts its helper processes as the application's own executable,
+//! which cargo builds beside the tests. Chromium opens no window, never
+//! touches the GPU, keeps its files in a private directory and only visits
+//! the pages this file serves on a loopback port.
 
 use super::*;
 use std::io::Read;
@@ -137,51 +128,29 @@ fn site() -> String {
     origin
 }
 
-/// What a context runs on.
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Chromium {
-    /// The Chrome or Chromium of `OPENIDE_BROWSER_EXECUTABLE`, headless.
-    Launched,
-    /// The one embedded with `--features cef`.
-    #[cfg(feature = "cef")]
-    Embedded,
-}
-
 struct Session {
     runtime: BrowserRuntime,
-    engine: Chromium,
-    data: tempfile::TempDir,
+    _data: tempfile::TempDir,
     _workspace: tempfile::TempDir,
-    /// Counts the frames the decoder published for the window.
+    /// Counts the frames the runtime published for the window.
     frames: Arc<AtomicUsize>,
 }
 
-fn launch(engine: Chromium, viewport: (u32, u32), scale: f32) -> Session {
-    launch_as(engine, viewport, scale, true)
+fn launch(viewport: (u32, u32), scale: f32) -> Session {
+    launch_as(viewport, scale, true)
 }
 
-/// `visible` is what the surface is from before the browser starts, as the
+/// `visible` is what the surface is from before the context starts, as the
 /// window sets it for a tab that is not shown.
-fn launch_as(engine: Chromium, viewport: (u32, u32), scale: f32, visible: bool) -> Session {
-    let browser_executable = match engine {
-        Chromium::Launched => Some(
-            std::env::var_os("OPENIDE_BROWSER_EXECUTABLE")
-                .expect("set OPENIDE_BROWSER_EXECUTABLE to a Chrome or Chromium")
-                .into(),
-        ),
-        // The window names no browser, and gets the embedded one.
-        #[cfg(feature = "cef")]
-        Chromium::Embedded => None,
-    };
+fn launch_as(viewport: (u32, u32), scale: f32, visible: bool) -> Session {
     let (data, workspace) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let runtime = BrowserRuntime::start(
         BrowserScope {
             workspace: workspace.path().into(),
-            session_id: "real-chrome".into(),
+            session_id: "real-cef".into(),
         },
         data.path(),
         BrowserLaunchOptions {
-            browser_executable,
             viewport_width: viewport.0,
             viewport_height: viewport.1,
             device_scale: scale,
@@ -196,19 +165,11 @@ fn launch_as(engine: Chromium, viewport: (u32, u32), scale: f32, visible: bool) 
     });
     let session = Session {
         runtime,
-        engine,
-        data,
+        _data: data,
         _workspace: workspace,
         frames,
     };
     session.until("the context to start", || session.runtime.snapshot().started);
-    // Never a silent fallback to the other one.
-    #[cfg(feature = "cef")]
-    assert_eq!(
-        session.runtime.handle.view.embedded.is_open(),
-        engine == Chromium::Embedded,
-        "the context runs on {engine:?}"
-    );
     session
 }
 
@@ -262,25 +223,6 @@ impl Session {
         });
     }
 
-    fn process(&self) -> u32 {
-        self.runtime
-            .handle
-            .process
-            .lock()
-            .unwrap()
-            .expect("a browser process")
-    }
-
-    /// The browser's own processes: Chrome's group, or the helpers the
-    /// embedded Chromium started below this process.
-    fn browser_processes(&self) -> Vec<u32> {
-        match self.engine {
-            Chromium::Launched => group(self.process()),
-            #[cfg(feature = "cef")]
-            Chromium::Embedded => descendants(std::process::id()),
-        }
-    }
-
     /// Waits until no frame has been published for `quiet`, and returns how
     /// many were since the call.
     fn settle(&self, quiet: Duration) -> usize {
@@ -307,16 +249,15 @@ impl Session {
 }
 
 /// The size of the frame the view was handed, or of the one it was handed a
-/// part of: an embedded page hands over what changed.
+/// part of: the page hands over what changed.
 fn extent(frame: &limn_egui::SurfaceFrame) -> [usize; 2] {
     frame.part().map_or(frame.size(), |(whole, _)| whole)
 }
 
-/// The canvas an embedded page is copied to was, after every paint, pixel
-/// for pixel what Chromium had painted: the rectangle it names as changed is
-/// all that did.
+/// The canvas the page is copied to was, after every paint, pixel for pixel
+/// what Chromium had painted: the rectangle it names as changed is all that
+/// did.
 fn every_paint_left_the_canvas_as_chromium_painted_it() {
-    #[cfg(feature = "cef")]
     assert_eq!(cef::STRAY_PAINTS.load(Ordering::Relaxed), 0, "paints after which the canvas was not what Chromium holds");
 }
 
@@ -332,17 +273,6 @@ fn ref_of(snapshot: &str, label: &str) -> String {
         .unwrap_or_else(|| panic!("{label} is not in:\n{snapshot}"));
     let start = line.find("[ref=").unwrap_or_else(|| panic!("{line} has no ref")) + 5;
     line[start..].split(']').next().unwrap().to_owned()
-}
-
-/// Chrome's private directory, from the profile on its command line.
-fn browser_directory(process: u32) -> PathBuf {
-    let command = fs::read(format!("/proc/{process}/cmdline")).unwrap();
-    let profile = command
-        .split(|byte| *byte == 0)
-        .find_map(|argument| std::str::from_utf8(argument).ok()?.strip_prefix("--user-data-dir="))
-        .expect("the browser was started with a profile of its own")
-        .to_owned();
-    PathBuf::from(profile).parent().unwrap().to_owned()
 }
 
 /// The fields of `/proc/<process>/stat` after the command, which may itself
@@ -361,16 +291,8 @@ fn running() -> Vec<u32> {
         .collect()
 }
 
-/// Every process of the browser's group that is still running.
-fn group(process: u32) -> Vec<u32> {
-    running()
-        .into_iter()
-        .filter(|candidate| stat(*candidate).get(2).and_then(|group| group.parse().ok()) == Some(process))
-        .collect()
-}
-
-/// Every running process started, directly or not, by `process`.
-#[cfg(feature = "cef")]
+/// Every running process started, directly or not, by `process`: for this
+/// one, the helpers of the embedded Chromium.
 fn descendants(process: u32) -> Vec<u32> {
     let parents: Vec<(u32, u32)> = running()
         .into_iter()
@@ -399,35 +321,7 @@ fn processor_seconds(processes: &[u32]) -> f64 {
     ticks as f64 / unsafe { libc::sysconf(libc::_SC_CLK_TCK) } as f64
 }
 
-#[test]
-#[ignore = "opt-in: launches a real Chrome against local fixture pages"]
-fn real_chrome_serves_the_agent_and_an_external_client_and_leaves_nothing_behind() {
-    let origin = site();
-    let session = launch(Chromium::Launched, (900, 700), 2.0);
-    let process = session.process();
-    let directory = browser_directory(process);
-    assert!(directory.join("profile").is_dir());
-    // Chrome's files live under the application's own data root when its
-    // path is short enough for Chromium's sockets, and under /tmp otherwise:
-    // never in the temporary directory of the shell that started the tests.
-    let base = fs::canonicalize(session.data.path().join("browser-runtime")).unwrap();
-    assert!(
-        [base.as_path(), Path::new("/tmp")].contains(&directory.parent().unwrap()),
-        "{directory:?}"
-    );
-    assert!(directory.to_str().unwrap().len() <= 48);
-    assert!(group(process).len() > 1, "the browser and its helpers run in one group");
-    let session = serves_the_agent_and_an_external_client(session, &origin);
-
-    // Closing leaves no process and no directory.
-    drop(session.runtime);
-    assert!(group(process).is_empty(), "{:?}", group(process));
-    assert!(!directory.exists());
-    assert_eq!(fs::read_dir(&base).unwrap().count(), 0);
-}
-
 fn serves_the_agent_and_an_external_client(session: Session, origin: &str) -> Session {
-
     // The window navigates; the agent reads the page and acts on it by ref.
     let opened = session.open(format!("{origin}/"));
     assert_eq!((opened.url.as_str(), opened.title.as_str()), (format!("{origin}/").as_str(), "Fixture OpenIDE"));
@@ -522,7 +416,8 @@ fn serves_the_agent_and_an_external_client(session: Session, origin: &str) -> Se
     // The external snapshot also carries the viewport, as a PNG at CSS scale.
     assert_eq!((&content[1]["type"], &content[1]["mimeType"]), (&json!("image"), &json!("image/png")));
     let picture = base64::engine::general_purpose::STANDARD.decode(content[1]["data"].as_str().unwrap()).unwrap();
-    assert_eq!(openide_browser::image_size(&picture), Some((900, 700)));
+    let picture = image::load_from_memory_with_format(&picture, image::ImageFormat::Png).unwrap();
+    assert_eq!((picture.width(), picture.height()), (900, 700));
     let paint = ref_of(state["aria_snapshot"].as_str().unwrap(), "button \"Pintar\"");
     let painted = request(4, "tools/call", json!({"name": "browser_click", "arguments": {"ref": paint}}));
     assert_eq!(painted["result"]["isError"], false);
@@ -536,22 +431,16 @@ fn serves_the_agent_and_an_external_client(session: Session, origin: &str) -> Se
     session
 }
 
-#[test]
-#[ignore = "opt-in: launches a real Chrome against local fixture pages"]
-fn real_chrome_frames_reach_the_view_at_the_windows_scale_only_while_it_is_visible() {
-    for scale in [2.0, 1.0] {
-        frames_at(Chromium::Launched, scale);
-    }
-}
-
-fn frames_at(engine: Chromium, scale: f32) {
+fn frames_at(scale: f32) {
     let origin = site();
-    let session = launch(engine, (640, 480), scale);
+    let session = launch((640, 480), scale);
     let device = [(640.0 * scale) as usize, (480.0 * scale) as usize];
     let wider = [(800.0 * scale) as usize, (600.0 * scale) as usize];
     session.open(format!("{origin}/animated"));
 
-    // Visible and animating: frames arrive decoded, at device pixels.
+    // The page is drawn at the window's scale, and says so.
+    assert_eq!(value(&session, "devicePixelRatio"), f64::from(scale));
+    // Visible and animating: frames arrive at device pixels.
     let first = session.next_frame("a first frame");
     assert_eq!((first.size(), first.part()), (device, None), "the first is a whole frame");
     assert!(format!("{first:?}").contains(&format!("pixels_per_point: {scale:?}")), "{first:?}");
@@ -565,18 +454,13 @@ fn frames_at(engine: Chromium, scale: f32) {
         }
         thread::sleep(Duration::from_millis(1));
     }
-    // The development profile decodes slowly; the rate itself is measured
-    // with the optimised one.
+    // The rate itself is measured with the optimised profile.
     assert!(frames >= 3, "only {frames} frames in three seconds");
-    // The launched Chrome sends whole frames. The embedded one hands over
-    // the corner where the page animates, and little else once it loaded.
-    #[cfg(feature = "cef")]
-    if engine == Chromium::Embedded {
-        assert!(corners * 10 >= frames * 9, "{corners} of {frames} frames were the corner that animates");
-    }
-    let _ = corners;
+    // The page hands over the corner where it animates, and little else
+    // once it loaded.
+    assert!(corners * 10 >= frames * 9, "{corners} of {frames} frames were the corner that animates");
     assert!(session.runtime.snapshot().error.is_none());
-    // Replies are not starved by the stream.
+    // Replies are not starved by the frames.
     for _ in 0..10 {
         let asked = Instant::now();
         let read = session.agent("browser_evaluate", json!({"expression": "1 + 1"}));
@@ -584,7 +468,7 @@ fn frames_at(engine: Chromium, scale: f32) {
         assert!(asked.elapsed() < Duration::from_millis(500), "a reply waited {:?} behind frames", asked.elapsed());
     }
 
-    // Hidden: Chrome stops encoding, and the agent still reads the page.
+    // Hidden: no paint is taken, and the agent still reads the page.
     session.runtime.set_visible(false);
     session.settle(Duration::from_millis(700));
     let _ = session.runtime.take_frame();
@@ -592,13 +476,12 @@ fn frames_at(engine: Chromium, scale: f32) {
     assert!(session.runtime.take_frame().is_none(), "a hidden page pushes no frame");
     let read = session.agent("browser_snapshot", json!({}));
     assert!(page(&read)["aria_snapshot"].as_str().unwrap().contains("Texto para arrastrar"));
-    // Shown again: the stream is back.
+    // Shown again: the page is painted whole once more.
     session.runtime.set_visible(true);
-    let shown = session.next_frame("a frame of the new stream");
+    let shown = session.next_frame("a frame of the page shown again");
     assert_eq!((shown.size(), shown.part()), (device, None), "shown again, the view is owed a whole frame");
 
-    // A page that holds still gets its frames and then nothing: the last is
-    // the lossless one, and it is not a loop.
+    // A page that holds still gets its frames and then nothing.
     session.open(format!("{origin}/"));
     session.settle(Duration::from_millis(900));
     let _ = session.runtime.take_frame();
@@ -606,8 +489,9 @@ fn frames_at(engine: Chromium, scale: f32) {
     thread::sleep(Duration::from_millis(1500));
     assert_eq!(session.frames.load(Ordering::Relaxed), still, "a still page pushes nothing");
 
-    // The agent's captures at CSS scale make Chrome draw the page at another
-    // scale for a moment. The view never shows that.
+    // The agent's captures make Chromium paint the page again, and one of
+    // the whole page draws it another way for a moment. The view never
+    // shows that.
     for _ in 0..3 {
         let captured = session.agent("browser_take_screenshot", json!({}));
         assert_eq!(page(&captured)["screenshot"], json!({"width": 640, "height": 480, "bytes": page(&captured)["screenshot"]["bytes"]}));
@@ -632,19 +516,13 @@ fn frames_at(engine: Chromium, scale: f32) {
         session.runtime.take_frame().is_some_and(|frame| frame.size() == wider && frame.part().is_none())
     });
     session.settle(Duration::from_millis(900));
-    assert!(session.runtime.snapshot().error.is_none(), "the stream was never lost");
+    assert!(session.runtime.snapshot().error.is_none());
     every_paint_left_the_canvas_as_chromium_painted_it();
 }
 
-#[test]
-#[ignore = "opt-in: launches a real Chrome against local fixture pages"]
-fn real_chrome_takes_the_windows_pointer_buttons_clicks_wheel_keys_and_clipboard() {
-    takes_the_windows_input(Chromium::Launched);
-}
-
-fn takes_the_windows_input(engine: Chromium) {
+fn takes_the_windows_input() {
     let origin = site();
-    let session = launch(engine, (640, 480), 2.0);
+    let session = launch((640, 480), 2.0);
     session.open(format!("{origin}/"));
     let left = MouseButton::Left;
     let press = |x: f64, y: f64, button, clicks| {
@@ -724,96 +602,84 @@ fn summary(mut samples: Vec<Duration>) -> String {
     format!("median {:.1} ms, p90 {:.1} ms, max {:.1} ms ({} samples)", at(0.5), at(0.9), at(1.0), samples.len())
 }
 
-/// What `docs/browser-runtime.md` reports, taken through the runtime at
+/// What `docs/browser-cef.md` reports, taken through the runtime at
 /// 1280 × 800 CSS pixels and scale 2. Run it alone, with the optimised
-/// profile and nothing compiling:
+/// profile and nothing compiling; the first context of the process is the
+/// one that starts CEF:
 ///
 /// ```sh
-/// OPENIDE_BROWSER_EXECUTABLE="$(command -v google-chrome-stable)" nix-shell --run \
-///   "cargo test --profile desktop -p agents-window -- --ignored --nocapture real_chrome_measurements"
+/// nix-shell --run \
+///   "cargo test --profile desktop -p agents-window -- --ignored --nocapture --test-threads=1 real_cef_measurements"
 /// ```
 #[test]
-#[ignore = "opt-in timing: launches a real Chrome and prints measurements"]
-fn real_chrome_measurements_of_the_live_view_and_of_what_the_browser_adds() {
-    measurements(Chromium::Launched);
-}
-
-fn measurements(engine: Chromium) {
+#[ignore = "opt-in timing: starts the embedded Chromium and prints measurements"]
+fn real_cef_measurements_of_the_live_view_and_of_what_the_browser_adds() {
     let origin = site();
     let own = std::process::id();
     // The tests compare every paint with the canvas. The application does not.
-    #[cfg(feature = "cef")]
     cef::COMPARE_PAINTS.store(false, Ordering::Relaxed);
-    #[cfg(feature = "cef")]
-    let untouched = pss(own);
-    // Chrome starts slower the first time after another environment used it.
-    // The embedded Chromium starts with the first context of the process.
+    // Chromium's browser process is this one: what starting it adds is
+    // counted from before the first context, which is the one that starts it.
+    let before = pss(own);
     let launched = Instant::now();
-    let first = launch_as(engine, (1280, 800), 2.0, false);
+    let first = launch_as((1280, 800), 2.0, false);
     eprintln!("launch: first context ready in {:.0} ms", launched.elapsed().as_secs_f64() * 1000.0);
     drop(first);
 
     // Memory, with a view that was never shown so no frame was ever held:
-    // what driving the browser adds to this process, beside the browser's
-    // own processes. An embedded Chromium's browser process is this one, so
-    // what starting it added is counted too.
-    let before = match engine {
-        Chromium::Launched => pss(own),
-        #[cfg(feature = "cef")]
-        Chromium::Embedded => untouched,
-    };
+    // what the browser adds to this process, beside its helpers'.
     let launched = Instant::now();
-    let session = launch_as(engine, (1280, 800), 2.0, false);
+    let session = launch_as((1280, 800), 2.0, false);
     let ready = launched.elapsed();
     session.open(format!("{origin}/"));
     let _ = session.agent("browser_snapshot", json!({}));
     thread::sleep(Duration::from_millis(1500));
-    let processes = session.browser_processes();
+    let processes = descendants(own);
     let browser: f64 = processes.iter().copied().map(pss).sum();
     eprintln!("memory (PSS): this process grew {:.1} MB with the context open, a page read and the view hidden; the browser's {} processes hold {browser:.0} MB", pss(own) - before, processes.len());
     let shown = Instant::now();
     session.runtime.set_visible(true);
     session.next_frame("a frame of the page");
-    eprintln!("launch: context ready in {:.0} ms; shown, its first frame is decoded {:.0} ms later", ready.as_secs_f64() * 1000.0, shown.elapsed().as_secs_f64() * 1000.0);
+    eprintln!("launch: context ready in {:.0} ms; shown, its first frame is ready {:.0} ms later", ready.as_secs_f64() * 1000.0, shown.elapsed().as_secs_f64() * 1000.0);
     drop(session);
     let launched = Instant::now();
-    let session = launch(engine, (1280, 800), 2.0);
+    let session = launch((1280, 800), 2.0);
     session.next_frame("the first frame");
-    eprintln!("launch: visible from the start, first frame decoded {:.0} ms after the start was asked for", launched.elapsed().as_secs_f64() * 1000.0);
+    eprintln!("launch: visible from the start, first frame ready {:.0} ms after the start was asked for", launched.elapsed().as_secs_f64() * 1000.0);
     session.open(format!("{origin}/"));
     session.settle(Duration::from_millis(900));
     eprintln!("memory (PSS): this process grew {:.1} MB with the view showing a still page", pss(own) - before);
 
     // Frames per second on a page that animates, and what producing them
-    // costs: this process, which turns them into pixels, and the browser's.
-    let busy = |session: &Session| (processor_seconds(&[own]), processor_seconds(&session.browser_processes()));
-    let share = |session: &Session, from: (f64, f64), seconds: f64| {
-        let now = busy(session);
+    // costs: this process, which copies and converts them, and the helpers.
+    let busy = || (processor_seconds(&[own]), processor_seconds(&descendants(own)));
+    let share = |from: (f64, f64), seconds: f64| {
+        let now = busy();
         format!("this process {:.0} % of one core, the browser's processes {:.0} %", (now.0 - from.0) / seconds * 100.0, (now.1 - from.1) / seconds * 100.0)
     };
     session.open(format!("{origin}/animated"));
     session.next_frame("an animated frame");
     thread::sleep(Duration::from_millis(500));
-    let (from, started, used) = (session.frames.load(Ordering::Relaxed), Instant::now(), busy(&session));
+    let (from, started, used) = (session.frames.load(Ordering::Relaxed), Instant::now(), busy());
     thread::sleep(Duration::from_secs(4));
     let elapsed = started.elapsed().as_secs_f64();
     let animated = (session.frames.load(Ordering::Relaxed) - from) as f64 / elapsed;
-    eprintln!("animated page: {animated:.1} decoded frames per second at 2560 × 1600");
-    eprintln!("processor while it animates on screen: {}", share(&session, used, elapsed));
-    eprintln!("memory (PSS): this process grew {:.1} MB while streaming it", pss(own) - before);
+    eprintln!("animated page: {animated:.1} frames per second at 2560 × 1600");
+    eprintln!("processor while it animates on screen: {}", share(used, elapsed));
+    eprintln!("memory (PSS): this process grew {:.1} MB while it animates", pss(own) - before);
     // Frames that are no longer in use may still be held by the allocator.
     unsafe { libc::malloc_trim(0) };
     eprintln!("memory (PSS): this process grew {:.1} MB, counted after the allocator gave back what it held free", pss(own) - before);
-    let processes = session.browser_processes();
+    let processes = descendants(own);
     eprintln!("memory (PSS): the browser's {} processes hold {:.0} MB while it animates on screen", processes.len(), processes.iter().copied().map(pss).sum::<f64>());
 
     // The same page off screen: what it still costs, and how long the agent
     // waits for a reading and for a picture of it.
     session.runtime.set_visible(false);
     thread::sleep(Duration::from_millis(700));
-    let (started, used) = (Instant::now(), busy(&session));
+    let (started, used) = (Instant::now(), busy());
     thread::sleep(Duration::from_secs(3));
-    eprintln!("processor while it animates off screen: {}", share(&session, used, started.elapsed().as_secs_f64()));
+    eprintln!("processor while it animates off screen: {}", share(used, started.elapsed().as_secs_f64()));
     let timed = |name: &str, arguments: Value| -> Vec<Duration> {
         (0..8)
             .map(|_| {
@@ -844,13 +710,13 @@ fn measurements(engine: Chromium) {
     };
 
     // Continuous scroll: a wheel step every 16 ms, one in flight at a time
-    // as the window sends them, and from each step to the next decoded frame.
+    // as the window sends them, and from each step to the next frame.
     session.open(format!("{origin}/"));
     session.settle(Duration::from_millis(600));
     session.window(BrowserCommand::PointerMove { x: 640.0, y: 400.0, modifiers: 0 }).unwrap();
     let (mut moving, mut replies, mut waiting) = (Vec::new(), Vec::new(), Vec::<Instant>::new());
     let (mut direction, mut travelled) = (30.0, 0.0);
-    let (from, started, used) = (session.frames.load(Ordering::Relaxed), Instant::now(), busy(&session));
+    let (from, started, used) = (session.frames.load(Ordering::Relaxed), Instant::now(), busy());
     let mut seen = from;
     while started.elapsed() < Duration::from_secs(4) {
         let tick = Instant::now();
@@ -874,9 +740,9 @@ fn measurements(engine: Chromium) {
     }
     let elapsed = started.elapsed().as_secs_f64();
     let scrolling = (seen - from) as f64 / elapsed;
-    eprintln!("continuous scroll, a wheel step every 16 ms: {scrolling:.1} decoded frames per second");
-    eprintln!("processor while scrolling: {}", share(&session, used, elapsed));
-    eprintln!("wheel to the next decoded frame while scrolling: {}", summary(moving));
+    eprintln!("continuous scroll, a wheel step every 16 ms: {scrolling:.1} frames per second");
+    eprintln!("processor while scrolling: {}", share(used, elapsed));
+    eprintln!("wheel to the next frame while scrolling: {}", summary(moving));
     eprintln!("wheel reply to the window while scrolling: {}", summary(replies));
     let mut resting = Vec::new();
     for step in 0..20 {
@@ -889,7 +755,7 @@ fn measurements(engine: Chromium) {
         }
         resting.push(sent.elapsed());
     }
-    eprintln!("wheel to the first decoded frame on a page at rest: {}", summary(resting));
+    eprintln!("wheel to the first frame on a page at rest: {}", summary(resting));
 
     let ctx = eframe::egui::Context::default();
     // A window's renderer reports what its GPU takes; a bare context assumes
@@ -909,98 +775,30 @@ fn measurements(engine: Chromium) {
         ctx.run_ui(Default::default(), |_| {}).textures_delta.clear();
         taken
     };
-    match engine {
-        Chromium::Launched => {
-            // What one frame costs this process, on frames of this very page.
-            let bytes = {
-                let executable = std::env::var_os("OPENIDE_BROWSER_EXECUTABLE").unwrap();
-                let mut driver = Driver::launch(&LaunchOptions { executable: executable.into(), width: 1280, height: 800, scale: 2.0, temp_root: None }).unwrap();
-                driver.navigate(&format!("{origin}/")).unwrap();
-                let stream = driver.start_stream(FrameFormat::Jpeg { quality: FRAME_QUALITY }, None).unwrap();
-                let jpeg = stream.next(Duration::from_secs(5)).expect("a frame").data;
-                // The same scroll with the driver alone and frames taken undecoded:
-                // what the runtime's own path costs is the difference.
-                let taken = Arc::new(AtomicUsize::new(0));
-                let (counter, frames, done) = (taken.clone(), stream.clone(), Arc::new(AtomicBool::new(false)));
-                let stop = done.clone();
-                let consumer = thread::spawn(move || {
-                    while !stop.load(Ordering::Acquire) {
-                        if frames.next(Duration::from_millis(50)).is_some() {
-                            counter.fetch_add(1, Ordering::Relaxed);
-                        }
-                    }
-                });
-                thread::sleep(Duration::from_millis(600));
-                let (mut direction, mut travelled, mut replies) = (30.0, 0.0, Vec::new());
-                let (from, started) = (taken.load(Ordering::Relaxed), Instant::now());
-                while started.elapsed() < Duration::from_secs(4) {
-                    let tick = Instant::now();
-                    driver.wheel(640.0, 400.0, 0.0, direction).unwrap();
-                    replies.push(tick.elapsed());
-                    travelled += direction;
-                    if !(0.0..1200.0).contains(&travelled) {
-                        direction = -direction;
-                    }
-                    thread::sleep(Duration::from_millis(16).saturating_sub(tick.elapsed()));
-                }
-                let rate = (taken.load(Ordering::Relaxed) - from) as f64 / started.elapsed().as_secs_f64();
-                done.store(true, Ordering::Release);
-                consumer.join().unwrap();
-                eprintln!("the driver alone, same page and scroll: {rate:.1} undecoded frames per second; wheel reply {}", summary(replies));
-                driver.stop_stream().unwrap();
-                [(image::ImageFormat::Jpeg, jpeg), (image::ImageFormat::Png, driver.capture_frame().unwrap().data)]
-            };
-            for (format, bytes) in &bytes {
-                let (mut decode, mut presented) = (Vec::new(), Vec::new());
-                for _ in 0..40 {
-                    let started = Instant::now();
-                    let decoded = decode_frame(bytes, *format, 2.0).unwrap();
-                    decode.push(started.elapsed());
-                    presented.push(present(decoded));
-                }
-                presented.sort();
-                eprintln!("{format:?} frame of {} KiB: decoder thread {}; UI thread median {:.1?}", bytes.len() / 1024, summary(decode), presented[20]);
-            }
-        }
-        #[cfg(feature = "cef")]
-        Chromium::Embedded => {
-            native_wheel(&session);
-            // What one frame costs this process: the copy of Chromium's
-            // pixels on CEF's UI thread, and the frame built from them.
-            let bgra = vec![0x7fu8; 2560 * 1600 * 4];
-            let (mut canvas, mut rgb) = (Vec::new(), vec![0u8; 2560 * 1600 * 3]);
-            let (mut painted, mut built, mut presented) = (Vec::new(), Vec::new(), Vec::new());
-            for _ in 0..40 {
-                let started = Instant::now();
-                canvas.clear();
-                canvas.extend_from_slice(&bgra);
-                painted.push(started.elapsed());
-                let started = Instant::now();
-                cef::bgra_to_rgb(&canvas, &mut rgb);
-                let frame = limn_egui::SurfaceFrame::from_rgb([2560, 1600], &rgb, 2.0).unwrap();
-                built.push(started.elapsed());
-                presented.push(present(frame));
-            }
-            presented.sort();
-            eprintln!("uncompressed frame of 2560 × 1600: CEF's UI thread {}; frame thread {}; UI thread median {:.1?}", summary(painted), summary(built), presented[20]);
-        }
+    native_wheel(&session);
+    // What one frame costs this process: the copy of Chromium's pixels on
+    // CEF's UI thread, and the frame built from them.
+    let bgra = vec![0x7fu8; 2560 * 1600 * 4];
+    let (mut canvas, mut rgb) = (Vec::new(), vec![0u8; 2560 * 1600 * 3]);
+    let (mut painted, mut built, mut presented) = (Vec::new(), Vec::new(), Vec::new());
+    for _ in 0..40 {
+        let started = Instant::now();
+        canvas.clear();
+        canvas.extend_from_slice(&bgra);
+        painted.push(started.elapsed());
+        let started = Instant::now();
+        cef::bgra_to_rgb(&canvas, &mut rgb);
+        let frame = limn_egui::SurfaceFrame::from_rgb([2560, 1600], &rgb, 2.0).unwrap();
+        built.push(started.elapsed());
+        presented.push(present(frame));
     }
+    presented.sort();
+    eprintln!("uncompressed frame of 2560 × 1600: CEF's UI thread {}; frame thread {}; UI thread median {:.1?}", summary(painted), summary(built), presented[20]);
     limn_egui::forget_surface("timing");
 
     let closing = Instant::now();
-    match engine {
-        Chromium::Launched => {
-            let process = session.process();
-            drop(session.runtime);
-            eprintln!("close: {:.0} ms, {} browser processes left", closing.elapsed().as_secs_f64() * 1000.0, group(process).len());
-        }
-        #[cfg(feature = "cef")]
-        Chromium::Embedded => {
-            drop(session.runtime);
-            eprintln!("close: {:.0} ms; {} processes of the embedded Chromium stay for the next context", closing.elapsed().as_secs_f64() * 1000.0, descendants(own).len());
-        }
-    }
-    #[cfg(feature = "cef")]
+    drop(session.runtime);
+    eprintln!("close: {:.0} ms; {} processes of the embedded Chromium stay for the next context", closing.elapsed().as_secs_f64() * 1000.0, descendants(own).len());
     cef::COMPARE_PAINTS.store(true, Ordering::Relaxed);
 }
 
@@ -1067,23 +865,16 @@ impl Drop for Texture {
     }
 }
 
-#[test]
-#[ignore = "opt-in: launches a real Chrome against local fixture pages"]
-fn real_chrome_draws_the_list_of_a_select_and_takes_keys_on_it() {
-    for scale in [2.0, 1.0] {
-        the_list_of_a_select(Chromium::Launched, scale);
-    }
-}
-
 /// The list of a `<select>` is a widget of its own, which Chromium paints
 /// apart from the page: the view shows it where it opens, at the page's
 /// scale, and what is done on it chooses.
-fn the_list_of_a_select(engine: Chromium, scale: f32) {
+fn the_list_of_a_select(scale: f32) {
     let origin = site();
-    let session = launch(engine, (640, 480), scale);
+    let session = launch((640, 480), scale);
+    let embedded = &session.runtime.handle.view.embedded;
     session.open(format!("{origin}/form"));
-    // A click sent the instant a load ends can be lost on the embedded
-    // Chromium: the page is clicked once it holds still.
+    // A click sent the instant a load ends can be lost: the page is clicked
+    // once it holds still.
     session.settle(Duration::from_millis(300));
     let click = |x: f64, y: f64| {
         let (button, clicks, modifiers) = (MouseButton::Left, 1, 0);
@@ -1111,11 +902,8 @@ fn the_list_of_a_select(engine: Chromium, scale: f32) {
     // Opened with the pointer, it is drawn under the select.
     click(100.0, 35.0);
     blue("the list under the select, its first row chosen", 0.0, true);
-    #[cfg(feature = "cef")]
-    if engine == Chromium::Embedded {
-        let (at, size) = session.runtime.handle.view.embedded.popup_box().expect("the list is open");
-        assert_eq!((at, size[0]), (((20.0 * scale) as i32, (50.0 * scale) as i32), (200.0 * scale) as usize), "{size:?}");
-    }
+    let (at, size) = embedded.popup_box().expect("the list is open");
+    assert_eq!((at, size[0]), (((20.0 * scale) as i32, (50.0 * scale) as i32), (200.0 * scale) as usize), "{size:?}");
     // The keyboard moves along it and chooses, and it is gone.
     press("ArrowDown");
     press("ArrowDown");
@@ -1132,72 +920,53 @@ fn the_list_of_a_select(engine: Chromium, scale: f32) {
 
     click(100.0, 35.0);
     blue("the list once more", 2.0, true);
-    match engine {
-        // The launched Chrome draws the list but its protocol's clicks only
-        // ever reach the page under it: one there closes the list.
-        Chromium::Launched => {
-            click(100.0, row(4.0));
-            blue("the page again", 2.0, false);
-            assert_eq!(chosen(), "Opción 2");
-        }
-        #[cfg(feature = "cef")]
-        Chromium::Embedded => {
-            let embedded = &session.runtime.handle.view.embedded;
-            // The pointer over a row, and a click on it.
-            session.window(BrowserCommand::PointerMove { x: 100.0, y: row(4.0), modifiers: 0 }).unwrap();
-            blue("the row under the pointer", 4.0, true);
-            click(100.0, row(4.0));
-            session.until("the list to close", || embedded.popup_box().is_none());
-            assert_eq!(chosen(), "Opción 4");
-            blue("the page again", 4.0, false);
-            // The wheel turns the list, not the page under it.
-            click(100.0, 35.0);
-            session.until("the list to open", || embedded.popup_box().is_some());
-            session.window(BrowserCommand::PointerMove { x: 100.0, y: row(4.0), modifiers: 0 }).unwrap();
-            session.window(BrowserCommand::Scroll { dx: 0.0, dy: 265.0, modifiers: 0 }).unwrap();
-            session.settle(Duration::from_millis(500));
-            click(100.0, row(4.0));
-            session.until("the list to close", || embedded.popup_box().is_none());
-            let further: u32 = chosen().as_str().unwrap().trim_start_matches("Opción ").parse().unwrap();
-            assert!(further >= 10, "the row under the pointer is now Opción {further}");
-            assert_eq!(value(&session, "scrollY"), 0);
-            // Pressed on the select, dragged to a row and released there: the
-            // row is chosen, and the page knows the button came up.
-            let (button, clicks, modifiers) = (MouseButton::Left, 1, 0);
-            session.window(BrowserCommand::PointerDown { x: 100.0, y: 35.0, button, clicks, modifiers }).unwrap();
-            session.until("the list to open", || embedded.popup_box().is_some());
-            session.window(BrowserCommand::PointerMove { x: 100.0, y: row(1.0), modifiers }).unwrap();
-            session.window(BrowserCommand::PointerUp { x: 100.0, y: row(1.0), button, clicks, modifiers }).unwrap();
-            session.until("the list to close", || embedded.popup_box().is_none());
-            assert_eq!(chosen(), "Opción 1");
-            session.window(BrowserCommand::PointerMove { x: 500.0, y: 400.0, modifiers }).unwrap();
-            session.until("the page to hear the pointer move", || value(&session, "window.buttons") == 0);
-            // A list left open goes with the view, and comes back with it.
-            click(100.0, 35.0);
-            session.until("the list to open", || embedded.popup_box().is_some());
-            session.runtime.set_visible(false);
-            session.until("the hidden view to let go of it", || embedded.popup_box().is_none());
-            session.runtime.set_visible(true);
-            session.until("the list of the view shown again", || embedded.popup_box().is_some());
-        }
-    }
+    // The pointer over a row, and a click on it.
+    session.window(BrowserCommand::PointerMove { x: 100.0, y: row(4.0), modifiers: 0 }).unwrap();
+    blue("the row under the pointer", 4.0, true);
+    click(100.0, row(4.0));
+    session.until("the list to close", || embedded.popup_box().is_none());
+    assert_eq!(chosen(), "Opción 4");
+    blue("the page again", 4.0, false);
+    // The wheel turns the list, not the page under it.
+    click(100.0, 35.0);
+    session.until("the list to open", || embedded.popup_box().is_some());
+    session.window(BrowserCommand::PointerMove { x: 100.0, y: row(4.0), modifiers: 0 }).unwrap();
+    session.window(BrowserCommand::Scroll { dx: 0.0, dy: 265.0, modifiers: 0 }).unwrap();
+    session.settle(Duration::from_millis(500));
+    click(100.0, row(4.0));
+    session.until("the list to close", || embedded.popup_box().is_none());
+    let further: u32 = chosen().as_str().unwrap().trim_start_matches("Opción ").parse().unwrap();
+    assert!(further >= 10, "the row under the pointer is now Opción {further}");
+    assert_eq!(value(&session, "scrollY"), 0);
+    // Pressed on the select, dragged to a row and released there: the
+    // row is chosen, and the page knows the button came up.
+    let (button, clicks, modifiers) = (MouseButton::Left, 1, 0);
+    session.window(BrowserCommand::PointerDown { x: 100.0, y: 35.0, button, clicks, modifiers }).unwrap();
+    session.until("the list to open", || embedded.popup_box().is_some());
+    session.window(BrowserCommand::PointerMove { x: 100.0, y: row(1.0), modifiers }).unwrap();
+    session.window(BrowserCommand::PointerUp { x: 100.0, y: row(1.0), button, clicks, modifiers }).unwrap();
+    session.until("the list to close", || embedded.popup_box().is_none());
+    assert_eq!(chosen(), "Opción 1");
+    session.window(BrowserCommand::PointerMove { x: 500.0, y: 400.0, modifiers }).unwrap();
+    session.until("the page to hear the pointer move", || value(&session, "window.buttons") == 0);
+    // A list left open goes with the view, and comes back with it.
+    click(100.0, 35.0);
+    session.until("the list to open", || embedded.popup_box().is_some());
+    session.runtime.set_visible(false);
+    session.until("the hidden view to let go of it", || embedded.popup_box().is_none());
+    session.runtime.set_visible(true);
+    session.until("the list of the view shown again", || embedded.popup_box().is_some());
     every_paint_left_the_canvas_as_chromium_painted_it();
 }
 
-#[test]
-#[ignore = "opt-in: launches a real Chrome against local fixture pages"]
-fn real_chrome_takes_modifier_keys_with_the_pointer_and_the_wheel() {
-    modifier_keys_with_the_pointer_and_the_wheel(Chromium::Launched);
-}
-
-fn modifier_keys_with_the_pointer_and_the_wheel(engine: Chromium) {
+fn modifier_keys_with_the_pointer_and_the_wheel() {
     use openide_browser::modifiers::{ALT, CONTROL, SHIFT};
     let origin = site();
-    let session = launch(engine, (640, 480), 2.0);
+    let session = launch((640, 480), 2.0);
     let form = format!("{origin}/form");
     session.open(form.clone());
-    // A click sent the instant a load ends can be lost on the embedded
-    // Chromium: the page is clicked once it holds still.
+    // A click sent the instant a load ends can be lost: the page is clicked
+    // once it holds still.
     session.settle(Duration::from_millis(300));
     let (left, middle) = (MouseButton::Left, MouseButton::Middle);
     let click = |x: f64, y: f64, button, modifiers| {
@@ -1230,9 +999,8 @@ fn modifier_keys_with_the_pointer_and_the_wheel(engine: Chromium) {
     value(&session, "(link => link.onclick = link.onauxclick = null)(document.querySelector('#link')); 0");
     for (button, modifiers) in [(left, CONTROL), (middle, 0), (left, SHIFT)] {
         click(320.0, 30.0, button, modifiers);
-        // The embedded Chromium is asked first, has nowhere else to open it
-        // and opens it in the page itself. The launched Chrome makes the
-        // tab; the driver closes it and opens its address in the page.
+        // Chromium is asked first, has nowhere else to open it and opens it
+        // in the page itself.
         session.until("the link to open in the page itself", || session.runtime.snapshot().url == format!("{origin}/"));
         session.open(form.clone());
         session.settle(Duration::from_millis(300));
@@ -1246,20 +1014,14 @@ fn modifier_keys_with_the_pointer_and_the_wheel(engine: Chromium) {
     every_paint_left_the_canvas_as_chromium_painted_it();
 }
 
-#[test]
-#[ignore = "opt-in: launches a real Chrome against local fixture pages"]
-fn real_chrome_opens_in_the_view_what_a_click_asked_to_see_in_another_tab() {
-    what_a_click_asked_to_see_in_another_tab(Chromium::Launched);
-}
-
 /// One panel has one page. A link for another tab, a script that opens a
 /// window and a link clicked with Control, Shift or the middle button open in
 /// that page when a click asked for them, the user's or the agent's alike. A
 /// window the page opens by itself opens nothing.
-fn what_a_click_asked_to_see_in_another_tab(engine: Chromium) {
+fn what_a_click_asked_to_see_in_another_tab() {
     use openide_browser::modifiers::{CONTROL, SHIFT};
     let origin = site();
-    let session = launch(engine, (640, 480), 2.0);
+    let session = launch((640, 480), 2.0);
     let links = format!("{origin}/links");
     let landing = |which: &str| format!("{origin}/landing?{which}");
     let (left, middle) = (MouseButton::Left, MouseButton::Middle);
@@ -1267,8 +1029,8 @@ fn what_a_click_asked_to_see_in_another_tab(engine: Chromium) {
         session.window(BrowserCommand::PointerDown { x: 40.0, y, button, clicks: 1, modifiers }).unwrap();
         session.window(BrowserCommand::PointerUp { x: 40.0, y, button, clicks: 1, modifiers }).unwrap();
     };
-    // A click sent the instant a load ends can be lost on the embedded
-    // Chromium: the page is clicked once it holds still.
+    // A click sent the instant a load ends can be lost: the page is clicked
+    // once it holds still.
     let reopen = || {
         session.open(links.clone());
         session.settle(Duration::from_millis(300));
@@ -1323,46 +1085,31 @@ fn what_a_click_asked_to_see_in_another_tab(engine: Chromium) {
     click(272.0, left, 0);
     stays("only an address of the web opens in the view");
 
-    // Every address was asked for by the view that opened it. The embedded
-    // Chromium never makes the other tab, so that is the only time.
+    // Every address was asked for by the view that opened it. Chromium
+    // never makes the other tab, so that is the only time.
     let landed = value(&session, "() => fetch('/landed').then(reply => reply.text())");
     let landed: Vec<&str> = landed.as_str().unwrap().split(',').collect();
     let asked = |what: &str| landed.iter().filter(|one| **one == what).count();
     assert_eq!(asked("GET script"), 0, "{landed:?}");
     for (what, times) in [("GET blank", 2), ("GET open", 2), ("GET named", 1), ("GET plain", 3)] {
-        match engine {
-            // The launched Chrome makes the tab, which asks for the address
-            // too before the driver closes it.
-            Chromium::Launched => assert!((times..=times * 2).contains(&asked(what)), "{what}: {landed:?}"),
-            #[cfg(feature = "cef")]
-            Chromium::Embedded => assert_eq!(asked(what), times, "{landed:?}"),
-        }
+        assert_eq!(asked(what), times, "{landed:?}");
     }
     // The view opens the address a form sends to, without what it sent.
     assert_eq!(asked("GET post"), 1, "{landed:?}");
-    #[cfg(feature = "cef")]
-    if engine == Chromium::Embedded {
-        assert_eq!(asked("POST post"), 0, "{landed:?}");
-    }
+    assert_eq!(asked("POST post"), 0, "{landed:?}");
     assert!(session.runtime.snapshot().error.is_none());
     every_paint_left_the_canvas_as_chromium_painted_it();
-}
-
-#[test]
-#[ignore = "opt-in: launches a real Chrome against local fixture pages"]
-fn real_chrome_takes_what_a_spanish_keyboard_types_and_its_editing_keys() {
-    what_a_spanish_keyboard_types(Chromium::Launched);
 }
 
 /// Text and keys as the window sends them: a character of the US layout is a
 /// key that goes down and up, any other text is inserted, and editing keys
 /// and shortcuts are chords by name.
-fn what_a_spanish_keyboard_types(engine: Chromium) {
+fn what_a_spanish_keyboard_types() {
     let origin = site();
-    let session = launch(engine, (640, 480), 2.0);
+    let session = launch((640, 480), 2.0);
     session.open(format!("{origin}/form"));
-    // A click sent the instant a load ends can be lost on the embedded
-    // Chromium: the page is clicked once it holds still.
+    // A click sent the instant a load ends can be lost: the page is clicked
+    // once it holds still.
     session.settle(Duration::from_millis(300));
     let click = |x: f64, y: f64| {
         let (button, clicks, modifiers) = (MouseButton::Left, 1, 0);
@@ -1476,14 +1223,13 @@ fn what_a_spanish_keyboard_types(engine: Chromium) {
     session.until("Home to go back to its start", || value(&session, "scrollY") == 0);
 }
 
-// ---- The embedded Chromium ---------------------------------------------------
+// ---- The scenarios ------------------------------------------------------------
 
-#[cfg(feature = "cef")]
 #[test]
 #[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
 fn real_cef_serves_the_agent_and_an_external_client() {
     let origin = site();
-    let session = launch(Chromium::Embedded, (900, 700), 2.0);
+    let session = launch((900, 700), 2.0);
     let session = serves_the_agent_and_an_external_client(session, &origin);
     // What an embedder must refuse itself: dialogs nobody answers are
     // dismissed, the armed one is answered, and no other window opens.
@@ -1493,7 +1239,7 @@ fn real_cef_serves_the_agent_and_an_external_client() {
     assert!(!session.agent("browser_handle_dialog", json!({"accept": true, "prompt_text": "Ada 🧠"})).is_error);
     assert_eq!(value("prompt('Nombre')"), "\"Ada 🧠\"");
     assert_eq!(value("String(window.open('/'))"), "\"null\"");
-    // Pages are told the languages of the system's locale, as Chrome tells them.
+    // Pages are told the languages of the system's locale.
     let languages = cef::accept_languages(&cef::system_locale());
     assert_eq!(value("navigator.languages.join(',')"), format!("\"{languages}\""));
     let console = session.agent("browser_console_messages", json!({}));
@@ -1525,28 +1271,25 @@ fn real_cef_serves_the_agent_and_an_external_client() {
     drop(session.runtime);
 }
 
-#[cfg(feature = "cef")]
 #[test]
 #[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
 fn real_cef_frames_reach_the_view_at_the_windows_scale_only_while_it_is_visible() {
     for scale in [2.0, 1.0] {
-        frames_at(Chromium::Embedded, scale);
+        frames_at(scale);
     }
 }
 
-#[cfg(feature = "cef")]
 #[test]
 #[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
 fn real_cef_takes_the_windows_pointer_buttons_clicks_wheel_keys_and_clipboard() {
-    takes_the_windows_input(Chromium::Embedded);
+    takes_the_windows_input();
 }
 
-#[cfg(feature = "cef")]
 #[test]
 #[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
 fn real_cef_opens_no_graphics_device_and_loads_no_graphics_driver() {
     let origin = site();
-    let session = launch(Chromium::Embedded, (640, 480), 2.0);
+    let session = launch((640, 480), 2.0);
     session.open(format!("{origin}/animated"));
     session.next_frame("a frame of the animation");
     // A page that asks for WebGL gets none, not a software stand-in.
@@ -1556,33 +1299,112 @@ fn real_cef_opens_no_graphics_device_and_loads_no_graphics_driver() {
     let mut processes = descendants(std::process::id());
     assert!(processes.len() >= 5, "CEF runs its helpers below this process: {processes:?}");
     processes.push(std::process::id());
-    let mut mapped = 0;
+    let (found, read) = graphics_in_use(&processes);
+    assert_eq!(found, Vec::<String>::new());
+    assert!(read >= 5, "the mappings of {read} processes could be read");
+}
+
+/// What `processes` have of the machine's graphics: a device that is open or
+/// a driver that is mapped, and how many of them could be read at all.
+fn graphics_in_use(processes: &[u32]) -> (Vec<String>, usize) {
+    let (mut found, mut read) = (Vec::new(), 0);
     for process in processes {
         for descriptor in fs::read_dir(format!("/proc/{process}/fd")).into_iter().flatten().flatten() {
             let target = fs::read_link(descriptor.path()).unwrap_or_default();
-            let device = target.starts_with("/dev/dri") || target.to_string_lossy().starts_with("/dev/nvidia");
-            assert!(!device, "process {process} holds {target:?}");
+            if target.starts_with("/dev/dri") || target.to_string_lossy().starts_with("/dev/nvidia") {
+                found.push(format!("process {process} holds {target:?}"));
+            }
         }
         let Ok(maps) = fs::read_to_string(format!("/proc/{process}/maps")) else {
             continue;
         };
-        mapped += 1;
+        read += 1;
         for line in maps.lines() {
             let library = line.rsplit('/').next().unwrap_or("");
             let driver = ["libEGL", "libGLX", "libGLESv2", "libGL.so", "_dri.so", "dri_gbm", "libgallium", "libnvidia", "libvulkan_", "libvk_swiftshader"]
                 .iter()
                 .any(|name| library.contains(name));
-            assert!(!driver, "process {process} maps {library}");
+            if driver {
+                found.push(format!("process {process} maps {library}"));
+            }
         }
     }
-    assert!(mapped >= 5, "the mappings of {mapped} processes could be read");
+    found.dedup();
+    (found, read)
 }
 
-#[cfg(feature = "cef")]
+/// Starts these tests again as an application of its own with one browser
+/// context open, and says its process and where its CEF keeps its files.
+fn holder() -> (std::process::Child, PathBuf) {
+    let mut holder = Command::new(std::env::current_exe().unwrap())
+        .args(["--ignored", "--exact", "browser_runtime::cef_tests::real_cef_holder_process", "--nocapture", "--test-threads=1"])
+        .env("OPENIDE_CEF_TEST_HOLDER", "1")
+        .env("TMPDIR", "/tmp")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let line = BufReader::new(holder.stdout.take().unwrap())
+        .lines()
+        .map_while(Result::ok)
+        .find(|line| line.contains("HOLDER "))
+        .expect("the holder reports where CEF keeps its files");
+    let directory = PathBuf::from(&line[line.find("HOLDER ").unwrap() + 7..]);
+    (holder, directory)
+}
+
+/// Opens a context, says where CEF keeps its files, and waits to be killed.
+/// Only when another test asks: on its own this is not a test.
+#[test]
+#[ignore = "opt-in: starts the embedded Chromium, windowless"]
+fn real_cef_holder_process() {
+    if std::env::var_os("OPENIDE_CEF_TEST_HOLDER").is_none() {
+        return;
+    }
+    let _session = launch_as((640, 480), 1.0, false);
+    println!("HOLDER {}", openide_cef::directory().unwrap().display());
+    thread::sleep(Duration::from_secs(600));
+}
+
+#[test]
+#[ignore = "opt-in: starts the embedded Chromium, windowless"]
+fn real_cef_helpers_exit_when_the_application_dies_and_its_directory_is_collected_later() {
+    let (mut application, directory) = holder();
+    // CEF's helpers carry its directory on their command lines.
+    let using = || -> Vec<String> {
+        running()
+            .into_iter()
+            .filter_map(|process| fs::read(format!("/proc/{process}/cmdline")).ok())
+            .map(|command| String::from_utf8_lossy(&command).replace('\0', " "))
+            .filter(|command| command.contains(directory.to_str().unwrap()))
+            .collect()
+    };
+    assert!(directory.is_dir());
+    assert!(using().len() >= 3, "{:?}", using());
+
+    // No destructor runs: the application is gone at once.
+    application.kill().unwrap();
+    application.wait().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while !using().is_empty() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(using(), Vec::<String>::new(), "the helpers end once their parent is gone");
+
+    // The directory outlived its owner. Whoever next makes one beside it,
+    // as a start of CEF does, finds it old enough and unlocked and removes it.
+    assert!(directory.is_dir());
+    let old = std::time::SystemTime::now() - Duration::from_secs(600);
+    fs::File::options().write(true).open(directory.join("driver.lock")).unwrap().set_modified(old).unwrap();
+    let next = openide_browser::PrivateDirectory::create(directory.parent()).unwrap();
+    assert!(!directory.exists(), "the abandoned directory is collected");
+    assert!(next.path().is_dir());
+}
+
 #[test]
 #[ignore = "opt-in: starts the embedded Chromium, windowless"]
 fn real_cef_leaves_the_signals_that_end_the_application_as_they_were() {
-    let _session = launch_as(Chromium::Embedded, (640, 480), 1.0, false);
+    let _session = launch_as((640, 480), 1.0, false);
     // Chromium takes these for a browser's own exit, after which a signal
     // would end the application with status 0. A test harness catches none.
     let status = fs::read_to_string("/proc/self/status").unwrap();
@@ -1594,7 +1416,6 @@ fn real_cef_leaves_the_signals_that_end_the_application_as_they_were() {
 }
 
 /// A site that counts how often `/hits` is asked for, and lets it be cached.
-#[cfg(feature = "cef")]
 fn counting_site() -> String {
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let origin = format!("http://{}", listener.local_addr().unwrap());
@@ -1615,13 +1436,12 @@ fn counting_site() -> String {
     origin
 }
 
-#[cfg(feature = "cef")]
 #[test]
 #[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
 fn real_cef_contexts_share_no_cookies_storage_or_cache_and_keep_none_after_closing() {
     let origin = counting_site();
     let open = || {
-        let session = launch_as(Chromium::Embedded, (640, 480), 1.0, false);
+        let session = launch_as((640, 480), 1.0, false);
         session.open(format!("{origin}/"));
         session
     };
@@ -1686,7 +1506,6 @@ fn real_cef_contexts_share_no_cookies_storage_or_cache_and_keep_none_after_closi
 
 /// The two wheel measurements again, with CEF's own input call in place of
 /// the driver's protocol event: which one the window should send.
-#[cfg(feature = "cef")]
 fn native_wheel(session: &Session) {
     let embedded = &session.runtime.handle.view.embedded;
     let scrolled = || session.agent("browser_evaluate", json!({"expression": "scrollY"})).content[1]["text"].clone();
@@ -1740,26 +1559,10 @@ fn native_wheel(session: &Session) {
     eprintln!("CEF's own wheel event to the first frame on a page at rest: {}", summary(resting));
 }
 
-/// The same measurements on the embedded Chromium. Run it alone, with the
-/// optimised profile and nothing compiling; the first context of the process
-/// is the one that starts CEF:
-///
-/// ```sh
-/// nix-shell --run \
-///   "cargo test --profile desktop -p agents-window --features cef -- --ignored --nocapture real_cef_measurements"
-/// ```
-#[cfg(feature = "cef")]
-#[test]
-#[ignore = "opt-in timing: starts the embedded Chromium and prints measurements"]
-fn real_cef_measurements_of_the_live_view_and_of_what_the_browser_adds() {
-    measurements(Chromium::Embedded);
-}
-
 /// What a change costs by how much of the view it is: the processor this
 /// process and Chromium's spend on a blinking caret, a small spinner, a
 /// continuous scroll and an animation of the whole view, at 2560 × 1600,
 /// composited 60 and 120 times a second. Run like the measurements above.
-#[cfg(feature = "cef")]
 #[test]
 #[ignore = "opt-in timing: starts the embedded Chromium and prints measurements"]
 fn real_cef_measurements_of_what_a_change_costs_by_how_much_of_the_view_it_is() {
@@ -1767,19 +1570,19 @@ fn real_cef_measurements_of_what_a_change_costs_by_how_much_of_the_view_it_is() 
     let own = std::process::id();
     // The tests compare every paint with the canvas. The application does not.
     cef::COMPARE_PAINTS.store(false, Ordering::Relaxed);
-    let session = launch(Chromium::Embedded, (1280, 800), 2.0);
+    let session = launch((1280, 800), 2.0);
     // The window takes every frame it is told of. Here it is taken and dropped.
     let (taken, view) = (session.frames.clone(), Arc::downgrade(&session.runtime.handle.view));
     session.runtime.on_frame(move || {
         taken.fetch_add(1, Ordering::Relaxed);
         if let Some(view) = view.upgrade() {
-            view.decoded.lock().unwrap().clear();
+            view.painted.lock().unwrap().clear();
         }
     });
     let load = || fs::read_to_string("/proc/loadavg").unwrap_or_default().trim().to_owned();
     eprintln!("load average before: {}", load());
     let measure = |what: &str, rate: u32, during: &dyn Fn(Instant)| {
-        let busy = || (processor_seconds(&[own]), processor_seconds(&session.browser_processes()));
+        let busy = || (processor_seconds(&[own]), processor_seconds(&descendants(own)));
         let (from, started, used) = (session.frames.load(Ordering::Relaxed), Instant::now(), busy());
         during(started);
         let (elapsed, now) = (started.elapsed().as_secs_f64(), busy());
@@ -1828,37 +1631,32 @@ fn real_cef_measurements_of_what_a_change_costs_by_how_much_of_the_view_it_is() 
     eprintln!("load average after: {}", load());
 }
 
-#[cfg(feature = "cef")]
 #[test]
 #[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
 fn real_cef_draws_the_list_of_a_select_and_takes_keys_the_pointer_and_the_wheel_on_it() {
     for scale in [2.0, 1.0] {
-        the_list_of_a_select(Chromium::Embedded, scale);
+        the_list_of_a_select(scale);
     }
 }
 
-#[cfg(feature = "cef")]
 #[test]
 #[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
 fn real_cef_takes_modifier_keys_with_the_pointer_and_the_wheel() {
-    modifier_keys_with_the_pointer_and_the_wheel(Chromium::Embedded);
+    modifier_keys_with_the_pointer_and_the_wheel();
 }
 
-#[cfg(feature = "cef")]
 #[test]
 #[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
 fn real_cef_takes_what_a_spanish_keyboard_types_and_its_editing_keys() {
-    what_a_spanish_keyboard_types(Chromium::Embedded);
+    what_a_spanish_keyboard_types();
 }
 
-#[cfg(feature = "cef")]
 #[test]
 #[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
 fn real_cef_opens_in_the_view_what_a_click_asked_to_see_in_another_tab() {
-    what_a_click_asked_to_see_in_another_tab(Chromium::Embedded);
+    what_a_click_asked_to_see_in_another_tab();
 }
 
-#[cfg(feature = "cef")]
 #[test]
 #[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
 fn real_cef_parts_of_frames_leave_the_view_pixel_for_pixel_what_a_whole_frame_would() {
@@ -1871,10 +1669,9 @@ fn real_cef_parts_of_frames_leave_the_view_pixel_for_pixel_what_a_whole_frame_wo
 /// After each thing a person or the agent does, its texture is pixel for
 /// pixel the page as Chromium last painted it, and at the end what a view
 /// that had none of those parts is handed whole.
-#[cfg(feature = "cef")]
 fn parts_of_frames_leave_the_view_what_a_whole_frame_would(scale: f32) {
     let origin = site();
-    let session = launch(Chromium::Embedded, (640, 480), scale);
+    let session = launch((640, 480), scale);
     let embedded = &session.runtime.handle.view.embedded;
     let mut texture = Texture::new();
     // Takes what the view is handed until its texture is the page as it was
@@ -2019,16 +1816,15 @@ fn parts_of_frames_leave_the_view_what_a_whole_frame_would(scale: f32) {
     every_paint_left_the_canvas_as_chromium_painted_it();
 }
 
-#[cfg(feature = "cef")]
 #[test]
 #[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
 fn real_cef_says_which_pointer_the_page_asks_for_under_the_windows() {
     use eframe::egui::CursorIcon;
     let origin = site();
-    let session = launch(Chromium::Embedded, (640, 480), 2.0);
+    let session = launch((640, 480), 2.0);
     session.open(format!("{origin}/form"));
-    // A click sent the instant a load ends can be lost on the embedded
-    // Chromium: the page is clicked once it holds still.
+    // A click sent the instant a load ends can be lost: the page is clicked
+    // once it holds still.
     session.settle(Duration::from_millis(300));
     for (what, x, y, icon) in [
         ("a link", 320.0, 30.0, CursorIcon::PointingHand),

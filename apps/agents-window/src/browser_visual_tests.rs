@@ -133,8 +133,7 @@ fn export_browser_ui_visual_review() {
             "page",
             "more",
             "error-startup",
-            "error-missing",
-            "notice",
+            "error-engine",
         ] {
             let mut state = crate::view::tests::empty_state();
             state.browser = browser_fixture();
@@ -154,17 +153,14 @@ fn export_browser_ui_visual_review() {
                     );
                 }
                 "more" => state.browser.more_open = true,
-                "notice" => {
-                    state.browser.engine_notice = Some("Falta icudtl.dat junto a libcef.so.".into());
-                }
                 "error-startup" => {
                     state.browser.started = false;
-                    state.browser.error = Some("El navegador no pudo iniciarse: error while loading shared libraries: libglib-2.0.so.0".into());
+                    state.browser.error = Some("CEF no creó la página a tiempo.".into());
                 }
-                "error-missing" => {
+                "error-engine" => {
                     state.browser.started = false;
-                    state.browser.browser_missing = true;
-                    state.browser.error = Some("No se encontró Google Chrome, Chromium ni Microsoft Edge en este equipo. Instalá uno de ellos o indicá la ruta de su ejecutable en la variable OPENIDE_BROWSER_EXECUTABLE.".into());
+                    state.browser.engine_failed = true;
+                    state.browser.error = Some("Falta icudtl.dat junto a /nix/store/pz63ll2vbx0b2141h40y47173hvg1d59-cef-binary-spike-154.0.34/libcef.so. El navegador embebido se inicia una sola vez por ejecución: cerrá OpenIDE y volvé a abrirlo para reintentar.".into());
                 }
                 _ => {}
             }

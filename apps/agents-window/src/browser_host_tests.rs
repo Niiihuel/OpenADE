@@ -1011,21 +1011,19 @@ fn a_typed_character_is_a_key_the_page_hears_and_other_text_is_inserted() {
 }
 
 #[test]
-fn the_notice_of_an_embedded_browser_that_could_not_start_is_said_until_dismissed_and_not_again() {
+fn the_tab_knows_an_embedded_browser_that_cannot_start_from_a_context_that_only_failed_to() {
     let (_root, mut app, id) = fixture();
-    let told = |generation| BrowserSnapshot {
-        engine_notice: Some("Falta icudtl.dat junto a libcef.so.".into()),
+    let failed = |generation, code: &str| BrowserSnapshot {
+        started: false,
+        error: Some("Falta icudtl.dat junto a libcef.so.".into()),
+        error_code: Some(code.into()),
         ..blank(generation)
     };
-    let commands = install_runtime(&mut app, id, told(1));
-    assert!(app.apply_browser_snapshot(id.get(), told(1)));
-    assert_eq!(app.view.browser.engine_notice.as_deref(), Some("Falta icudtl.dat junto a libcef.so."));
-    let ctx = egui::Context::default();
-    app.apply_action(UiAction::Clicked { id: "browser_notice_dismiss".into() }, &ctx);
-    assert_eq!(app.view.browser.engine_notice, None);
-    // The context still says why it runs where it runs; the panel does not
-    // repeat it, in this tab or in another started later.
-    commands.set_snapshot(told(2));
-    app.apply_browser_snapshot(id.get(), told(2));
-    assert_eq!(app.view.browser.engine_notice, None);
+    let _commands = install_runtime(&mut app, id, failed(1, "engine_failed"));
+    assert!(app.apply_browser_snapshot(id.get(), failed(1, "engine_failed")));
+    assert!(app.view.browser.engine_failed && !app.view.browser.started);
+    assert_eq!(app.view.browser.error.as_deref(), Some("Falta icudtl.dat junto a libcef.so."));
+    // A page that could not be opened is another matter: a retry may do.
+    assert!(app.apply_browser_snapshot(id.get(), failed(2, "launch_failed")));
+    assert!(!app.view.browser.engine_failed && app.view.browser.error.is_some());
 }

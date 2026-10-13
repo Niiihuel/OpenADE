@@ -1,7 +1,7 @@
 //! A DevTools endpoint the unit tests script: what the client writes can be
 //! read back, and what it reads is whatever the test sends.
 
-use crate::cdp::{Client, EventSink, ScreencastFrame};
+use crate::cdp::{Client, EventSink};
 use crate::transport::{Incoming, MessageSink, MessageSource, Transport};
 use serde_json::{json, Value};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -24,7 +24,6 @@ impl MessageSource for Source {
 struct Ignore;
 impl EventSink for Ignore {
     fn event(&mut self, _: &Client, _: &str, _: &str, _: Value) {}
-    fn screencast_frame(&mut self, _: &Client, _: &str, _: ScreencastFrame<'_>) {}
     fn closed(&mut self) {}
 }
 

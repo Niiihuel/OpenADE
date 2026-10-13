@@ -1,6 +1,6 @@
-//! A browser context on the embedded Chromium (`--features cef`): a CEF page
-//! Chromium composites on the CPU, driven by the same `Driver` through the
-//! DevTools protocol inside this process.
+//! A browser context on the embedded Chromium: a CEF page Chromium composites
+//! on the CPU, driven by `openide_browser::Driver` through the DevTools
+//! protocol inside this process.
 //!
 //! Chromium hands over each frame uncompressed and says which rectangle of
 //! it changed. The paint callback, on CEF's UI thread, copies that rectangle
@@ -30,6 +30,23 @@ static DISPLAY_RATE: AtomicU32 = AtomicU32::new(60);
 /// The window's first frame intervals with a browser open.
 static WINDOW_FRAMES: Mutex<Vec<f32>> = Mutex::new(Vec::new());
 const WINDOW_FRAMES_WANTED: usize = 48;
+/// The most pixels one frame of the view may hold: the largest viewport,
+/// 1600 × 1200, fits whole at scale 2.
+const MAX_FRAME_PIXELS: f32 = 3840.0 * 2160.0;
+
+/// The scale a page is created at: the window's, unless the largest viewport
+/// would then paint more than a frame may hold.
+// shortcut: capped once, for the largest viewport. A page's scale is fixed
+// when CEF creates it; a display denser than 2x that must keep its own on a
+// small panel needs the page created again on resize.
+fn page_scale(scale: f32) -> f32 {
+    let fit = (MAX_FRAME_PIXELS / ((1600.0 * scale).ceil() * (1200.0 * scale).ceil())).sqrt();
+    if fit >= 1.0 {
+        scale
+    } else {
+        (scale * fit * 100.0).floor() / 100.0
+    }
+}
 
 /// Takes the time between two frames of the window while its rate is being
 /// measured, and says whether the next frame is wanted at once.
@@ -169,7 +186,7 @@ fn overlay(rgb: &mut [u8], size: [usize; 2], corner: [usize; 2], popup: &Popup) 
     }
 }
 
-/// The embedded page of one context, when it runs on one.
+/// The embedded page of one context.
 #[derive(Default)]
 pub(super) struct Embedded {
     page: Mutex<Option<openide_cef::Page>>,
@@ -177,8 +194,6 @@ pub(super) struct Embedded {
     /// The frame thread's own: the canvas in the channel order a frame is
     /// built from, kept between frames.
     rgb: Mutex<Vec<u8>>,
-    /// Why this context is not on the embedded Chromium, when it was meant to be.
-    fallback: Mutex<Option<Arc<str>>>,
 }
 
 /// How CEF starts in this process. Its helper processes are this executable,
@@ -208,7 +223,7 @@ pub(super) fn system_locale() -> String {
 }
 
 /// The languages pages are told the user reads, from the system's locale:
-/// `es_AR.UTF-8` is `es-AR,es,en`. A launched Chrome reads the same variables.
+/// `es_AR.UTF-8` is `es-AR,es,en`.
 pub(super) fn accept_languages(locale: &str) -> String {
     let tag = locale.split(['.', '@']).next().unwrap_or("").replace('_', "-");
     let language = tag.split('-').next().unwrap_or("");
@@ -249,22 +264,33 @@ impl Embedded {
     }
 
     /// Opens this context's page in the embedded Chromium, starting CEF if it
-    /// is the first of the process, and connects a driver to it. The error
-    /// says why the context cannot run there.
+    /// is the first of the process, and connects a driver to it. The failure
+    /// says why the context could not start, and whether any other could.
     pub(super) fn start(
         view: &Arc<LiveView>,
         data: &Path,
         viewport: (u32, u32),
         scale: f32,
-    ) -> Result<Driver, String> {
-        // shortcut: the scale is capped once, for the largest viewport, so a
-        // frame always fits the pixel budget. A page's scale is fixed when
-        // CEF creates it; a display denser than 2x that must keep its own on
-        // a small panel needs the page created again on resize.
-        let scale = match frame_bounds((1600, 1200), scale) {
-            (fitted, Some(_)) => (fitted * 100.0).floor() / 100.0,
-            _ => scale,
-        };
+    ) -> Result<Driver, StartFailure> {
+        Self::open(view, data, viewport, page_scale(scale)).map_err(|reason| {
+            // CEF starts once per process: a start that failed fails the
+            // same way for every later context, and is said once here.
+            if openide_cef::start_failure().is_none() {
+                return StartFailure {
+                    code: "launch_failed",
+                    message: reason,
+                };
+            }
+            static SAID: std::sync::Once = std::sync::Once::new();
+            SAID.call_once(|| eprintln!("OpenIDE: el navegador embebido (CEF) no pudo iniciarse. {reason}"));
+            StartFailure {
+                code: "engine_failed",
+                message: format!("{reason} El navegador embebido se inicia una sola vez por ejecución: cerrá OpenIDE y volvé a abrirlo para reintentar."),
+            }
+        })
+    }
+
+    fn open(view: &Arc<LiveView>, data: &Path, viewport: (u32, u32), scale: f32) -> Result<Driver, String> {
         let painted = Arc::downgrade(view);
         let page = openide_cef::Page::open(
             &host_options(data),
@@ -290,10 +316,6 @@ impl Embedded {
         };
         *view.embedded.page() = Some(page);
         Ok(driver)
-    }
-
-    pub(super) fn is_open(&self) -> bool {
-        self.page().is_some()
     }
 
     /// One paint of the page, on CEF's UI thread, which also carries the
@@ -363,9 +385,9 @@ impl Embedded {
     /// hands what it gets to the view. It is the whole page when all of it
     /// was painted, and otherwise the one rectangle that was, as a part of
     /// the frame the view already holds. An agent capture makes Chromium draw
-    /// the page another way for a moment, as with the stream; the paints of
-    /// that moment are held back, and what is left after it is news only if
-    /// it differs from what the view already shows.
+    /// the page again; the paints of that moment are held back, and what is
+    /// left after it is news only if it differs from what the view already
+    /// shows.
     pub(super) fn frame(&self, view: &LiveView) -> Option<limn_egui::SurfaceFrame> {
         // The window's rate may have been measured since the page was shown.
         self.pace();
@@ -397,7 +419,7 @@ impl Embedded {
         // A part the view has yet to take is replaced by this one, which
         // therefore carries its pixels too: the view may skip a frame, and
         // loses nothing that was painted.
-        let untaken = view.decoded.lock().unwrap_or_else(|poison| poison.into_inner());
+        let untaken = view.painted.lock().unwrap_or_else(|poison| poison.into_inner());
         if let Some((frame, [left, top])) = untaken.last().and_then(|waiting| waiting.part()) {
             let [width, height] = untaken.last().map_or([0; 2], |waiting| waiting.size());
             damage = if frame == size {
@@ -576,10 +598,6 @@ impl Embedded {
     pub(super) fn cursor(&self) -> Option<egui::CursorIcon> {
         self.page().as_ref().map(|page| cursor_icon(page.cursor()))
     }
-
-    pub(super) fn fallback(&self) -> Option<Arc<str>> {
-        self.fallback.lock().unwrap_or_else(|poison| poison.into_inner()).clone()
-    }
 }
 
 fn cursor_icon(cursor: openide_cef::Cursor) -> egui::CursorIcon {
@@ -627,17 +645,6 @@ fn cursor_icon(cursor: openide_cef::Cursor) -> egui::CursorIcon {
     }
 }
 
-/// Said once on the error output: CEF starts once per process, so a start
-/// that failed fails the same way for every later context. The context keeps
-/// the reason for its panel to say.
-pub(super) fn report_fallback(view: &LiveView, reason: &str) {
-    static SAID: std::sync::Once = std::sync::Once::new();
-    SAID.call_once(|| {
-        eprintln!("OpenIDE: el navegador embebido (CEF) no pudo iniciarse y se usa el navegador del sistema. {reason}");
-    });
-    *view.embedded.fallback.lock().unwrap_or_else(|poison| poison.into_inner()) = Some(reason.into());
-}
-
 /// `agents-window --cef-probe`: starts a browser context the way the window
 /// does, without a window, waits for its first frame and says what it got.
 /// For checking that an installation can run the embedded Chromium.
@@ -658,21 +665,15 @@ pub(crate) fn probe() -> i32 {
             viewport_width: 1280,
             viewport_height: 800,
             device_scale: 2.0,
-            ..Default::default()
         },
     )
     .and_then(|runtime| {
         let deadline = Instant::now() + Duration::from_secs(30);
         loop {
             let state = runtime.snapshot();
+            // What the browser tab would say.
             if let Some(error) = state.error.filter(|_| !state.loading) {
                 return Err(error);
-            }
-            if state.started && !runtime.handle.view.embedded.is_open() {
-                return Err(format!(
-                    "CEF no se inició; la aplicación usa el navegador del sistema. El panel avisa: {}",
-                    state.engine_notice.as_deref().unwrap_or("nada")
-                ));
             }
             if let Some(frame) = runtime.take_frame() {
                 return Ok((frame.size(), started.elapsed()));
@@ -706,7 +707,7 @@ pub(crate) fn probe() -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{accept_languages, display_rate, overlay, LiveView, Popup};
+    use super::{accept_languages, display_rate, overlay, page_scale, LiveView, Popup};
     use openide_cef::Paint;
 
     #[test]
@@ -829,7 +830,7 @@ mod tests {
         assert_eq!((carried.size(), carried.part()), ([3, 2], Some(([4, 3], [0, 0]))));
         assert_eq!(built(), [100, 1, 102, 4, 105, 106]);
         view.publish(carried);
-        assert_eq!(view.decoded.lock().unwrap().len(), 1, "the part it never took was replaced");
+        assert_eq!(view.painted.lock().unwrap().len(), 1, "the part it never took was replaced");
         // After a whole frame it has yet to take, what changes is still a
         // part: both wait, the frame first.
         let whole = limn_egui::SurfaceFrame::from_rgb([4, 3], &[0; 36], 1.0).unwrap();
@@ -842,7 +843,7 @@ mod tests {
         let again = embedded.frame(&view).unwrap();
         assert_eq!((again.size(), again.part()), ([1, 2], Some(([4, 3], [3, 0]))));
         view.publish(again);
-        let waiting: Vec<_> = view.decoded.lock().unwrap().drain(..).map(|frame| (frame.size(), frame.part().is_some())).collect();
+        let waiting: Vec<_> = view.painted.lock().unwrap().drain(..).map(|frame| (frame.size(), frame.part().is_some())).collect();
         assert_eq!(waiting, [([4, 3], false), ([1, 2], true)]);
         // What Chromium says it did not paint is not read again.
         let mut elsewhere = page.clone();
@@ -904,6 +905,16 @@ mod tests {
         // Only the paint that did not say all it painted; it is not left
         // for a scenario on the real engine to find.
         assert_eq!(super::STRAY_PAINTS.fetch_sub(1, std::sync::atomic::Ordering::Relaxed) - strays, 1);
+    }
+
+    #[test]
+    fn a_page_keeps_the_windows_scale_until_its_largest_frame_would_be_over_the_pixel_budget() {
+        for scale in [1.0, 1.5, 2.0] {
+            assert_eq!(page_scale(scale), scale);
+        }
+        let capped = page_scale(3.0);
+        assert!((2.07..2.08).contains(&capped), "{capped}");
+        assert!((1600.0 * capped).ceil() * (1200.0 * capped).ceil() <= 3840.0 * 2160.0);
     }
 
     #[test]

@@ -15,15 +15,14 @@ fn driver(
             return Some(reply);
         }
         Some(Ok(match method {
-            "Target.createBrowserContext" => json!({"browserContextId": "CONTEXT"}),
-            "Target.createTarget" => json!({"targetId": "MAIN"}),
+            "Target.getTargetInfo" => json!({"targetInfo": {"targetId": "MAIN"}}),
             "Target.attachToTarget" => json!({"sessionId": "PAGE"}),
             "Page.createIsolatedWorld" => json!({"executionContextId": 7}),
             "Page.getFrameTree" => json!({"frameTree": {"frame": {"id": "MAIN", "loaderId": "L1"}}}),
             _ => json!({}),
         }))
     });
-    (Driver::connect(transport, 640, 480, 2.0).unwrap(), events)
+    (Driver::connect_to_page(transport, 640, 480, 2.0).unwrap(), events)
 }
 
 fn event(events: &Sender<crate::transport::Incoming>, method: &str, params: Value) {
@@ -125,8 +124,11 @@ fn the_viewport_stays_within_what_the_panel_can_show() {
     for (width, height) in [(319, 240), (320, 239), (1601, 1200), (1600, 1201), (0, 0)] {
         assert_eq!(validate_viewport(width, height).unwrap_err().kind, ErrorKind::Invalid);
     }
-    let (transport, _written, _incoming) = transport();
-    assert_eq!(Driver::connect(transport, 100, 100, 1.0).unwrap_err().kind, ErrorKind::Invalid);
+    // Nor is a page driven at a scale no display has.
+    for (width, height, scale) in [(100, 100, 1.0), (640, 480, 0.0), (640, 480, f64::NAN)] {
+        let (transport, _written, _incoming) = transport();
+        assert_eq!(Driver::connect_to_page(transport, width, height, scale).unwrap_err().kind, ErrorKind::Invalid);
+    }
 }
 
 #[test]
@@ -179,7 +181,7 @@ fn a_request_is_refused_before_the_browser_hears_of_it() {
     let (mut driver, _events) = driver(|method, _| match method {
         // Anything that would act on the page fails the test.
         "Page.navigate" | "Input.dispatchMouseEvent" | "Input.dispatchKeyEvent" | "Input.insertText"
-        | "Runtime.evaluate" | "Runtime.callFunctionOn" | "DOM.resolveNode" | "Page.startScreencast" => {
+        | "Runtime.evaluate" | "Runtime.callFunctionOn" | "DOM.resolveNode" => {
             panic!("{method} reached the browser")
         }
         _ => None,
@@ -382,28 +384,7 @@ fn a_browser_that_goes_away_is_reported_as_closed_from_then_on() {
 }
 
 #[test]
-fn a_stream_asks_chrome_to_fit_its_frames_only_when_given_a_limit() {
-    let asked = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let seen = asked.clone();
-    let (mut driver, _events) = driver(move |method, params| {
-        if method == "Page.startScreencast" {
-            seen.lock().unwrap().push(params.clone());
-        }
-        None
-    });
-    driver.start_stream(FrameFormat::Jpeg { quality: 80 }, None).unwrap();
-    driver.start_stream_within(FrameFormat::Jpeg { quality: 200 }, Some((3840, 2160)), None).unwrap();
-    assert_eq!(
-        *asked.lock().unwrap(),
-        [
-            json!({"format": "jpeg", "quality": 80, "everyNthFrame": 1}),
-            json!({"format": "jpeg", "quality": 100, "everyNthFrame": 1, "maxWidth": 3840, "maxHeight": 2160}),
-        ]
-    );
-    let refused = driver.start_stream_within(FrameFormat::Png, Some((0, 2160)), None).err().map(|error| error.kind);
-    assert_eq!(refused, Some(ErrorKind::Invalid));
-    assert_eq!(asked.lock().unwrap().len(), 2, "a limit of nothing never reaches the browser");
-    // A host names a pointer button the way the protocol does.
+fn a_host_names_a_pointer_button_the_way_the_protocol_does() {
     use crate::MouseButton::{Left, Middle, Right};
     assert_eq!(serde_json::to_value([Left, Middle, Right]).unwrap(), json!(["left", "middle", "right"]));
     assert_eq!(serde_json::from_value::<crate::MouseButton>(json!("right")).unwrap(), Right);
@@ -411,10 +392,9 @@ fn a_stream_asks_chrome_to_fit_its_frames_only_when_given_a_limit() {
 }
 
 #[test]
-fn a_driver_moves_to_a_worker_thread_and_its_stream_is_shared_with_the_view() {
+fn a_driver_moves_to_a_worker_thread() {
     fn sendable<T: Send>() {}
     fn shareable<T: Send + Sync + Clone>() {}
     sendable::<Driver>();
-    shareable::<crate::FrameStream>();
     shareable::<Client>();
 }

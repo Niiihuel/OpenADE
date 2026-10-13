@@ -1,13 +1,14 @@
-//! Rust-owned, workspace/chat-scoped browser actor. A worker thread drives a
-//! private headless Chrome through `openide_browser::Driver`; UI and agent
-//! commands share one bounded queue and the same isolated browser context.
-//! No personal Chrome profile, Electron renderer or desktop-private API.
+//! Rust-owned, workspace/chat-scoped browser actor. A worker thread drives
+//! the page of an embedded Chromium through `openide_browser::Driver`; UI and
+//! agent commands share one bounded queue and the same isolated browser
+//! context. No personal browser profile, Electron renderer or
+//! desktop-private API.
 
 use async_trait::async_trait;
 use base64::Engine;
 use openide_browser::{
-    Capture, ConsoleLevel, Driver, DriverError, ErrorKind, FrameFormat, FrameStream, LaunchOptions,
-    MouseButton, PageInfo, SnapshotOptions, Target,
+    Capture, ConsoleLevel, Driver, DriverError, ErrorKind, MouseButton, PageInfo, SnapshotOptions,
+    Target,
 };
 use openide_harness::{McpCallResult, McpError, McpStdioConfig, McpTool, McpToolClient};
 use serde::{Deserialize, Serialize};
@@ -30,19 +31,10 @@ const COMMAND_CAPACITY: usize = 16;
 const MAX_REQUEST_BYTES: usize = 64 * 1024;
 const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_BROKER_CONNECTIONS: usize = 4;
-// The largest frame of the live view: the 1600 × 1200 viewport at scale 2
-// fits whole, and a larger one is scaled down by Chromium before it is sent.
-const MAX_FRAME_PIXELS: u64 = 3840 * 2160;
-const FRAME_QUALITY: u8 = 80;
-/// How long a page must hold still before its JPEG gives way to a lossless frame.
-const STILL_DELAY: Duration = Duration::from_millis(200);
-/// How long after an agent capture frames may still show its re-render.
+/// How long after an agent capture paints may still show its re-render.
 const RERENDER_SETTLE: Duration = Duration::from_millis(400);
 const STATE_POLL: Duration = Duration::from_millis(300);
-const STREAM_RETRY: Duration = Duration::from_secs(2);
 const ACTION_TIMEOUT: Duration = Duration::from_secs(35);
-/// What the panel explains, in its own words, when this is why a start failed.
-const BROWSER_MISSING: &str = "No se encontró Google Chrome, Chromium ni Microsoft Edge en este equipo. Instalá uno de ellos o indicá la ruta de su ejecutable en la variable OPENIDE_BROWSER_EXECUTABLE.";
 const QUEUED: u8 = 0;
 const DISPATCHED: u8 = 1;
 const CANCELLED: u8 = 2;
@@ -57,9 +49,6 @@ pub(crate) struct BrowserScope {
 
 #[derive(Clone, Debug)]
 pub(crate) struct BrowserLaunchOptions {
-    /// A browser the caller chose. Without one the worker looks for Chrome,
-    /// Chromium or Edge each time it starts a context.
-    pub browser_executable: Option<PathBuf>,
     pub viewport_width: u32,
     pub viewport_height: u32,
     /// The window's pixels per point when the context starts. Chromium keeps
@@ -70,7 +59,6 @@ pub(crate) struct BrowserLaunchOptions {
 impl Default for BrowserLaunchOptions {
     fn default() -> Self {
         Self {
-            browser_executable: None,
             viewport_width: 900,
             viewport_height: 700,
             device_scale: 1.0,
@@ -84,11 +72,6 @@ pub(crate) struct BrowserSnapshot {
     pub started: bool,
     pub loading: bool,
     pub navigating: bool,
-    /// No Chrome, Chromium or Edge was found to start a context with.
-    pub browser_missing: bool,
-    /// Why the context runs on the system's browser when the application
-    /// embeds one that could not start.
-    pub engine_notice: Option<Arc<str>>,
     pub url: String,
     pub title: String,
     pub error: Option<String>,
@@ -129,8 +112,6 @@ impl Default for BrowserSnapshot {
             started: false,
             loading: false,
             navigating: false,
-            browser_missing: false,
-            engine_notice: None,
             url: "about:blank".into(),
             title: String::new(),
             error: None,
@@ -611,8 +592,6 @@ struct BrowserHandle {
     context_lost: Arc<AtomicBool>,
     visible: Arc<AtomicBool>,
     view: Arc<LiveView>,
-    /// The process id of the Chrome this context runs in, while it runs.
-    process: Arc<Mutex<Option<u32>>>,
     scope: BrowserScope,
     identity_digest: String,
     /// The address the server this conversation's agent started answers on:
@@ -720,19 +699,21 @@ pub(crate) struct BrowserRuntime {
     broker_token: String,
 }
 
-/// Why a context could not start, as the code the view tells apart.
+/// Why a context could not start, as the code the view tells apart:
+/// `engine_failed` when no later context of this process can start either,
+/// `launch_failed` when only this one did not.
 struct StartFailure {
     code: &'static str,
     message: String,
 }
 
-/// Starts the browser of one context. The worker calls it again only for an
-/// explicit retry.
+/// Opens the page of one context and connects a driver to it. The worker
+/// calls it again only for an explicit retry.
 type Launcher = Box<dyn FnMut() -> Result<Driver, StartFailure> + Send>;
 
 impl BrowserRuntime {
-    /// Starts an isolated about:blank context on a worker thread, in a system
-    /// browser found there. No downloads, personal profile or remote page.
+    /// Starts an isolated about:blank context on a worker thread, in the
+    /// embedded Chromium. No downloads, personal profile or remote page.
     pub(crate) fn start(
         scope: BrowserScope,
         data_root: &Path,
@@ -741,47 +722,15 @@ impl BrowserRuntime {
         let base_dir = data_root.join("browser-runtime");
         private_directory(&base_dir)?;
         let base_dir = fs::canonicalize(&base_dir).map_err(|error| error.to_string())?;
-        let (data_root, launch) = (data_root.to_owned(), options.clone());
         let view = Arc::<LiveView>::default();
-        #[cfg(feature = "cef")]
-        let embedded_view = view.clone();
+        let (page, viewport) = (view.clone(), (options.viewport_width, options.viewport_height));
+        let scale = device_scale(options.device_scale);
         Self::start_on(
             scope,
             options,
-            Box::new(move || {
-                // The embedded Chromium, unless the caller chose a browser.
-                // One that cannot start leaves the system's.
-                #[cfg(feature = "cef")]
-                if launch.browser_executable.is_none() {
-                    let viewport = (launch.viewport_width, launch.viewport_height);
-                    let scale = device_scale(launch.device_scale);
-                    match cef::Embedded::start(&embedded_view, &base_dir, viewport, scale) {
-                        Ok(driver) => return Ok(driver),
-                        Err(reason) => cef::report_fallback(&embedded_view, &reason),
-                    }
-                }
-                let missing = |message| StartFailure {
-                    code: "browser_missing",
-                    message,
-                };
-                let executable = match &launch.browser_executable {
-                    Some(executable) => executable.clone(),
-                    None => find_browser(&data_root).map_err(missing)?,
-                };
-                // The application may outlive the shell that launched it:
-                // Chrome's files never go to its inherited, ephemeral TMPDIR.
-                Driver::launch(&LaunchOptions {
-                    executable,
-                    width: launch.viewport_width,
-                    height: launch.viewport_height,
-                    scale: f64::from(device_scale(launch.device_scale)),
-                    temp_root: Some(base_dir.clone()),
-                })
-                .map_err(|error| StartFailure {
-                    code: "launch_failed",
-                    message: error.message,
-                })
-            }),
+            // Chromium's files never go to the temporary directory this
+            // process inherited, which the shell that started it may take.
+            Box::new(move || cef::Embedded::start(&page, &base_dir, viewport, scale)),
             view,
         )
     }
@@ -796,8 +745,8 @@ impl BrowserRuntime {
         Self::start_on(scope, options, launch, Arc::default())
     }
 
-    /// `view` is where the context's frames go; a launcher that paints the
-    /// page itself holds it too.
+    /// `view` is where the context's frames go, which the page a launcher
+    /// opens paints into.
     fn start_on(
         scope: BrowserScope,
         options: BrowserLaunchOptions,
@@ -851,7 +800,6 @@ impl BrowserRuntime {
             context_lost: Arc::new(AtomicBool::new(false)),
             visible: Arc::new(AtomicBool::new(true)),
             view,
-            process: Arc::default(),
             scope,
             identity_digest,
             preview: Arc::default(),
@@ -861,12 +809,7 @@ impl BrowserRuntime {
             handle: handle.clone(),
             launch,
             driver: None,
-            viewport: (options.viewport_width, options.viewport_height),
-            scale: device_scale(options.device_scale),
-            streaming: false,
-            lossless: false,
-            stream_retry: Instant::now(),
-            still: None,
+            shown: false,
         };
         let (finishing, finished) = mpsc::channel();
         thread::Builder::new()
@@ -876,10 +819,10 @@ impl BrowserRuntime {
                 drop(finishing);
             })
             .map_err(|error| format!("Worker de navegador: {error}"))?;
-        let decoder_handle = handle.clone();
+        let frames_handle = handle.clone();
         thread::Builder::new()
             .name("openide-browser-frames".into())
-            .spawn(move || decode_frames(&decoder_handle))
+            .spawn(move || publish_frames(&frames_handle))
             .map_err(|error| {
                 handle.closed.store(true, Ordering::Release);
                 format!("Vista de navegador: {error}")
@@ -917,35 +860,34 @@ impl BrowserRuntime {
         let was = self.handle.visible.swap(visible, Ordering::AcqRel);
         // The worker samples visibility between requests and may never see
         // that the surface was hidden meanwhile. Shown again, it is owed a
-        // frame of a new stream either way: the window waits for one before
-        // it sends the page any input.
+        // whole frame either way: the window waits for one before it sends
+        // the page any input.
         if visible && !was {
-            self.handle.view.restart.store(true, Ordering::Release);
+            self.handle.view.refresh.store(true, Ordering::Release);
         }
         was
     }
     pub(crate) fn visible(&self) -> bool {
         self.handle.visible.load(Ordering::Acquire)
     }
-    /// The pointer an embedded page asks for where the window's last was.
-    #[cfg(feature = "cef")]
+    /// The pointer the page asks for where the window's last was.
     pub(crate) fn cursor(&self) -> Option<eframe::egui::CursorIcon> {
         self.handle.view.embedded.cursor()
     }
-    /// The newest decoded frame of the page, once; older ones were replaced.
-    /// An embedded page hands over the part of its frame that changed since
-    /// the last one taken, to be presented over that one: after a whole
-    /// frame there may be such a part to take as well.
+    /// The newest frame of the page, once; older ones were replaced. The
+    /// page hands over the part of its frame that changed since the last one
+    /// taken, to be presented over that one: after a whole frame there may
+    /// be such a part to take as well.
     pub(crate) fn take_frame(&self) -> Option<limn_egui::SurfaceFrame> {
-        let mut decoded = self
+        let mut painted = self
             .handle
             .view
-            .decoded
+            .painted
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
-        (!decoded.is_empty()).then(|| decoded.remove(0))
+        (!painted.is_empty()).then(|| painted.remove(0))
     }
-    /// Runs on the decoder thread whenever a frame is ready to take.
+    /// Runs on the frame thread whenever a frame is ready to take.
     pub(crate) fn on_frame(&self, notify: impl Fn() + Send + 'static) {
         *self
             .handle
@@ -954,9 +896,9 @@ impl BrowserRuntime {
             .lock()
             .unwrap_or_else(|poison| poison.into_inner()) = Some(Box::new(notify));
     }
-    /// Starts the stream again; it answers with a fresh frame, a whole one.
-    pub(crate) fn restart_stream(&self) {
-        self.handle.view.restart.store(true, Ordering::Release);
+    /// Asks the page for all of its view again: a fresh frame, a whole one.
+    pub(crate) fn refresh_view(&self) {
+        self.handle.view.refresh.store(true, Ordering::Release);
     }
     pub(crate) fn scope(&self) -> &BrowserScope {
         &self.handle.scope
@@ -1012,24 +954,9 @@ impl BrowserRuntime {
         if self.handle.closed.swap(true, Ordering::AcqRel) {
             return;
         }
-        // A request in flight may hold the worker for seconds. Killing Chrome
-        // ends it at once; the worker then reaps the browser and removes its
-        // directory. The id is only ever cleared under this lock, before the
-        // browser is reaped, so it cannot name another process here.
-        #[cfg(unix)]
-        if let Some(process) = *self
-            .handle
-            .process
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-        {
-            unsafe {
-                libc::kill(-(process as libc::pid_t), libc::SIGKILL);
-            }
-        }
-        // An embedded page has no process of its own to kill: closing it is
-        // what ends a request in flight.
-        #[cfg(feature = "cef")]
+        // A request in flight may hold the worker for seconds. The page has
+        // no process of its own to kill: closing it is what ends the request
+        // at once.
         self.handle.view.embedded.interrupt();
         // An idle worker would only notice at its next tick: a request that
         // is already cancelled wakes it now.
@@ -1048,9 +975,8 @@ impl BrowserRuntime {
 impl Drop for BrowserRuntime {
     fn drop(&mut self) {
         self.shutdown();
-        // The process may be exiting: give the worker a moment to leave no
-        // browser and no directory behind. A start that is still in flight
-        // finishes on its own thread.
+        // The process may be exiting: give the worker a moment to close its
+        // page. A start that is still in flight finishes on its own thread.
         let _ = self.finished.recv_timeout(Duration::from_secs(1));
     }
 }
@@ -1074,8 +1000,8 @@ fn apply_reply(handle: &BrowserHandle, reply: PageReply) -> Result<BrowserSnapsh
 }
 
 /// Reading the page's state is not a successful retry of a failed navigation
-/// or input action, and does not bring a lost stream back: their explanation
-/// stays until an explicit command, or the stream, clears it.
+/// or input action: their explanation stays until an explicit command
+/// clears it.
 fn apply_refresh(handle: &BrowserHandle, reply: PageReply) -> Result<BrowserSnapshot, String> {
     apply(handle, reply, true)
 }
@@ -1089,7 +1015,7 @@ fn apply(handle: &BrowserHandle, reply: PageReply, refresh: bool) -> Result<Brow
     let kept = (refresh
         && matches!(
             state.error_code.as_deref(),
-            Some("command_failed" | "navigation_failed" | "stream_lost")
+            Some("command_failed" | "navigation_failed")
         ))
     .then(|| (state.error.clone(), state.error_code.clone()));
     if let Some(info) = reply.info {
@@ -1122,7 +1048,6 @@ fn apply(handle: &BrowserHandle, reply: PageReply, refresh: bool) -> Result<Brow
     state.navigating = false;
     state.generation = state.generation.saturating_add(1);
     state.error_code = reply.failure.as_ref().map(|(code, _)| (*code).into());
-    state.browser_missing = false;
     let failed = reply.failure.is_some();
     state.error = reply
         .failure
@@ -1157,13 +1082,12 @@ fn fail_state(handle: &BrowserHandle, code: &str, error: &str) {
     state.error = Some(bounded_string(error, 2048));
     state.error_code = Some(code.into());
     state.aria_snapshot = Arc::from("");
-    state.browser_missing = code == "browser_missing";
     state.generation = state.generation.saturating_add(1);
 }
 
 fn mark_context_lost(handle: &BrowserHandle, error: &str) {
     // This identity names one browser context for its entire lifetime. Once
-    // that context disappears, a newly launched browser must receive a new
+    // that context disappears, a new one must receive a new
     // runtime/token/digest through the user's Retry action.
     handle.context_lost.store(true, Ordering::Release);
     fail_state(
@@ -1179,15 +1103,8 @@ struct Worker {
     handle: BrowserHandle,
     launch: Launcher,
     driver: Option<Driver>,
-    /// The CSS viewport, and the scale the context keeps for its lifetime.
-    viewport: (u32, u32),
-    scale: f32,
-    streaming: bool,
-    /// The stream's frames are at device scale, so a lossless one can replace them.
-    lossless: bool,
-    stream_retry: Instant,
-    /// The change of the view the last lossless frame was captured after.
-    still: Option<u64>,
+    /// The page's paints are let through to the view.
+    shown: bool,
 }
 
 impl Worker {
@@ -1195,11 +1112,11 @@ impl Worker {
         self.ensure_started();
         let mut idle_since = Instant::now();
         while !self.handle.closed.load(Ordering::Acquire) {
-            self.sync_stream();
+            self.sync_view();
             let pending = match receiver.recv_timeout(Duration::from_millis(50)) {
                 Ok(pending) => pending,
                 Err(mpsc::RecvTimeoutError::Timeout) => {
-                    // The page's pixels arrive on the stream. Its address,
+                    // The page paints its pixels by itself. Its address,
                     // title and history are still asked for.
                     if self.handle.visible.load(Ordering::Acquire)
                         && idle_since.elapsed() >= STATE_POLL
@@ -1311,7 +1228,6 @@ impl Worker {
             state.navigating = false;
             state.error = None;
             state.error_code = None;
-            state.browser_missing = false;
             state.generation = state.generation.saturating_add(1);
         }
         let started = (self.launch)().and_then(|mut driver| match driver.info() {
@@ -1323,17 +1239,7 @@ impl Worker {
         });
         match started {
             Ok((driver, info)) => {
-                *self
-                    .handle
-                    .process
-                    .lock()
-                    .unwrap_or_else(|poison| poison.into_inner()) = driver.process_id();
                 self.driver = Some(driver);
-                #[cfg(feature = "cef")]
-                {
-                    let notice = self.handle.view.embedded.fallback();
-                    self.handle.state.lock().unwrap_or_else(|poison| poison.into_inner()).engine_notice = notice;
-                }
                 let _ = apply_reply(
                     &self.handle,
                     PageReply {
@@ -1346,19 +1252,11 @@ impl Worker {
         }
     }
 
-    /// Lets go of the browser: it is killed and reaped and its directory is
-    /// removed. Also when the worker unwinds, so the process id never
-    /// outlives the browser it names.
+    /// Lets go of the page: it is closed, and its cookies, cache and storage
+    /// go with it. Also when the worker unwinds.
     fn stop(&mut self) {
-        self.streaming = false;
-        self.handle.view.feed().stream = None;
-        self.handle
-            .process
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-            .take();
+        self.shown = false;
         self.driver = None;
-        #[cfg(feature = "cef")]
         self.handle.view.embedded.close();
     }
 
@@ -1393,23 +1291,18 @@ impl Worker {
         };
         let agent = pending.include_aria;
         let view = &self.handle.view;
-        // An embedded page is as large as its view, which changes first.
-        #[cfg(feature = "cef")]
+        // The page is as large as its view, which changes first.
         if let BrowserCommand::Resize { width, height } = pending.command {
             view.embedded.resize((width, height));
         }
-        #[cfg(feature = "cef")]
         view.embedded.busy(true);
-        let outcome = execute(driver, pending, view, self.scale);
-        #[cfg(feature = "cef")]
+        let outcome = execute(driver, pending, view);
         view.embedded.busy(false);
         match outcome {
             Ok(reply) => {
-                if let BrowserCommand::Resize { width, height } = pending.command {
-                    // A resized page has other frame bounds, and owes a first
-                    // frame at them.
-                    self.viewport = (width, height);
-                    view.restart.store(true, Ordering::Release);
+                if matches!(pending.command, BrowserCommand::Resize { .. }) {
+                    // A resized page owes a first frame at its new size.
+                    view.refresh.store(true, Ordering::Release);
                 }
                 // Passing over the page is not an action: it keeps the
                 // explanation of the last one that failed.
@@ -1425,7 +1318,7 @@ impl Worker {
             }
             Err(error) => {
                 // Where the page is now is read again either way: a failed
-                // navigation leaves Chrome's error page behind.
+                // navigation leaves Chromium's error page behind.
                 let mut reply = PageReply {
                     info: driver.info().ok(),
                     ..Default::default()
@@ -1448,137 +1341,21 @@ impl Worker {
         }
     }
 
-    /// Keeps the stream subscribed to the surface's visibility. A stream
-    /// that could not start is asked for again after a pause, and says so
-    /// meanwhile. Once the page holds still, one lossless frame replaces its
-    /// last JPEG.
-    fn sync_stream(&mut self) {
-        let Some(driver) = self.driver.as_mut() else {
-            self.streaming = false;
+    /// Lets the page's paints through to the view while its surface is
+    /// visible. Shown again, or asked to ("Actualizar vista"), the page
+    /// paints all of its view once more: a whole frame for the window.
+    fn sync_view(&mut self) {
+        if self.driver.is_none() {
+            self.shown = false;
             return;
-        };
+        }
         let view = &self.handle.view;
         let wanted = self.handle.visible.load(Ordering::Acquire);
-        let restart = wanted && view.restart.load(Ordering::Acquire);
-        // An embedded page paints by itself: there is no stream to start,
-        // only its paints to let through, and a restart is one more of them.
-        #[cfg(feature = "cef")]
-        if view.embedded.is_open() {
-            if wanted != self.streaming || restart {
-                view.restart.store(false, Ordering::Release);
-                self.streaming = wanted;
-                view.embedded.show(wanted);
-            }
-            return;
-        }
-        let waiting = wanted && Instant::now() < self.stream_retry;
-        let mut lost = None;
-        if (wanted != self.streaming || restart) && !waiting {
-            view.restart.store(false, Ordering::Release);
-            if self.streaming {
-                self.streaming = false;
-                view.feed().stream = None;
-                lost = driver.stop_stream().err();
-            }
-            if wanted && lost.is_none() {
-                let (scale, limit) = frame_bounds(self.viewport, self.scale);
-                let wake = Arc::downgrade(view);
-                let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-                    if let Some(view) = wake.upgrade() {
-                        view.feed().woken = true;
-                        view.arrived.notify_one();
-                    }
-                });
-                let format = FrameFormat::Jpeg {
-                    quality: FRAME_QUALITY,
-                };
-                match driver.start_stream_within(format, limit, Some(wake)) {
-                    Ok(stream) => {
-                        self.streaming = true;
-                        self.lossless = limit.is_none();
-                        self.still = None;
-                        let mut feed = view.feed();
-                        feed.stream = Some(stream);
-                        feed.scale = scale;
-                        feed.epoch += 1;
-                        feed.skipped = false;
-                        feed.settling_until = None;
-                        // A page that is already still may not send a frame
-                        // of its own: the lossless one is its first.
-                        feed.changes += 1;
-                        feed.changed_at = Some(Instant::now());
-                        // A frame may have come before the decoder could
-                        // know where to take it from.
-                        feed.woken = true;
-                        drop(feed);
-                        view.arrived.notify_one();
-                        let mut state = self
-                            .handle
-                            .state
-                            .lock()
-                            .unwrap_or_else(|poison| poison.into_inner());
-                        if state.error_code.as_deref() == Some("stream_lost") {
-                            state.error = None;
-                            state.error_code = None;
-                            state.generation = state.generation.saturating_add(1);
-                        }
-                    }
-                    Err(error) => lost = Some(error),
-                }
-            }
-        }
-        if self.streaming && self.lossless && lost.is_none() {
-            let due = {
-                let feed = view.feed();
-                (self.still != Some(feed.changes)
-                    && feed.changed_at.is_some_and(|at| at.elapsed() >= STILL_DELAY))
-                .then_some(feed.changes)
-            };
-            if let Some(after) = due {
-                self.still = Some(after);
-                match driver.capture_frame() {
-                    Ok(frame) => {
-                        let mut feed = view.feed();
-                        // A frame that arrived meanwhile is newer than this.
-                        if feed.changes == after {
-                            feed.lossless = Some((frame.data, after));
-                            view.arrived.notify_one();
-                        }
-                    }
-                    Err(error) if error.kind == ErrorKind::Closed => lost = Some(error),
-                    // The compositor has no frame to give yet: asked again.
-                    Err(error) if error.message.contains("Unable to capture screenshot") => {
-                        view.arm()
-                    }
-                    // A capture that cannot be had (a page whose PNG is over
-                    // the frame limit) is not a stream that stopped: the
-                    // JPEG stays, and this stream is not asked again.
-                    Err(_) => self.lossless = false,
-                }
-            }
-        }
-        if self.streaming && !self.lossless && lost.is_none() {
-            // Without a lossless frame to bring back what a skipped frame
-            // hid, a new stream does: its first frame is always shown.
-            let feed = view.feed();
-            let settled = !feed.rerendering
-                && feed.settling_until.is_none_or(|until| Instant::now() >= until)
-                && feed.changed_at.is_some_and(|at| at.elapsed() >= STILL_DELAY);
-            if feed.skipped && settled {
-                view.restart.store(true, Ordering::Release);
-            }
-        }
-        match lost {
-            Some(error) if error.kind == ErrorKind::Closed => self.lose_context(&error.message),
-            Some(error) => {
-                if std::mem::take(&mut self.streaming) {
-                    view.feed().stream = None;
-                    let _ = driver.stop_stream();
-                }
-                self.stream_retry = Instant::now() + STREAM_RETRY;
-                mark_stream_lost(&self.handle, &error.message);
-            }
-            None => {}
+        let refresh = wanted && view.refresh.load(Ordering::Acquire);
+        if wanted != self.shown || refresh {
+            view.refresh.store(false, Ordering::Release);
+            self.shown = wanted;
+            view.embedded.show(wanted);
         }
     }
 }
@@ -1595,7 +1372,6 @@ fn execute(
     driver: &mut Driver,
     pending: &PendingCommand,
     view: &LiveView,
-    scale: f32,
 ) -> Result<PageReply, DriverError> {
     use BrowserCommand::*;
     fn target<'a>(
@@ -1628,10 +1404,8 @@ fn execute(
     let agent = pending.include_aria;
     let mut reply = PageReply::default();
     let mut options = SnapshotOptions::default();
-    // The list of a <select> on an embedded page is Chromium's to click.
-    // The page is still told of a button that comes up over it: it may have
-    // seen it go down.
-    #[cfg(feature = "cef")]
+    // The list of a <select> is Chromium's to click. The page is still told
+    // of a button that comes up over it: it may have seen it go down.
     if !agent && view.embedded.takes_pointer(&pending.command) && !matches!(pending.command, PointerUp { .. }) {
         return Ok(reply);
     }
@@ -1805,9 +1579,7 @@ fn execute(
                 None if *full_page => Capture::FullPage,
                 None => Capture::Viewport,
             };
-            // Past the viewport Chrome lays the page out again at any scale.
-            let redraws = scale != 1.0 || !matches!(capture, Capture::Viewport);
-            let png = view.while_redrawing(redraws, || driver.screenshot(capture))?;
+            let png = view.while_redrawing(|| driver.screenshot(capture))?;
             reply.output = Some(BrowserToolOutput {
                 data: data(
                     "screenshot",
@@ -1837,7 +1609,7 @@ fn execute(
     }
     reply.info = Some(driver.info()?);
     let reading = matches!(pending.command, Snapshot { .. });
-    // What the user did in the window is on the stream. The agent reads the
+    // What the user did in the window is on its frames. The agent reads the
     // tree an action left, with the refs to act on next; a tool that returns
     // data of its own does not bury it behind that tree.
     if reading || (agent && reply.output.is_none() && reply.clipboard.is_none()) {
@@ -1854,7 +1626,7 @@ fn execute(
     if pending.include_image {
         // Reading never changes the page: without the picture the snapshot
         // is still an answer.
-        if let Ok(png) = view.while_redrawing(scale != 1.0, || driver.screenshot(Capture::Viewport)) {
+        if let Ok(png) = view.while_redrawing(|| driver.screenshot(Capture::Viewport)) {
             reply.screenshot = Some(Arc::from(
                 base64::engine::general_purpose::STANDARD.encode(&png.data),
             ));
@@ -1868,33 +1640,17 @@ fn data(key: &str, value: Value) -> serde_json::Map<String, Value> {
 }
 
 // ---- Live view -------------------------------------------------------------
-// The visible page is the driver's frame stream. Chrome sends a frame and
-// waits until the decoder thread has taken it, so a view that falls behind
-// makes Chrome skip frames: nothing queues here, and no reply waits behind a
-// frame. The decoder turns frames into pixels; the UI thread only uploads
-// the newest.
+// The visible page is what Chromium paints: each paint is copied on its own
+// thread into the page's canvas, and the frame thread turns what was painted
+// since its last turn into what the window takes. Nothing queues here, and no
+// reply waits behind a frame. The UI thread only uploads what it is handed.
 
 #[derive(Default)]
 struct Feed {
-    /// The driver's stream while it runs.
-    stream: Option<FrameStream>,
-    /// Device pixels per CSS pixel of the stream's frames.
-    scale: f32,
-    /// A frame may be waiting in the stream.
+    /// The page painted since the frame thread last looked.
     woken: bool,
-    /// A lossless frame for the decoder, and the change it was captured after.
-    lossless: Option<(Vec<u8>, u64)>,
-    /// Counts what gave the view something new to show. A page that holds
-    /// still gets one lossless frame after the last of them.
-    changes: u64,
-    changed_at: Option<Instant>,
-    /// Counts streams: the first frame of one is news whatever it shows.
-    epoch: u64,
-    /// The last frame of this stream was skipped, not shown.
-    skipped: bool,
-    /// An agent capture is making Chrome draw the page another way (at CSS
-    /// scale, or past the viewport), or did until a moment ago. Frames of
-    /// that moment are not the page.
+    /// An agent capture is making Chromium draw the page again, or did until
+    /// a moment ago. Paints of that moment are not news of the page.
     rerendering: bool,
     settling_until: Option<Instant>,
 }
@@ -1905,12 +1661,11 @@ struct LiveView {
     arrived: Condvar,
     /// What the window has yet to take: the newest whole frame, the part of
     /// it that changed since, or one after the other.
-    decoded: Mutex<Vec<limn_egui::SurfaceFrame>>,
+    painted: Mutex<Vec<limn_egui::SurfaceFrame>>,
     notify: Mutex<Option<Box<dyn Fn() + Send>>>,
-    restart: AtomicBool,
-    /// The page itself, when an embedded Chromium paints it: frames then
-    /// come from there and not from a stream.
-    #[cfg(feature = "cef")]
+    /// The window is owed a whole frame.
+    refresh: AtomicBool,
+    /// The page itself, which Chromium paints.
     embedded: cef::Embedded,
 }
 
@@ -1919,29 +1674,13 @@ impl LiveView {
         self.feed.lock().unwrap_or_else(|poison| poison.into_inner())
     }
 
-    /// The page may show something no frame has said yet: it is owed a
-    /// lossless frame once it holds still.
-    fn arm(&self) {
-        let mut feed = self.feed();
-        feed.changes += 1;
-        feed.changed_at = Some(Instant::now());
-    }
-
-    /// A capture at CSS scale on a denser display, or one that reaches past
-    /// the viewport, makes Chrome draw the page another way for a moment, and
-    /// the stream sees it. The view skips the frames of that moment and keeps
-    /// the last true one, until the frame it had comes back or, on a page
-    /// that moved meanwhile, for `RERENDER_SETTLE`.
-    fn while_redrawing<T>(&self, redraws: bool, take: impl FnOnce() -> T) -> T {
-        // Chromium paints an embedded page again for any capture, also one
-        // that changes nothing.
-        #[cfg(feature = "cef")]
-        let redraws = redraws || self.embedded.is_open();
-        if !redraws {
-            return take();
-        }
+    /// Chromium paints the page again for any capture, also one that changes
+    /// nothing, and one that reaches past the viewport makes it draw the
+    /// page another way for a moment. The view is not handed the paints of
+    /// that moment, nor of `RERENDER_SETTLE` after it: what they leave is
+    /// news only if it differs from what the view already shows.
+    fn while_redrawing<T>(&self, take: impl FnOnce() -> T) -> T {
         self.feed().rerendering = true;
-        #[cfg(feature = "cef")]
         self.embedded.before_capture();
         let taken = take();
         let mut feed = self.feed();
@@ -1954,17 +1693,17 @@ impl LiveView {
     /// to be taken. A part goes after a whole frame, and replaces a part:
     /// whoever built it made it carry what that one did.
     fn publish(&self, frame: limn_egui::SurfaceFrame) {
-        let mut decoded = self
-            .decoded
+        let mut painted = self
+            .painted
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
         if frame.part().is_none() {
-            decoded.clear();
-        } else if decoded.last().is_some_and(|waiting| waiting.part().is_some()) {
-            decoded.pop();
+            painted.clear();
+        } else if painted.last().is_some_and(|waiting| waiting.part().is_some()) {
+            painted.pop();
         }
-        decoded.push(frame);
-        drop(decoded);
+        painted.push(frame);
+        drop(painted);
         if let Some(notify) = self
             .notify
             .lock()
@@ -1976,8 +1715,8 @@ impl LiveView {
     }
 }
 
-/// The scale a context is launched with: the window's, within what a display
-/// has, as the two decimals that reach Chromium's command line.
+/// The scale a context's page is created with: the window's, within what a
+/// display has, to two decimals.
 pub(crate) fn device_scale(pixels_per_point: f32) -> f32 {
     if pixels_per_point.is_finite() {
         (pixels_per_point.clamp(1.0, 3.0) * 100.0).round() / 100.0
@@ -1986,193 +1725,25 @@ pub(crate) fn device_scale(pixels_per_point: f32) -> f32 {
     }
 }
 
-/// The scale of the stream's frames and, over the pixel budget, the bounds
-/// Chromium scales them down to.
-fn frame_bounds(viewport: (u32, u32), scale: f32) -> (f32, Option<(u32, u32)>) {
-    let exact = (
-        (viewport.0 as f32 * scale).ceil(),
-        (viewport.1 as f32 * scale).ceil(),
-    );
-    let fit = (MAX_FRAME_PIXELS as f32 / (exact.0 * exact.1)).sqrt();
-    if fit >= 1.0 {
-        (scale, None)
-    } else {
-        (
-            scale * fit,
-            Some(((exact.0 * fit) as u32, (exact.1 * fit) as u32)),
-        )
-    }
-}
-
-/// Runs on the decoder thread: the UI thread only uploads the result.
-fn decode_frame(
-    bytes: &[u8],
-    format: image::ImageFormat,
-    scale: f32,
-) -> Result<limn_egui::SurfaceFrame, String> {
-    let reader = |bytes| {
-        let mut reader = image::ImageReader::with_format(std::io::Cursor::new(bytes), format);
-        let mut limits = image::Limits::default();
-        limits.max_alloc = Some(MAX_FRAME_PIXELS * 8);
-        reader.limits(limits);
-        reader
-    };
-    // The header is checked before a decoder may allocate the image.
-    let (width, height) = reader(bytes)
-        .into_dimensions()
-        .map_err(|error| error.to_string())?;
-    if width == 0 || height == 0 || u64::from(width) * u64::from(height) > MAX_FRAME_PIXELS {
-        return Err("Cuadro fuera del límite de píxeles".into());
-    }
-    let size = [width as usize, height as usize];
-    let decoded = reader(bytes).decode().map_err(|error| error.to_string())?;
-    match decoded {
-        image::DynamicImage::ImageRgba8(pixels) => {
-            limn_egui::SurfaceFrame::from_rgba(size, pixels.as_raw(), scale)
-        }
-        other => limn_egui::SurfaceFrame::from_rgb(size, other.into_rgb8().as_raw(), scale),
-    }
-    .ok_or_else(|| "Cuadro no válido".into())
-}
-
-/// What the decoder remembers of the frames it was given, to tell news from
-/// a frame that repeats and from one that is not the page.
-#[derive(Default)]
-struct Shown {
-    epoch: u64,
-    /// The JPEG the view shows, or the twin of its lossless frame.
-    jpeg: Vec<u8>,
-    /// The last frame skipped as an agent capture's re-render.
-    skipped: Vec<u8>,
-    /// The lossless frame the view shows.
-    lossless: Vec<u8>,
-}
-
-impl Shown {
-    /// A new stream owes nothing to the frames of the one before it.
-    fn follow(&mut self, feed: &Feed) {
-        if feed.epoch != self.epoch {
-            *self = Self {
-                epoch: feed.epoch,
-                ..Default::default()
-            };
-        }
-    }
-
-    /// A frame of the stream. `None` when it is not for the view.
-    fn stream_frame(&mut self, view: &LiveView, data: Vec<u8>) -> Option<(Vec<u8>, f32)> {
-        let mut feed = view.feed();
-        self.follow(&feed);
-        // A repeated frame is no news; the lossless capture itself causes
-        // one. After an agent capture it says the true page is back,
-        // unchanged.
-        if data == self.jpeg {
-            feed.settling_until = None;
-            feed.skipped = false;
-            self.skipped.clear();
-            return None;
-        }
-        if data == self.skipped {
-            feed.settling_until = None;
-            return None;
-        }
-        feed.changes += 1;
-        feed.changed_at = Some(Instant::now());
-        let suspect = feed.rerendering
-            || feed
-                .settling_until
-                .is_some_and(|until| Instant::now() < until);
-        feed.skipped = suspect;
-        if suspect {
-            // What a skipped frame may have hidden, the lossless frame that
-            // follows brings back.
-            self.skipped = data;
-            return None;
-        }
-        Some((data, feed.scale))
-    }
-
-    /// A lossless frame captured after change `after`. `None` when the page
-    /// moved on meanwhile or already shows it.
-    fn lossless_frame(
-        &mut self,
-        view: &LiveView,
-        data: Vec<u8>,
-        after: u64,
-    ) -> Option<(Vec<u8>, f32)> {
-        let mut feed = view.feed();
-        self.follow(&feed);
-        if feed.changes != after {
-            return None;
-        }
-        feed.skipped = false;
-        // This capture is the page a skipped frame showed: that frame is its
-        // twin, and is no news when the capture makes Chrome send it again.
-        if !self.skipped.is_empty() {
-            self.jpeg = std::mem::take(&mut self.skipped);
-        }
-        (data != self.lossless).then(|| (data, feed.scale))
-    }
-}
-
-fn decode_frames(handle: &BrowserHandle) {
+/// Runs on the frame thread: hands the window what the page painted since
+/// the last turn, and sleeps until it paints again.
+fn publish_frames(handle: &BrowserHandle) {
     let view = &handle.view;
-    let mut shown = Shown::default();
     while !handle.closed.load(Ordering::Acquire) {
-        let mut feed = view.feed();
-        if let Some((data, after)) = feed.lossless.take() {
-            drop(feed);
-            if let Some((data, scale)) = shown.lossless_frame(view, data, after) {
-                if let Ok(frame) = decode_frame(&data, image::ImageFormat::Png, scale) {
-                    view.publish(frame);
-                    shown.lossless = data;
-                }
-            }
-            continue;
-        }
-        let stream = feed.stream.clone();
-        // A frame that arrives from here on sets it again.
-        feed.woken = false;
-        drop(feed);
-        #[cfg(feature = "cef")]
+        // A paint that arrives from here on sets it again.
+        view.feed().woken = false;
         if let Some(frame) = view.embedded.frame(view) {
             view.publish(frame);
             continue;
         }
-        // Taking the frame is what lets Chrome send the next one.
-        let Some(frame) = stream.and_then(|stream| stream.try_next()) else {
-            let feed = view.feed();
-            if !feed.woken && feed.lossless.is_none() {
-                let _ = view
-                    .arrived
-                    .wait_timeout(feed, Duration::from_millis(200))
-                    .unwrap_or_else(|poison| poison.into_inner());
-            }
-            continue;
-        };
-        if let Some((data, scale)) = shown.stream_frame(view, frame.data) {
-            // A frame that does not decode is skipped; the next one replaces it.
-            if let Ok(frame) = decode_frame(&data, image::ImageFormat::Jpeg, scale) {
-                view.publish(frame);
-                shown.jpeg = data;
-                shown.skipped.clear();
-                shown.lossless.clear();
-            }
+        let feed = view.feed();
+        if !feed.woken {
+            let _ = view
+                .arrived
+                .wait_timeout(feed, Duration::from_millis(200))
+                .unwrap_or_else(|poison| poison.into_inner());
         }
     }
-}
-
-fn mark_stream_lost(handle: &BrowserHandle, error: &str) {
-    let mut state = handle
-        .state
-        .lock()
-        .unwrap_or_else(|poison| poison.into_inner());
-    state.error = Some(bounded_string(
-        &format!("La vista en vivo se detuvo; se vuelve a pedir en unos segundos. {error}"),
-        2048,
-    ));
-    state.error_code = Some("stream_lost".into());
-    state.generation = state.generation.saturating_add(1);
 }
 
 fn read_bounded_line(reader: &mut impl BufRead, limit: usize) -> Result<Vec<u8>, String> {
@@ -2764,144 +2335,6 @@ pub(crate) fn browser_tool_command(name: &str, arguments: Value) -> Result<Brows
     Ok(command)
 }
 
-/// The browser a context runs in: the one the user named, else a system
-/// Chrome, Chromium or Edge, else a Chromium an earlier version of this
-/// application downloaded. Nothing is downloaded here. The error is what the
-/// panel says when there is none.
-fn find_browser(data_root: &Path) -> Result<PathBuf, String> {
-    choose_browser(
-        std::env::var_os("OPENIDE_BROWSER_EXECUTABLE"),
-        std::env::var_os("PATH").as_deref(),
-        &usual_locations(),
-        (!Path::new("/etc/NIXOS").exists()).then_some(data_root),
-    )
-}
-
-/// `named` is the user's choice, `search_path` the system's PATH, `usual`
-/// where this system installs browsers and `downloads` the data directory
-/// whose downloaded Chromium can run here.
-fn choose_browser(
-    named: Option<std::ffi::OsString>,
-    search_path: Option<&std::ffi::OsStr>,
-    usual: &[PathBuf],
-    downloads: Option<&Path>,
-) -> Result<PathBuf, String> {
-    if let Some(named) = named.filter(|value| !value.is_empty()) {
-        let executable = resolve_executable(Path::new(&named), search_path);
-        return if executable.is_file() {
-            Ok(executable)
-        } else {
-            Err(format!(
-                "OPENIDE_BROWSER_EXECUTABLE indica «{}», que no es un navegador instalado. Corregí la ruta o quitá la variable.",
-                Path::new(&named).display()
-            ))
-        };
-    }
-    let on_path = SYSTEM_BROWSERS
-        .iter()
-        .map(|name| resolve_executable(Path::new(name), search_path))
-        .find(|executable| executable.is_absolute() && executable.is_file());
-    on_path
-        .or_else(|| usual.iter().find(|path| path.is_file()).cloned())
-        .or_else(|| downloads.and_then(downloaded_chromium))
-        .ok_or_else(|| BROWSER_MISSING.to_owned())
-}
-
-/// Chrome, then Chromium, then Edge, by the names their packages install.
-#[cfg(not(windows))]
-const SYSTEM_BROWSERS: &[&str] = &[
-    "google-chrome-stable",
-    "google-chrome",
-    "chromium",
-    "chromium-browser",
-    "microsoft-edge-stable",
-    "microsoft-edge",
-];
-#[cfg(windows)]
-const SYSTEM_BROWSERS: &[&str] = &["chrome", "msedge"];
-
-/// Where each system installs a browser without putting it on PATH.
-fn usual_locations() -> Vec<PathBuf> {
-    #[cfg(target_os = "macos")]
-    {
-        let applications = [
-            "Google Chrome.app/Contents/MacOS/Google Chrome",
-            "Chromium.app/Contents/MacOS/Chromium",
-            "Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-        ];
-        let home = std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Applications"));
-        applications
-            .iter()
-            .flat_map(|application| {
-                [Some(PathBuf::from("/Applications")), home.clone()]
-                    .into_iter()
-                    .flatten()
-                    .map(move |root| root.join(application))
-            })
-            .collect()
-    }
-    #[cfg(windows)]
-    {
-        let applications = [
-            r"Google\Chrome\Application\chrome.exe",
-            r"Chromium\Application\chrome.exe",
-            r"Microsoft\Edge\Application\msedge.exe",
-        ];
-        applications
-            .iter()
-            .flat_map(|application| {
-                ["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"]
-                    .into_iter()
-                    .filter_map(std::env::var_os)
-                    .map(move |root| PathBuf::from(root).join(application))
-            })
-            .collect()
-    }
-    #[cfg(not(any(target_os = "macos", windows)))]
-    {
-        [
-            "/opt/google/chrome/chrome",
-            "/opt/chromium/chrome",
-            "/opt/microsoft/msedge/msedge",
-            "/snap/bin/chromium",
-        ]
-        .into_iter()
-        .map(PathBuf::from)
-        .collect()
-    }
-}
-
-/// The Chromium the removed npm installer left in the data directory, newest
-/// revision first. That generic binary expects a conventional distribution's
-/// libraries, which is why NixOS never gets here.
-fn downloaded_chromium(data_root: &Path) -> Option<PathBuf> {
-    let browsers = data_root
-        .join("browser-runtime/deps/node_modules/playwright-core/.local-browsers");
-    let mut revisions: Vec<(u64, PathBuf)> = fs::read_dir(browsers)
-        .ok()?
-        .flatten()
-        .filter_map(|entry| {
-            let revision = entry.file_name().to_str()?.strip_prefix("chromium-")?.parse().ok()?;
-            Some((revision, entry.path()))
-        })
-        .collect();
-    revisions.sort_by(|a, b| b.0.cmp(&a.0));
-    let layouts = [
-        "chrome-linux64/chrome",
-        "chrome-linux/chrome",
-        "chrome-mac-arm64/Chromium.app/Contents/MacOS/Chromium",
-        "chrome-mac/Chromium.app/Contents/MacOS/Chromium",
-        "chrome-win64/chrome.exe",
-        "chrome-win/chrome.exe",
-    ];
-    revisions.iter().find_map(|(_, revision)| {
-        layouts
-            .iter()
-            .map(|layout| revision.join(layout))
-            .find(|executable| executable.is_file())
-    })
-}
-
 fn private_directory(path: &Path) -> Result<(), String> {
     if fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
         return Err("Directorio de navegador no puede ser enlace simbólico".into());
@@ -2914,49 +2347,6 @@ fn private_directory(path: &Path) -> Result<(), String> {
             .map_err(|error| error.to_string())?;
     }
     Ok(())
-}
-
-fn resolve_executable(path: &Path, search_path: Option<&std::ffi::OsStr>) -> PathBuf {
-    if path.is_absolute() {
-        return path.to_owned();
-    }
-    if path.components().count() > 1 {
-        return std::env::current_dir()
-            .map(|cwd| cwd.join(path))
-            .unwrap_or_else(|_| path.to_owned());
-    }
-    if let Some(search_path) = search_path {
-        for directory in std::env::split_paths(search_path) {
-            let candidate = directory.join(path);
-            #[cfg(unix)]
-            let executable = {
-                use std::os::unix::fs::PermissionsExt;
-                fs::metadata(&candidate).is_ok_and(|metadata| {
-                    metadata.is_file() && metadata.permissions().mode() & 0o111 != 0
-                })
-            };
-            #[cfg(not(unix))]
-            let executable = candidate.is_file();
-            // By the name it was found under, never by what that links to:
-            // a snap's browser is a link to `snap`, which reads its name.
-            if executable {
-                if let Ok(absolute) = std::path::absolute(&candidate) {
-                    return absolute;
-                }
-            }
-            #[cfg(windows)]
-            if path.extension().is_none() {
-                let candidate = candidate.with_extension("exe");
-                if candidate.is_file() {
-                    if let Ok(absolute) = std::path::absolute(&candidate) {
-                        return absolute;
-                    }
-                }
-            }
-        }
-    }
-    // A name that is not on PATH stays as it was asked for.
-    path.to_owned()
 }
 
 fn validate_viewport(width: u32, height: u32) -> Result<(), String> {
@@ -2982,17 +2372,63 @@ fn hex_digest(bytes: &[u8]) -> String {
         .collect()
 }
 
-#[cfg(feature = "cef")]
+#[cfg(target_os = "linux")]
 #[path = "browser_cef.rs"]
 mod cef;
-#[cfg(feature = "cef")]
+/// The embedded Chromium is built for Linux alone. On any other system a
+/// context says so instead of starting, and nothing else here is reached.
+#[cfg(not(target_os = "linux"))]
+mod cef {
+    use super::*;
+
+    const UNAVAILABLE: &str = "Esta versión de OpenIDE sólo incluye su navegador embebido para Linux.";
+
+    #[derive(Default)]
+    pub(super) struct Embedded;
+
+    impl Embedded {
+        pub(super) fn start(_: &Arc<LiveView>, _: &Path, _: (u32, u32), _: f32) -> Result<Driver, StartFailure> {
+            Err(StartFailure {
+                code: "engine_failed",
+                message: UNAVAILABLE.into(),
+            })
+        }
+        pub(super) fn frame(&self, _: &LiveView) -> Option<limn_egui::SurfaceFrame> {
+            None
+        }
+        pub(super) fn before_capture(&self) {}
+        pub(super) fn show(&self, _: bool) {}
+        pub(super) fn busy(&self, _: bool) {}
+        pub(super) fn resize(&self, _: (u32, u32)) {}
+        pub(super) fn interrupt(&self) {}
+        pub(super) fn close(&self) {}
+        pub(super) fn takes_pointer(&self, _: &BrowserCommand) -> bool {
+            false
+        }
+        pub(super) fn cursor(&self) -> Option<eframe::egui::CursorIcon> {
+            None
+        }
+    }
+
+    pub(crate) fn observe_window_frame(_: f32) -> bool {
+        false
+    }
+
+    pub(crate) fn probe() -> i32 {
+        eprintln!("{UNAVAILABLE}");
+        1
+    }
+}
 pub(crate) use cef::{observe_window_frame as cef_observe_window_frame, probe as cef_probe};
 
 #[cfg(test)]
 #[path = "browser_runtime_tests.rs"]
 pub(crate) mod tests;
 
-// Reads the browser's processes from /proc.
+// They start the embedded Chromium and read its processes from /proc.
 #[cfg(all(test, target_os = "linux"))]
-#[path = "browser_chrome_tests.rs"]
-mod chrome_tests;
+#[path = "browser_cef_tests.rs"]
+mod cef_tests;
+#[cfg(all(test, target_os = "linux"))]
+#[path = "browser_cef_driver_tests.rs"]
+mod cef_driver_tests;

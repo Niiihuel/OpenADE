@@ -24,7 +24,7 @@ use std::time::Duration;
 /// What the browser process runs with; Chromium hands its helpers what they
 /// need of it. The first three keep it off the GPU: no hardware acceleration,
 /// no compositing on it and no software GL instead. The rest make it the one
-/// quiet page of a panel, as the switches of the launched Chrome do.
+/// quiet page of a panel.
 const SWITCHES: &[&str] = &[
     "disable-gpu",
     "disable-gpu-compositing",
@@ -158,6 +158,12 @@ struct Host {
 
 static HOST: OnceLock<Result<Host, String>> = OnceLock::new();
 
+/// Why CEF did not start in this process, once it has tried and failed.
+/// It initialises once per process: every later page fails the same way.
+pub fn start_failure() -> Option<String> {
+    HOST.get()?.as_ref().err().cloned()
+}
+
 /// Starts CEF if this is the first page of the process. A start that failed
 /// is not tried again: CEF initialises once per process.
 pub(crate) fn ensure_started(options: &Options) -> Result<(), String> {
@@ -232,7 +238,7 @@ pub fn shutdown() {
 
 /// CEF reads its data files from the directory `libcef.so` was loaded from,
 /// and takes the whole process down when one is missing. Looked for first, a
-/// broken installation is an error the caller can fall back from.
+/// broken installation is an error the caller can say.
 fn resources() -> Result<(), String> {
     let mut found: libc::Dl_info = unsafe { std::mem::zeroed() };
     let located = unsafe { libc::dladdr(sys::cef_initialize as *const () as *const libc::c_void, &mut found) };
