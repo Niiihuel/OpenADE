@@ -450,6 +450,8 @@ pub struct ViewState {
     pub workspace_draft: String,
     /// Cached for the composer so opening the Git review tab is not required.
     pub project_branch: Option<String>,
+    /// The project has a remote on GitHub, whose mark stands for its branch.
+    pub project_on_github: bool,
     pub(crate) composer_branches: crate::git_branches::BranchPickerView,
     pub prompt: String,
     pub composer_attachments: Vec<ComposerAttachmentView>,
@@ -4031,6 +4033,7 @@ pub(crate) mod tests {
             workspace: "C:/project".into(),
             workspace_draft: "C:/project".into(),
             project_branch: None,
+            project_on_github: false,
             composer_branches: Default::default(),
             prompt: String::new(),
             composer_attachments: Vec::new(),

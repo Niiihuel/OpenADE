@@ -4229,6 +4229,7 @@ mod tests {
             workspace: "C:/repo/openIDE".into(),
             workspace_draft: "C:/repo/openIDE".into(),
             project_branch: None,
+            project_on_github: false,
             composer_branches: Default::default(),
             github_contributions: crate::github_contributions::GithubContributionsStatus::Idle,
             prompt: "Siguiente paso".into(),

@@ -201,9 +201,14 @@ fn label_width(value: &str) -> f32 {
         + 8.0
 }
 
-// The glyphs of the problems and bell cells never took the muted ink of
-// their row; see the ledger before changing it.
+// The glyph of the bell cell never took the muted ink of its row; see the
+// ledger before changing it.
 const GLYPH_INK: Color = Color::WHITE;
+
+/// The color the Problems panel gives a severity.
+fn tone_ink(tone: openide_ui::AlertTone) -> Color {
+    openide_ui::AlertColors::for_tone(tone, theme::component_palette()).accent
+}
 
 fn cell_palette(surface: Color) -> ComponentPalette {
     theme::action_palette(surface, theme::FOREGROUND_SUBTLE)
@@ -600,15 +605,21 @@ fn branch_open(state: &ViewState) -> bool {
 
 fn branch(state: &ViewState, width: f32) -> StatusBarItem {
     let value = state.project_branch.as_deref().unwrap_or("Git");
-    control(
+    // The one value the bar is read for stands out, under its host's mark
+    // when the repository has one.
+    let icon = if state.project_on_github { Icon::Github } else { Icon::GitBranch };
+    // Its own palette: the other cells' text ink is the subtle one.
+    StatusBarItem::new(
         "ide_git_review",
-        "ide_status_branch_open",
-        if width > 24.0 { value } else { "" },
-        Some(Icon::GitBranch),
-        hint(format!("{value} · Ramas y cambios del repositorio")),
         width,
-        theme::WINDOW,
+        theme::action_palette(theme::WINDOW, theme::FOREGROUND),
     )
+    .icon(icon)
+    .label(if width > 24.0 { value } else { "" })
+    .strong()
+    .ink(theme::FOREGROUND)
+    .dispatch_as("ide_status_branch_open")
+    .tooltip_with(hint(format!("{value} · Ramas y cambios del repositorio")))
     .menu(
         branch_entries(),
         branch_open(state),
@@ -698,6 +709,11 @@ fn status_cells(state: &ViewState, width: f32, workspace: bool) -> StatusBar {
     let Some(status) = status else {
         return bar(leading, usage.into_iter().map(|(item, _)| item).collect());
     };
+    // A hairline parts the repository from the document's own state.
+    let divider_width = if branch_width > 24.0 { 1.0 + StatusBar::GAP } else { 0.0 };
+    if divider_width > 0.0 {
+        leading.push(StatusBarItem::divider("ide_status_divider", palette));
+    }
     let prefix = status.scope.prefix();
     let diagnostic_hint = format!(
         "{} errores · {} advertencias · {} informativos · {} sugerencias · {} sin severidad{} · Mostrar problemas del archivo",
@@ -712,15 +728,27 @@ fn status_cells(state: &ViewState, width: f32, workspace: bool) -> StatusBar {
             ""
         }
     );
-    let problem_width =
-        label_width(&status.errors.to_string()) + label_width(&status.warnings.to_string()) + 24.0;
+    // A severity shows its color only while the file has it; a clean file
+    // says so with one check.
+    let clean = status.errors == 0 && status.warnings == 0;
+    let problem_width = if clean {
+        label_width("0") + 12.0
+    } else {
+        label_width(&status.errors.to_string()) + label_width(&status.warnings.to_string()) + 24.0
+    };
+    let problems = StatusBarItem::new("ide_editor_diagnostics", problem_width, palette);
+    let severity = |item: StatusBarItem, icon, tone, count: usize| {
+        if count > 0 { item.tinted_icon(icon, tone_ink(tone)) } else { item.icon(icon) }.count(count)
+    };
+    let problems = if clean {
+        problems.tinted_icon(Icon::CheckCircle, tone_ink(openide_ui::AlertTone::Success)).count(0)
+    } else {
+        let problems =
+            severity(problems, Icon::ErrorCircle, openide_ui::AlertTone::Error, status.errors);
+        severity(problems, Icon::WarningTriangle, openide_ui::AlertTone::Warning, status.warnings)
+    };
     leading.push(
-        StatusBarItem::new("ide_editor_diagnostics", problem_width, palette)
-            .icon(Icon::ErrorCircle)
-            .count(status.errors)
-            .icon(Icon::WarningTriangle)
-            .count(status.warnings)
-            .ink(GLYPH_INK)
+        problems
             .sizing(StatusBarItemSizing::COUNTS)
             .dispatch_as(format!("{prefix}:diagnostics"))
             .tooltip_with(hint(diagnostic_hint)),
@@ -734,7 +762,8 @@ fn status_cells(state: &ViewState, width: f32, workspace: bool) -> StatusBar {
         surface,
     ));
     // The reservation is this bar's own rule, so the breakpoints stay put.
-    let budget = (width - branch_width - problem_width - service_width - 20.0).max(0.0);
+    let budget =
+        (width - branch_width - divider_width - problem_width - service_width - 20.0).max(0.0);
     let full_cursor = if status.selection > 0 {
         format!("{} · {} sel.", status.cursor, status.selection)
     } else {
@@ -1035,6 +1064,42 @@ mod tests {
     }
 
     #[test]
+    fn the_branch_stands_out_under_its_hosts_mark_and_a_clean_file_shows_one_green_check() {
+        let mut state = editor_state();
+        let size = Size::new(1440.0, 48.0);
+        let icons = |state: &ViewState| -> Vec<(Icon, Color)> {
+            openide_ui::UiTree::new(root(state, size.width))
+                .layout(size)
+                .commands
+                .iter()
+                .filter_map(|command| match command {
+                    openide_ui::DrawCommand::Icon { icon, tint, .. } => Some((*icon, *tint)),
+                    _ => None,
+                })
+                .collect()
+        };
+        let plain = icons(&state);
+        assert!(plain.contains(&(Icon::GitBranch, theme::FOREGROUND)), "{plain:?}");
+        // No problems: one check in the color of success, and no severity glyph.
+        let success = tone_ink(openide_ui::AlertTone::Success);
+        assert!(plain.contains(&(Icon::CheckCircle, success)), "{plain:?}");
+        assert!(!plain.iter().any(|(icon, _)| *icon == Icon::ErrorCircle), "{plain:?}");
+
+        state.project_on_github = true;
+        let hosted = icons(&state);
+        assert!(hosted.contains(&(Icon::Github, theme::FOREGROUND)), "{hosted:?}");
+        assert!(!hosted.iter().any(|(icon, _)| *icon == Icon::GitBranch), "{hosted:?}");
+
+        // The branch reads in the text ink, and a hairline parts it from the file's state.
+        let frame = openide_ui::UiTree::new(root(&state, size.width)).layout(size);
+        assert!(frame.commands.iter().any(|command| matches!(command,
+            openide_ui::DrawCommand::Text { text, color, .. }
+                if text == state.project_branch.as_deref().unwrap() && *color == theme::FOREGROUND)));
+        assert!(frame.commands.iter().any(|command| matches!(command,
+            openide_ui::DrawCommand::FillRect { rect, .. } if rect.width == 1.0 && rect.height == 11.0)));
+    }
+
+    #[test]
     #[ignore = "export the IDE footer with its usage cell at wide and narrow widths"]
     fn export_ide_footer_usage_visual_review() {
         let output = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -1043,8 +1108,11 @@ mod tests {
         let mut state = with_usage(editor_state(), &[("5 horas", 30.0), ("Semanal", 58.0)]);
         let warning = with_usage(editor_state(), &[("Semanal", 85.0)]);
         state.provider_usage_open = true;
+        let mut github = with_usage(editor_state(), &[("Semanal", 85.0)]);
+        github.project_on_github = true;
         for (name, state, width, height) in [
             ("1440", &warning, 1440.0, 48.0),
+            ("1440-github", &github, 1440.0, 48.0),
             ("460", &warning, 460.0, 48.0),
             ("360", &warning, 360.0, 48.0),
             ("popover-700", &state, 700.0, 360.0),
