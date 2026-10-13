@@ -231,6 +231,8 @@ pub struct SubagentSessionView {
     pub inputs: Vec<openide_harness::SubagentInputSnapshot>,
     pub dispatch_error: Option<String>,
     pub depth: u8,
+    /// The start of what it last answered, once it is done.
+    pub final_response: Option<String>,
 }
 
 #[derive(Clone, Debug)]

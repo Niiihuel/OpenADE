@@ -6384,6 +6384,7 @@ mod tests {
             inputs: vec![],
             dispatch_error: None,
             depth: 1,
+            final_response: None,
         };
         let live = |child: &str, parent: &str, title: &str| SubagentRunView {
             child_session_id: child.into(),
@@ -6606,6 +6607,7 @@ mod tests {
                     inputs: vec![],
                     dispatch_error: None,
                     depth: 1,
+                    final_response: None,
                 });
             for selected in ["s1", "child-1"] {
                 state.selected_session = Some(selected.into());
@@ -6661,6 +6663,7 @@ mod tests {
                     inputs: vec![],
                     dispatch_error: None,
                     depth: 1,
+                    final_response: None,
                 });
             for width in [360.0, 900.0] {
                 let frame = UiTree::new(related_subagent_cards(&state, width < 500.0).unwrap())
@@ -6692,6 +6695,7 @@ mod tests {
                 cancellation_requested: false,
                 open_inputs: 2,
                 depth: 1,
+                final_response: None,
                 dispatch_error: None,
                 inputs: [
                     SubagentInputStatus::Pending,
@@ -6796,6 +6800,7 @@ mod tests {
                 inputs: vec![],
                 dispatch_error: None,
                 depth: 1,
+                final_response: None,
             });
         state.subagent_input_edit = Some(crate::view::SubagentInputEditView {
             child_session_id: "child-1".into(),
@@ -6837,6 +6842,7 @@ mod tests {
                 cancellation_requested: false,
                 open_inputs: 2,
                 depth: 1,
+                final_response: None,
                 dispatch_error: None,
                 inputs: vec![
                     openide_harness::SubagentInputSnapshot {
@@ -6887,6 +6893,7 @@ mod tests {
                 open_inputs: 1,
                 inputs: vec![],
                 depth: 1,
+                final_response: None,
                 dispatch_error: Some("Selecciona el modelo original del subagente".into()),
             });
         for selected in ["s1", "child-1"] {

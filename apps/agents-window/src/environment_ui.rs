@@ -1033,9 +1033,34 @@ fn progress_rows(plan: &openide_core::PlanSnapshot) -> Vec<Element> {
 /// conversation, and the way to stop those still going.
 fn subagent_rows(state: &ViewState, width: f32) -> Vec<Element> {
     let mut going = 0;
-    let mut rows: Vec<Element> = subagents(state)
-        .map(|(run, stoppable)| {
+    // Those still at work first, then the ones that ended, each under its count.
+    let (mut active, mut done): (Vec<_>, Vec<_>) = subagents(state).partition(|(run, stoppable)| {
+        *stoppable
+            || !matches!(
+                run.status,
+                openide_harness::SubagentStatus::Completed
+                    | openide_harness::SubagentStatus::Failed
+                    | openide_harness::SubagentStatus::Cancelled
+            )
+    });
+    let heading = |title: &str, count: usize| {
+        theme::text_px(format!("{title} · {count}"), 10.5, theme::FOREGROUND_SUBTLE).size(None, Some(18.0))
+    };
+    let (active_count, done_count) = (active.len(), done.len());
+    let mut rows: Vec<Element> = Vec::new();
+    if active_count > 0 && done_count > 0 {
+        rows.push(heading("Activos", active_count));
+    }
+    let ended_heading = (done_count > 0 && active_count > 0).then(|| heading("Terminados", done_count));
+    let listed: Vec<Element> = active
+        .drain(..)
+        .map(|entry| (entry, false))
+        .chain(done.drain(..).map(|entry| (entry, true)))
+        .enumerate()
+        .flat_map(|(index, ((run, stoppable), ended))| {
             going += usize::from(stoppable);
+            let before = (ended && index == active_count).then(|| ended_heading.clone()).flatten();
+            let row = {
             let status = if state.pause.sessions.contains_key(&run.child_session_id) {
                 "En pausa"
             } else {
@@ -1043,6 +1068,10 @@ fn subagent_rows(state: &ViewState, width: f32) -> Vec<Element> {
             };
             let detail = if run.cancellation_requested {
                 format!("{status} · Cancelación solicitada")
+            } else if let Some(answer) = run.final_response.as_deref().filter(|_| ended) {
+                // What it answered, in a line; its conversation has the rest.
+                let line: String = answer.lines().next().unwrap_or("").chars().take(120).collect();
+                format!("{status} · {line}")
             } else {
                 status.to_owned()
             };
@@ -1057,10 +1086,17 @@ fn subagent_rows(state: &ViewState, width: f32) -> Vec<Element> {
                 .render()
                 .dispatch_as(format!("subagent_open:{}", run.child_session_id));
             Tooltip::new(row, id, "Abrir subagente", theme::component_palette())
-                .description(run.title.clone())
+                .description(match run.final_response.as_deref().filter(|_| ended) {
+                    Some(answer) => format!("{}\n\nRespuesta final:\n{answer}", run.title),
+                    None => run.title.clone(),
+                })
+                .max_width(360.0)
                 .render()
+            };
+            before.into_iter().chain([row])
         })
         .collect();
+    rows.extend(listed);
     if going > 0 {
         rows.push(Element::row(vec![
             Button::new("environment_subagents_stop", "Detener todos", block_button_palette())
@@ -1502,6 +1538,7 @@ pub(crate) mod tests {
                 inputs: vec![],
                 dispatch_error: None,
                 depth: 1,
+                final_response: None,
             });
         }
         for (id, command, ended, preview) in [
@@ -2275,6 +2312,32 @@ pub(crate) mod tests {
         assert_eq!(height(&frame), list);
         assert!(has(&frame, "project_action_run:check") && !has(&frame, "project_action_label"));
         assert!(!tree.is_animating());
+    }
+
+    #[test]
+    fn subagents_are_listed_as_active_and_finished_with_what_each_answered() {
+        let mut state = crate::view::tests::empty_state();
+        repository(&mut state);
+        going(&mut state);
+        state.environment.subagents_expanded = true;
+        let ended = |run: &crate::view::SubagentSessionView| run.status == openide_harness::SubagentStatus::Completed;
+        assert!(state.subagent_sessions.iter().any(ended) && !state.subagent_sessions.iter().all(ended));
+        for run in state.subagent_sessions.iter_mut().filter(|run| ended(run)) {
+            run.final_response = Some("Encontré dos regresiones.\nEl detalle sigue acá.".into());
+        }
+        let said: Vec<String> = texts(&frame(&state, 380.0, 1100.0)).into_iter().map(str::to_owned).collect();
+        let place = |start: &str| said.iter().position(|text| text.starts_with(start)).unwrap_or_else(|| panic!("{start}: {said:?}"));
+        // Those at work come first, each group under its count, and one that
+        // ended says what it answered in a line.
+        assert!(place("Activos · 1") < place("En ejecución"));
+        assert!(place("En ejecución") < place("Terminados · 1"));
+        assert!(place("Terminados · 1") < place("Completado · Encontré dos"));
+        assert!(!said.iter().any(|text| text.contains("El detalle sigue")), "{said:?}");
+
+        // With only one kind there is nothing to tell apart.
+        state.subagent_sessions.retain(|run| !ended(run));
+        let alone = texts(&frame(&state, 380.0, 1100.0)).join(" | ");
+        assert!(!alone.contains("Activos ·") && !alone.contains("Terminados ·"), "{alone}");
     }
 
     #[test]
