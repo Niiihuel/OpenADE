@@ -41,11 +41,12 @@ python3 scripts/build.py
 python3 scripts/build.py --run
 ```
 
-En NixOS, si el compilador C o `pkg-config` no están en el entorno:
+En NixOS, `shell.nix` trae el compilador C, `pkg-config` y las bibliotecas
+que la aplicación enlaza y carga:
 
 ```sh
-nix-shell -p stdenv.cc pkg-config cmake rustPlatform.bindgenHook wayland libxkbcommon alsa-lib \
-  --run 'python3 scripts/build.py'
+nix-shell --run 'python3 scripts/build.py'
+nix-shell --run ./target/desktop/agents-window
 ```
 
 El dictado del compositor usa SAPI en Windows. En Linux y macOS transcribe en la

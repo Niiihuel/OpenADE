@@ -7,7 +7,7 @@ rust-version.workspace = true
 [features]
 editor-e2e = []
 # The project browser on an embedded Chromium instead of a launched Chrome.
-# Needs CEF: build and run inside `nix-shell nix/shell-cef.nix`.
+# Needs CEF: build and run inside `nix-shell`.
 cef = ["dep:openide-cef"]
 
 [dependencies]

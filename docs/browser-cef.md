@@ -29,12 +29,12 @@ una lista o de cambiar el tamaño del panel.
 ## Compilar y abrir
 
 ```sh
-nix-shell nix/shell-cef.nix --run "cargo build --profile desktop -p agents-window --features cef"
-nix-shell nix/shell-cef.nix --run "target/desktop/agents-window"
+nix-shell --run "cargo build --profile desktop -p agents-window --features cef"
+nix-shell --run "target/desktop/agents-window"
 ```
 
-`nix/shell-cef.nix` es el shell normal más CEF (`nix/cef.nix`, un archivo de
-300 MB que el shell normal nunca descarga). Define `CEF_PATH`, con lo que
+`shell.nix` trae CEF (`nix/cef.nix`, un archivo de 300 MB que se descarga la
+primera vez que se entra al shell). Define `CEF_PATH`, con lo que
 `cef-dll-sys` enlaza contra ese directorio y no descarga nada, y lo agrega al
 final de `LD_LIBRARY_PATH`: de ahí se carga `libcef.so`, y CEF lee sus
 recursos y sus locales del directorio del que se cargó la biblioteca. Va al
@@ -52,7 +52,7 @@ abrir el binario directamente, como hace `scripts/build.py`, no se usa.
 Para comprobar una instalación sin abrir la ventana:
 
 ```sh
-nix-shell nix/shell-cef.nix --run "target/desktop/agents-window --cef-probe"
+nix-shell --run "target/desktop/agents-window --cef-probe"
 ```
 
 Inicia un contexto como lo hace la ventana, espera su primer cuadro y lo dice:
@@ -565,7 +565,7 @@ más los propios de CEF. No abren ventanas, no usan la GPU y sólo visitan
 páginas que la prueba sirve en localhost:
 
 ```sh
-nix-shell nix/shell-cef.nix --run \
+nix-shell --run \
   "cargo test -p agents-window --features cef -- --ignored real_cef --test-threads=1"
 ```
 
@@ -621,7 +621,7 @@ Las mediciones se repiten con el perfil optimizado, sin otra compilación en
 curso:
 
 ```sh
-nix-shell nix/shell-cef.nix --run \
+nix-shell --run \
   "cargo test --profile desktop -p agents-window --features cef --bin agents-window -- --ignored --nocapture --test-threads=1 real_cef_measurements"
 ```
 

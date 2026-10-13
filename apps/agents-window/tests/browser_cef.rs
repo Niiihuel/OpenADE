@@ -4,7 +4,7 @@
 //! them, and a normal exit leaves no process and no directory. Opt-in:
 //!
 //! ```sh
-//! nix-shell nix/shell-cef.nix --run \
+//! nix-shell --run \
 //!   "cargo test -p agents-window --features cef -- --ignored real_cef --test-threads=1"
 //! ```
 #![cfg(all(feature = "cef", target_os = "linux"))]

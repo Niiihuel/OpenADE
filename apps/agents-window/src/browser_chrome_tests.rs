@@ -16,7 +16,7 @@
 //! open a window or touch the GPU:
 //!
 //! ```sh
-//! nix-shell nix/shell-cef.nix --run \
+//! nix-shell --run \
 //!   "cargo test -p agents-window --features cef -- --ignored real_cef --test-threads=1"
 //! ```
 
@@ -1745,7 +1745,7 @@ fn native_wheel(session: &Session) {
 /// is the one that starts CEF:
 ///
 /// ```sh
-/// nix-shell nix/shell-cef.nix --run \
+/// nix-shell --run \
 ///   "cargo test --profile desktop -p agents-window --features cef -- --ignored --nocapture real_cef_measurements"
 /// ```
 #[cfg(feature = "cef")]

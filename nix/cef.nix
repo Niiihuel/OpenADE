@@ -1,7 +1,7 @@
 { pkgs ? import <nixpkgs> { } }:
 # CEF 154.0.34 for the `cef` feature of agents-window, laid out the way
-# cef-rs' export-cef-dir does. Only nix/shell-cef.nix refers to it: the normal
-# shell never fetches it (a 300 MB archive).
+# cef-rs' export-cef-dir does. shell.nix refers to it: entering the shell
+# fetches it once (a 300 MB archive).
 #
 # Why not NIX_CEF_BINARY=1: cef-rs overrides nixpkgs' cef-binary (147.0.10) to
 # 154.0.34, and that package's installPhase runs patchelf on Release/libEGL.so
