@@ -12,6 +12,8 @@ use crate::{theme, view::ViewState};
 pub(crate) const TOOLBAR_HEIGHT: f32 = crate::dock_tab_ui::HEADER_HEIGHT;
 pub(crate) const STATUS_HEIGHT: f32 = 20.0;
 const NAVIGATION_SIZE: f32 = crate::dock_tab_ui::TOOL_SIZE;
+/// Copies the address in the bar; its button shows a check for a moment.
+pub(crate) const COPY_URL: &str = "browser_copy_url";
 // The inset of `ui_sizing::PANE_HEADER`, which the toolbar is built with.
 #[cfg(test)]
 const NAVIGATION_INSET: f32 = (TOOLBAR_HEIGHT - NAVIGATION_SIZE) / 2.0;
@@ -69,9 +71,27 @@ fn menu_action(
         .into()
 }
 
+/// Whether the copy button stands beside the address: while there is one,
+/// and the bar leaves the address room for it. Narrower, the menu copies.
+fn copies_in_bar(browser: &BrowserUiState, width: f32) -> bool {
+    width >= 320.0 && has_address(browser)
+}
+
+fn has_address(browser: &BrowserUiState) -> bool {
+    !browser.url_draft.is_empty() || !browser.url.is_empty()
+}
+
 fn more_menu(browser: &BrowserUiState, width: f32) -> Element {
     let ready = browser.started && !browser.navigating;
-    let address = !browser.url_draft.is_empty() || !browser.url.is_empty();
+    let mut entries = vec![
+        menu_action("browser_snapshot", Icon::Refresh, "Actualizar vista", "Vuelve a pedir la imagen en vivo de la página, sin recargarla.", ready),
+        DropdownMenuEntry::Separator,
+        menu_action("browser_mcp_config", Icon::Code, "Copiar conexión MCP", "Copia la configuración para conectar herramientas a esta página. La conexión existe mientras esta pestaña siga abierta.", ready),
+        menu_action("browser_restart", Icon::Refresh, "Reiniciar navegador", "Abre un contexto nuevo y vuelve a la dirección actual. El estado de la página anterior se descarta.", true),
+    ];
+    if !copies_in_bar(browser, width) {
+        entries.insert(0, menu_action(COPY_URL, Icon::Copy, "Copiar dirección", "Copia la dirección visible en la barra al portapapeles.", has_address(browser)));
+    }
     DropdownMenu::new(
         IconButton::new("browser_more_toggle", Icon::More, theme::component_palette())
             .variant(ButtonVariant::Ghost)
@@ -79,13 +99,7 @@ fn more_menu(browser: &BrowserUiState, width: f32) -> Element {
             .enabled(true)
             .tooltip_with(TooltipSpec::new("Más opciones del navegador").placement(TooltipPlacement::Below))
             .render(),
-        vec![
-            menu_action("browser_copy_url", Icon::File, "Copiar dirección", "Copia la dirección visible en la barra al portapapeles.", address),
-            menu_action("browser_snapshot", Icon::Refresh, "Actualizar vista", "Vuelve a pedir la imagen en vivo de la página, sin recargarla.", ready),
-            DropdownMenuEntry::Separator,
-            menu_action("browser_mcp_config", Icon::Code, "Copiar conexión MCP", "Copia la configuración para conectar herramientas a esta página. La conexión existe mientras esta pestaña siga abierta.", ready),
-            menu_action("browser_restart", Icon::Refresh, "Reiniciar navegador", "Abre un contexto nuevo y vuelve a la dirección actual. El estado de la página anterior se descarta.", true),
-        ],
+        entries,
         browser.more_open,
         "browser_more_dismiss",
         theme::menu_palette(),
@@ -96,7 +110,7 @@ fn more_menu(browser: &BrowserUiState, width: f32) -> Element {
     .render()
 }
 
-fn navigation(browser: &BrowserUiState, width: f32) -> Element {
+fn navigation(browser: &BrowserUiState, copied: bool, width: f32) -> Element {
     let ready = browser.started && !browser.navigating;
     let address = Tooltip::new(
         Element::text_input("browser_url", &browser.url_draft, "URL o localhost:3000")
@@ -147,7 +161,18 @@ fn navigation(browser: &BrowserUiState, width: f32) -> Element {
     .gap(4.0);
     openide_ui::PanelHeader::new("", theme::component_palette())
         .leading(leading)
-        .trailing(vec![more_menu(browser, width)])
+        .trailing(
+            copies_in_bar(browser, width)
+                .then(|| {
+                    openide_ui::Clipboard::new(COPY_URL, "Copiar dirección", theme::component_palette())
+                        .size(ControlSize::Dense)
+                        .copied(copied)
+                        .render()
+                })
+                .into_iter()
+                .chain([more_menu(browser, width)])
+                .collect(),
+        )
         .width(width)
         .sizing(crate::ui_sizing::PANE_HEADER)
         .render()
@@ -436,7 +461,11 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
         state_surface(browser, width, mode)
     };
     Element::column(vec![
-        navigation(browser, width),
+        navigation(
+            browser,
+            state.link_copied.as_ref().is_some_and(|copied| copied.by == COPY_URL),
+            width,
+        ),
         Separator::horizontal(theme::component_palette()).render(),
         content,
         status(browser, width, mode),

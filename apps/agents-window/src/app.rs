@@ -6908,6 +6908,8 @@ impl AgentsWindow {
             tool_verification_is_error: false,
             selected_tool_id: None,
             show_jump_to_bottom: false,
+            turn_in_view: None,
+            link_copied: None,
             show_archived: false,
             session_organization: sidebar_preferences.organization,
             session_sort: sidebar_preferences.sort,
@@ -9221,6 +9223,28 @@ impl AgentsWindow {
             self.view.status = "Reanudación automática cancelada; el turno sigue en pausa".to_owned();
         }
         armed
+    }
+
+    /// Copy a link and say so: a toast, and a check on the button `by`.
+    pub(super) fn copy_link(&mut self, url: String, by: &'static str, ctx: &egui::Context) {
+        if url.is_empty() {
+            return;
+        }
+        ctx.copy_text(url.clone());
+        self.view.link_copied = Some(crate::view::LinkCopied { url, by, at: Instant::now() });
+    }
+
+    fn expire_link_copied(&mut self, ctx: &egui::Context) -> bool {
+        let Some(copied) = &self.view.link_copied else {
+            return false;
+        };
+        let left = crate::view::LinkCopied::SHOWN_FOR.saturating_sub(copied.at.elapsed());
+        if !left.is_zero() {
+            ctx.request_repaint_after(left);
+            return false;
+        }
+        self.view.link_copied = None;
+        true
     }
 
     fn expire_message_copy(&mut self, ctx: &egui::Context) -> bool {
@@ -16488,7 +16512,8 @@ impl AgentsWindow {
                 "browser_focus_url" => { self.view.browser.more_open = false; self.tree.focus("browser_url"); },
                 "browser_copy_url" => {
                     self.view.browser.more_open = false;
-                    ctx.copy_text(if self.view.browser.url_draft.is_empty() { self.view.browser.url.clone() } else { self.view.browser.url_draft.clone() });
+                    let address = if self.view.browser.url_draft.is_empty() { self.view.browser.url.clone() } else { self.view.browser.url_draft.clone() };
+                    self.copy_link(address, crate::browser_ui::COPY_URL, ctx);
                 },
                 "browser_snapshot" => {
                     self.view.browser.more_open = false;
@@ -19799,6 +19824,16 @@ impl AgentsWindow {
                 self.tree.scroll_to_end("transcript");
                 self.view.show_jump_to_bottom = false;
             }
+            UiAction::Clicked { id } if id.starts_with(crate::session_surface::TURN_JUMP) => {
+                let row = id.trim_start_matches(crate::session_surface::TURN_JUMP);
+                if let Ok(row) = row.parse() {
+                    // To the top of the view, also from further down in it.
+                    self.tree.reveal_at_start(
+                        &crate::session_surface::turn_anchor(row),
+                        crate::session_surface::TURN_JUMP_MARGIN,
+                    );
+                }
+            }
             UiAction::Clicked { id } if id == "side_tab:context" => {
                 self.view.side_tab = SideTab::Context;
                 let scope = self.dock_scope();
@@ -20701,6 +20736,7 @@ impl eframe::App for AgentsWindow {
         early_changed |= self.expire_settings_notice(&ctx);
         early_changed |= self.expire_reveal_flash(&ctx);
         early_changed |= self.expire_message_copy(&ctx);
+        early_changed |= self.expire_link_copied(&ctx);
         early_changed |= self.follow_pause_clock(&ctx);
         early_changed |= self.poll_turn_check();
         // These updates are already included in the first tree below. Only
@@ -20877,6 +20913,9 @@ impl eframe::App for AgentsWindow {
             !self.view.transcript.is_empty() && !self.tree.is_scroll_at_end("transcript", 24.0);
         early_changed |= self.view.show_jump_to_bottom != show_jump;
         self.view.show_jump_to_bottom = show_jump;
+        let turn_in_view = crate::session_surface::turn_in_view(&self.view, &self.tree);
+        early_changed |= self.view.turn_in_view != turn_in_view;
+        self.view.turn_in_view = turn_in_view;
         let window_focused = ctx.input(|input| input.focused);
         // Files may have changed while another program had the focus.
         self.environment_dirty |= window_focused && !self.window_focused;

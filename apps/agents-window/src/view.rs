@@ -420,6 +420,21 @@ pub struct ExternalApprovalView {
     pub detail: String,
 }
 
+/// A link just copied: a toast says so, and the button that copied it shows
+/// a check meanwhile.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LinkCopied {
+    pub url: String,
+    /// The action that copied it; empty for a menu row.
+    pub by: &'static str,
+    pub at: std::time::Instant,
+}
+
+impl LinkCopied {
+    /// Long enough to read the toast and see whose link it was.
+    pub const SHOWN_FOR: std::time::Duration = std::time::Duration::from_secs(2);
+}
+
 pub struct ViewState {
     pub(crate) tour: crate::tour::TourView,
     /// Editing an earlier message, its confirmation and the rewind's undo.
@@ -574,6 +589,7 @@ pub struct ViewState {
     pub status: String,
     pub settings_notice: Option<String>,
     pub settings_notice_error: bool,
+    pub link_copied: Option<LinkCopied>,
     pub native_key_available: bool,
     pub workspace_writes_enabled: bool,
     pub native_tool_permissions: ToolPermissions,
@@ -735,6 +751,8 @@ pub struct ViewState {
     pub tool_verification_is_error: bool,
     pub selected_tool_id: Option<String>,
     pub show_jump_to_bottom: bool,
+    /// Transcript row of the message whose turn is at the top of the view.
+    pub turn_in_view: Option<usize>,
     pub github_account: GithubAccountStatus,
     pub github_account_menu_open: bool,
     pub github_account_refreshing: bool,
@@ -4281,6 +4299,8 @@ pub(crate) mod tests {
             terminal_error: None,
             selected_tool_id: None,
             show_jump_to_bottom: false,
+            turn_in_view: None,
+            link_copied: None,
             github_account: GithubAccountStatus::Disconnected,
             github_account_menu_open: false,
             github_account_refreshing: false,

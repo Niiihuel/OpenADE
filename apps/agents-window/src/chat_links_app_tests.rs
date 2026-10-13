@@ -230,6 +230,11 @@ fn a_secondary_click_on_a_link_opens_its_menu_and_each_row_acts_on_that_link() {
         assert_eq!(fixture.output(), expected, "{operation}");
     }
     assert_eq!(fixture.navigated().as_deref(), Some("https://github.com/openai/codex"));
+    // The copied link, not its text, is announced.
+    assert_eq!(
+        fixture.app.view.link_copied.as_ref().map(|copied| copied.url.as_str()),
+        Some("https://github.com/openai/codex")
+    );
 
     // A row chosen with no link behind it does nothing.
     fixture.choose("system");

@@ -135,6 +135,19 @@ pub(crate) fn toast_layer(state: &crate::view::ViewState, base: Element) -> Elem
                 .render(),
         );
     }
+    if let Some(copied) = &state.link_copied {
+        // A long address is cut: the toast names the link, it is not read from.
+        let mut address: String = copied.url.chars().take(56).collect();
+        if address.len() < copied.url.len() {
+            address.push('…');
+        }
+        cards.push(
+            openide_ui::Toast::new("Enlace copiado", theme::menu_palette())
+                .description(address)
+                .width(340.0)
+                .render(),
+        );
+    }
     if let Some(item) = state.notifications.toast(std::time::Instant::now()) {
         cards.push(
             openide_ui::Toast::new(item.title.clone(), theme::menu_palette())
@@ -353,6 +366,21 @@ mod tests {
         let empty = UiTree::new(bell(&center, theme::SIDEBAR, 24.0, false)).layout(Size::new(400.0, 300.0));
         let shown = texts(&empty);
         assert!(shown.contains("Sin notificaciones") && !shown.contains("Limpiar"), "{shown}");
+    }
+
+    #[test]
+    fn a_copied_link_is_announced_with_its_address_cut_short() {
+        let mut state = crate::view::tests::empty_state();
+        state.link_copied = Some(crate::view::LinkCopied {
+            url: format!("https://example.com/{}", "a".repeat(80)),
+            by: "",
+            at: std::time::Instant::now(),
+        });
+        let base = Element::spacer().size(Some(800.0), Some(500.0));
+        let frame = UiTree::new(toast_layer(&state, base)).layout(Size::new(800.0, 500.0));
+        let shown = texts(&frame);
+        assert!(shown.contains("Enlace copiado") && shown.contains("https://example.com/"), "{shown}");
+        assert!(shown.contains('…') && !shown.contains(&"a".repeat(80)), "{shown}");
     }
 
     #[test]
