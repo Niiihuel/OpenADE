@@ -1,5 +1,5 @@
 use super::*;
-use openide_ui::{HitKind, Point, Size, UiEvent, UiTree};
+use openide_ui::{DrawCommand, HitKind, Icon, Point, Size, UiEvent, UiTree};
 
 const REQUEST: &str = "pending-question";
 
@@ -477,6 +477,70 @@ fn only_a_question_comes_back_as_its_card_a_mode_proposal_is_answered_through_th
         let (text, regions) = window(&app);
         assert!(text.contains("Responder y reanudar"), "{text}");
         assert!(regions.contains(&format!("session_recover:{session}")));
+    }
+}
+
+/// Whether the list marks `session` as waiting for the user's answer.
+fn marked(app: &AgentsWindow, session: &str) -> bool {
+    let size = Size::new(900.0, 720.0);
+    let mut tree = UiTree::new(crate::view::build_window_view(&app.view, size.width, size.height));
+    tree.set_reduced_motion(true);
+    let frame = tree.layout(size);
+    let row = frame
+        .regions
+        .iter()
+        .find(|region| region.id == format!("session:{session}"))
+        .unwrap_or_else(|| panic!("no row for {session}"))
+        .rect;
+    frame.commands.iter().any(|command| {
+        matches!(command, DrawCommand::Icon { icon: Icon::Chat, tint, rect }
+            if *tint == crate::theme::BRAND
+                && rect.y >= row.y
+                && rect.y + rect.height <= row.y + row.height
+                && rect.x < row.x + 40.0)
+    })
+}
+
+#[test]
+fn the_list_marks_a_conversation_waiting_for_an_answer_until_it_is_answered_or_skipped() {
+    for skip in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let data_root = root.path().join("data");
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let app = AgentsWindow::with_data_root(data_root.clone());
+        let store = app.store.as_ref().unwrap().clone();
+        let waiting = interrupted(&store, &workspace, ask());
+        let other = store.create(&workspace, "native").unwrap().id;
+        drop(app);
+
+        // After a restart, with another conversation open: only the one
+        // whose agent asked is marked.
+        let mut app = reopened(&data_root, &other);
+        assert!(marked(&app, &waiting));
+        assert!(!marked(&app, &other));
+        // Opening it brings the question back; the mark stays while it is open.
+        app.open_session(&waiting);
+        app.view.native_provider_id = "custom".into();
+        app.view.model = "different-current-model".into();
+        assert_eq!(app.view.pending_permissions.len(), 1);
+        assert!(marked(&app, &waiting));
+
+        if skip {
+            press(&mut app, &question_ui::action(REQUEST, "skip"));
+        } else {
+            press(&mut app, &question_ui::pick_action(REQUEST, 0, 0));
+            press(&mut app, &question_ui::action(REQUEST, "next"));
+            press(&mut app, &question_ui::action(REQUEST, "send"));
+        }
+        assert_eq!(recorded(&app, &waiting).len(), 1);
+        assert!(!marked(&app, &waiting));
+        // Not from another conversation either, nor after another restart.
+        app.open_session(&other);
+        assert!(!marked(&app, &waiting));
+        drop(app);
+        let app = reopened(&data_root, &other);
+        assert!(!marked(&app, &waiting));
     }
 }
 

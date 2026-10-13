@@ -970,8 +970,24 @@ struct SessionRowContext {
     group_menu_id: Option<String>,
     session_plans: BTreeMap<String, SessionPlanView>,
     session_recovery: BTreeMap<String, SessionRecoveryView>,
+    /// The selected conversation shows a question its agent waits on.
+    selected_asked: bool,
     /// `en pausa · 03:10` for the sessions paused on a provider limit.
     pause_labels: BTreeMap<String, String>,
+}
+
+impl SessionRowContext {
+    /// Whether this conversation's agent asked the user and still waits: the
+    /// request open in the selected conversation, or the one an interrupted
+    /// turn left unanswered in any other.
+    fn awaits_answer(&self, session: &SessionView) -> bool {
+        let selected = self.selected_session.as_deref() == Some(session.id.as_str());
+        if selected && (self.selected_asked || self.running) {
+            // A turn that runs on has what it asked, whatever the list knew.
+            return self.selected_asked;
+        }
+        self.session_recovery.get(&session.id) == Some(&SessionRecoveryView::Question)
+    }
 }
 
 impl From<&ViewState> for SessionRowContext {
@@ -984,6 +1000,10 @@ impl From<&ViewState> for SessionRowContext {
             group_menu_id: state.group_menu_id.clone(),
             session_plans: state.session_plans.clone(),
             session_recovery: state.session_recovery.clone(),
+            selected_asked: state
+                .pending_permissions
+                .iter()
+                .any(|permission| openide_harness::is_user_interaction_tool(&permission.tool_name)),
             pause_labels: state
                 .pause
                 .sessions
@@ -1041,6 +1061,15 @@ fn session_row_with_context(
     if selected || session.unread {
         row = row.title_ink(theme::BRAND);
     }
+    if state.awaits_answer(session) {
+        // The mark says what it is where the pointer rests on the row.
+        row = row.tooltip_with(
+            TooltipSpec::new("Espera tu respuesta")
+                .placement(TooltipPlacement::Right)
+                .palette(theme::component_palette())
+                .suppressed(menu_open),
+        );
+    }
     row.render()
         .size(Some(row_width), crate::ui_sizing::SIDEBAR_TASK.height)
 }
@@ -1056,9 +1085,14 @@ fn session_row_parts(
     let menu_open = state.session_menu_id.as_deref() == Some(session.id.as_str());
     let menu_width = row_width.max(246.0);
     let recovery = state.session_recovery.get(&session.id);
+    let awaits_answer = state.awaits_answer(session);
     let status_marker = if state.pause_labels.contains_key(&session.id) {
         // Waiting on a clock, not asking for a recovery.
         Element::icon(Icon::Clock).foreground(theme::FOREGROUND_SUBTLE)
+    } else if awaits_answer {
+        // The agent asked and waits: the question card's own icon, neither
+        // the dot of something unread nor the arrows of a turn to recover.
+        Element::icon(Icon::Chat).foreground(theme::BRAND)
     } else if recovery.is_some() {
         Element::icon(Icon::Refresh).foreground(theme::BRAND)
     } else if session.unread {
@@ -1080,12 +1114,12 @@ fn session_row_parts(
     // rounded hover surface. Reserving it also keeps idle/running titles fixed.
     let status_marker = status_marker
         .size(
-            Some(if session.unread && recovery.is_none() {
+            Some(if session.unread && recovery.is_none() && !awaits_answer {
                 6.0
             } else {
                 16.0
             }),
-            Some(if session.unread && recovery.is_none() {
+            Some(if session.unread && recovery.is_none() && !awaits_answer {
                 6.0
             } else {
                 16.0
@@ -8460,6 +8494,140 @@ pub(crate) mod tests {
                 id: "session:unicode".into()
             }]
         );
+    }
+
+    #[test]
+    fn a_conversation_whose_agent_waits_for_an_answer_wears_its_own_mark() {
+        let session = |id: &str, unread: bool| SessionView {
+            id: id.into(),
+            title: "Tarea".into(),
+            project: "/project".into(),
+            backend: "native".into(),
+            pinned: false,
+            archived: false,
+            unread,
+            native_automation: None,
+        };
+        // The marker a row draws, whether it is the unread dot, and whether
+        // resting on the row says what the mark means.
+        let marks = |state: &ViewState, session: &SessionView| {
+            // Room beside the row for the hint, which opens to its right.
+            let viewport = Size::new(640.0, 160.0);
+            let mut tree = UiTree::new(session_row(state, session, 264.0));
+            tree.set_reduced_motion(true);
+            tree.layout(viewport);
+            assert!(tree.focus(&format!("session:{}", session.id)));
+            let frame = tree.layout(viewport);
+            let icons = frame
+                .commands
+                .iter()
+                .filter_map(|command| match command {
+                    DrawCommand::Icon { icon, tint, .. } if *icon != Icon::More => {
+                        Some((*icon, *tint))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            let dot = frame.commands.iter().any(|command| {
+                matches!(command, DrawCommand::FillRect { rect, color, .. }
+                    if rect.width == 6.0 && rect.height == 6.0 && *color == theme::BRAND)
+            });
+            let hint = frame.commands.iter().any(|command| {
+                matches!(command, DrawCommand::Text { text, .. } if text == "Espera tu respuesta")
+            });
+            (icons, dot, hint)
+        };
+        let waiting = (vec![(Icon::Chat, theme::BRAND)], false, true);
+
+        // Not the selected conversation: the journal says its agent asked.
+        let mut state = empty_state();
+        state.selected_session = Some("elsewhere".into());
+        state
+            .session_recovery
+            .insert("asked".into(), SessionRecoveryView::Question);
+        assert_eq!(marks(&state, &session("asked", false)), waiting);
+        // Unread as well, the question is still what it waits for.
+        assert_eq!(marks(&state, &session("asked", true)), waiting);
+        // Told apart from a conversation that is only unread, and from a
+        // turn to recover that asks nothing.
+        assert_eq!(marks(&state, &session("unread", true)), (vec![], true, false));
+        for recovery in [SessionRecoveryView::Resume, SessionRecoveryView::Permission] {
+            state.session_recovery.insert("asked".into(), recovery);
+            assert_eq!(
+                marks(&state, &session("asked", false)),
+                (vec![(Icon::Refresh, theme::BRAND)], false, false)
+            );
+        }
+
+        // The selected conversation, its turn running: the open question.
+        let running = (vec![(Icon::Clock, theme::FOREGROUND)], false, false);
+        let mut live = empty_state();
+        live.selected_session = Some("live".into());
+        live.running = true;
+        assert_eq!(marks(&live, &session("live", false)), running);
+        live.pending_permissions.push(PermissionView {
+            request_id: "request".into(),
+            tool_name: openide_harness::ASK_USER_TOOL.into(),
+            arguments: "{}".into(),
+        });
+        assert_eq!(marks(&live, &session("live", false)), waiting);
+        // Only on its own row.
+        assert_eq!(marks(&live, &session("another", false)), (vec![], false, false));
+        // A permission prompt is not a question.
+        live.pending_permissions[0].tool_name = "run_command".into();
+        assert_eq!(marks(&live, &session("live", false)), running);
+        // Answered or skipped: the card is gone and so is the mark.
+        live.pending_permissions.clear();
+        assert_eq!(marks(&live, &session("live", false)), running);
+
+        // Selected after a restart, the card back in the conversation.
+        let mut restored = empty_state();
+        restored.selected_session = Some("asked".into());
+        restored
+            .session_recovery
+            .insert("asked".into(), SessionRecoveryView::Question);
+        assert_eq!(marks(&restored, &session("asked", false)), waiting);
+    }
+
+    #[test]
+    #[ignore = "export the sidebar's marks for visual review"]
+    fn export_sidebar_marks_visual_review() {
+        let mut state = empty_state();
+        state.sidebar_collapsed = false;
+        state.workspace = "/workspace/openADE".into();
+        let session = |id: &str, title: &str, unread: bool, pinned: bool| SessionView {
+            id: id.into(),
+            title: title.into(),
+            project: "/workspace/openADE".into(),
+            backend: "native".into(),
+            pinned,
+            archived: false,
+            unread,
+            native_automation: None,
+        };
+        state.sessions = vec![
+            session("asked", "Elegir el almacenamiento de sesiones", false, false),
+            session("asked-unread", "Diseñar el panel de permisos", true, false),
+            session("unread", "Revisar el proyecto y la interfaz", true, false),
+            session("resume", "Migrar el journal a SQLite", false, false),
+            session("pinned", "Notas de la versión", false, true),
+            session("plain", "Corregir el scroll del transcript", false, false),
+        ];
+        state.selected_session = Some("plain".into());
+        for id in ["asked", "asked-unread"] {
+            state
+                .session_recovery
+                .insert(id.into(), SessionRecoveryView::Question);
+        }
+        state
+            .session_recovery
+            .insert("resume".into(), SessionRecoveryView::Resume);
+        let size = Size::new(264.0, 640.0);
+        let (context, mut tree) =
+            ide_visual_tests::native_tree(sidebar_for_height(&state, size.width, size.height));
+        let frame = tree.layout(size);
+        ide_visual_tests::export_shot(&frame, size, "agent-tools", "sidebar-waiting-answer");
+        context.end_pass().textures_delta.clear();
     }
 
     #[test]
