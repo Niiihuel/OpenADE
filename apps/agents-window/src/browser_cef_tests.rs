@@ -1295,6 +1295,10 @@ fn real_cef_opens_no_graphics_device_and_loads_no_graphics_driver() {
     // A page that asks for WebGL gets none, not a software stand-in.
     let webgl = session.agent("browser_evaluate", json!({"expression": "!!document.createElement('canvas').getContext('webgl')"}));
     assert_eq!(webgl.content[1]["text"], "false");
+    // Nor does one that asks for WebGPU get an adapter, of the GPU or of a
+    // software stand-in.
+    let webgpu = session.agent("browser_evaluate", json!({"expression": "() => navigator.gpu ? navigator.gpu.requestAdapter().then(adapter => !!adapter) : false"}));
+    assert_eq!(webgpu.content[1]["text"], "false", "{:?}", webgpu.content);
     // This process, where CEF's browser side runs, and every helper of it.
     let mut processes = descendants(std::process::id());
     assert!(processes.len() >= 5, "CEF runs its helpers below this process: {processes:?}");
@@ -1364,6 +1368,28 @@ fn real_cef_holder_process() {
     let _session = launch_as((640, 480), 1.0, false);
     println!("HOLDER {}", openide_cef::directory().unwrap().display());
     thread::sleep(Duration::from_secs(600));
+}
+
+/// Chrome looks at the machine's graphics by itself after it has started:
+/// two minutes in for what WebGPU would run on, three for the grade its
+/// on-device models go by. Neither may load a driver or open a device, in an
+/// application that stays open like the window does.
+#[test]
+#[ignore = "opt-in: starts the embedded Chromium, windowless, and watches it for more than three minutes"]
+fn real_cef_still_opens_no_graphics_device_minutes_after_it_started() {
+    let (mut application, _directory) = holder();
+    let started = Instant::now();
+    let mut touched = Vec::new();
+    while touched.is_empty() && started.elapsed() < Duration::from_secs(200) {
+        let mut processes = descendants(application.id());
+        processes.push(application.id());
+        touched = graphics_in_use(&processes).0;
+        thread::sleep(Duration::from_millis(40));
+    }
+    let after = started.elapsed();
+    application.kill().unwrap();
+    application.wait().unwrap();
+    assert_eq!(touched, Vec::<String>::new(), "{after:?} after the application started");
 }
 
 #[test]

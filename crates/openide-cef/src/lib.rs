@@ -68,6 +68,11 @@ const VALUED_SWITCHES: &[(&str, &str)] = &[
     ),
     // Without it a viewport capture waits three frames instead of one.
     ("enable-features", "CDPScreenshotNewSurface"),
+    // Three minutes after it starts, Chrome grades the machine for its
+    // on-device models: a helper process that asks Vulkan for the GPU, which
+    // loads every driver the system's loader finds and opens their devices.
+    // Told the grade beforehand, as "GPU blocked" (8), it never starts it.
+    ("optimization-guide-performance-class", "8"),
 ];
 const OPAQUE_WHITE: u32 = 0xFFFF_FFFF;
 /// A CEF that hangs while shutting down must not keep the process from exiting.
