@@ -10440,6 +10440,9 @@ impl AgentsWindow {
             .agent_tool_settings
             .permission_policy()
             .with_exec_policy(exec_policy)
+            // The user is at this window: a request waits for their answer,
+            // as the agent's questions do, and ends with the turn.
+            .with_timeout(Duration::MAX)
             .with_tool("spawn_agent", PermissionMode::Allow)
             .with_tool("wait_agent", PermissionMode::Allow)
             .with_tool("cancel_agent", PermissionMode::Allow)
