@@ -17918,6 +17918,13 @@ impl AgentsWindow {
                 self.marketplace_operation(MarketplaceOperation::Load);
                 self.visit_navigation();
             }
+            UiAction::Clicked { id } if id == "automation_quit_confirm" || id == "automation_quit_cancel" => {
+                self.view.automations.quit_pending = false;
+                if id == "automation_quit_confirm" {
+                    self.view.automations.quit_allowed = true;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            }
             UiAction::Clicked { id } if id.starts_with("automation_") => {
                 self.handle_automation_action(&id);
             }
@@ -21504,6 +21511,15 @@ impl eframe::App for AgentsWindow {
         self.expire_text_paste_request();
         let quit_confirm_before = self.view.code_editor_quit_confirm;
         self.guard_editor_close(&ctx);
+        // Closing with tasks running stops them: it is asked first.
+        if ctx.input(|input| input.viewport().close_requested())
+            && !self.view.automations.quit_allowed
+            && !self.view.code_editor_quit_confirm
+            && (!self.background_automation_runs.is_empty() || !self.automation_queue.is_empty())
+        {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.view.automations.quit_pending = true;
+        }
         self.guard_debugger_close(&ctx);
         early_changed |= quit_confirm_before != self.view.code_editor_quit_confirm;
         early_changed |= self.sync_external_approval(&ctx);

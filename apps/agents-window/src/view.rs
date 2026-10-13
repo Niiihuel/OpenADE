@@ -3881,6 +3881,15 @@ fn confirmation_dialog(state: &ViewState, base: Element, viewport_width: f32) ->
                 true,
             )
         })
+    } else if state.automations.quit_pending {
+        Some((
+            "¿Salir con automatizaciones en curso?".to_owned(),
+            "Las que están corriendo se cancelan, y ninguna tarea programada se ejecuta mientras openADE está cerrado.".to_owned(),
+            "automation_quit_confirm".to_owned(),
+            "automation_quit_cancel".to_owned(),
+            "Salir".to_owned(),
+            true,
+        ))
     } else if let Some(id) = state.automations.pending_delete_id.as_deref() {
         state
             .automations

@@ -380,6 +380,10 @@ pub struct AutomationViewState {
     pub calendar_month: u32,
     pub filter: AutomationFilter,
     pub query: String,
+    /// The window was asked to close with tasks running: it asks first, and
+    /// closes once told to.
+    pub quit_pending: bool,
+    pub quit_allowed: bool,
     /// The tasks running or waiting for a worker.
     pub busy_ids: Vec<String>,
     /// The models a native task can be given: provider, model and how the
@@ -414,6 +418,8 @@ impl AutomationViewState {
             calendar_month: today.month(),
             filter: AutomationFilter::All,
             query: String::new(),
+            quit_pending: false,
+            quit_allowed: false,
             busy_ids: Vec::new(),
             models: Vec::new(),
             pending_delete_id: None,
