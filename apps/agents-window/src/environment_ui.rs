@@ -983,7 +983,7 @@ pub(crate) fn subagents(
 
 /// The newest command of this conversation that serves a preview, as the
 /// browser's default address is chosen.
-fn preview(state: &ViewState) -> Option<&crate::terminal_dock_ui::AgentTerminalView> {
+pub(crate) fn preview(state: &ViewState) -> Option<&crate::terminal_dock_ui::AgentTerminalView> {
     state
         .terminal_controls
         .agents
@@ -2312,6 +2312,39 @@ pub(crate) mod tests {
         assert_eq!(height(&frame), list);
         assert!(has(&frame, "project_action_run:check") && !has(&frame, "project_action_label"));
         assert!(!tree.is_animating());
+    }
+
+    #[test]
+    fn the_new_tab_page_suggests_what_the_conversation_has_to_show() {
+        use openide_core::{PlanSnapshot, PlanStep, PlanStepStatus};
+        let texts_of = |state: &ViewState| {
+            let frame = UiTree::new(crate::view::tests::new_tab_page(state, 420.0)).layout(Size::new(420.0, 900.0));
+            let ids: Vec<String> = frame.regions.iter().map(|region| region.id.clone()).collect();
+            (texts(&frame).join(" | "), ids)
+        };
+        let mut state = crate::view::tests::empty_state();
+        // With nothing of its own the page lists every view and suggests none.
+        let (said, ids) = texts_of(&state);
+        assert!(said.contains("Nueva pestaña") && !said.contains("Sugerencias"), "{said}");
+        assert!(ids.iter().any(|id| id == "dock_open:browser"));
+
+        state.environment.changes.files = 3;
+        state.selected_session = Some("session".into());
+        state.session_plans.insert("session".into(), crate::view::SessionPlanView {
+            snapshot: PlanSnapshot {
+                explanation: None,
+                plan: vec![
+                    PlanStep { step: "Uno".into(), status: PlanStepStatus::Completed },
+                    PlanStep { step: "Dos".into(), status: PlanStepStatus::Pending },
+                ],
+            },
+            can_build: false,
+        });
+        let (said, ids) = texts_of(&state);
+        for text in ["Sugerencias", "Cambios del chat", "3 archivos", "Plan", "1 de 2", "Todas las vistas"] {
+            assert!(said.contains(text), "{text}: {said}");
+        }
+        assert!(ids.iter().any(|id| id == "environment_open"));
     }
 
     #[test]

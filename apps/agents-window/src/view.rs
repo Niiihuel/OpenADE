@@ -2983,7 +2983,12 @@ fn dock_add_menu(state: &ViewState) -> Element {
         ("activity", "Actividad", Icon::History, SideTab::Activity),
         ("review", "Cambios de Git", Icon::Code, SideTab::CodeReview),
     ];
-    let mut menu: Vec<DropdownMenuEntry> = entries
+    let mut menu: Vec<DropdownMenuEntry> = vec![
+        // The page with what this conversation has to show, and every view.
+        DropdownMenuItem::new("dock_open:newtab", "Nueva pestaña").icon(Icon::Add).into(),
+        DropdownMenuEntry::Separator,
+    ];
+    menu.extend(entries
         .into_iter()
         .map(|(id, title, icon, kind)| {
             let already_open = state.dock_tabs.iter().any(|tab| tab.kind == kind);
@@ -2992,8 +2997,7 @@ fn dock_add_menu(state: &ViewState) -> Element {
                 item = item.annotation("Abierta");
             }
             item.into()
-        })
-        .collect();
+        }));
     if crate::ide_workspace::active(state) {
         menu.push(
             DropdownMenuItem::new("dock_open:debugger", "Depurador")
@@ -3049,10 +3053,10 @@ fn dock_add_menu(state: &ViewState) -> Element {
     .render()
 }
 
-fn dock_empty_content(width: f32) -> Element {
+fn dock_empty_content(state: &ViewState, width: f32) -> Element {
     let content_width = (width - 48.0).clamp(150.0, 320.0);
-    let content = Element::column(vec![
-        theme::text_px("Abrir pestaña", 19.0, theme::FOREGROUND),
+    let mut rows = vec![
+        theme::text_px("Nueva pestaña", 19.0, theme::FOREGROUND),
         UiText::new(
             "Elige una vista para este panel.",
             theme::component_palette(),
@@ -3060,8 +3064,14 @@ fn dock_empty_content(width: f32) -> Element {
         .muted()
         .render(),
         Element::spacer().size(None, Some(8.0)),
-        dock_overview::open_actions(content_width),
-    ])
+    ];
+    if let Some(suggested) = dock_overview::suggestions(state, content_width) {
+        rows.push(suggested);
+        rows.push(Element::spacer().size(None, Some(6.0)));
+        rows.push(theme::text_px("Todas las vistas", 11.0, theme::FOREGROUND_SUBTLE));
+    }
+    rows.push(dock_overview::open_actions(content_width));
+    let content = Element::column(rows)
     .gap(8.0)
     .size(Some(content_width), None);
     content.centered().padding(20.0).flex(1.0)
@@ -3128,10 +3138,10 @@ fn side_pane_primary_sized(state: &ViewState, width: f32, height: f32) -> Elemen
     {
         crate::ide_editor_empty::build(state.keymap_profile, width, (height - crate::dock_tab_ui::HEADER_HEIGHT).max(0.0))
     } else if state.dock_tabs.is_empty() {
-        dock_empty_content(width)
+        dock_empty_content(state, width)
     } else {
         match state.side_tab {
-            SideTab::Context => dock_empty_content(width),
+            SideTab::Context => dock_empty_content(state, width),
             SideTab::Files => file_tree_content(state, width),
             SideTab::Activity => dock_activity::content(
                 state,
@@ -6198,6 +6208,11 @@ pub(crate) mod tests {
                 vec![UiAction::Clicked { id: route }]
             );
         }
+    }
+
+    /// The page a new tab opens on, for tests of what it offers.
+    pub(crate) fn new_tab_page(state: &ViewState, width: f32) -> Element {
+        dock_empty_content(state, width)
     }
 
     fn settings_action_reachable(tree: &mut UiTree, action: &str, width: f32, height: f32) -> bool {
