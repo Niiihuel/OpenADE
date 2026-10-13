@@ -402,7 +402,7 @@ fn an_embedded_browser_that_cannot_start_fails_every_context_with_its_reason_and
         workspace: workspace.path().into(),
         session_id: session.into(),
     };
-    const REASON: &str = "Falta icudtl.dat junto a libcef.so. El navegador embebido se inicia una sola vez por ejecución: cerrá OpenIDE y volvé a abrirlo para reintentar.";
+    const REASON: &str = "Falta icudtl.dat junto a libcef.so. El navegador embebido se inicia una sola vez por ejecución: cerrá openADE y volvé a abrirlo para reintentar.";
     let attempts = Arc::new(AtomicUsize::new(0));
     let counted = attempts.clone();
     let runtime = BrowserRuntime::start_with(

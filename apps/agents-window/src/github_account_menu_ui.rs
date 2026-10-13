@@ -533,7 +533,7 @@ pub(crate) fn build(state: &ViewState, width: f32, sidebar_width: f32) -> Elemen
                     DropdownMenuItem::new("tour_start:agents", "Recorrido guiado")
                         .icon(Icon::InfoCircle)
                         .into(),
-                    DropdownMenuItem::new("github_account_disconnect", "Desconectar de OpenIDE")
+                    DropdownMenuItem::new("github_account_disconnect", "Desconectar de openADE")
                         .icon(Icon::CloseCircle)
                         .into(),
                 ],

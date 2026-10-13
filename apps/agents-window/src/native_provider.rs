@@ -87,7 +87,7 @@ impl Adapter {
         }
         if !self.model_transports.is_empty() {
             selected.wire_api = *self.model_transports.get(model).ok_or(
-                "Este modelo requiere un protocolo que todavía no está disponible en OpenIDE",
+                "Este modelo requiere un protocolo que todavía no está disponible en openADE",
             )?;
             if selected.wire_api == NativeWireApi::AnthropicMessages {
                 selected.auth = ProviderAuth::Header {

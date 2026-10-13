@@ -72,7 +72,7 @@ fn settings_agent_exposes_native_harness_and_preserves_legacy_history_origin() {
             let frame = tree.layout(Size::new(width, 10000.0));
             let copy = text_source(&frame);
             for value in [
-                "Agente nativo de OpenIDE",
+                "Agente nativo de openADE",
                 "Proveedor y modelo",
                 "tenant.provider",
                 "generation/v1:exact",
@@ -122,7 +122,7 @@ fn settings_agent_exposes_native_harness_and_preserves_legacy_history_origin() {
         let mut tree = UiTree::new(Element::column(agent_page(&state, width < 640.0)));
         let frame = tree.layout(Size::new(width, 10000.0));
         let copy = text_source(&frame);
-        assert!(copy.contains("Agente nativo de OpenIDE") && copy.contains("Proveedor y modelo"));
+        assert!(copy.contains("Agente nativo de openADE") && copy.contains("Proveedor y modelo"));
         assert!(!copy.contains("Mi CLI") && !copy.contains("Origen del historial"));
         assert!(!copy.contains("Elegir motor") && !copy.contains("CLI externas"));
         assert!(copy.contains("Credencial detectada") && copy.contains("aún debe verificarse"));
@@ -154,7 +154,7 @@ fn settings_agent_exposes_native_harness_and_preserves_legacy_history_origin() {
         tree.set_root(Element::column(agent_page(&state, width < 640.0)));
         let frame = tree.layout(Size::new(width, 10000.0));
         let copy = text_source(&frame);
-        assert!(copy.contains("Agente nativo de OpenIDE"));
+        assert!(copy.contains("Agente nativo de openADE"));
         assert!(!copy.contains("Mi CLI") && !copy.contains("Origen del historial"));
         state.selected_session = Some("legacy-session".into());
         state.composer_routes[0].credential = CredentialAvailability::MissingCredential;

@@ -103,7 +103,7 @@ pub fn build_home(state: &ViewState, available_width: f32) -> Element {
         content_width(available_width),
         true,
         Some("home_workspace_settings"),
-        "Pregúntale a OpenIDE",
+        "Pregúntale a openADE",
         None,
     );
     build_home_with(&props, available_width)
@@ -119,7 +119,7 @@ pub(crate) fn build_home_sized(
         content_width(available_width),
         true,
         Some("home_workspace_settings"),
-        "Pregúntale a OpenIDE",
+        "Pregúntale a openADE",
         None,
     );
     build_home_layout(

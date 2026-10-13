@@ -11,7 +11,7 @@ use openide_ui::RasterImage;
 fn brand_icon() -> Option<RasterImage> {
     static IMAGE: OnceLock<Option<RasterImage>> = OnceLock::new();
     IMAGE
-        .get_or_init(|| crate::ide_editor_empty::brand_raster(64, 1.0, "OpenIDE"))
+        .get_or_init(|| crate::ide_editor_empty::brand_raster(64, 1.0, "openADE"))
         .clone()
 }
 
@@ -116,13 +116,13 @@ mod tests {
                         .iter()
                         .find_map(|command| match command {
                             DrawCommand::RasterImage { rect, image, .. }
-                                if image.alt() == "OpenIDE" && image == &brand_icon().unwrap() =>
+                                if image.alt() == "openADE" && image == &brand_icon().unwrap() =>
                             {
                                 Some(*rect)
                             }
                             _ => None,
                         })
-                        .expect("shared existing OpenIDE brand");
+                        .expect("shared existing openADE brand");
                     assert_eq!(glyph, Rect::new(4.0, 4.0, 16.0, 16.0));
 
                     let mut clips = Vec::new();
@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn workspace_mode_brand_keeps_tooltip_keyboard_and_reduced_motion_behavior() {
-        let brand = brand_icon().expect("embedded OpenIDE vector must decode");
+        let brand = brand_icon().expect("embedded openADE vector must decode");
         assert_eq!(
             brand,
             brand_icon().unwrap(),
@@ -210,7 +210,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "opt-in native review of the shared OpenIDE mode-switch brand"]
+    #[ignore = "opt-in native review of the shared openADE mode-switch brand"]
     fn export_workspace_mode_brand_visual_review() {
         let directory = std::path::Path::new("/tmp/openade-workspace-mode-brand-review");
         std::fs::create_dir_all(directory).unwrap();
@@ -226,7 +226,7 @@ mod tests {
                     );
                     let frame = tree.layout(size);
                     assert!(frame.commands.iter().any(|command| matches!(command,
-                        DrawCommand::RasterImage { image, .. } if image.alt() == "OpenIDE"
+                        DrawCommand::RasterImage { image, .. } if image.alt() == "openADE"
                     )));
                     let path = directory.join(format!("{name}-{width:.0}-{phase}.svg"));
                     crate::settings_ui::visual_qa::write_native_frame_svg(

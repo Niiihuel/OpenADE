@@ -218,7 +218,7 @@ fn evaluate(driver: &mut Driver, expression: &str) -> String {
     driver.evaluate(expression, None).unwrap().text
 }
 
-const INPUT_PAGE: &str = r#"<!doctype html><html lang="es"><head><title>Fixture OpenIDE</title><style>
+const INPUT_PAGE: &str = r#"<!doctype html><html lang="es"><head><title>Fixture openADE</title><style>
   body{font:18px sans-serif;margin:20px;background:linear-gradient(#fff,#bcd);min-height:2200px}
   #panel{height:130px}input,button,a{font:inherit;margin:4px}footer{position:absolute;top:1900px}
   </style></head><body><div id="panel"><label>Nombre <input id="name" aria-label="Nombre"></label>
@@ -260,7 +260,7 @@ fn real_cef_driver_navigates_takes_input_copies_cuts_scrolls_and_keeps_history()
     viewport(&mut driver, 640, 480);
 
     driver.navigate(&origin).unwrap();
-    assert_eq!(driver.info().unwrap().title, "Fixture OpenIDE");
+    assert_eq!(driver.info().unwrap().title, "Fixture openADE");
     viewport(&mut driver, 640, 480);
     driver.click_at(200.0, 35.0).unwrap();
     driver.type_text("Niño 🧠").unwrap();
@@ -367,7 +367,7 @@ fn real_cef_driver_navigates_takes_input_copies_cuts_scrolls_and_keeps_history()
     assert_eq!(reload.kind, ErrorKind::Navigation);
     assert!(reload.message.starts_with("net::ERR_CONNECTION_REFUSED at http://127.0.0.1:"), "{reload}");
     driver.navigate(&origin).unwrap();
-    assert_eq!(driver.info().unwrap().title, "Fixture OpenIDE");
+    assert_eq!(driver.info().unwrap().title, "Fixture openADE");
     viewport(&mut driver, 800, 600);
 }
 

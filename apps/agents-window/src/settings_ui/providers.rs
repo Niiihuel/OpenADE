@@ -658,7 +658,7 @@ pub(super) fn page(state: &ViewState, compact: bool, width: f32) -> Vec<Element>
                     .trailing(Element::icon(Icon::ArrowRight).foreground(theme::FOREGROUND_SUBTLE))
                     .render(),
                 ActionRow::new("Desconectar", control_palette())
-                    .subtitle("Quita esta conexión de OpenIDE.")
+                    .subtitle("Quita esta conexión de openADE.")
                     .trailing(
                         outline(format!("provider_disconnect:{id}"), "Desconectar")
                             .width(96.0)
@@ -1012,7 +1012,7 @@ pub(super) fn connect_modal(state: &ViewState, base: Element, viewport_width: f3
     if welcome {
         body.push(
             Text::new(
-                "OpenIDE usa el plan y los límites de tu cuenta de ChatGPT para estos modelos.",
+                "openADE usa el plan y los límites de tu cuenta de ChatGPT para estos modelos.",
                 theme::component_palette(),
             )
             .role(TextRole::Small)
@@ -1047,7 +1047,7 @@ pub(super) fn connect_modal(state: &ViewState, base: Element, viewport_width: f3
             if id == "zai" {
                 body.push(Text::new("Usa una clave de la API general de Z.ai. Los modelos se muestran según su documentación; el acceso se comprueba al enviar una solicitud.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
             } else if id == "minimax" {
-                body.push(Text::new("Usa la clave de tu cuenta de MiniMax. OpenIDE consulta sus modelos disponibles antes de guardar la conexión.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
+                body.push(Text::new("Usa la clave de tu cuenta de MiniMax. openADE consulta sus modelos disponibles antes de guardar la conexión.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
             }
             body.push(
                 Text::new("Clave de API", theme::component_palette())
@@ -1073,8 +1073,8 @@ pub(super) fn connect_modal(state: &ViewState, base: Element, viewport_width: f3
             );
             body.push(Text::new("La clave se guarda de forma privada en este equipo. El acceso a generación se comprueba al usar un modelo.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
         } else {
-            body.push(Text::new(if id == "codex" { "Selecciona tu cuenta de ChatGPT y permite el acceso a OpenIDE." }
-            else { "Autoriza una clave de OpenRouter para OpenIDE. Puedes administrarla luego desde tu cuenta." }, theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
+            body.push(Text::new(if id == "codex" { "Selecciona tu cuenta de ChatGPT y permite el acceso a openADE." }
+            else { "Autoriza una clave de OpenRouter para openADE. Puedes administrarla luego desde tu cuenta." }, theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
         }
     } else {
         body.push(

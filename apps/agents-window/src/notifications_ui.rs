@@ -205,7 +205,7 @@ pub(crate) fn settings_group(center: &NotificationCenter, compact: bool) -> Elem
             row(
                 "system",
                 "Avisos del sistema",
-                "Notificación del escritorio cuando OpenIDE no tiene el foco.",
+                "Notificación del escritorio cuando openADE no tiene el foco.",
             ),
             row(
                 "do_not_disturb",

@@ -66,7 +66,7 @@ fn watermark() -> Option<RasterImage> {
     static IMAGE: OnceLock<Option<RasterImage>> = OnceLock::new();
     // 2x the largest size shown.
     IMAGE
-        .get_or_init(|| raster(512, "OpenIDE · editor vacío", letterpress))
+        .get_or_init(|| raster(512, "openADE · editor vacío", letterpress))
         .clone()
 }
 
@@ -195,7 +195,7 @@ mod tests {
                 );
             }
             if width >= 460.0 {
-                assert!(frame.commands.iter().any(|c| matches!(c, DrawCommand::RasterImage { image, .. } if image.alt() == "OpenIDE · editor vacío")));
+                assert!(frame.commands.iter().any(|c| matches!(c, DrawCommand::RasterImage { image, .. } if image.alt() == "openADE · editor vacío")));
                 for key in ["Ctrl", "P", "Shift", "`"] {
                     assert!(
                         frame

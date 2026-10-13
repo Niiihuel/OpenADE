@@ -36,15 +36,15 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
             vec![
                 settings_parts::switch_row(
                     "external_agents_enabled",
-                    "Ofrecer herramientas de OpenIDE",
-                    "Claude Code, Codex y otras CLIs iniciadas desde OpenIDE reciben las herramientas activadas abajo. Desactivado, ninguna llamada externa llega a OpenIDE.",
+                    "Ofrecer herramientas de openADE",
+                    "Claude Code, Codex y otras CLIs iniciadas desde openADE reciben las herramientas activadas abajo. Desactivado, ninguna llamada externa llega a openADE.",
                     settings.enabled(),
                     true,
                     compact,
                 ),
                 page_note(
-                    "Solo CLIs iniciadas por OpenIDE",
-                    "Cada sesión recibe un acceso propio que deja de valer al cerrarla. Una CLI abierta por fuera de OpenIDE no puede conectarse.",
+                    "Solo CLIs iniciadas por openADE",
+                    "Cada sesión recibe un acceso propio que deja de valer al cerrarla. Una CLI abierta por fuera de openADE no puede conectarse.",
                     Icon::Terminal,
                 ),
             ],
@@ -100,7 +100,7 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
                     state,
                     ExternalTool::Subagents,
                     "Subagentes",
-                    "Todavía no disponible. Creará subagentes de OpenIDE y esperará su resultado.",
+                    "Todavía no disponible. Creará subagentes de openADE y esperará su resultado.",
                     compact,
                 ),
             ],
@@ -111,8 +111,8 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
                 settings_parts::settings_row(
                     "Aprobaciones",
                     match mode {
-                        ExternalPermissionMode::MirrorCli => "Seguir a la CLI: si la iniciaste en modo aceptar todo, las herramientas de OpenIDE tampoco preguntan. En cualquier otro modo, OpenIDE pide aprobación.",
-                        ExternalPermissionMode::AlwaysAsk => "Preguntar siempre: OpenIDE pide aprobación aunque la CLI esté en modo aceptar todo.",
+                        ExternalPermissionMode::MirrorCli => "Seguir a la CLI: si la iniciaste en modo aceptar todo, las herramientas de openADE tampoco preguntan. En cualquier otro modo, openADE pide aprobación.",
+                        ExternalPermissionMode::AlwaysAsk => "Preguntar siempre: openADE pide aprobación aunque la CLI esté en modo aceptar todo.",
                     },
                     settings_choice_selector(
                         state,
@@ -269,7 +269,7 @@ pub(super) fn compat_hooks_group(state: &ViewState, compact: bool) -> Vec<Elemen
     }
     let mut rows = vec![page_note(
         "Nada se ejecuta sin que lo actives",
-        "Cada entrada es un comando definido para Claude Code. Al activarla, OpenIDE lo ejecuta con sh y los permisos de tu cuenta en las llamadas del agente nativo. Si el comando cambia en su archivo de origen, la entrada se desactiva sola.",
+        "Cada entrada es un comando definido para Claude Code. Al activarla, openADE lo ejecuta con sh y los permisos de tu cuenta en las llamadas del agente nativo. Si el comando cambia en su archivo de origen, la entrada se desactiva sola.",
         Icon::InfoCircle,
     )];
     if state.compat_hooks.is_empty() {
@@ -289,7 +289,7 @@ pub(super) fn compat_hooks_group(state: &ViewState, compact: bool) -> Vec<Elemen
         let description = if hook.runs_today {
             command
         } else {
-            format!("OpenIDE todavía no ejecuta este evento. {command}")
+            format!("openADE todavía no ejecuta este evento. {command}")
         };
         let source = if hook.origin.is_empty() {
             "Tu configuración".to_owned()

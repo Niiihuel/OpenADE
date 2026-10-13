@@ -15,7 +15,7 @@ use super::*;
 use std::io::Read;
 use std::process::{Command, Stdio};
 
-const PAGE: &str = r#"<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Fixture OpenIDE</title><style>
+const PAGE: &str = r#"<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Fixture openADE</title><style>
 html{background:#fff}body{font:16px/1.5 sans-serif;margin:0;min-height:2400px;color:#111}
 #hover{position:absolute;left:20px;top:20px;width:200px;height:40px;background:#dde}#hover:hover{background:#365ff4}
 #panel{position:absolute;left:20px;top:80px}input,button{font:inherit}
@@ -324,7 +324,7 @@ fn processor_seconds(processes: &[u32]) -> f64 {
 fn serves_the_agent_and_an_external_client(session: Session, origin: &str) -> Session {
     // The window navigates; the agent reads the page and acts on it by ref.
     let opened = session.open(format!("{origin}/"));
-    assert_eq!((opened.url.as_str(), opened.title.as_str()), (format!("{origin}/").as_str(), "Fixture OpenIDE"));
+    assert_eq!((opened.url.as_str(), opened.title.as_str()), (format!("{origin}/").as_str(), "Fixture openADE"));
     let read = session.agent("browser_snapshot", json!({}));
     assert!(!read.is_error && read.content.len() == 1);
     let state = page(&read);
@@ -386,7 +386,7 @@ fn serves_the_agent_and_an_external_client(session: Session, origin: &str) -> Se
     let back = session.window(BrowserCommand::Back).unwrap();
     assert_eq!((back.url, back.can_go_forward), (format!("{origin}/"), true));
     assert_eq!(session.window(BrowserCommand::Forward).unwrap().url, format!("{origin}/animated"));
-    assert_eq!(session.window(BrowserCommand::Reload).unwrap().title, "Fixture OpenIDE");
+    assert_eq!(session.window(BrowserCommand::Reload).unwrap().title, "Fixture openADE");
     session.window(BrowserCommand::Back).unwrap();
 
     // An external MCP client: the built executable in its proxy mode, with

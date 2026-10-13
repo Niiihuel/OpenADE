@@ -37,7 +37,7 @@ pub(crate) fn main() -> i32 {
     let variable = |name| std::env::var(name).ok();
     let Some((port, token)) = configuration(variable(BROKER).as_deref(), variable(TOKEN).as_deref())
     else {
-        eprintln!("Missing scoped OpenIDE browser broker configuration.");
+        eprintln!("Missing scoped openADE browser broker configuration.");
         return 1;
     };
     // A reply that cannot be written ends the process from the thread that

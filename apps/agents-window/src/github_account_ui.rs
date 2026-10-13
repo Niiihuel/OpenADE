@@ -128,7 +128,7 @@ pub fn sign_in_alert(state: &ViewState, base: Element, viewport_width: f32) -> E
                 },
                 Element::column(vec![
                     code_card,
-                    text("1. Abre github.com/login/device en el navegador.\n2. Introduce el código y autoriza OpenIDE."),
+                    text("1. Abre github.com/login/device en el navegador.\n2. Introduce el código y autoriza openADE."),
                     if *continued {
                         progress(
                             "github_sign_in_authorize_progress",

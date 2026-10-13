@@ -19,7 +19,7 @@ const INVALID_CALENDAR: &str = "GitHub devolvió un calendario de contribuciones
 // GitHub defaults this collection to one year ago through the current time.
 // https://docs.github.com/en/graphql/reference/users#user
 const CALENDAR_QUERY: &str = r#"
-query OpenIDEContributions {
+query openADEContributions {
   viewer {
     login
     contributionsCollection {

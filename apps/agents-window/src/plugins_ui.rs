@@ -79,7 +79,7 @@ pub(crate) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
     }
     if plugins.installed.is_empty() {
         if !plugins.busy && !plugins.load_error {
-            rows.push(settings_parts::empty_state_with_icon(Icon::Puzzle, "Todavía no hay plugins instalados", "Selecciona una carpeta de plugin de OpenIDE para revisar su autor, versión y programa antes de instalarla. Las extensiones VSIX y WASM de otros editores usan formatos distintos.", None));
+            rows.push(settings_parts::empty_state_with_icon(Icon::Puzzle, "Todavía no hay plugins instalados", "Selecciona una carpeta de plugin de openADE para revisar su autor, versión y programa antes de instalarla. Las extensiones VSIX y WASM de otros editores usan formatos distintos.", None));
         }
         return rows;
     }
@@ -365,7 +365,7 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
         .render();
         (
             "Instalar plugin",
-            "Revisa el paquete antes de guardarlo en OpenIDE.",
+            "Revisa el paquete antes de guardarlo en openADE.",
             fields,
             footer,
             "plugins_source",
