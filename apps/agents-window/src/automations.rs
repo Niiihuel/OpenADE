@@ -472,6 +472,13 @@ impl AutomationStore {
             }
             store.commit(next)?;
         }
+        // Runs left behind by tasks deleted before their history went with them.
+        let known = |run: &AutomationRun| store.document.automations.iter().any(|item| item.id == run.automation_id);
+        if !store.document.runs.iter().all(known) {
+            let mut next = store.document.clone();
+            next.runs.retain(|run| next.automations.iter().any(|item| item.id == run.automation_id));
+            store.commit(next)?;
+        }
         Ok(store)
     }
 
@@ -604,8 +611,10 @@ impl AutomationStore {
         if next.automations.len() == before {
             return Err(AutomationError::NotFound);
         }
-        // Keep the bounded history as an audit trail. New dispatch is blocked
-        // because there is no longer a definition.
+        // Its history goes with it: nothing shows the runs of a task that is
+        // gone, and they would take room from those of the tasks that stay.
+        // Each run's conversation is a session of its own and remains.
+        next.runs.retain(|run| run.automation_id != id);
         self.commit(next)
     }
 
@@ -1115,6 +1124,26 @@ pub(crate) mod tests {
         ] {
             assert!(invalid.validate().is_err());
         }
+    }
+
+    #[test]
+    fn a_deleted_task_takes_its_history_and_one_left_behind_goes_when_the_project_opens() {
+        let root = tempfile::tempdir().unwrap();
+        let mut store = AutomationStore::open(root.path(), root.path()).unwrap();
+        let gone = store.create(draft(AutomationSchedule::Once { at_ms: 2_000_000 }), 1_000_000).unwrap();
+        let kept = store.create(draft(AutomationSchedule::Once { at_ms: 2_000_000 }), 1_000_000).unwrap();
+        assert_eq!(store.claim_due(2_000_000).unwrap().len(), 2);
+        store.delete(&gone).unwrap();
+        assert_eq!(store.runs().iter().map(|run| run.automation_id.as_str()).collect::<Vec<_>>(), [kept.as_str()]);
+        // A file written before this, with the runs of a task that is gone.
+        let mut orphaned = store.document.clone();
+        let mut run = orphaned.runs[0].clone();
+        run.run_id = "antes:1".into();
+        run.automation_id = "antes".into();
+        orphaned.runs.push(run);
+        store.commit(orphaned).unwrap();
+        let reopened = AutomationStore::open(root.path(), root.path()).unwrap();
+        assert_eq!(reopened.runs().iter().map(|run| run.automation_id.as_str()).collect::<Vec<_>>(), [kept.as_str()]);
     }
 
     #[test]
@@ -2157,7 +2186,8 @@ pub(crate) mod tests {
         store.set_enabled(&id, true, 1_320_000).unwrap();
         store.delete(&id).unwrap();
         assert!(store.automations().is_empty());
-        assert_eq!(store.runs().len(), 1);
+        // Its run goes with it.
+        assert!(store.runs().is_empty());
         assert!(AutomationStore::open(root.path(), &b)
             .unwrap()
             .automations()

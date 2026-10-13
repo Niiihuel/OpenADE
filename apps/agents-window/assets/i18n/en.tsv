@@ -2165,6 +2165,7 @@ Esta sesión conserva el perfil original de la ejecución registrada.	This sessi
 Esta sesión pertenece a un subagente; retomá el trabajo desde la sesión padre	This session belongs to a subagent; resume the work from the parent session
 Esta sesión usa un agente CLI	This session uses a CLI agent
 Esta tarea aún no tiene actividad	This task has no activity yet
+Esta tarea se está ejecutando. Esperá a que termine para eliminarla.	This task is running. Wait for it to finish before deleting it.
 Esta tarea tiene mensajes de subagentes pendientes; resolvelos antes de archivarla	This task has pending subagent messages; resolve them before archiving it
 Esta tarea tiene subagentes activos o interrumpidos; resolvelos antes de archivarla	This task has active or interrupted subagents; resolve them before archiving it
 Esta tarea ya no existe.	This task no longer exists.
@@ -4579,6 +4580,7 @@ Se detectarán las carpetas que contengan SKILL.md.	Folders containing SKILL.md 
 Se detiene el turno en curso y se quitan los mensajes posteriores.	Stops the running turn and removes the later messages.
 Se ejecuta con sh en la carpeta del proyecto después de cada turno que modifique archivos o ejecute comandos. Si falla, aparece un aviso sobre el composer con la acción Corregir. Dejalo vacío y presioná Enter para desactivarlo.	Runs with sh in the project folder after every turn that modifies files or runs commands. If it fails, a notice appears above the composer with the Fix action. Leave it empty and press Enter to disable it.
 Se eliminará esta automatización y su programación. Esta acción no se puede deshacer.	This automation and its schedule will be deleted. This action cannot be undone.
+Se eliminarán esta automatización, su programación y su historial de ejecuciones. Las conversaciones de cada ejecución se conservan. Esta acción no se puede deshacer.	This automation, its schedule and its run history will be deleted. Each run's conversation is kept. This action cannot be undone.
 Se está preparando el resumen.	The summary is being prepared.
 Se guardan los turnos y resultados. Los checkpoints conservan un resumen para continuar esta conversación.	Turns and results are saved. Checkpoints keep a summary to continue this conversation.
 Se guardan para los próximos turnos nativos. Cambiar el aislamiento o desactivar comandos revoca los procesos persistentes existentes.	Saved for the next native turns. Changing the isolation or disabling commands revokes existing persistent processes.
