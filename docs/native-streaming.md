@@ -1070,3 +1070,13 @@ tomó aparece en la conversación como mensaje del usuario y deja la cola.
 
 Límites: hasta 16 mensajes en cola por conversación, sin adjuntos (los
 adjuntos van con Ctrl+Enter); sólo en conversaciones nativas.
+
+## Resumen de un turno
+
+La fila de acciones de un turno terminado dice, después de cuándo terminó,
+cuánto duró y con qué modelo, qué hizo el agente en una línea: «leyó 6
+archivos, buscó 2 veces, ejecutó 3 comandos, editó 2 archivos»
+(`activity_summary`, `message_actions.rs`). Se cuenta de las llamadas del
+propio turno, que conservan su fila arriba: un archivo editado dos veces es un
+archivo, seguir un comando o un subagente ya contado no suma, y un turno sin
+herramientas no dice nada.
