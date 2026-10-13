@@ -9561,6 +9561,10 @@ impl AgentsWindow {
     fn refresh_mcp_settings(&mut self) {
         match McpSettings::load(&self.data_root, Path::new(&self.view.workspace)) {
             Ok(settings) => {
+                let kept = &self.view.mcp_servers;
+                self.view.mcp_inspection.last.retain(|id, _| {
+                    settings.servers.iter().find(|server| &server.id == id).is_some_and(|server| kept.contains(server))
+                });
                 self.view.mcp_servers = settings.servers;
                 self.view.mcp_load_error = None;
             }
@@ -9635,6 +9639,10 @@ impl AgentsWindow {
         let settings = McpSettings { servers };
         match settings.save(&self.data_root, Path::new(&self.view.workspace)) {
             Ok(()) => {
+                let kept = &self.view.mcp_servers;
+                self.view.mcp_inspection.last.retain(|id, _| {
+                    settings.servers.iter().find(|server| &server.id == id).is_some_and(|server| kept.contains(server))
+                });
                 self.view.mcp_servers = settings.servers;
                 self.set_settings_notice(message, false);
                 true
@@ -9912,6 +9920,10 @@ impl AgentsWindow {
                     "El servidor MCP ya no está en la configuración guardada".to_owned()
                 })?;
             if self.view.mcp_servers.iter().find(|server| server.id == id) != Some(&server) {
+                let kept = &self.view.mcp_servers;
+                self.view.mcp_inspection.last.retain(|id, _| {
+                    saved.servers.iter().find(|server| &server.id == id).is_some_and(|server| kept.contains(server))
+                });
                 self.view.mcp_servers = saved.servers;
                 return Err("La configuración MCP guardada cambió. Revisá la fila actual y volvé a inspeccionar.".to_owned());
             }

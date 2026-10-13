@@ -38,6 +38,14 @@ runner. Presenta la versión realmente negociada, la información del servidor,
 los esquemas completos y sus campos adicionales en un panel desplazable.
 Los errores de conexión, descubrimiento y cierre se muestran completos.
 
+Cada servidor de la lista muestra cómo fue su última conexión: **Habilitado ·
+sin probar**, **Conectado · N herramientas** o **No se pudo conectar** con la
+primera línea del motivo. Tras una falla el botón pasa a llamarse
+**Reconectar**: es la misma inspección. El estado no se guarda entre
+ejecuciones y se olvida cuando la configuración de ese servidor cambia. Las
+conexiones siguen siendo por turno: esto dice lo último que se vio, no una
+conexión abierta.
+
 La inspección carga la configuración guardada antes de iniciar y vuelve a
 validarla al recibir el resultado. Un cambio del servidor, una configuración
 ilegible o un cambio de proyecto descarta el informe; un resultado de una

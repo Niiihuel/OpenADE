@@ -192,6 +192,7 @@ mod tests {
                 snapshot: Some(snapshot.clone()),
                 error: Some(error.clone()),
                 shutdown_error: Some("Cierre no confirmado: FIN_CIERRE".into()),
+                ..Default::default()
             };
             let mut tree = UiTree::new(render(&state, width < 640.0));
             let frame = tree.layout(Size::new(width, 2400.0));

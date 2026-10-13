@@ -651,3 +651,44 @@ fn secret_observation_limit_suppresses_payload_and_diagnostics_without_new_persi
         .sanitize("private-token-256 remote error".into())
         .contains("private-token-256"));
 }
+
+#[test]
+fn the_last_connection_to_each_server_is_remembered_until_another_says_otherwise() {
+    let workspace = tempfile::tempdir().unwrap();
+    let server = |id: &str| McpServerSettings {
+        id: id.into(),
+        enabled: true,
+        program: "servidor".into(),
+        args: vec![],
+        cwd: None,
+        credential_env_names: vec![],
+        url: None,
+        http_bearer_token_env_name: None,
+        http_oauth: None,
+        http_env_headers: Vec::new(),
+    };
+    let saved = McpSettings { servers: vec![server("uno"), server("dos")] };
+    let mut state = McpInspectionUiState::default();
+    let mut inspect = |state: &mut McpInspectionUiState, id: &str, snapshot: Option<McpInspectionSnapshot>, error: Option<&str>, cancelled: bool| {
+        let scope = McpInspectionScope {
+            request_id: 1,
+            workspace: workspace.path().canonicalize().unwrap(),
+            server: server(id),
+        };
+        state.begin(scope.clone());
+        let result = McpInspectionResult { scope, snapshot, error: error.map(str::to_owned), shutdown_error: None, cancelled };
+        assert!(state.apply_result(result, workspace.path(), &saved));
+    };
+    let tools = sample_snapshot().tools.len();
+    inspect(&mut state, "uno", Some(sample_snapshot()), None, false);
+    assert_eq!(state.last.get("uno"), Some(&McpServerStatus::Connected { tools }));
+    // Another server's inspection keeps what was seen of the first.
+    inspect(&mut state, "dos", None, Some("conexión rechazada"), false);
+    assert_eq!(state.last.get("uno"), Some(&McpServerStatus::Connected { tools }));
+    assert_eq!(state.last.get("dos"), Some(&McpServerStatus::Failed("conexión rechazada".into())));
+    // A cancelled one says nothing about the server; a later success replaces a failure.
+    inspect(&mut state, "dos", None, None, true);
+    assert_eq!(state.last.get("dos"), Some(&McpServerStatus::Failed("conexión rechazada".into())));
+    inspect(&mut state, "dos", Some(sample_snapshot()), None, false);
+    assert_eq!(state.last.get("dos"), Some(&McpServerStatus::Connected { tools }));
+}
