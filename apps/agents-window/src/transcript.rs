@@ -401,16 +401,32 @@ impl TranscriptProjection {
                     }
                 )
             });
-            projection.items.push(TranscriptItem::Notice {
-                message: if uncertain_tools > 0 {
-                    "Turno interrumpido. Una herramienta pudo haberse ejecutado; su resultado es incierto. No se reintentará automáticamente.".to_owned()
-                } else if pending_permission {
-                    "Turno interrumpido con un permiso pendiente. La herramienta no se ejecutó.".to_owned()
-                } else {
-                    "Turno interrumpido al cerrar la aplicación".to_owned()
-                },
-                is_error: true,
-            });
+            // A question the agent asked is still to be answered: its card,
+            // or the recovery card, says so. That is not an error to report.
+            let pending_question = uncertain_tools == 0
+                && projection.tool_rows.values().any(|index| {
+                    matches!(
+                        &projection.items[*index],
+                        TranscriptItem::Tool {
+                            name,
+                            output: None,
+                            activity: ActivityStatus::WaitingPermission,
+                            ..
+                        } if openide_harness::is_user_interaction_tool(name)
+                    )
+                });
+            if !pending_question {
+                projection.items.push(TranscriptItem::Notice {
+                    message: if uncertain_tools > 0 {
+                        "Turno interrumpido. Una herramienta pudo haberse ejecutado; su resultado es incierto. No se reintentará automáticamente.".to_owned()
+                    } else if pending_permission {
+                        "Turno interrumpido con un permiso pendiente. La herramienta no se ejecutó.".to_owned()
+                    } else {
+                        "Turno interrumpido al cerrar la aplicación".to_owned()
+                    },
+                    is_error: true,
+                });
+            }
             // A response commit can be the last durable event before a crash.
             // Its final answer already exists; an explicit Resume may append
             // TurnCompleted without another AssistantMessage. Retain only

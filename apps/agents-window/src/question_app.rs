@@ -234,17 +234,40 @@ impl AgentsWindow {
                 .active_resume
                 .as_ref()
                 .is_some_and(|resume| resume.resolve_permission(request_id, choice));
-        self.view.status = if !resolved {
-            "La pregunta ya no está activa".to_owned()
-        } else if answer.is_some() {
-            "Respuesta enviada".to_owned()
+        // A question restored from an interrupted turn has no worker to
+        // resolve it: resuming the turn does, from the record just written.
+        let resumed = !resolved
+            && self.active_run.is_none()
+            && self.active_resume.is_none()
+            && self.view.session_recovery.get(&session_id) == Some(&SessionRecoveryView::Question);
+        if resumed {
+            self.view.session_recovery_error = None;
+            self.start_resume();
+            if self.active_resume.is_none() {
+                // The answer is kept. The recovery card says why the turn
+                // did not continue and resumes it with that answer.
+                self.view.session_recovery_error = Some((
+                    session_id.clone(),
+                    self.view.status.trim_end_matches('.').to_owned(),
+                ));
+            }
         } else {
-            "Pregunta omitida".to_owned()
-        };
+            self.view.status = if !resolved {
+                "La pregunta ya no está activa".to_owned()
+            } else if answer.is_some() {
+                "Respuesta enviada".to_owned()
+            } else {
+                "Pregunta omitida".to_owned()
+            };
+        }
         self.view
             .pending_permissions
             .retain(|permission| permission.request_id != request_id);
         self.view.question_drafts.remove(request_id);
+        if resumed {
+            // The question is answered: the conversation no longer waits for it.
+            self.refresh_sessions();
+        }
     }
 
     /// The user's decision on a proposed mode. Accepting only remembers the

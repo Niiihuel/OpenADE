@@ -2878,13 +2878,14 @@ fn recovery_status(recovery: &ReplayRecovery) -> &'static str {
 
 fn native_session_views(
     data_root: &Path,
+    store: &SessionStore,
     stored: &StoredSession,
 ) -> (
     Option<SessionRecoveryView>,
     Option<SessionPlanView>,
     Option<crate::pause::PausedTurn>,
 ) {
-    let (recovery, plan, pause) = native_session_views_inner(data_root, stored);
+    let (recovery, plan, pause) = native_session_views_inner(data_root, store, stored);
     // A pause is a mark on a turn that can simply be resumed, nothing else.
     let pause = pause.filter(|_| recovery == Some(SessionRecoveryView::Resume));
     (recovery, plan, pause)
@@ -2892,6 +2893,7 @@ fn native_session_views(
 
 fn native_session_views_inner(
     data_root: &Path,
+    store: &SessionStore,
     stored: &StoredSession,
 ) -> (
     Option<SessionRecoveryView>,
@@ -2918,10 +2920,21 @@ fn native_session_views_inner(
         Ok(replay) => {
             let recovery = match &replay.recovery {
                 ReplayRecovery::Idle => None,
-                ReplayRecovery::PermissionPending { tool_call, .. }
+                ReplayRecovery::PermissionPending { request_id, tool_call }
                     if openide_harness::is_user_interaction_tool(&tool_call.name) =>
                 {
-                    Some(SessionRecoveryView::Question)
+                    // Answered before the turn stopped: nothing is left to
+                    // ask, and resuming resolves the request from that record.
+                    let answered = store
+                        .load_permission_decisions(&stored.session.id)
+                        .is_ok_and(|decisions| {
+                            decisions.iter().any(|decision| decision.request_id == *request_id)
+                        });
+                    Some(if answered {
+                        SessionRecoveryView::Resume
+                    } else {
+                        SessionRecoveryView::Question
+                    })
                 }
                 ReplayRecovery::PermissionPending { .. } => Some(SessionRecoveryView::Permission),
                 ReplayRecovery::ToolOutcomeUncertain { .. } => {
@@ -8107,6 +8120,55 @@ impl AgentsWindow {
         }
     }
 
+    /// The question an interrupted turn of the selected conversation left
+    /// open comes back as its card, drawn from the journal with nothing
+    /// chosen. Answering it records the answer and resumes the turn, which
+    /// resolves the request from that record. Without the card the recovery
+    /// card offers "Responder y reanudar", which asks through the resumed turn.
+    fn restore_pending_question(&mut self) {
+        let Some(session_id) = self.view.selected_session.clone() else {
+            return;
+        };
+        if self.view.running
+            || self.active_run.is_some()
+            || self.active_resume.is_some()
+            || self.view.session_recovery.get(&session_id) != Some(&SessionRecoveryView::Question)
+        {
+            return;
+        }
+        let Some(stored) = self
+            .store
+            .as_ref()
+            .and_then(|store| store.load(&session_id).ok().flatten())
+        else {
+            return;
+        };
+        // A subagent's turn and an automation's are resumed by their own paths.
+        if stored.session.subagent.is_some() || stored.session.native_automation.is_some() {
+            return;
+        }
+        let Ok(ReplayRecovery::PermissionPending { request_id, tool_call }) =
+            replay_stored_native(&self.data_root, &stored).map(|replay| replay.recovery)
+        else {
+            return;
+        };
+        if tool_call.name != crate::question_ui::TOOL
+            || crate::question_ui::parse(&tool_call.arguments).is_empty()
+            || self
+                .view
+                .pending_permissions
+                .iter()
+                .any(|permission| permission.request_id == request_id)
+        {
+            return;
+        }
+        self.view.pending_permissions.push(PermissionView {
+            request_id,
+            tool_name: tool_call.name,
+            arguments: serde_json::to_string_pretty(&tool_call.arguments).unwrap_or_default(),
+        });
+    }
+
     fn refresh_sessions(&mut self) {
         if let Some(store) = self.store.clone() {
             // A durable journal is intentionally incomplete while its worker is
@@ -8136,7 +8198,7 @@ impl AgentsWindow {
                             switches.insert(record.session.id.clone(), switch);
                         }
                         let (recovery, plan, pause) =
-                            native_session_views(&self.data_root, record);
+                            native_session_views(&self.data_root, &store, record);
                         if let Some(recovery) = recovery {
                             let selected_running = self.view.running
                                 && self.view.selected_session.as_deref()
@@ -8174,6 +8236,7 @@ impl AgentsWindow {
                     self.view.model_switch.usage = usage;
                     self.view.model_switch.subagent_usage = subagent_usage;
                     self.view.session_recovery = recoveries;
+                    self.restore_pending_question();
                     self.view.pause.sessions = pauses;
                     // While the switch is being carried out the card would
                     // only offer what is already happening.

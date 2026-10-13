@@ -1174,9 +1174,14 @@ pub(crate) fn tool_line_with_output(
         unreachable!()
     };
     if openide_harness::is_user_interaction_tool(name) {
+        // Interrupted and back as its card, the request is open again.
+        let waiting = match activity {
+            ActivityStatus::PermissionInterrupted => ActivityStatus::WaitingPermission,
+            other => *other,
+        };
         match (activity, output) {
             // The open request is the card below; it needs no second row.
-            _ if approval_card_shown(state, name, arguments, *activity) => {
+            _ if approval_card_shown(state, name, arguments, waiting) => {
                 return Element::spacer();
             }
             (ActivityStatus::Completed, Some(output)) if !*is_error => {
@@ -2536,7 +2541,15 @@ fn timeline(state: &ViewState, width: f32) -> Element {
                 ));
             } else if let Some(card) = state.model_switch.unfinished_card(session_id) {
                 rows.push(card);
-            } else if !child_card_already_visible {
+            } else if !child_card_already_visible
+                // The open question is back as its own card, below: answering
+                // it resumes the turn.
+                && !(*recovery == SessionRecoveryView::Question
+                    && state
+                        .pending_permissions
+                        .iter()
+                        .any(|permission| permission.tool_name == crate::question_ui::TOOL))
+            {
                 let error = state
                     .session_recovery_error
                     .as_ref()

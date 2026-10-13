@@ -385,6 +385,48 @@ fn the_open_question_is_one_card_and_the_streamed_call_is_its_skeleton() {
 }
 
 #[test]
+fn an_interrupted_question_back_as_its_card_replaces_the_recovery_step() {
+    let surface = |state: &ViewState| {
+        frame(
+            crate::session_surface::build_session_surface(state, 900.0, false, false),
+            900.0,
+        )
+    };
+    let mut restored = state(3);
+    restored.transcript = vec![tool(ActivityStatus::PermissionInterrupted, None)];
+    restored
+        .session_recovery
+        .insert(OWNER.into(), crate::view::SessionRecoveryView::Question);
+    let card = surface(&restored);
+    assert_eq!(
+        card.text_layouts()
+            .iter()
+            .filter(|layout| layout.source == "Almacenamiento")
+            .count(),
+        1
+    );
+    let text = texts(&card);
+    assert!(!text.contains("Responder y reanudar") && !text.contains("sin responder"), "{text}");
+    assert!(card.regions.iter().any(|region| region.id == action(REQUEST, "skip")));
+
+    // Without its card the recovery step is the way to the question.
+    restored.pending_permissions.clear();
+    let recovery = surface(&restored);
+    let text = texts(&recovery);
+    assert!(text.contains("Responder y reanudar") && text.contains("sin responder"), "{text}");
+    assert!(recovery
+        .regions
+        .iter()
+        .any(|region| region.id == format!("session_recover:{OWNER}")));
+    // Any other recovery keeps its card whatever else is pending.
+    let mut other = state(3);
+    other
+        .session_recovery
+        .insert(OWNER.into(), crate::view::SessionRecoveryView::Resume);
+    assert!(texts(&surface(&other)).contains("puede reanudarse"));
+}
+
+#[test]
 #[ignore = "export the question card states for visual review"]
 fn export_question_card_visual_review() {
     let answered_output = json!({"answered_by": "user", "answers": [
@@ -503,15 +545,24 @@ fn export_question_card_visual_review() {
         ];
         shots.push(("question-answered-images", done_images));
 
-        // After a restart the turn is interrupted: the recovery card offers
-        // to resume, and resuming brings the same question back.
-        let mut restarted = crate::view::tests::empty_state();
-        restarted.selected_session = Some(OWNER.into());
+        // After a restart the turn is interrupted and the question is back
+        // as its card, with nothing chosen: answering it resumes the turn.
+        let mut restarted = state(3);
         restarted.transcript = vec![user.clone(), tool(ActivityStatus::PermissionInterrupted, None)];
         restarted
             .session_recovery
             .insert(OWNER.into(), crate::view::SessionRecoveryView::Question);
         shots.push(("question-after-restart", restarted));
+
+        // Where the card cannot be drawn, the recovery card asks through
+        // the resumed turn.
+        let mut two_steps = crate::view::tests::empty_state();
+        two_steps.selected_session = Some(OWNER.into());
+        two_steps.transcript = vec![user.clone(), tool(ActivityStatus::PermissionInterrupted, None)];
+        two_steps
+            .session_recovery
+            .insert(OWNER.into(), crate::view::SessionRecoveryView::Question);
+        shots.push(("question-after-restart-recovery", two_steps));
 
         for (name, state) in shots {
             let size = Size::new(width, 760.0);
