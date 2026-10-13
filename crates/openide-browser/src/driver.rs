@@ -988,6 +988,19 @@ impl Driver {
         self.shared.state().network.report(|_| true)
     }
 
+    /// With `on`, what asks for another tab or window (a link with
+    /// `target="_blank"`, a `window.open` behind a click) no longer opens in
+    /// this page: its address waits in `take_window_request` for a host that
+    /// opens tabs.
+    pub fn open_windows_as_tabs(&self, on: bool) {
+        self.shared.state().windows_as_tabs = on;
+    }
+
+    /// The address the page last asked to open in another tab, once.
+    pub fn take_window_request(&self) -> Option<String> {
+        self.shared.state().window_request.take()
+    }
+
     /// Decides how the next JavaScript dialog is answered. Used once, and
     /// forgotten if the page navigates first. Without it dialogs are dismissed.
     pub fn handle_dialog(&self, accept: bool, prompt_text: Option<&str>) -> Outcome<()> {

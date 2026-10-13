@@ -81,6 +81,8 @@ pub(crate) struct BrowserSnapshot {
     pub viewport_height: u32,
     pub can_go_back: bool,
     pub can_go_forward: bool,
+    /// The tabs of the context, in the order they were opened.
+    pub tabs: Vec<BrowserTabView>,
     // Returned only to the request which asked for it, never retained in state
     // or exposed by the MCP snapshot serializer.
     pub clipboard: Option<BrowserClipboard>,
@@ -90,6 +92,15 @@ pub(crate) struct BrowserSnapshot {
     // The viewport as a PNG at CSS scale, base64 encoded: taken only for the
     // external snapshot that returns it, and never retained either.
     pub screenshot: Option<Arc<str>>,
+}
+
+/// One tab of a context: what its strip shows and what the agent is told.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub(crate) struct BrowserTabView {
+    pub id: u64,
+    pub title: String,
+    pub url: String,
+    pub active: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -121,6 +132,7 @@ impl Default for BrowserSnapshot {
             viewport_height: 700,
             can_go_back: false,
             can_go_forward: false,
+            tabs: Vec::new(),
             clipboard: None,
             output: None,
             screenshot: None,
@@ -308,6 +320,19 @@ pub(crate) enum BrowserCommand {
     FileUpload {
         paths: Vec<String>,
     },
+    /// The tabs of the context, without touching any.
+    TabList {},
+    /// Opens a tab, shows it, and takes it to `url` if one is given.
+    TabNew {
+        url: Option<String>,
+    },
+    /// Shows another tab: the tools act on it from then on.
+    TabSelect {
+        id: u64,
+    },
+    TabClose {
+        id: u64,
+    },
 }
 
 /// One end of a drag. The other element tools take the same fields inline.
@@ -336,7 +361,7 @@ impl BrowserCommand {
             !value.is_empty() && value.len() <= limit && !value.chars().any(char::is_control)
         };
         match self {
-            Self::Navigate { url } => {
+            Self::Navigate { url } | Self::TabNew { url: Some(url) } => {
                 if !short(url, 4096) {
                     return Err("URL vacía o demasiado extensa".into());
                 }
@@ -562,6 +587,7 @@ impl BrowserCommand {
                 | Self::WaitFor { .. }
                 | Self::ConsoleMessages { .. }
                 | Self::NetworkRequests {}
+                | Self::TabList {}
                 | Self::TakeScreenshot { .. }
         )
     }
@@ -845,6 +871,9 @@ impl BrowserRuntime {
             handle: handle.clone(),
             launch,
             driver: None,
+            tab: cef::FIRST_TAB,
+            parked: Vec::new(),
+            next_tab: cef::FIRST_TAB + 1,
             shown: false,
         };
         let (finishing, finished) = mpsc::channel();
@@ -1147,10 +1176,25 @@ fn mark_context_lost(handle: &BrowserHandle, error: &str) {
 struct Worker {
     handle: BrowserHandle,
     launch: Launcher,
+    /// The driver of the tab the view shows.
     driver: Option<Driver>,
+    /// That tab, and the others with what each was showing when left.
+    tab: u64,
+    parked: Vec<ParkedTab>,
+    next_tab: u64,
     /// The page's paints are let through to the view.
     shown: bool,
 }
+
+struct ParkedTab {
+    id: u64,
+    driver: Driver,
+    title: String,
+    url: String,
+}
+
+/// Tabs one context may hold: each is a page of Chromium with its processes.
+const MAX_TABS: usize = 8;
 
 impl Worker {
     fn run(mut self, receiver: Receiver<PendingCommand>) {
@@ -1284,7 +1328,11 @@ impl Worker {
         });
         match started {
             Ok((driver, info)) => {
+                // What asks for another tab gets one, as in any browser.
+                driver.open_windows_as_tabs(true);
                 self.driver = Some(driver);
+                self.tab = cef::FIRST_TAB;
+                self.next_tab = cef::FIRST_TAB + 1;
                 let _ = apply_reply(
                     &self.handle,
                     PageReply {
@@ -1302,7 +1350,148 @@ impl Worker {
     fn stop(&mut self) {
         self.shown = false;
         self.driver = None;
+        self.parked.clear();
         self.handle.view.embedded.close();
+        self.publish_tabs();
+    }
+
+    /// Opens a tab beside the others and shows it. The context's cookies,
+    /// cache and storage are its own too.
+    fn open_tab(&mut self) -> Result<(), String> {
+        if self.driver.is_none() {
+            return Err("Navegador no disponible".into());
+        }
+        if self.parked.len() + 1 >= MAX_TABS {
+            return Err(format!("El navegador ya tiene {MAX_TABS} pestañas abiertas. Cerrá una antes de abrir otra."));
+        }
+        let id = self.next_tab;
+        let driver = cef::Embedded::open_tab(&self.handle.view, id)?;
+        driver.open_windows_as_tabs(true);
+        self.next_tab += 1;
+        self.parked.push(ParkedTab {
+            id,
+            driver,
+            title: String::new(),
+            url: "about:blank".into(),
+        });
+        self.select_tab(id)
+    }
+
+    /// Shows the tab `id`: the view paints it and commands reach it.
+    fn select_tab(&mut self, id: u64) -> Result<(), String> {
+        if id == self.tab && self.driver.is_some() {
+            return Ok(());
+        }
+        let unknown = || format!("No hay una pestaña {id}. browser_tabs lista las que hay.");
+        let index = self.parked.iter().position(|tab| tab.id == id).ok_or_else(unknown)?;
+        if !self.handle.view.embedded.select_tab(id) {
+            return Err(unknown());
+        }
+        let mut shown = self.parked.remove(index);
+        let (title, url, viewport) = {
+            let state = self.handle.snapshot();
+            (state.title, state.url, (state.viewport_width, state.viewport_height))
+        };
+        // Parked at another size, the page takes the view's now.
+        let _ = shown.driver.resize(viewport.0, viewport.1);
+        if let Some(driver) = self.driver.replace(shown.driver) {
+            self.parked.push(ParkedTab { id: self.tab, driver, title, url });
+        }
+        self.tab = id;
+        // The agent's pointer was over the other page.
+        *self.handle.view.cue.lock().unwrap_or_else(|poison| poison.into_inner()) = None;
+        self.handle.view.refresh.store(true, Ordering::Release);
+        Ok(())
+    }
+
+    /// Closes the tab `id`. The last one stays: a context has a page.
+    fn close_tab(&mut self, id: u64) -> Result<(), String> {
+        if id == self.tab {
+            // The one opened before it takes its place.
+            let next = self.parked.iter().map(|tab| tab.id).max().ok_or("Es la única pestaña: no se cierra.")?;
+            self.select_tab(next)?;
+        }
+        let index = self
+            .parked
+            .iter()
+            .position(|tab| tab.id == id)
+            .ok_or_else(|| format!("No hay una pestaña {id}. browser_tabs lista las que hay."))?;
+        drop(self.parked.remove(index));
+        self.handle.view.embedded.close_tab(id);
+        Ok(())
+    }
+
+    /// The tabs as the window and the agent are told them.
+    fn publish_tabs(&self) -> Vec<BrowserTabView> {
+        let mut state = self.handle.state.lock().unwrap_or_else(|poison| poison.into_inner());
+        let mut tabs: Vec<BrowserTabView> = self
+            .parked
+            .iter()
+            .map(|tab| BrowserTabView {
+                id: tab.id,
+                title: tab.title.clone(),
+                url: tab.url.clone(),
+                active: false,
+            })
+            .collect();
+        if self.driver.is_some() {
+            tabs.push(BrowserTabView {
+                id: self.tab,
+                title: state.title.clone(),
+                url: state.url.clone(),
+                active: true,
+            });
+        }
+        tabs.sort_by_key(|tab| tab.id);
+        if state.tabs != tabs {
+            state.tabs = tabs.clone();
+            state.generation = state.generation.saturating_add(1);
+        }
+        tabs
+    }
+
+    /// A tab command, done here: no page is asked. What is left for the page
+    /// of the tab now shown is the command it returns, or an answer.
+    fn tab_command(&mut self, command: &BrowserCommand, agent: bool) -> Result<BrowserCommand, Result<BrowserSnapshot, String>> {
+        use BrowserCommand::*;
+        let done = match command {
+            TabList {} => Ok(None),
+            TabNew { url } => self.open_tab().map(|()| Some(url.clone().map_or(
+                Snapshot { interactive_only: false, max_depth: None, selector: None },
+                |url| Navigate { url },
+            ))),
+            TabSelect { id } => self.select_tab(*id).map(|()| Some(Snapshot { interactive_only: false, max_depth: None, selector: None })),
+            // The page of the tab left showing is read again.
+            TabClose { id } => self.close_tab(*id).map(|()| Some(Snapshot { interactive_only: false, max_depth: None, selector: None })),
+            other => return Ok(other.clone()),
+        };
+        let tabs = self.publish_tabs();
+        match done {
+            Ok(Some(next)) => Ok(next),
+            Ok(None) => Err(apply_refresh(&self.handle, PageReply {
+                output: Some(BrowserToolOutput { data: data("tabs", json!(tabs)), ..Default::default() }),
+                ..Default::default()
+            })),
+            // The tool's own answer, for the model to read; the window is told the same.
+            Err(error) if agent => Err(apply_refresh(&self.handle, PageReply {
+                output: Some(BrowserToolOutput::failed(error)),
+                ..Default::default()
+            })),
+            Err(error) => {
+                let _ = apply_refresh(&self.handle, PageReply::default());
+                Err(Err(error))
+            }
+        }
+    }
+
+    /// The page asked for another tab (a link with `target="_blank"`, a
+    /// `window.open` behind a click): opens it there. Without room for one
+    /// more, or a browser that has no tabs, it opens in the page itself.
+    fn follow_window_request(&mut self) -> Option<BrowserCommand> {
+        let url = self.driver.as_ref()?.take_window_request()?;
+        let _ = self.open_tab();
+        self.publish_tabs();
+        Some(BrowserCommand::Navigate { url })
     }
 
     fn lose_context(&mut self, error: &str) {
@@ -1311,6 +1500,11 @@ impl Worker {
     }
 
     fn poll_state(&mut self) {
+        if let Some(BrowserCommand::Navigate { url }) = self.follow_window_request() {
+            if let Some(driver) = self.driver.as_mut() {
+                let _ = driver.navigate(&url);
+            }
+        }
         let Some(driver) = self.driver.as_mut() else {
             return;
         };
@@ -1328,16 +1522,34 @@ impl Worker {
             // A page that is busy for a moment still has its context.
             Err(_) => {}
         }
+        self.publish_tabs();
     }
 
     fn perform(&mut self, pending: &PendingCommand) -> Result<BrowserSnapshot, String> {
+        let command = match self.tab_command(&pending.command, pending.include_aria) {
+            Ok(command) => command,
+            Err(answer) => return answer,
+        };
+        let mut result = self.perform_on_page(&command, pending);
+        // What the action asked to open in another tab is what it led to.
+        if let Some(opened) = self.follow_window_request() {
+            result = self.perform_on_page(&opened, pending);
+        }
+        self.publish_tabs();
+        result.map(|mut snapshot| {
+            snapshot.tabs = self.handle.snapshot().tabs;
+            snapshot
+        })
+    }
+
+    fn perform_on_page(&mut self, command: &BrowserCommand, pending: &PendingCommand) -> Result<BrowserSnapshot, String> {
         let Some(driver) = self.driver.as_mut() else {
             return Err("Navegador no disponible".into());
         };
         let agent = pending.include_aria;
         let view = &self.handle.view;
         // The page is as large as its view, which changes first.
-        if let BrowserCommand::Resize { width, height } = pending.command {
+        if let BrowserCommand::Resize { width, height } = *command {
             view.embedded.resize((width, height));
         }
         view.embedded.busy(true);
@@ -1348,18 +1560,18 @@ impl Worker {
                 view.point(cue, point, visible.load(Ordering::Acquire))
             })));
         }
-        let outcome = execute(driver, pending, view);
+        let outcome = execute(driver, command, pending, view);
         driver.watch_actions(None);
         view.embedded.busy(false);
         match outcome {
             Ok(reply) => {
-                if matches!(pending.command, BrowserCommand::Resize { .. }) {
+                if matches!(command, BrowserCommand::Resize { .. }) {
                     // A resized page owes a first frame at its new size.
                     view.refresh.store(true, Ordering::Release);
                 }
                 // Passing over the page is not an action: it keeps the
                 // explanation of the last one that failed.
-                if matches!(pending.command, BrowserCommand::PointerMove { .. }) {
+                if matches!(command, BrowserCommand::PointerMove { .. }) {
                     apply_refresh(&self.handle, reply)
                 } else {
                     apply_reply(&self.handle, reply)
@@ -1423,6 +1635,7 @@ impl Drop for Worker {
 /// says what it means for the caller.
 fn execute(
     driver: &mut Driver,
+    command: &BrowserCommand,
     pending: &PendingCommand,
     view: &LiveView,
 ) -> Result<PageReply, DriverError> {
@@ -1459,10 +1672,12 @@ fn execute(
     let mut options = SnapshotOptions::default();
     // The list of a <select> is Chromium's to click. The page is still told
     // of a button that comes up over it: it may have seen it go down.
-    if !agent && view.embedded.takes_pointer(&pending.command) && !matches!(pending.command, PointerUp { .. }) {
+    if !agent && view.embedded.takes_pointer(command) && !matches!(command, PointerUp { .. }) {
         return Ok(reply);
     }
-    match &pending.command {
+    match command {
+        // Done by the worker before a page is asked.
+        TabList {} | TabNew { .. } | TabSelect { .. } | TabClose { .. } => {}
         Navigate { url } => driver.navigate(url)?,
         Back => driver.back()?,
         Forward => driver.forward()?,
@@ -1688,7 +1903,7 @@ fn execute(
         }
     }
     reply.info = Some(driver.info()?);
-    let reading = matches!(pending.command, Snapshot { .. });
+    let reading = matches!(command, Snapshot { .. });
     // What the user did in the window is on its frames. The agent reads the
     // tree an action left, with the refs to act on next; a tool that returns
     // data of its own does not bury it behind that tree.
@@ -2046,12 +2261,13 @@ pub(crate) fn native_tool_names() -> Vec<String> {
 
 /// The tools that only read the page. They never ask: what they return is
 /// what the user already sees in the tab.
-const READ_TOOLS: [&str; 5] = [
+const READ_TOOLS: [&str; 6] = [
     "browser_snapshot",
     "browser_wait_for",
     "browser_console_messages",
     "browser_network_requests",
     "browser_take_screenshot",
+    "browser_tabs",
 ];
 
 /// Whether a call to the native agent's tool `name` goes ahead without
@@ -2530,6 +2746,30 @@ pub(crate) fn browser_mcp_tools() -> Vec<McpTool> {
         vec!["accept"],
     );
     add(
+        "browser_tabs",
+        "List the tabs of this browser: each one's `id`, title, address and whether it is the `active` one, the tab the user sees and every other tool acts on. A link that asks for another tab opens one and makes it active.",
+        json!({}),
+        vec![],
+    );
+    add(
+        "browser_tab_new",
+        "Open a new tab and make it active, at `url` if given (http or https) and otherwise blank. It shares cookies and sign-ins with the other tabs. At most 8 tabs.",
+        json!({"url":{"type":"string","minLength":1,"maxLength":4096}}),
+        vec![],
+    );
+    add(
+        "browser_tab_select",
+        "Make the tab `id` (from browser_tabs) the active one: the user sees it and the other tools act on it.",
+        json!({"id":{"type":"integer","minimum":1}}),
+        vec!["id"],
+    );
+    add(
+        "browser_tab_close",
+        "Close the tab `id` (from browser_tabs). Closing the active tab makes the newest of the others active; the only tab cannot be closed.",
+        json!({"id":{"type":"integer","minimum":1}}),
+        vec!["id"],
+    );
+    add(
         "browser_file_upload",
         "Decide which local files the NEXT file chooser of the page gets: `paths`, absolute, one file unless the input accepts several. Call it before the click that opens the chooser (the file input or its upload button). Without it a chooser stays closed. The files are used once and forgotten when the page navigates; each chooser and whether it got its files appear in browser_console_messages as `filechooser`.",
         json!({"paths":{"type":"array","minItems":1,"maxItems":16,"items":{"type":"string","minLength":1,"maxLength":4096}}}),
@@ -2566,6 +2806,10 @@ pub(crate) fn browser_tool_command(name: &str, arguments: Value) -> Result<Brows
         "browser_take_screenshot" => "take_screenshot",
         "browser_handle_dialog" => "handle_dialog",
         "browser_file_upload" => "file_upload",
+        "browser_tabs" => "tab_list",
+        "browser_tab_new" => "tab_new",
+        "browser_tab_select" => "tab_select",
+        "browser_tab_close" => "tab_close",
         _ => return Err(format!("Herramienta de navegador no anunciada: {name}")),
     };
     if object
@@ -2623,8 +2867,18 @@ mod cef {
 
     #[derive(Default)]
     pub(super) struct Embedded;
+    pub(super) const FIRST_TAB: u64 = 1;
 
     impl Embedded {
+        pub(super) fn open_tab(_: &Arc<LiveView>, _: u64) -> Result<Driver, String> {
+            Err(UNAVAILABLE.into())
+        }
+        pub(super) fn select_tab(&self, _: u64) -> bool {
+            false
+        }
+        pub(super) fn close_tab(&self, _: u64) -> bool {
+            false
+        }
         pub(super) fn start(_: &Arc<LiveView>, _: &Path, _: (u32, u32), _: f32) -> Result<Driver, StartFailure> {
             Err(StartFailure {
                 code: "engine_failed",

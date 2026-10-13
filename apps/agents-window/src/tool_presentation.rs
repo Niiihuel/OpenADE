@@ -318,6 +318,10 @@ fn meta(name: &str) -> Meta<'_> {
             Web,
             Icon::Refresh,
         ),
+        "browser_tabs" => ("Pestañas del navegador", "Leyendo pestañas", "Pestañas leídas", &[], Web, Icon::Globe),
+        "browser_tab_new" => ("Pestaña nueva", "Abriendo pestaña", "Pestaña abierta", &["url"], Web, Icon::Globe),
+        "browser_tab_select" => ("Cambio de pestaña", "Cambiando de pestaña", "Pestaña mostrada", &[], Web, Icon::Globe),
+        "browser_tab_close" => ("Cierre de pestaña", "Cerrando pestaña", "Pestaña cerrada", &[], Web, Icon::Globe),
         "browser_click" => (
             "Interacción con página",
             "Pulsando",

@@ -190,6 +190,16 @@ pub(crate) fn summary(tool_name: &str, arguments: &str) -> ApprovalSummary {
             Icon::Globe,
             &["url"],
         ),
+        "browser_tab_new" => (
+            "Abrir una pestaña del navegador",
+            Icon::Globe,
+            &["url"],
+        ),
+        "browser_tab_select" | "browser_tab_close" => (
+            if canonical == "browser_tab_close" { "Cerrar una pestaña del navegador" } else { "Cambiar de pestaña del navegador" },
+            Icon::Globe,
+            &[],
+        ),
         "web_search" => (
             "Buscar en la web",
             Icon::Search,

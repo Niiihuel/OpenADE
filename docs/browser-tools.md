@@ -43,6 +43,10 @@ o `selector` (un selector que identifique un único elemento).
 | `browser_take_screenshot` | `full_page` o destino, ambos opcionales | Lectura |
 | `browser_handle_dialog` | `accept`, `prompt_text` opcional | Modifica |
 | `browser_file_upload` | `paths`: de 1 a 16 rutas absolutas | Modifica |
+| `browser_tabs` | ninguno | Lee |
+| `browser_tab_new` | `url` opcional (`http` o `https`) | Modifica |
+| `browser_tab_select` | `id` | Modifica |
+| `browser_tab_close` | `id` | Modifica |
 | `open_preview` | `url` opcional (sólo de este equipo) | Modifica |
 
 «Modifica» es la clasificación de `BrowserCommand::mutating()`: la vista marca
@@ -270,6 +274,28 @@ aparezca un diálogo, para que no alcance a una página distinta. Cada diálogo
 queda en la consola con nivel `warning`, tipo `dialog`, su clase (`dialog`), su
 mensaje y cómo se respondió (`action`: `accepted` o `dismissed`).
 
+### Pestañas
+
+Un navegador tiene hasta 8 pestañas. Cada una es una página propia que
+comparte cookies, caché y sesiones iniciadas con las demás. Una sola es la
+**activa**: la que el usuario ve y sobre la que actúan todas las otras
+herramientas.
+
+```text
+browser_tabs {}
+browser_tab_new {"url":"http://localhost:3000/admin"}
+browser_tab_select {"id":1}
+browser_tab_close {"id":2}
+```
+
+`browser_tabs` devuelve `id`, título, dirección y `active` de cada una, y no
+pide permiso. Abrir, cambiar y cerrar responden con la página de la pestaña
+que queda activa. Cerrar la activa muestra la más nueva de las otras; la única
+pestaña no se cierra. Un enlace con `target="_blank"` o un `window.open` detrás
+de un clic abre una pestaña y la deja activa: `browser_click` responde con esa
+página. El usuario ve las pestañas en una tira bajo la barra de direcciones en
+cuanto hay más de una.
+
 ### Subir archivos
 
 Ningún selector de archivos se abre en el escritorio. `browser_file_upload`
@@ -460,7 +486,6 @@ del modelo con la que se verifican y reanudan turnos guardados.
 
 | De la skill de Codex | Motivo |
 | --- | --- |
-| Pestañas (`tab-new`, `tab-select`…) | Hay una única página autoritativa por contexto, compartida con el usuario. Un clic sobre un enlace que pide otra pestaña la abre en esa misma página, y la respuesta del clic ya es la página nueva; lo que una página intenta abrir sola no abre nada. |
 | `resize` | El viewport pertenece al panel visible. |
 | `pdf` | Produce un archivo en disco; no hay destino acotado para artefactos. |
 | `tracing-start`/`tracing-stop` | Las trazas guardan capturas, DOM y red con cuerpos; contradicen los límites de esta página. |

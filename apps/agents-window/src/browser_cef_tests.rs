@@ -434,7 +434,7 @@ fn serves_the_agent_and_an_external_client(session: Session, origin: &str) -> Se
     assert_eq!(colour.content[1]["text"], "\"rgb(255, 221, 238)\"", "the external click reached the shared page");
     let missed = request(5, "tools/call", json!({"name": "browser_click", "arguments": {"ref": "e99999"}}));
     assert_eq!(missed["result"]["isError"], true);
-    assert!(request(6, "tools/call", json!({"name": "browser_tabs", "arguments": {}})).get("error").is_some());
+    assert!(request(6, "tools/call", json!({"name": "browser_pdf_save", "arguments": {}})).get("error").is_some());
     drop(input);
     assert!(proxy.wait().unwrap().success());
     session
@@ -1023,10 +1023,11 @@ fn modifier_keys_with_the_pointer_and_the_wheel() {
     every_paint_left_the_canvas_as_chromium_painted_it();
 }
 
-/// One panel has one page. A link for another tab, a script that opens a
-/// window and a link clicked with Control, Shift or the middle button open in
-/// that page when a click asked for them, the user's or the agent's alike. A
-/// window the page opens by itself opens nothing.
+/// A link for another tab and a script that opens a window open a tab of
+/// their own when a click asked for them, the user's or the agent's alike,
+/// and the view shows it. A link clicked with Control, Shift or the middle
+/// button opens in the page itself. A window the page opens by itself opens
+/// nothing.
 fn what_a_click_asked_to_see_in_another_tab() {
     use openide_browser::modifiers::{CONTROL, SHIFT};
     let origin = site();
@@ -1054,14 +1055,20 @@ fn what_a_click_asked_to_see_in_another_tab() {
 
     // The user's click on a link for another tab, on a button whose script
     // opens a window, on a link for a window with a name and on a form that
-    // sends to another tab. Each opens here, and Back returns from it.
+    // sends to another tab. Each opens in a tab of its own, which the view
+    // shows; the page that asked stays in its tab, and is back once that
+    // tab is closed.
+    let tabs = || session.runtime.snapshot().tabs;
     reopen();
     for (which, y) in [("blank", 32.0), ("open", 72.0), ("named", 152.0), ("post", 232.0)] {
         click(y, left, 0);
         arrives(which);
         assert_eq!(session.runtime.snapshot().title, format!("Destino {which}"));
-        let back = session.window(BrowserCommand::Back).unwrap();
-        assert_eq!((back.url.as_str(), back.can_go_forward), (links.as_str(), true), "{which}");
+        let open = tabs();
+        assert_eq!(open.len(), 2, "{which}: {open:?}");
+        assert_eq!((open[0].url.as_str(), open[0].active, open[1].active), (links.as_str(), false, true), "{which}");
+        let closed = session.window(BrowserCommand::TabClose { id: open[1].id }).unwrap();
+        assert_eq!((closed.url.as_str(), closed.tabs.len()), (links.as_str(), 1), "{which}");
         session.settle(Duration::from_millis(300));
     }
     // A link clicked for another tab or another window.
@@ -1078,10 +1085,19 @@ fn what_a_click_asked_to_see_in_another_tab() {
         let state = page(&clicked);
         assert_eq!((state["url"].as_str(), state["title"].as_str()), (Some(landing(which).as_str()), Some(format!("Destino {which}").as_str())));
         assert!(state["aria_snapshot"].as_str().unwrap().contains(&format!("Llegaste por {which}")), "{state}");
-        assert_eq!(state["can_go_back"], true);
-        reopen();
+        // It is told the tabs there are, and closes the one its click opened.
+        let open = tabs();
+        assert_eq!(open.len(), 2, "{which}: {open:?}");
+        let listed = session.agent("browser_tabs", json!({}));
+        assert!(format!("{:?}", listed.content).contains(&landing(which)), "{:?}", listed.content);
+        assert!(!session.agent("browser_tab_close", json!({"id": open[1].id})).is_error);
+        assert_eq!(session.runtime.snapshot().url, links);
+        session.settle(Duration::from_millis(300));
     }
 
+    // A page loaded again has no click behind it: the one just made would
+    // still stand behind a window its script opened a moment later.
+    reopen();
     // What the page does by itself, with no click behind it, opens nothing:
     // a script's window, a click of its own on the link, one with Control.
     assert_eq!(value(&session, "String(window.open('/landing?script'))"), "null");
@@ -1094,8 +1110,8 @@ fn what_a_click_asked_to_see_in_another_tab() {
     click(272.0, left, 0);
     stays("only an address of the web opens in the view");
 
-    // Every address was asked for by the view that opened it. Chromium
-    // never makes the other tab, so that is the only time.
+    // Every address was asked for by the tab that opened it. Chromium
+    // never makes a tab of its own, so that is the only time.
     let landed = value(&session, "() => fetch('/landed').then(reply => reply.text())");
     let landed: Vec<&str> = landed.as_str().unwrap().split(',').collect();
     let asked = |what: &str| landed.iter().filter(|one| **one == what).count();
@@ -1108,6 +1124,46 @@ fn what_a_click_asked_to_see_in_another_tab() {
     assert_eq!(asked("POST post"), 0, "{landed:?}");
     assert!(session.runtime.snapshot().error.is_none());
     every_paint_left_the_canvas_as_chromium_painted_it();
+}
+
+/// The tabs of one context: each is a page of its own that shares what the
+/// others stored, the view shows the one selected, and the last one stays.
+fn tabs_of_one_context() {
+    let origin = site();
+    let session = launch((640, 480), 2.0);
+    let links = format!("{origin}/links");
+    session.open(links.clone());
+    value(&session, "document.cookie = 'visita=uno; path=/'; 0");
+    let shown = || -> Vec<(u64, bool)> { session.runtime.snapshot().tabs.iter().map(|tab| (tab.id, tab.active)).collect() };
+    assert_eq!(shown(), [(1, true)]);
+
+    // A tab the agent opens is the one shown and acted on from then on, and
+    // has the cookies of the first.
+    let opened = session.agent("browser_tab_new", json!({"url": format!("{origin}/landing?tab")}));
+    assert!(!opened.is_error, "{:?}", opened.content);
+    assert_eq!(page(&opened)["title"], "Destino tab");
+    assert_eq!(shown(), [(1, false), (2, true)]);
+    assert_eq!(value(&session, "document.cookie"), "visita=uno");
+    session.next_frame("the tab the view now shows");
+
+    // Selected again, the first tab is as it was left.
+    let back = session.agent("browser_tab_select", json!({"id": 1}));
+    assert_eq!(page(&back)["url"], links.as_str());
+    assert_eq!(shown(), [(1, true), (2, false)]);
+    session.next_frame("the first tab again");
+    assert!(session.agent("browser_tab_select", json!({"id": 99})).is_error);
+
+    // The only tab left cannot be closed.
+    assert!(!session.agent("browser_tab_close", json!({"id": 2})).is_error);
+    assert!(session.agent("browser_tab_close", json!({"id": 1})).is_error);
+    assert_eq!(shown(), [(1, true)]);
+
+    // The window's own new tab is blank; closing the one shown shows the other.
+    let blank = session.window(BrowserCommand::TabNew { url: None }).unwrap();
+    assert_eq!((blank.url.as_str(), blank.tabs.len()), ("about:blank", 2));
+    let closed = session.window(BrowserCommand::TabClose { id: blank.tabs[1].id }).unwrap();
+    assert_eq!((closed.url.as_str(), closed.tabs.len()), (links.as_str(), 1));
+    assert!(session.runtime.snapshot().error.is_none());
 }
 
 /// Text and keys as the window sends them: a character of the US layout is a
@@ -1688,8 +1744,14 @@ fn real_cef_takes_what_a_spanish_keyboard_types_and_its_editing_keys() {
 
 #[test]
 #[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
-fn real_cef_opens_in_the_view_what_a_click_asked_to_see_in_another_tab() {
+fn real_cef_opens_in_a_tab_what_a_click_asked_to_see_in_another_tab() {
     what_a_click_asked_to_see_in_another_tab();
+}
+
+#[test]
+#[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
+fn real_cef_tabs_of_one_context_share_its_storage_and_show_the_one_selected() {
+    tabs_of_one_context();
 }
 
 #[test]

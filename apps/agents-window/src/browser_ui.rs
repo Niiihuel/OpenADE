@@ -11,6 +11,7 @@ use crate::{theme, view::ViewState};
 
 pub(crate) const TOOLBAR_HEIGHT: f32 = crate::dock_tab_ui::HEADER_HEIGHT;
 pub(crate) const STATUS_HEIGHT: f32 = 20.0;
+pub(crate) const TABS_HEIGHT: f32 = 30.0;
 const NAVIGATION_SIZE: f32 = crate::dock_tab_ui::TOOL_SIZE;
 /// Copies the address in the bar; its button shows a check for a moment.
 pub(crate) const COPY_URL: &str = "browser_copy_url";
@@ -40,6 +41,8 @@ pub(crate) struct BrowserUiState {
     pub engine_failed: bool,
     pub can_go_back: bool,
     pub can_go_forward: bool,
+    /// The tabs of this browser. Their strip shows once there are two.
+    pub pages: Vec<crate::browser_runtime::BrowserTabView>,
     pub queued_inputs: usize,
     pub input_rejection: Option<String>,
     pub more_open: bool,
@@ -84,6 +87,7 @@ fn has_address(browser: &BrowserUiState) -> bool {
 fn more_menu(browser: &BrowserUiState, width: f32) -> Element {
     let ready = browser.started && !browser.navigating;
     let mut entries = vec![
+        menu_action("browser_tab_new", Icon::Add, "Nueva pestaña", "Abre otra pestaña en este navegador. Comparte las sesiones iniciadas con las demás.", ready),
         menu_action("browser_snapshot", Icon::Refresh, "Actualizar vista", "Vuelve a pedir la imagen en vivo de la página, sin recargarla.", ready),
         DropdownMenuEntry::Separator,
         menu_action("browser_mcp_config", Icon::Code, "Copiar conexión MCP", "Copia la configuración para conectar herramientas a esta página. La conexión existe mientras esta pestaña siga abierta.", ready),
@@ -176,6 +180,65 @@ fn navigation(browser: &BrowserUiState, copied: bool, width: f32) -> Element {
         .width(width)
         .sizing(crate::ui_sizing::PANE_HEADER)
         .render()
+}
+
+/// The height the strip of tabs takes: none with a single tab.
+pub(crate) fn tabs_height(browser: &BrowserUiState) -> f32 {
+    if browser.pages.len() > 1 {
+        TABS_HEIGHT
+    } else {
+        0.0
+    }
+}
+
+/// The tabs of the browser: each shows its page and can be closed, and one
+/// more can be opened. The agent's tools act on the one that is shown.
+fn tabs(browser: &BrowserUiState, width: f32) -> Element {
+    let ready = browser.started && !browser.navigating;
+    let mut strip: Vec<Element> = browser
+        .pages
+        .iter()
+        .map(|tab| {
+            let name = if !tab.title.is_empty() {
+                tab.title.as_str()
+            } else if tab.url == "about:blank" || tab.url.is_empty() {
+                "Nueva pestaña"
+            } else {
+                tab.url.as_str()
+            };
+            let mut label: String = name.chars().take(24).collect();
+            if name.chars().count() > 24 {
+                label.push('…');
+            }
+            Element::row(vec![
+                Button::new(format!("browser_tab_select:{}", tab.id), label, theme::component_palette())
+                    .variant(if tab.active { ButtonVariant::Secondary } else { ButtonVariant::Ghost })
+                    .size(ControlSize::Dense)
+                    .enabled(ready)
+                    .tooltip_with(TooltipSpec::new(name.chars().take(160).collect::<String>()).placement(TooltipPlacement::Below))
+                    .render(),
+                IconButton::new(format!("browser_tab_close:{}", tab.id), Icon::Close, theme::component_palette())
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Dense)
+                    .enabled(ready)
+                    .tooltip_with(TooltipSpec::new("Cerrar pestaña").placement(TooltipPlacement::Below))
+                    .render(),
+            ])
+        })
+        .collect();
+    strip.push(
+        IconButton::new("browser_tab_new", Icon::Add, theme::component_palette())
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .enabled(ready)
+            .tooltip_with(TooltipSpec::new("Nueva pestaña").placement(TooltipPlacement::Below))
+            .render(),
+    );
+    Element::row(strip)
+        .gap(4.0)
+        .padding(3.0)
+        .size(Some(width), Some(TABS_HEIGHT))
+        .clip_children()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -460,18 +523,22 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
     } else {
         state_surface(browser, width, mode)
     };
-    Element::column(vec![
+    let mut rows = vec![
         navigation(
             browser,
             state.link_copied.as_ref().is_some_and(|copied| copied.by == COPY_URL),
             width,
         ),
         Separator::horizontal(theme::component_palette()).render(),
+    ];
+    if tabs_height(browser) > 0.0 {
+        rows.push(tabs(browser, width));
+    }
+    rows.extend([
         content,
         status(browser, width, mode),
-    ])
-    .size(Some(width), None)
-    .clip_children()
+    ]);
+    Element::column(rows).size(Some(width), None).clip_children()
 }
 
 #[cfg(test)]

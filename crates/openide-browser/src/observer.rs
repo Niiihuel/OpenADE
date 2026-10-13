@@ -24,6 +24,7 @@ pub const MAX_REQUEST_URL_BYTES: usize = 512;
 /// Bytes of the entries one report returns; the newest that fit.
 pub const MAX_REPORT_BYTES: usize = 12 * 1024;
 const MAX_LOCATION_BYTES: usize = 512;
+const MAX_WINDOW_URL_BYTES: usize = 4096;
 const MAX_FAILURE_BYTES: usize = 256;
 /// Out-of-process frames and script contexts tracked at once. A page that
 /// creates more keeps working; the ones beyond are not addressable.
@@ -174,6 +175,10 @@ pub(crate) struct State {
     pub dialog_plan: Option<DialogPlan>,
     /// The files the next file chooser gets. Used once.
     pub upload_plan: Option<Vec<String>>,
+    /// The host opens what asks for another tab or window in a tab of its
+    /// own: the address is kept in `window_request` for it to take.
+    pub windows_as_tabs: bool,
+    pub window_request: Option<String>,
     /// Out-of-process frames by the id of their root frame.
     pub children: HashMap<String, ChildSession>,
     /// The page's own script world of each frame, by session and frame id.
@@ -374,7 +379,14 @@ impl EventSink for Observer {
                 // announced before the browser is asked, with where it goes.
                 // What the user did not ask for with a click opens nothing.
                 if params["userGesture"] == true {
-                    state.open_here(client, text(&params, "url"));
+                    let url = text(&params, "url");
+                    if !state.windows_as_tabs {
+                        state.open_here(client, url);
+                    } else if url.starts_with("http://") || url.starts_with("https://") {
+                        // Only an address of the web, as when it opens here.
+                        state.window_request = Some(limited(url, MAX_WINDOW_URL_BYTES).to_owned());
+                        self.shared.changed.notify_all();
+                    }
                 }
             }
             "Inspector.targetCrashed" if session == state.page_session => {

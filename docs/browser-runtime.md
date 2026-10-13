@@ -116,26 +116,28 @@ La ventana envía además el puntero, en los mismos píxeles CSS:
   no puede nombrarlos.
 - **Un enlace pedido en otra pestaña.** Un enlace con `target="_blank"`, un
   script que llama a `window.open` y Control + clic, el botón del medio o
-  Shift + clic sobre un enlace piden otra pestaña u otra ventana, y acá hay
-  una sola página. Cuando lo pidió un clic, se abre en esa misma página y
-  **Atrás** vuelve a la anterior. Nunca se abre una ventana. El detalle está
-  en **Enlaces que piden otra pestaña**, más abajo.
+  Shift + clic sobre un enlace piden otra pestaña u otra ventana. Cuando lo
+  pidió un clic, los dos primeros abren una pestaña nueva del mismo navegador,
+  que pasa a ser la que se ve; los clics con tecla o botón del medio abren en
+  la misma página. Nunca se abre una ventana. El detalle está en **Enlaces que
+  piden otra pestaña**, más abajo.
 
 **Enlaces que piden otra pestaña.** La regla es la misma para el usuario y
 para las herramientas del agente, cuyo clic es un clic:
 
 | Pedido | Qué pasa |
 | --- | --- |
-| Clic en un enlace con `target="_blank"` o con el nombre de otra ventana | Se abre en la misma página. La pestaña no llega a crearse. |
-| Clic en algo cuyo script llama a `window.open(dirección)` | Lo mismo. El script recibe `null`. |
+| Clic en un enlace con `target="_blank"` o con el nombre de otra ventana | Se abre en una pestaña nueva, que pasa a ser la activa. La página que lo pidió queda en la suya. |
+| Clic en algo cuyo script llama a `window.open(dirección)` | Lo mismo. El script recibe `null`: la pestaña nueva no tiene `opener`. |
 | Control + clic, Shift + clic o botón del medio sobre un enlace | Chromium lo abre directamente en la misma página. |
 | `window.open` o un clic hecho por script, sin un clic del usuario detrás | No abre nada: el script recibe `null`. |
 | Un destino que no es `http` ni `https` | No abre nada. |
-| Un formulario que envía a otra pestaña | Se abre su dirección por GET, **sin los datos**, que no se envían. |
+| Un formulario que envía a otra pestaña | Se abre su dirección por GET en la pestaña nueva, **sin los datos**, que no se envían. |
+| Ya hay 8 pestañas | Se abre en la misma página. |
 
 `browser_click` sobre uno de esos enlaces espera la página nueva y responde
-con su dirección, su título y su árbol, como con un enlace común; el modelo
-no tiene que saber que el enlace pedía otra pestaña. «Pedido por un clic» es
+con su dirección, su título y su árbol, como con un enlace común; la pestaña
+que se abrió figura en `browser_tabs`. «Pedido por un clic» es
 lo que Chromium entiende por eso: también lo que el script de la página hace
 poco después de un clic (un `window.open` evaluado un segundo después de uno
 se abrió).
@@ -555,10 +557,12 @@ otra, y `localStorage`, IndexedDB y los service workers no se restauran así.
 
 - **Zoom de página.** Control + rueda y el gesto de pellizco no amplían la
   página: ver *Control + rueda no hace nada*.
-- **Varias pestañas.** Lo que pide otra pestaña se abre en la misma página;
-  no hay una segunda. Una ventana que un script abre vacía para llenarla
-  después no abre nada, y un formulario que envía a otra pestaña pierde sus
-  datos: ver **Enlaces que piden otra pestaña**.
+- **Ventanas con `opener`.** Las pestañas existen (tira bajo la barra de
+  direcciones, herramientas `browser_tab*`), pero la que abre un enlace no
+  conoce a la página que la pidió. Una ventana que un script abre vacía para
+  llenarla después no abre nada, y un formulario que envía a otra pestaña
+  pierde sus datos: ver **Enlaces que piden otra pestaña**. Las pestañas que
+  abre el agente no se cierran solas al terminar su turno.
 - **Teclas para todo el texto.** Lo que no está en la distribución
   estadounidense del driver (`ñ`, acentos) se inserta sin `keydown`, y una
   tecla lleva el código físico de esa distribución, no el del teclado real.
