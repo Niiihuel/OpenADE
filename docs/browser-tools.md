@@ -36,7 +36,7 @@ o `selector` (un selector que identifique un único elemento).
 | `browser_select_option` | destino, `values` (1 a 32) | Modifica |
 | `browser_check` | destino, `checked` | Modifica |
 | `browser_drag` | `from` y `to`, cada uno un destino | Modifica |
-| `browser_wait_for` | uno de `text`, `text_gone`, `seconds` | Lectura |
+| `browser_wait_for` | uno de `text`, `text_gone`, `url`, `load_state`, `seconds` | Lectura |
 | `browser_evaluate` | `expression`, destino opcional | Modifica |
 | `browser_console_messages` | `level` opcional | Lectura |
 | `browser_network_requests` | — | Lectura |
@@ -174,8 +174,11 @@ browser_snapshot {}
 
 `values` coincide con el valor o con la etiqueta de cada opción.
 `browser_wait_for` evita adivinar pausas: espera hasta 10 s a que el texto sea
-visible (`text`) o deje de serlo (`text_gone`), o hace una pausa fija de hasta
-10 s (`seconds`). Si el plazo se agota lo dice y se puede volver a llamar.
+visible (`text`) o deje de serlo (`text_gone`), a que la dirección de la página
+contenga un texto (`url`, como tras una redirección o un inicio de sesión) o a
+que el documento esté leído (`load_state: "domcontentloaded"`) o cargado con
+sus imágenes, estilos y marcos (`"load"`); o hace una pausa fija de hasta 10 s
+(`seconds`). Si el plazo se agota lo dice y se puede volver a llamar.
 
 ### Depurar con consola y red
 
@@ -222,9 +225,20 @@ se depende del motor de selectores `aria-ref` de Playwright, que no figuraba
 entre sus motores documentados.
 
 Los destinos por rol y nombre y por selector buscan sólo en el marco
-principal; dentro de un marco se usa una referencia. El selector es CSS: los
-motores propios de Playwright (`text=`, `role=`, `>>`, `:has-text()`) no
-existen aquí.
+principal; dentro de un marco se usa una referencia. El selector es CSS, o
+nombra al elemento por lo que muestra:
+
+| Selector | Elemento |
+| --- | --- |
+| `text=Guardar` | El más chico cuyo texto completo es ése |
+| `label=Correo` | El campo con esa etiqueta o ese `aria-label` |
+| `placeholder=Buscar` | El campo con ese texto de ayuda |
+| `testid=enviar` | El de ese `data-testid`, exacto |
+
+Los tres primeros no distinguen mayúsculas ni espacios repetidos. Como con CSS,
+tiene que coincidir con un solo elemento. Los demás motores de Playwright
+(`role=`, `>>`, `:has-text()`) no existen aquí: para rol y nombre están `role`
+y `name`.
 
 Si el árbol no pudo leerse después de una acción, la acción no se informa como
 fallida: la respuesta llega sin árbol y el motivo queda en `error`. La entrada

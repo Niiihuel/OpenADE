@@ -162,12 +162,30 @@ pub(crate) const LIBRARY: &str = r#"function (operation, first, second) {
       return null;
     },
     // The one element a selector names, or how many it matches. Open shadow
-    // roots are searched too.
+    // roots are searched too. A selector is CSS, or one of `text=`, `label=`,
+    // `placeholder=` and `testid=` followed by what the element shows: its
+    // whole text, its label's, its placeholder (none of them minding case or
+    // runs of whitespace) or its exact `data-testid`.
     query(_, selector) {
       const found = [];
+      const named = /^(text|label|placeholder|testid)=([^]*)$/.exec(selector);
+      const normal = value => (value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+      const wanted = named && normal(named[2]);
+      const matches = {
+        // The smallest element with that text: not the ones around it.
+        text: element => normal(element.textContent) === wanted
+          && ![...element.children].some(child => normal(child.textContent) === wanted),
+        label: element => normal(element.getAttribute('aria-label')) === wanted
+          || [...(element.labels || [])].some(label => normal(label.textContent) === wanted),
+        placeholder: element => normal(element.getAttribute('placeholder')) === wanted,
+        testid: element => element.getAttribute('data-testid') === named[2],
+      };
       const search = scope => {
-        for (const match of scope.querySelectorAll(selector)) found.push(match);
-        for (const host of scope.querySelectorAll('*')) if (host.shadowRoot) search(host.shadowRoot);
+        if (!named) for (const match of scope.querySelectorAll(selector)) found.push(match);
+        for (const element of scope.querySelectorAll('*')) {
+          if (named && wanted && matches[named[1]](element)) found.push(element);
+          if (element.shadowRoot) search(element.shadowRoot);
+        }
       };
       search(document);
       return found.length === 1 ? found[0] : found.length;

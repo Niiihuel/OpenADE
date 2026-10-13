@@ -872,6 +872,49 @@ impl Driver {
         })
     }
 
+    /// Waits until the page's address contains `part`: a path, a query or
+    /// the whole address, as after a redirect or a sign-in.
+    pub fn wait_for_url(&mut self, part: &str) -> Outcome<()> {
+        if part.is_empty() || part.len() > MAX_URL_BYTES || part.chars().any(char::is_control) {
+            return Err(invalid("Indicá la parte de la dirección que se espera"));
+        }
+        self.run(TIMEOUT, |driver| loop {
+            let url = driver.shared.state().url.clone();
+            if url.contains(part) {
+                return Ok(());
+            }
+            if driver.deadline.saturating_duration_since(Instant::now()) < Duration::from_millis(100) {
+                return Err(tool(format!(
+                    "La dirección no llegó a contener eso después de {} s. Es {}",
+                    TIMEOUT.as_secs(),
+                    limited(&url, 512)
+                )));
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        })
+    }
+
+    /// Waits until the document has been parsed (`complete` false) or has
+    /// also loaded what it refers to: images, styles, frames.
+    pub fn wait_for_load(&mut self, complete: bool) -> Outcome<()> {
+        let ready = if complete { "document.readyState === 'complete'" } else { "document.readyState !== 'loading'" };
+        self.run(TIMEOUT, |driver| loop {
+            let session = driver.session.clone();
+            // A page in the middle of a navigation has no context for a moment: ask again.
+            let state: Outcome<Value> =
+                driver.call(&session, "Runtime.evaluate", json!({"expression": ready, "returnByValue": true}));
+            match state {
+                Ok(state) if state["result"]["value"] == true => return Ok(()),
+                Err(error) if error.kind == ErrorKind::Closed => return Err(error),
+                _ => {}
+            }
+            if driver.deadline.saturating_duration_since(Instant::now()) < Duration::from_millis(100) {
+                return Err(tool(format!("La página no terminó de cargar después de {} s.", TIMEOUT.as_secs())));
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        })
+    }
+
     /// A fixed pause of at most ten seconds.
     pub fn wait_seconds(&mut self, seconds: f64) -> Outcome<()> {
         if !(0.0..=10.0).contains(&seconds) {

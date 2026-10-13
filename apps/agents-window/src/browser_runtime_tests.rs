@@ -806,10 +806,18 @@ fn new_tools_reject_arguments_outside_their_bounds() {
     rejected("browser_wait_for", json!({"text":"a","seconds":1}));
     rejected("browser_wait_for", json!({"text":""}));
     rejected("browser_wait_for", json!({"text":"x".repeat(1025)}));
+    accepted("browser_wait_for", json!({"url":"/panel"}));
+    accepted("browser_wait_for", json!({"load_state":"load"}));
+    accepted("browser_wait_for", json!({"load_state":"domcontentloaded"}));
+    rejected("browser_wait_for", json!({"load_state":"networkidle"}));
+    rejected("browser_wait_for", json!({"url":"/panel","load_state":"load"}));
+    rejected("browser_wait_for", json!({"url":""}));
     assert!(BrowserCommand::WaitFor {
         text: None,
         text_gone: None,
-        seconds: Some(f64::NAN)
+        seconds: Some(f64::NAN),
+        url: None,
+        load_state: None,
     }
     .validate()
     .is_err());
