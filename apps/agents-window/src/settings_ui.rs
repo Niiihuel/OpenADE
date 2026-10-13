@@ -2538,7 +2538,7 @@ pub(crate) fn provider_limits_group(state: &ViewState, compact: bool) -> Element
                 settings_parts::switch_row(
                     "settings_auto_resume_toggle",
                     "Continuar automáticamente cuando se renueve el límite",
-                    "Un turno en pausa por un límite de uso retoma solo a la hora que informa el proveedor, sin reenviar tu mensaje. Nunca continúa solo si falta crédito, hay que reconectar la cuenta o faltan más de 24 horas.",
+                    "Un turno en pausa por un límite de uso retoma solo a la hora que informa el proveedor, sin reenviar tu mensaje. Vale también para las tareas que no tenés en pantalla y para las automatizaciones, que continúan con el modelo y los permisos con los que quedaron en pausa. Nunca continúa solo si falta crédito, hay que reconectar la cuenta o faltan más de 24 horas.",
                     state.pause.auto_enabled,
                     true,
                     compact,
