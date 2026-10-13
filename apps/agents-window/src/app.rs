@@ -7536,7 +7536,7 @@ impl AgentsWindow {
                         .cloned()
                 })
                 .collect();
-            self.view.automations.busy_id = self
+            self.view.automations.busy_ids = self
                 .background_automation_runs
                 .iter()
                 .map(|run| &run.automation_id)
@@ -7545,14 +7545,8 @@ impl AgentsWindow {
                         .iter()
                         .map(|(_, dispatch)| &dispatch.automation_id),
                 )
-                .find(|id| {
-                    self.view
-                        .automations
-                        .items
-                        .iter()
-                        .any(|item| &item.id == *id)
-                })
-                .cloned();
+                .cloned()
+                .collect();
         } else {
             self.view.automations.items.clear();
             self.view.automations.runs.clear();
@@ -7814,6 +7808,8 @@ impl AgentsWindow {
             let session = store
                 .create_native_automation(&dispatch.workspace_path, origin)
                 .map_err(|error| error.to_string())?;
+            // Named after its task, so the run is told apart in the list.
+            let _ = store.rename(&session.id, Some(&dispatch.title));
             (session, frozen)
         };
         if crate::native_automation::FrozenNativeAutomationAuthorityV1::from_session(&session)?
@@ -7936,6 +7932,7 @@ impl AgentsWindow {
         let session = store
             .create(&dispatch.workspace_path, &dispatch.backend)
             .map_err(|error| error.to_string())?;
+        let _ = store.rename(&session.id, Some(&dispatch.title));
         let run = ActiveRun::Cli(CliRunner::start(
             profile,
             AgentRunRequest {
@@ -8041,6 +8038,27 @@ impl AgentsWindow {
                     self.reconcile_native_automation_session(&session_id);
                 }
                 self.rebuild_history();
+                // A run nobody was watching is left unread and announced. One
+                // that only paused has not ended: its continuation says so.
+                let ended = self.store.as_ref().and_then(|store| {
+                    store.load(&session_id).ok().flatten()?.events.iter().rev().find_map(|event| match event.kind {
+                        AgentEventKind::TurnFailed { .. } => Some(crate::notifications::Event::TurnFailed),
+                        AgentEventKind::TurnCompleted { .. } => Some(crate::notifications::Event::TurnCompleted),
+                        AgentEventKind::TurnPaused { .. } => None,
+                        _ => None,
+                    })
+                });
+                if let Some(event) = ended.filter(|_| self.view.selected_session.as_deref() != Some(session_id.as_str())) {
+                    if let Some(store) = &self.store {
+                        let _ = store.mark_unread(&session_id);
+                    }
+                    self.refresh_sessions();
+                    let title = match event {
+                        crate::notifications::Event::TurnFailed => "La automatización no terminó",
+                        _ => "Automatización terminada",
+                    };
+                    self.notify_session(event, title, &session_id);
+                }
                 self.refresh_sessions();
                 changed = true;
             } else {
@@ -8102,6 +8120,8 @@ impl AgentsWindow {
     }
 
     fn handle_automation_action(&mut self, id: &str) {
+        // What the last action said has been read by the time of the next.
+        self.view.automations.notice = None;
         let now_ms = chrono::Utc::now().timestamp_millis();
         let current_native = self.native_settings();
         let state = &mut self.view.automations;

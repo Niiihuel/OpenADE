@@ -165,6 +165,9 @@ pub struct AutomationForm {
     pub time: String,
     /// Monday = 0, as in [`AutomationSchedule::Weekly`].
     pub weekday: u8,
+    /// The schedule of the task being edited: left as it is, it needs no
+    /// future run, so a one-off that already ran can still be renamed.
+    pub kept_schedule: Option<AutomationSchedule>,
 }
 
 impl AutomationForm {
@@ -179,6 +182,7 @@ impl AutomationForm {
             interval_minutes: "60".to_owned(),
             time: "09:00".to_owned(),
             weekday: 0,
+            kept_schedule: None,
         }
     }
 
@@ -187,6 +191,7 @@ impl AutomationForm {
         form.title.clone_from(&automation.title);
         form.prompt.clone_from(&automation.prompt);
         form.native_provider.clone_from(&automation.native_provider);
+        form.kept_schedule = Some(automation.schedule.clone());
         match &automation.schedule {
             AutomationSchedule::Once { at_ms } => {
                 form.frequency = AutomationFrequency::Once;
@@ -262,6 +267,9 @@ impl AutomationForm {
             }
         };
         schedule.validate()?;
+        if self.kept_schedule.as_ref() == Some(&schedule) {
+            return Ok(schedule);
+        }
         if schedule.next_after(now_ms.saturating_sub(1)).is_none() {
             return Err(AutomationError::Invalid(
                 "Elige una fecha y hora futuras".to_owned(),
@@ -348,7 +356,8 @@ pub struct AutomationViewState {
     pub calendar_month: u32,
     pub filter: AutomationFilter,
     pub query: String,
-    pub busy_id: Option<String>,
+    /// The tasks running or waiting for a worker.
+    pub busy_ids: Vec<String>,
     pub pending_delete_id: Option<String>,
     pub notice: Option<String>,
     pub error: Option<String>,
@@ -378,7 +387,7 @@ impl AutomationViewState {
             calendar_month: today.month(),
             filter: AutomationFilter::All,
             query: String::new(),
-            busy_id: None,
+            busy_ids: Vec::new(),
             pending_delete_id: None,
             notice: None,
             error: None,
@@ -477,14 +486,15 @@ fn status_for(item: &Automation, runs: &[AutomationRun]) -> AutomationStatus {
             },
         )
     });
-    if has_error {
-        AutomationStatus::Failed
-    } else if item.enabled {
-        AutomationStatus::Active
-    } else if item.next_run_at.is_none() {
+    // A task that is not running says so first: its last error is history.
+    if !item.enabled && item.next_run_at.is_none() {
         AutomationStatus::Completed
-    } else {
+    } else if !item.enabled {
         AutomationStatus::Paused
+    } else if has_error {
+        AutomationStatus::Failed
+    } else {
+        AutomationStatus::Active
     }
 }
 
@@ -568,7 +578,7 @@ fn form_field(label: &str, control: Element) -> FormField {
 
 fn automation_card(item: &Automation, runs: &[AutomationRun], width: f32, busy: bool) -> Element {
     let status = status_for(item, runs);
-    let next = if status == AutomationStatus::Active {
+    let next = if matches!(status, AutomationStatus::Active | AutomationStatus::Failed) {
         item.next_run_at
             .and_then(|at| Local.timestamp_millis_opt(at).single())
             .map(|at| format!(" · Próxima {}", at.format("%d/%m %H:%M")))
@@ -859,7 +869,7 @@ fn list_page(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
                         item,
                         &state.runs,
                         card_width,
-                        state.busy_id.as_deref() == Some(&item.id),
+                        state.busy_ids.contains(&item.id),
                     )
                 })
                 .collect();
@@ -1106,7 +1116,7 @@ pub fn editor_modal_body(state: &AutomationViewState, width: f32) -> Element {
                 .height(112.0)
                 .render(),
             )
-            .hint("Las ejecuciones sin supervisión pueden esperar una aprobación antes de modificar archivos.")
+            .hint("Nadie aprueba nada durante una ejecución: el agente nativo sólo lee el proyecto, y a un agente externo se le niega lo que pediría permiso.")
             .rows(),
             );
             rows
@@ -1133,7 +1143,7 @@ fn editor_modal_layout(state: &AutomationViewState, width: f32, form: Element) -
                 .description("Elige cuándo")
                 .icon(Icon::Clock),
             Step::new("automation_step:agent", "Agente")
-                .description("Modelo y acceso")
+                .description("Quién la ejecuta")
                 .icon(Icon::Settings),
         ],
         state.editor_step.index(),
@@ -1245,7 +1255,7 @@ fn history_page(state: &AutomationViewState, content_width: f32) -> Vec<Element>
             .font_family(FontFamily::Sans)
             .font_size(22.0)
             .foreground(theme::FOREGROUND),
-        Text::new("El despacho y el resultado del agente se registran por separado. Los resultados nativos se verifican contra el origen y el journal de la sesión.", theme::component_palette()).muted().render(),
+        Text::new("Cada ejecución, con cómo se lanzó y cómo terminó.", theme::component_palette()).muted().render(),
     ];
     for error in &state.native_result_errors {
         body.push(
@@ -1385,22 +1395,6 @@ fn history_page(state: &AutomationViewState, content_width: f32) -> Vec<Element>
                 details.push(
                     Text::new(
                         format!("Despacho: {dispatch_status}"),
-                        theme::component_palette(),
-                    )
-                    .role(TextRole::Small)
-                    .muted()
-                    .render(),
-                );
-                details.push(
-                    Text::new(
-                        format!(
-                            "Journal observado hasta el evento {}{}",
-                            result.last_sequence(),
-                            result
-                                .terminal_sequence()
-                                .map(|sequence| format!(" · terminal {sequence}"))
-                                .unwrap_or_default(),
-                        ),
                         theme::component_palette(),
                     )
                     .role(TextRole::Small)
@@ -2165,7 +2159,7 @@ mod tests {
         let ready = UiTree::new(build_automations(&state, viewport.width)).layout(viewport);
         assert!(ready.regions.iter().any(|r| r.id == "automation_run:one"));
 
-        state.busy_id = Some("one".into());
+        state.busy_ids = vec!["one".into()];
         let busy = UiTree::new(build_automations(&state, viewport.width)).layout(viewport);
         // The busy button keeps its hint, so only a hover region remains.
         assert!(busy

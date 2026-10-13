@@ -310,6 +310,8 @@ pub struct AutomationDispatch {
     pub backend: String,
     pub native_provider: Option<NativeProviderSettings>,
     pub prompt: String,
+    /// The task's name, which the session of the run takes.
+    pub title: String,
     pub scheduled_at: i64,
     /// The persisted claim's origin; never inferred from the run ID format.
     pub manual: bool,
@@ -514,12 +516,30 @@ impl AutomationStore {
             .iter_mut()
             .find(|item| item.id == id)
             .ok_or(AutomationError::NotFound)?;
-        let next_run_at = draft.schedule.next_after(now_ms.saturating_sub(1));
-        if next_run_at.is_none() {
-            return Err(AutomationError::Invalid(
-                "El horario debe tener una ejecución futura".to_owned(),
-            ));
+        let mut draft = draft;
+        // The same interval keeps its cadence: an edit of the name does not
+        // start the count again.
+        if let (
+            AutomationSchedule::EveryMinutes { interval, anchor_ms },
+            AutomationSchedule::EveryMinutes { interval: kept, anchor_ms: kept_anchor },
+        ) = (&mut draft.schedule, &automation.schedule)
+        {
+            if interval == kept {
+                *anchor_ms = *kept_anchor;
+            }
         }
+        // A schedule left as it was keeps its next run, even when it has none.
+        let next_run_at = if draft.schedule == automation.schedule {
+            automation.next_run_at
+        } else {
+            let next = draft.schedule.next_after(now_ms.saturating_sub(1));
+            if next.is_none() {
+                return Err(AutomationError::Invalid(
+                    "El horario debe tener una ejecución futura".to_owned(),
+                ));
+            }
+            next
+        };
         automation.title = draft.title.trim().to_owned();
         automation.prompt = draft.prompt.trim().to_owned();
         automation.backend = draft.backend.trim().to_owned();
@@ -602,6 +622,8 @@ impl AutomationStore {
                     created_at: now_ms,
                     updated_at: now_ms,
                 });
+                // A run that was skipped did not happen: it is in the
+                // history, not in the count.
                 if !late {
                     claims.push(dispatch_for(
                         &self.workspace_path,
@@ -610,9 +632,9 @@ impl AutomationStore {
                         due,
                         false,
                     ));
+                    automation.run_count = automation.run_count.saturating_add(1);
+                    automation.last_run_at = Some(due);
                 }
-                automation.run_count = automation.run_count.saturating_add(1);
-                automation.last_run_at = Some(due);
             }
             automation.next_run_at = automation.schedule.next_after(now_ms);
             if automation.next_run_at.is_none() {
@@ -933,6 +955,7 @@ fn dispatch_for(
         backend: automation.backend.clone(),
         native_provider: automation.native_provider.clone(),
         prompt: automation.prompt.clone(),
+        title: automation.title.clone(),
         scheduled_at,
         manual,
     }
@@ -1042,6 +1065,32 @@ pub(crate) mod tests {
             native_provider: None,
             schedule,
         }
+    }
+
+    #[test]
+    fn renaming_keeps_the_cadence_and_a_one_off_that_ran_can_still_be_renamed() {
+        let root = tempfile::tempdir().unwrap();
+        let mut store = AutomationStore::open(root.path(), root.path()).unwrap();
+        let every = |anchor_ms| AutomationSchedule::EveryMinutes { interval: 10, anchor_ms };
+        let id = store.create(draft(every(1_000_000)), 1_000_000).unwrap();
+        let next = store.automations()[0].next_run_at;
+        let mut renamed = draft(every(1_300_000));
+        renamed.title = "Otro nombre".into();
+        store.update(&id, renamed, 1_300_000).unwrap();
+        assert_eq!((store.automations()[0].title.as_str(), store.automations()[0].next_run_at), ("Otro nombre", next));
+        assert_eq!(store.automations()[0].schedule, every(1_000_000));
+
+        let once = store.create(draft(AutomationSchedule::Once { at_ms: 2_000_000 }), 1_000_000).unwrap();
+        let claimed = store.claim_due(2_000_000).unwrap();
+        // A run that was claimed counts; one that came too late would not.
+        assert_eq!((claimed.len(), claimed[0].title.as_str()), (1, "Informe diario"));
+        let ran = store.automations().iter().find(|item| item.id == once).unwrap().clone();
+        assert_eq!((ran.run_count, ran.next_run_at), (1, None));
+        let mut renamed = draft(AutomationSchedule::Once { at_ms: 2_000_000 });
+        renamed.title = "Ya corrió".into();
+        store.update(&once, renamed, 3_000_000).unwrap();
+        // Moved to a moment that has passed, it is refused as before.
+        assert!(store.update(&once, draft(AutomationSchedule::Once { at_ms: 2_500_000 }), 3_000_000).is_err());
     }
 
     fn native_settings(model_id: &str) -> NativeProviderSettings {
