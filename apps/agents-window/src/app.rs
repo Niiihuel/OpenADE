@@ -6993,6 +6993,7 @@ impl AgentsWindow {
             browser: Default::default(),
             browser_refs: Arc::from(""),
             agent_page_url: String::new(),
+            queued_messages: Vec::new(),
             browser_sites: crate::browser_sites::BrowserSites::load(&root).unwrap_or_default().sites,
             browser_site_draft: String::new(),
             review_detail: None,
@@ -12620,6 +12621,28 @@ impl AgentsWindow {
         true
     }
 
+    /// What the selected conversation's running turn has yet to take of
+    /// what the user sent it meanwhile. Nothing when no turn is running.
+    fn refresh_queued_messages(&mut self) {
+        let queued = (|| {
+            let session = self.view.selected_session.as_deref()?;
+            let store = self.store.as_ref()?;
+            let turn = store.active_native_turn_id(session).ok()??;
+            let pending = store.pending_native_steers(session, &turn).ok()?;
+            Some(
+                pending
+                    .into_iter()
+                    .map(|input| crate::view::QueuedMessageView {
+                        text: input.text.chars().take(2000).collect(),
+                        images: input.images.len(),
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        })()
+        .unwrap_or_default();
+        self.view.queued_messages = queued;
+    }
+
     fn queue_native_steer(&mut self) {
         if !self.interactive_native_session_ready() {
             return;
@@ -12716,7 +12739,8 @@ impl AgentsWindow {
                 self.draft_dirty_at = None;
                 self.draft_error = None;
                 self.tree.set_input_value("prompt", "");
-                self.view.status = "Instrucción en cola para el próximo límite seguro".to_owned();
+                self.view.status = "Mensaje en cola: el agente lo lee al terminar el paso actual".to_owned();
+                self.refresh_queued_messages();
             }
             Err(error) => {
                 self.view.status = format!("No se pudo intervenir el turno: {error}");
@@ -13803,6 +13827,20 @@ impl AgentsWindow {
                 | AgentEventKind::ModelRequestStarted { .. }
         ) {
             self.environment_dirty = true;
+        }
+        // The turn took a queued message, or ended: the queue shown is stale.
+        if !self.view.queued_messages.is_empty()
+            && matches!(
+                event.kind,
+                AgentEventKind::TurnSteered { .. }
+                    | AgentEventKind::TurnSteeredWithImages { .. }
+                    | AgentEventKind::TurnCompleted { .. }
+                    | AgentEventKind::TurnFailed { .. }
+                    | AgentEventKind::TurnCancelled
+                    | AgentEventKind::TurnSuperseded { .. }
+            )
+        {
+            self.refresh_queued_messages();
         }
         let persisted = if native_run {
             true

@@ -502,6 +502,44 @@ fn full_access_confirmation_blocks_message_admission_before_model_or_network_pre
 }
 
 #[test]
+fn what_is_sent_during_a_turn_waits_above_the_composer_until_the_turn_takes_it() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app = fixture(root.path());
+    let session = app.view.selected_session.clone().unwrap();
+    // With no turn running there is nothing to wait for.
+    app.refresh_queued_messages();
+    assert!(app.view.queued_messages.is_empty());
+
+    let store = app.store.clone().unwrap();
+    store.admit_native_turn(&session, "turn-1", "Primero", "model", TurnMode::Build).unwrap();
+    store.enqueue_native_steer(&session, "turn-1", "input-1", "Además revisá los tests\nsegunda línea").unwrap();
+    store.enqueue_native_steer(&session, "turn-1", "input-2", "Y actualizá el changelog").unwrap();
+    app.refresh_queued_messages();
+    let waiting: Vec<&str> = app.view.queued_messages.iter().map(|message| message.text.as_str()).collect();
+    assert_eq!(waiting, ["Además revisá los tests\nsegunda línea", "Y actualizá el changelog"]);
+
+    // They show above the composer, one line each, with how many there are.
+    let frame = UiTree::new(crate::view::build_view(&app.view, 1100.0)).layout(openide_ui::Size::new(1100.0, 800.0));
+    let said: Vec<&str> = frame
+        .commands
+        .iter()
+        .filter_map(|command| match command {
+            DrawCommand::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    for text in ["2 mensajes en cola", "Además revisá los tests", "Y actualizá el changelog"] {
+        assert!(said.contains(&text), "{text}: {said:?}");
+    }
+    assert!(!said.contains(&"segunda línea"));
+
+    // Another conversation's queue is not this one's.
+    app.view.selected_session = None;
+    app.refresh_queued_messages();
+    assert!(app.view.queued_messages.is_empty());
+}
+
+#[test]
 fn a_sites_permission_is_saved_listed_changed_and_removed() {
     use crate::browser_sites::{BrowserSites, SiteAccess};
     let root = tempfile::tempdir().unwrap();
