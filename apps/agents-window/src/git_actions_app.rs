@@ -273,11 +273,6 @@ impl AgentsWindow {
                                 GitActionKind::Discard | GitActionKind::Trash | GitActionKind::DiscardHunk(_)
                             ) {
                                 self.invalidate_workspace_files();
-                                if self.view.side_tab == SideTab::Files
-                                    || self.ide_workspace_active()
-                                {
-                                    self.refresh_file_rows();
-                                }
                             }
                             if matches!(response.request.kind, GitActionKind::DiscardHunk(_)) {
                                 // The diff that is open lost a block.

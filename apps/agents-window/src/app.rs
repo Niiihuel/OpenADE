@@ -6610,6 +6610,10 @@ impl AgentsWindow {
         if self.view.show_command_center {
             self.request_command_search();
         }
+        // In view, the tree is read again now: nothing else would refill it.
+        if self.view.side_tab == SideTab::Files || self.ide_workspace_active() {
+            self.refresh_file_rows();
+        }
     }
 
     pub fn new() -> Self {
@@ -9220,9 +9224,6 @@ impl AgentsWindow {
                 );
             }
             self.invalidate_workspace_files();
-            if self.view.side_tab == SideTab::Files || self.ide_workspace_active() {
-                self.refresh_file_rows();
-            }
             self.request_git_review(workspace);
             if self.view.environment.open {
                 self.request_environment_git(crate::environment_git::Operation::Refresh, ctx);
