@@ -144,17 +144,30 @@ impl AgentsWindow {
     }
 
     /// Open or reuse a conversation's "Navegador" tab on the address of a
-    /// server of this machine, and of no other. The keyboard stays where it
-    /// is: the tab comes forward only when that does not replace what the
-    /// user is typing in, and is otherwise left among the tabs.
+    /// server of this machine, and of no other.
     fn open_preview(&mut self, scope: &DockScope, url: &str) -> bool {
         let Some(url) = crate::preview::loopback_url(url) else {
             return false;
         };
+        let tab = self.open_tab_beside_typing(scope, DockTabKind::Browser);
+        // The tab's context may still be starting, or not be started until
+        // the tab is shown: the address waits and opens once it is ready.
+        self.browser_restart_urls.insert(tab.get(), url);
+        if *scope == self.dock_scope() {
+            self.sync_dock_view();
+        }
+        true
+    }
+
+    /// Open or reuse a tab nobody asked for by hand. The keyboard stays where
+    /// it is: the tab comes forward only when that does not replace what the
+    /// user is typing in, and is otherwise left among the tabs. The caller
+    /// syncs the view when `scope` is the one shown.
+    pub(super) fn open_tab_beside_typing(&mut self, scope: &DockScope, kind: DockTabKind) -> DockTabId {
         let shown = *scope == self.dock_scope();
         let previous = self.dock.active_tab(scope).map(|tab| tab.id);
         let collapsed = self.dock.is_collapsed(scope);
-        let tab = self.dock.open(scope, DockTabKind::Browser);
+        let tab = self.dock.open(scope, kind);
         self.dock.set_collapsed(scope, false);
         // The composer is beside the dock; any other field or editor may be
         // the tab this one would cover.
@@ -165,13 +178,7 @@ impl AgentsWindow {
             }
             self.dock.set_collapsed(scope, collapsed);
         }
-        // The tab's context may still be starting, or not be started until
-        // the tab is shown: the address waits and opens once it is ready.
-        self.browser_restart_urls.insert(tab.get(), url);
-        if shown {
-            self.sync_dock_view();
-        }
-        true
+        tab
     }
 
     /// The text field or editor that holds the keyboard, if one does.

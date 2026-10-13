@@ -1,14 +1,36 @@
 //! Runs the loopback bridge for agent CLIs started from the terminal dock and
 //! brings their approval requests to the window. The server starts with the
 //! first agent terminal; a plain shell never opens a port.
+//!
+//! A CLI's browser tools drive a browser of its own, one per terminal: the
+//! first call opens its tab and starts it, and it ends with the terminal's
+//! grant. It is never a conversation's browser.
 use super::*;
 use crate::agent_cli_definitions::{self, AgentCliDefinition};
+use crate::browser_runtime::BrowserMcpClient;
 use openide_bridge::{Approver, Bridge, Grant, Host, HostTool};
 use std::ffi::OsString;
 use std::sync::Mutex;
 
 const APPROVAL_LIFETIME: Duration = Duration::from_secs(50);
 const MAX_REVIEW_CHARS: usize = 60_000;
+/// How long a browser call waits for its terminal's browser, which a first
+/// call has to start.
+const BROWSER_WAIT: Duration = Duration::from_secs(30);
+const SESSION_ENDED: &str = "La sesión de esta CLI terminó y su navegador se cerró.";
+
+/// A CLI's browser call, waiting for the window to hand it the browser of
+/// that CLI's terminal.
+struct BrowserCall {
+    /// The session of the grant the call came under.
+    session: String,
+    reply: mpsc::Sender<Result<BrowserMcpClient, String>>,
+    // The call stops waiting after this long; a later browser reaches nobody.
+    expires: Instant,
+    /// This call already asked for the context: one that failed to start is
+    /// not started again for it.
+    started: bool,
+}
 
 struct PendingApproval {
     title: String,
@@ -24,7 +46,11 @@ pub(super) struct ExternalBridgeHost {
     approvals: Arc<Mutex<VecDeque<PendingApproval>>>,
     repaint: Arc<Mutex<Option<egui::Context>>>,
     agents: HashMap<u64, (&'static AgentCliDefinition, bool)>,
-    grants: HashMap<u64, (String, Option<PathBuf>)>,
+    /// Per terminal tab: its token, the file that holds it and its session.
+    grants: HashMap<u64, (String, Option<PathBuf>, String)>,
+    browser_calls: Arc<Mutex<Vec<BrowserCall>>>,
+    /// A CLI's browser tab opened or closed since the dock's view was built.
+    dock_stale: bool,
 }
 
 pub(super) type AgentCommand = (OsString, Vec<OsString>, Vec<(&'static str, String)>);
@@ -65,6 +91,35 @@ fn review_changes(grant: &Grant) -> Result<String, String> {
     Ok(text)
 }
 
+/// One browser tool call of a CLI, on the bridge's thread. The window hands
+/// over the browser of that CLI's terminal, which the first call starts.
+fn browser_call(
+    calls: &Mutex<Vec<BrowserCall>>,
+    repaint: &Mutex<Option<egui::Context>>,
+    grant: &Grant,
+    name: &str,
+    arguments: &serde_json::Value,
+) -> Result<Vec<serde_json::Value>, String> {
+    // A client may leave out the arguments of a tool that takes none.
+    let arguments = if arguments.is_null() { serde_json::json!({}) } else { arguments.clone() };
+    // Checked before anything else: a call that is refused starts no browser.
+    crate::browser_runtime::browser_tool_command(name, arguments.clone())?;
+    let (reply, browser) = mpsc::channel();
+    locked(calls).push(BrowserCall {
+        session: grant.session.clone(),
+        reply,
+        expires: Instant::now() + BROWSER_WAIT,
+        started: false,
+    });
+    if let Some(ctx) = locked(repaint).as_ref() {
+        ctx.request_repaint();
+    }
+    browser
+        .recv_timeout(BROWSER_WAIT)
+        .map_err(|_| "El navegador de esta CLI no llegó a iniciar.".to_owned())??
+        .call_blocking(name, arguments)
+}
+
 impl ExternalBridgeHost {
     pub(super) fn new(settings: ExternalAgentSettings) -> Self {
         Self {
@@ -74,6 +129,8 @@ impl ExternalBridgeHost {
             repaint: Arc::default(),
             agents: HashMap::new(),
             grants: HashMap::new(),
+            browser_calls: Arc::default(),
+            dock_stale: false,
         }
     }
 
@@ -82,7 +139,7 @@ impl ExternalBridgeHost {
     }
 
     fn revoke(&mut self, id: u64) {
-        if let Some((token, config_file)) = self.grants.remove(&id) {
+        if let Some((token, config_file, _)) = self.grants.remove(&id) {
             if let Some((bridge, _)) = &self.server {
                 bridge.revoke(&token);
             }
@@ -112,6 +169,29 @@ impl ExternalBridgeHost {
             }
             answer
         });
+        let mut tools = vec![HostTool {
+            name: "review_changes".into(),
+            group: ExternalTool::GitReview.name(),
+            description: "Devuelve los cambios sin confirmar del proyecto tal como los muestra la revisión de OpenIDE: rama, archivos y diff por sección.".into(),
+            input_schema: serde_json::json!({ "type": "object", "properties": {} }),
+            run: Arc::new(|grant, _| review_changes(grant).map(openide_bridge::text)),
+        }];
+        // The native agent's browser tools, on a browser of the calling CLI's
+        // own. `open_preview` is not among them: it opens the server a native
+        // conversation started.
+        for tool in crate::browser_runtime::browser_mcp_tools() {
+            let (calls, repaint) = (self.browser_calls.clone(), self.repaint.clone());
+            let name = tool.name.clone();
+            tools.push(HostTool {
+                name: tool.name,
+                group: ExternalTool::Browser.name(),
+                description: tool.description.unwrap_or_default(),
+                input_schema: tool.input_schema,
+                run: Arc::new(move |grant, arguments| {
+                    browser_call(&calls, &repaint, grant, &name, arguments)
+                }),
+            });
+        }
         Host {
             policy: Arc::new(move |group, cli_accepts_all| {
                 let settings = *locked(&settings);
@@ -121,13 +201,7 @@ impl ExternalBridgeHost {
                     .map_or(PermissionMode::Deny, |tool| settings.mode_for(tool, cli_accepts_all))
             }),
             approver: Some(approver),
-            tools: vec![HostTool {
-                name: "review_changes",
-                group: ExternalTool::GitReview.name(),
-                description: "Devuelve los cambios sin confirmar del proyecto tal como los muestra la revisión de OpenIDE: rama, archivos y diff por sección.",
-                input_schema: serde_json::json!({ "type": "object", "properties": {} }),
-                run: Arc::new(|grant, _| review_changes(grant)),
-            }],
+            tools,
         }
     }
 
@@ -303,8 +377,9 @@ impl AgentsWindow {
     /// user has opened it in Settings. `None` means an ordinary shell.
     pub(super) fn agent_terminal_command(&mut self, id: u64) -> Option<std::io::Result<AgentCommand>> {
         let (agent, accept_all) = *self.external_bridge.agents.get(&id)?;
-        // A restart must not leave the previous process's token alive.
-        self.external_bridge.revoke(id);
+        // A restart must not leave the previous process's token alive, nor
+        // the browser that process opened.
+        self.external_bridge.dock_stale |= self.revoke_external_grant(id);
         Some((|| {
             let program = self.resolve_agent_cli(agent).ok_or_else(|| {
                 std::io::Error::other(format!(
@@ -334,16 +409,22 @@ impl AgentsWindow {
                     &config_dir,
                     std::os::unix::fs::PermissionsExt::from_mode(0o700),
                 )?;
+                // New with every start: a restarted CLI never reaches the
+                // browser of the process before it.
+                let session = format!("terminal:{id}:{}", uuid::Uuid::new_v4().simple());
                 let token = bridge.grant(Grant {
                     workspace: PathBuf::from(&self.view.workspace),
                     // OpenIDE chose these arguments itself, so this is known.
                     cli_accepts_all: accept_all,
+                    session: session.clone(),
                 });
                 match kind.bridge_launch(&url, &token, &config_dir) {
                     Ok(launch) => {
                         args.extend(launch.args);
                         env.extend(launch.env);
-                        self.external_bridge.grants.insert(id, (token, launch.config_file));
+                        self.external_bridge
+                            .grants
+                            .insert(id, (token, launch.config_file, session));
                     }
                     Err(error) => {
                         bridge.revoke(&token);
@@ -366,13 +447,122 @@ impl AgentsWindow {
             .collect();
         for id in closed {
             self.external_bridge.agents.remove(&id);
-            self.external_bridge.revoke(id);
+            self.revoke_external_grant(id);
         }
     }
 
     pub(super) fn revoke_all_external_grants(&mut self) {
         for id in self.external_bridge.grants.keys().copied().collect::<Vec<_>>() {
-            self.external_bridge.revoke(id);
+            self.revoke_external_grant(id);
+        }
+    }
+
+    /// Ends the grant of terminal tab `id`: its token, its token file and the
+    /// browser its CLI opened, with that browser's tab. Returns whether a
+    /// tab closed.
+    fn revoke_external_grant(&mut self, id: u64) -> bool {
+        self.external_bridge.revoke(id);
+        let kind = DockTabKind::CliBrowser { terminal: id };
+        let Some(tab) = self.dock.tab_of_kind(&kind).cloned() else {
+            return false;
+        };
+        self.dock.close(&DockScope::new(tab.workspace_id, tab.owner), tab.id);
+        // The browser ends here, not when the dock is next synced.
+        self.browser_starts.remove(&tab.id.get());
+        self.browsers.remove(&tab.id.get());
+        true
+    }
+
+    /// The session of the CLI that runs in terminal tab `id`, while its
+    /// grant lives.
+    pub(super) fn external_session(&self, id: u64) -> Option<&str> {
+        self.external_bridge
+            .grants
+            .get(&id)
+            .map(|(_, _, session)| session.as_str())
+    }
+
+    /// Hands each waiting browser call the browser of its CLI's terminal.
+    /// Returns whether the view changed.
+    pub(super) fn serve_external_browser_calls(&mut self, ctx: &egui::Context) -> bool {
+        let mut calls = std::mem::take(&mut *locked(&self.external_bridge.browser_calls));
+        let now = Instant::now();
+        calls.retain_mut(|call| {
+            if call.expires <= now {
+                return false;
+            }
+            match self.external_browser(call).transpose() {
+                None => true,
+                Some(answer) => {
+                    let _ = call.reply.send(answer);
+                    false
+                }
+            }
+        });
+        if !calls.is_empty() {
+            // Nothing else wakes the window while a hidden context starts.
+            ctx.request_repaint_after(Duration::from_millis(50));
+            locked(&self.external_bridge.browser_calls).extend(calls);
+        }
+        let stale = std::mem::take(&mut self.external_bridge.dock_stale);
+        if stale {
+            self.sync_dock_view();
+        }
+        stale
+    }
+
+    /// The browser of the terminal whose grant `call` came under. Its first
+    /// call opens the tab and starts the context; `None` while that starts.
+    fn external_browser(&mut self, call: &mut BrowserCall) -> Result<Option<BrowserMcpClient>, String> {
+        // Only a live grant names a terminal: a revoked session reaches nothing.
+        let terminal = self
+            .external_bridge
+            .grants
+            .iter()
+            .find(|(_, (_, _, session))| *session == call.session)
+            .map(|(id, _)| *id)
+            .ok_or(SESSION_ENDED)?;
+        // The switch may have gone off after the bridge let this call through.
+        if self.external_agent_settings.mode_for(ExternalTool::Browser, true) == PermissionMode::Deny {
+            return Err("Herramienta desactivada en Ajustes → CLIs externas.".into());
+        }
+        let kind = DockTabKind::CliBrowser { terminal };
+        let tab = match self.dock.tab_of_kind(&kind) {
+            Some(tab) => tab.id,
+            None => {
+                if self.browsers.len() + self.browser_starts.len() >= MAX_BROWSERS {
+                    return Err(BROWSER_LIMIT.into());
+                }
+                // Beside its terminal, in that conversation's dock.
+                let owner = self.dock.tab(terminal).ok_or(SESSION_ENDED)?;
+                let scope = DockScope::new(owner.workspace_id.clone(), owner.owner.clone());
+                self.external_bridge.dock_stale = true;
+                self.open_tab_beside_typing(&scope, kind)
+            }
+        }
+        .get();
+        let Some(runtime) = self.browsers.get(&tab) else {
+            // Without the window's scale there is nothing to start it with yet.
+            if self.browser_starts.contains_key(&tab) || self.browser_scale == 0.0 {
+                return Ok(None);
+            }
+            if std::mem::replace(&mut call.started, true) {
+                return Err("No se pudo iniciar el navegador de esta CLI.".into());
+            }
+            let scope = self.browser_launch_scope(tab).ok_or(SESSION_ENDED)?;
+            self.start_browser(tab, scope)?;
+            return Ok(None);
+        };
+        // What the native agent's client is checked for against its
+        // conversation: this context is the calling session's and no other's.
+        if runtime.scope().session_id != call.session {
+            return Err("Ese navegador pertenece a otra sesión.".into());
+        }
+        let snapshot = runtime.snapshot();
+        match snapshot.error {
+            _ if snapshot.started => Ok(Some(runtime.mcp_client())),
+            Some(error) => Err(error),
+            None => Ok(None),
         }
     }
 
@@ -921,7 +1111,7 @@ mod tests {
         let ctx = egui::Context::default();
         let host = app.external_bridge.host();
         let approver = host.approver.unwrap();
-        let grant = Grant { workspace: root.path().to_path_buf(), cli_accepts_all: false };
+        let grant = Grant { workspace: root.path().to_path_buf(), cli_accepts_all: false, session: "cli".into() };
         for (action, expected) in [("external_approval_allow", true), ("external_approval_deny", false)] {
             let answer = approver(&host.tools[0], &serde_json::json!({ "a": 1 }), &grant);
             assert!(app.sync_external_approval(&ctx));
@@ -1046,7 +1236,7 @@ mod tests {
         std::fs::write(root.path().join("b.rs"), "LINEA_SIN_PREPARAR\n").unwrap();
         std::fs::write(root.path().join("nuevo.rs"), "x\n").unwrap();
 
-        let grant = Grant { workspace: root.path().to_path_buf(), cli_accepts_all: false };
+        let grant = Grant { workspace: root.path().to_path_buf(), cli_accepts_all: false, session: "cli".into() };
         let text = review_changes(&grant).unwrap();
         for part in ["+LINEA_PREPARADA", "+LINEA_SIN_PREPARAR", "-one", "a.rs", "b.rs", "nuevo.rs"] {
             assert!(text.contains(part), "{part} missing in:\n{text}");
@@ -1113,7 +1303,7 @@ mod tests {
         let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
         let file = root.path().join("claude-mcp-test.json");
         std::fs::write(&file, "{}").unwrap();
-        app.external_bridge.grants.insert(7, ("token".into(), Some(file.clone())));
+        app.external_bridge.grants.insert(7, ("token".into(), Some(file.clone()), "cli".into()));
         app.revoke_all_external_grants();
         assert!(app.external_bridge.grants.is_empty());
         assert!(!file.exists());
@@ -1203,7 +1393,7 @@ mod tests {
         app.apply_action(clicked("external_agents_enabled"), &ctx);
         let (_, args, _) = app.agent_terminal_command(1).unwrap().unwrap();
         assert_eq!(args[1], "--mcp-config");
-        let (_, config) = app.external_bridge.grants.get(&1).unwrap().clone();
+        let (_, config, _) = app.external_bridge.grants.get(&1).unwrap().clone();
         let config = config.unwrap();
         assert!(config.is_file() && args[2] == config.as_os_str());
         // Restarting replaces the grant; leaving removes the file.
@@ -1220,3 +1410,8 @@ mod tests {
         assert_eq!(app.agent_cli_paths.get("claude"), Some(binary.as_path()));
     }
 }
+
+// Marks a script executable and calls the bridge on its loopback socket.
+#[cfg(all(test, unix))]
+#[path = "external_bridge_browser_tests.rs"]
+mod browser_tests;

@@ -315,6 +315,13 @@ y puerto; no se inicia un servidor automáticamente. Los detalles de aislamiento
 entrada, portapapeles, límites y validación están en
 [Navegador del proyecto](browser-runtime.md).
 
+Una CLI externa iniciada desde el menú de perfiles de la terminal abre su
+propia pestaña, «Navegador · Claude Code», con su primera llamada a una
+herramienta del navegador. Es otra clase de pestaña (`CliBrowser`, con el ID
+de su terminal): abrir «Navegador» a mano nunca la reutiliza, y se cierra sola
+cuando esa terminal se cierra o reinicia su CLI. No se restaura desde las
+cerradas recientemente.
+
 ## Referencias de diseño
 
 Implementación propia, estudiando estructura e interacciones de:

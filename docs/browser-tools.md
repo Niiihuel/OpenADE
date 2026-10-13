@@ -11,8 +11,10 @@ las herramientas las ejecuta el driver propio en Rust
 proceso, sus límites y la vista están en [Runtime del navegador](browser-runtime.md).
 
 Las herramientas se anuncian como `mcp__openide_browser__<nombre>` al motor
-propio y con su nombre simple al proxy MCP externo. Ambos caminos usan el mismo
-catálogo (`browser_mcp_tools`) y la misma validación (`BrowserCommand::validate`).
+propio y con su nombre simple al proxy MCP externo y a las CLIs que OpenIDE
+inicia en una terminal (ver [CLIs externas](#clis-externas-iniciadas-por-openide)).
+Los tres caminos usan el mismo catálogo (`browser_mcp_tools`) y la misma
+validación (`BrowserCommand::validate`).
 
 ## Catálogo
 
@@ -336,6 +338,55 @@ El proxy MCP externo (**Copiar conexión MCP**) no pasa por esa política: el
 cliente externo administra sus permisos, igual que para las demás herramientas
 del navegador.
 
+## CLIs externas iniciadas por OpenIDE
+
+Una CLI de agente que OpenIDE inicia en una terminal (Claude Code, Codex)
+recibe el catálogo por el puente MCP de loopback (`crates/openide-bridge`,
+`external_bridge_app.rs`), bajo el interruptor **Navegador** de Ajustes → CLIs
+externas. Son las definiciones de `browser_mcp_tools` sin cambios, y cada
+llamada es la del agente nativo (`BrowserMcpClient::call_tool`, desde
+`call_blocking`): la misma validación, la misma cola, los mismos límites y el
+mismo resultado. `open_preview` no se ofrece: abre el servidor que inició una
+conversación nativa. `browser_snapshot` no trae la imagen del viewport que
+entrega el proxy externo (`screenshot_available` es `false`).
+
+- **Un navegador por terminal.** La CLI nunca maneja el navegador de una
+  conversación. Su primera llamada a una herramienta del navegador abre la
+  pestaña «Navegador · Claude Code» (el nombre de la CLI) en el panel de la
+  conversación donde está su terminal e inicia un contexto propio. El ámbito de
+  ese contexto es la sesión de la concesión de esa terminal,
+  `terminal:<pestaña>:<aleatorio>`, que OpenIDE elige al iniciar la CLI y la
+  CLI no conoce. Dos terminales no comparten páginas ni sesiones iniciadas,
+  entre sí ni con la conversación.
+- **Dueño.** Ningún argumento nombra un navegador. La ventana entrega a cada
+  llamada sólo el contexto de la pestaña `CliBrowser` de la terminal cuya
+  concesión vigente trae esa sesión, y sólo si el ámbito del contexto es esa
+  misma sesión. El agente nativo sigue tomando la pestaña `Browser` de su
+  conversación, que nunca es la de una CLI.
+- **Permisos.** Cada llamada pasa por `Host.policy("browser", …)` antes de
+  ejecutarse: con el interruptor apagado las herramientas no se anuncian y la
+  llamada se rechaza (la ventana lo vuelve a comprobar antes de entregar o
+  iniciar un contexto); en modo normal OpenIDE muestra su diálogo de
+  aprobación y una negativa o 50 s sin respuesta no ejecutan nada; una CLI
+  iniciada en modo aceptar todo no pregunta mientras Ajustes diga «Seguir a la
+  CLI». A diferencia del motor propio, que pregunta siempre.
+- **Visible, sin quitar el teclado.** La pestaña pasa al frente sólo cuando eso
+  no tapa lo que el usuario está escribiendo, como la vista previa. Es el panel
+  de siempre: el usuario ve la página y también puede usarla.
+- **Fin.** Cerrar la pestaña de la terminal, reiniciar su CLI o salir de la
+  aplicación revoca la concesión: su navegador se cierra y su pestaña con él.
+  Cerrar a mano la pestaña del navegador cierra ese contexto; la siguiente
+  llamada abre uno nuevo, en blanco.
+- **Imágenes.** La captura viaja como bloque `image` de MCP
+  (`{"type":"image","mimeType":"image/png","data":…}`), nunca dentro de un
+  texto. Valen los límites de siempre: PNG de 2 MiB, 4 MiB por respuesta, y la
+  regla del motor propio para una imagen que va a un modelo
+  (`tool_image_for_model`: 3,75 MB y 8000 px por lado). La que no la cumple se
+  reemplaza por una línea `[image omitted (image/png, N bytes): …]`.
+- **Límites.** Los cuatro contextos simultáneos cuentan a los de las
+  conversaciones y a los de las CLIs juntos. Una llamada espera hasta 30 s a
+  que su navegador inicie.
+
 ## Dónde lee el modelo esta guía
 
 - **Motor propio:** en las descripciones de las herramientas. Viajan con el
@@ -344,7 +395,8 @@ del navegador.
   lleva el ciclo; cada herramienta dice qué destino prefiere y
   `browser_evaluate` dice cuándo no usarlo.
 - **Clientes externos:** además, en `instructions` de la respuesta
-  `initialize` del proxy, el lugar previsto por MCP.
+  `initialize` del proxy, el lugar previsto por MCP. El puente de las CLIs
+  iniciadas por OpenIDE no envía `instructions`: su guía son las descripciones.
 
 No se usa una skill local: se eligen por proyecto, nunca se activan solas y
 sus instrucciones también llegan a subagentes sin navegador. Tampoco se cambia
@@ -370,11 +422,19 @@ del modelo con la que se verifican y reanudan turnos guardados.
 
 ```sh
 nix-shell --run "cargo test -p agents-window -- browser_ tool_presentation approval_ui environment_runtime"
+nix-shell --run "cargo test -p agents-window -p openide-bridge -- external_bridge tests::"
 OPENIDE_BROWSER_EXECUTABLE="$(command -v google-chrome-stable)" \
   nix-shell --run "cargo test -p agents-window -- --ignored real_chrome"
 OPENIDE_BROWSER_EXECUTABLE="$(command -v google-chrome-stable)" \
   nix-shell --run "cargo test -p openide-browser --test chrome -- --ignored"
 ```
+
+La segunda línea cubre el camino de las CLIs externas de punta a punta, por el
+socket de loopback del puente y con páginas en memoria: interruptor apagado,
+aprobación, negativa y vencimiento, un navegador por terminal y su dueño, el
+cierre con la concesión, el teclado, la validación del agente nativo y las
+imágenes. Lo que no ejercita es el arranque real del contexto (Chrome) ni una
+CLI real.
 
 La primera línea no necesita un navegador: maneja el runtime real contra un
 extremo DevTools guionado y cubre el catálogo anunciado a ambos clientes

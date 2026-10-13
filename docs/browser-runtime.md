@@ -10,7 +10,9 @@ la opción `cef`, la aplicación usa en cambio un
 sigue describe el camino por defecto. El contexto
 es nuevo y aislado por conversación: no abre el perfil personal de Chrome. El
 usuario y el agente comparten esa misma página, con una cola limitada y las
-políticas de permisos del host. No se repiten automáticamente acciones
+políticas de permisos del host. Una CLI externa iniciada por OpenIDE tiene un
+contexto aparte, uno por terminal, con las mismas piezas
+([CLIs externas](browser-tools.md#clis-externas-iniciadas-por-openide)). No se repiten automáticamente acciones
 inciertas.
 
 ## Piezas

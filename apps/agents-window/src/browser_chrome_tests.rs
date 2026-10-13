@@ -467,6 +467,9 @@ fn serves_the_agent_and_an_external_client(session: Session, origin: &str) -> Se
     let captured = session.agent("browser_take_screenshot", json!({}));
     assert_eq!(page(&captured)["screenshot"]["width"], 900, "CSS pixels whatever the scale");
     assert_eq!(captured.content[1]["type"], "image");
+    // A CLI on the loopback bridge makes the same call from a thread of its own.
+    let bridged = session.runtime.mcp_client().call_blocking("browser_take_screenshot", json!({})).unwrap();
+    assert_eq!(bridged[1]["type"], "image");
 
     // A page that does not load says so, and the context goes on.
     let closed = TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap();

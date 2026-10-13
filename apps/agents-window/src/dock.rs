@@ -60,6 +60,11 @@ pub enum DockTabKind {
     SessionChanges,
     Terminal,
     Browser,
+    /// The browser an external agent CLI drives from terminal tab `terminal`.
+    /// It is that CLI's own: never the conversation's `Browser`.
+    CliBrowser {
+        terminal: u64,
+    },
     FilePreview {
         path: PathBuf,
     },
@@ -101,6 +106,7 @@ impl DockTab {
             DockTabKind::SessionChanges => "Cambios del chat".to_owned(),
             DockTabKind::Terminal => "Terminal".to_owned(),
             DockTabKind::Browser => "Navegador".to_owned(),
+            DockTabKind::CliBrowser { .. } => "Navegador de la CLI".to_owned(),
             DockTabKind::CodeSnapshot { title, .. } => format!("{title} · Vista previa"),
             DockTabKind::FilePreview { path } => path
                 .file_name()
@@ -342,6 +348,14 @@ impl DockState {
             .find(|tab| tab.id.get() == raw_id)
     }
 
+    /// The open tab of this kind, of any workspace and owner.
+    pub fn tab_of_kind(&self, kind: &DockTabKind) -> Option<&DockTab> {
+        self.workspaces
+            .values()
+            .flat_map(|workspace| &workspace.tabs)
+            .find(|tab| tab.kind == *kind)
+    }
+
     /// A durably deleted task must release its private resources even when its
     /// tabs are currently hidden by another task. Shared workspace tabs survive.
     pub fn forget_task(&mut self, workspace_id: &str, task_id: &str) {
@@ -465,7 +479,10 @@ impl DockState {
         workspace.recently_closed.push_front(RecentlyClosedTab {
             restorable: !matches!(
                 removed.kind,
-                DockTabKind::Terminal | DockTabKind::Browser | DockTabKind::CodeSnapshot { .. }
+                DockTabKind::Terminal
+                    | DockTabKind::Browser
+                    | DockTabKind::CliBrowser { .. }
+                    | DockTabKind::CodeSnapshot { .. }
             ),
             tab: removed.clone(),
         });
