@@ -254,7 +254,7 @@ fn manifest_fields(manifest: &PluginManifest) -> Vec<Element> {
 }
 
 pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> Element {
-    if !state.show_settings || state.settings_page != SettingsPage::Plugins {
+    if !state.shows(SettingsPage::Plugins) {
         return base;
     }
     let plugins = &state.plugins;

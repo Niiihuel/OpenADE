@@ -1156,39 +1156,46 @@ fn editor_agent_step(state: &AutomationViewState, content_width: f32) -> Element
         .size(Some(content_width), None)
 }
 
+/// The fields that say what a task does: its name and its instructions.
+fn content_fields(state: &AutomationViewState) -> Vec<Element> {
+    let mut rows = Vec::new();
+    rows.extend(
+        form_field(
+        "Título",
+        TextField::new(
+            "automation_title",
+            &state.form.title,
+            "Ej. Resumen diario",
+            theme::component_palette(),
+        )
+        .size(ControlSize::Regular)
+        .render(),
+    )
+    .rows(),
+    );
+    rows.extend(
+        form_field(
+        "Instrucciones",
+        TextArea::new(
+            "automation_prompt",
+            &state.form.prompt,
+            "Describe el resultado esperado y los límites de esta tarea…",
+            theme::component_palette(),
+        )
+        .height(112.0)
+        .render(),
+    )
+    .hint("Nadie aprueba nada durante una ejecución: el agente nativo sólo lee el proyecto, y a un agente externo se le niega lo que pediría permiso.")
+    .rows(),
+    );
+    rows
+}
+
 pub fn editor_modal_body(state: &AutomationViewState, width: f32) -> Element {
     let form = match state.editor_step {
         AutomationEditorStep::Content => Element::column({
             let mut rows = vec![section_label("¿Qué hará esta tarea?")];
-            rows.extend(
-                form_field(
-                "Título",
-                TextField::new(
-                    "automation_title",
-                    &state.form.title,
-                    "Ej. Resumen diario",
-                    theme::component_palette(),
-                )
-                .size(ControlSize::Regular)
-                .render(),
-            )
-            .rows(),
-            );
-            rows.extend(
-                form_field(
-                "Instrucciones",
-                TextArea::new(
-                    "automation_prompt",
-                    &state.form.prompt,
-                    "Describe el resultado esperado y los límites de esta tarea…",
-                    theme::component_palette(),
-                )
-                .height(112.0)
-                .render(),
-            )
-            .hint("Nadie aprueba nada durante una ejecución: el agente nativo sólo lee el proyecto, y a un agente externo se le niega lo que pediría permiso.")
-            .rows(),
-            );
+            rows.extend(content_fields(state));
             rows
         })
         .gap(8.0),
@@ -1524,7 +1531,216 @@ fn history_page(state: &AutomationViewState, content_width: f32) -> Vec<Element>
 
 /// Responsive page body for the center dock. `width` is its available width
 /// after the shared workspace border, not the entire window width.
+/// From this width the tasks are a list with the one in view beside it;
+/// under it, a page whose editor opens over it.
+const SPLIT_WIDTH: f32 = 860.0;
+
+/// One task in the list: its name, when it runs and how it stands. Opening
+/// it is editing it.
+fn task_row(item: &Automation, runs: &[AutomationRun], width: f32, busy: bool, selected: bool) -> Element {
+    let status = status_for(item, runs);
+    let surface = if selected { theme::SELECTED } else { theme::BACKGROUND };
+    openide_ui::ListRow::new(
+        format!("automation_edit:{}", item.id),
+        &item.title,
+        theme::action_palette(surface, theme::FOREGROUND),
+    )
+    .subtitle(item.schedule.summary())
+    .meta(if busy { "En curso" } else { status.title() })
+    .filled()
+    .width(width)
+    .render()
+}
+
+/// The list beside the detail: a way to start a task, the search, the
+/// filters and the tasks.
+fn list_pane(state: &AutomationViewState, width: f32) -> Vec<Element> {
+    let mut body = vec![Element::row(vec![
+        Element::truncated_text("Tareas programadas")
+            .font_family(FontFamily::Sans)
+            .font_size(16.0)
+            .foreground(theme::FOREGROUND)
+            .centered_y()
+            .flex(1.0),
+        Button::new("automation_new", "Nueva", theme::component_palette())
+            .icon(Icon::Add)
+            .size(ControlSize::Compact)
+            .render(),
+    ])
+    .gap(8.0)];
+    if state.screen != AutomationScreen::Edit {
+        if let Some(error) = &state.error {
+            body.push(Alert::new("Error de automatizaciones", error, theme::component_palette()).tone(AlertTone::Error).compact(true).render());
+        }
+    }
+    if let Some(notice) = &state.notice {
+        body.push(Alert::new("Aviso de automatizaciones", notice, theme::component_palette()).tone(AlertTone::Info).compact(true).render());
+    }
+    if state.items.is_empty() {
+        body.push(Text::new("Todavía no hay tareas programadas.", theme::component_palette()).muted().render());
+        return body;
+    }
+    body.push(
+        SearchField::new("automation_query", &state.query, "Buscar tareas programadas…", theme::component_palette())
+            .size(ControlSize::Regular)
+            .width(width)
+            .render(),
+    );
+    let filters = [
+        (AutomationFilter::All, 62.0),
+        (AutomationFilter::Active, 68.0),
+        (AutomationFilter::Paused, 72.0),
+        (AutomationFilter::Completed, 96.0),
+        (AutomationFilter::Failed, 86.0),
+    ];
+    let mut tabs = filters
+        .into_iter()
+        .map(|(filter, width)| Tab::new(filter.action_id(), filter.title(), width).active(state.filter == filter));
+    // The pane is never wide enough for the five on one line.
+    body.push(
+        Element::column(vec![
+            Tabs::new(tabs.by_ref().take(3).collect(), theme::segmented_palette())
+                .id("automation_filters_primary")
+                .size(ControlSize::Compact)
+                .render(),
+            Tabs::new(tabs.collect(), theme::segmented_palette())
+                .id("automation_filters_secondary")
+                .size(ControlSize::Compact)
+                .render(),
+        ])
+        .gap(4.0),
+    );
+    let visible = state.visible_items();
+    if visible.is_empty() {
+        body.push(Text::new("Ninguna tarea coincide con la búsqueda o el filtro.", theme::component_palette()).muted().render());
+    }
+    body.extend(visible.into_iter().map(|item| {
+        task_row(
+            item,
+            &state.runs,
+            width,
+            state.busy_ids.contains(&item.id),
+            state.screen != AutomationScreen::List && state.selected_id.as_deref() == Some(item.id.as_str()),
+        )
+    }));
+    body
+}
+
+/// The task in view, all of it at once: what it does, when, who runs it,
+/// and under them what its runs left.
+fn detail_pane(state: &AutomationViewState, width: f32) -> Vec<Element> {
+    let grid = || CardGrid::new(width, 690.0);
+    match state.screen {
+        AutomationScreen::History => history_page(state, width),
+        AutomationScreen::List => vec![
+            Empty::new(
+                if state.items.is_empty() { "Todavía no hay tareas programadas" } else { "Elegí una tarea de la lista" },
+                "Crea una tarea recurrente o empieza desde una plantilla.",
+                theme::component_palette(),
+            )
+            .icon(Icon::Clock)
+            .action("automation_new", "Crear tarea programada", ButtonVariant::Default)
+            .compact()
+            .width(width)
+            .height(188.0)
+            .render(),
+            Separator::horizontal(theme::component_palette()).render(),
+            section_label("Plantillas de tareas programadas"),
+            grid().items(TEMPLATES.iter().map(|template| template_card(template, grid().item_width())).collect()).render(),
+        ],
+        AutomationScreen::Edit => {
+            let existing = state.selected();
+            let mut header = vec![Element::truncated_text(match existing {
+                Some(item) => item.title.as_str(),
+                None => "Nueva tarea programada",
+            })
+            .font_family(FontFamily::Sans)
+            .font_size(22.0)
+            .foreground(theme::FOREGROUND)
+            .centered_y()
+            .flex(1.0)];
+            if let Some(item) = existing {
+                let busy = state.busy_ids.contains(&item.id);
+                let toggle_id = format!("automation_toggle:{}", item.id);
+                header.extend([
+                    Button::new(format!("automation_run:{}", item.id), if busy { "En curso…" } else { "Ejecutar ahora" }, theme::component_palette())
+                        .variant(ButtonVariant::Outline)
+                        .size(ControlSize::Compact)
+                        .enabled(!busy)
+                        .render(),
+                    Tooltip::new(
+                        Switch::new(toggle_id.clone(), item.enabled, theme::component_palette()).render(),
+                        toggle_id,
+                        if item.enabled { "Pausar tarea" } else { "Activar tarea" },
+                        theme::component_palette(),
+                    )
+                    .render()
+                    .centered_y(),
+                    IconButton::new(format!("automation_delete_request:{}", item.id), Icon::Trash, theme::component_palette())
+                        .variant(ButtonVariant::Ghost)
+                        .size(ControlSize::Regular)
+                        .tooltip_with(TooltipSpec::new("Eliminar tarea").placement(TooltipPlacement::Above))
+                        .render(),
+                ]);
+            }
+            let mut body = vec![Element::row(header).gap(8.0)];
+            if let Some(error) = &state.error {
+                body.push(Alert::new("Revisa la automatización", error, theme::component_palette()).tone(AlertTone::Error).compact(true).render());
+            }
+            let form = crate::ui_sizing::form_width(width.min(620.0));
+            body.push(section_label("¿Qué hará esta tarea?"));
+            body.extend(content_fields(state));
+            body.push(section_label("¿Cuándo se ejecutará?"));
+            body.extend(schedule_editor(state, form));
+            body.push(editor_agent_step(state, form));
+            body.push(
+                ButtonGroup::new(vec![
+                    Button::new("automation_cancel", "Cancelar", theme::component_palette())
+                        .variant(ButtonVariant::Ghost)
+                        .size(ControlSize::Regular)
+                        .render(),
+                    Button::new(
+                        "automation_save_all",
+                        if existing.is_some() { "Guardar cambios" } else { "Crear tarea" },
+                        theme::component_palette(),
+                    )
+                    .icon(Icon::Check)
+                    .size(ControlSize::Regular)
+                    .render(),
+                ])
+                .align_end()
+                .render(),
+            );
+            if existing.is_some() {
+                body.push(Separator::horizontal(theme::component_palette()).render());
+                // Its own way back is the list beside it.
+                body.extend(history_page(state, width).into_iter().skip(1));
+            }
+            body
+        }
+    }
+}
+
+fn split_page(state: &AutomationViewState, width: f32) -> Element {
+    let palette = theme::component_palette();
+    let list_width = (width * 0.34).clamp(300.0, 380.0).round();
+    let list = PageColumn::new("automation_list", list_width, palette).min_width(240.0);
+    let list_content = list.content_width();
+    let detail_width = width - list_width - 1.0;
+    let detail = PageColumn::new("automation_page", detail_width, palette).min_width(240.0);
+    let detail_content = detail.content_width();
+    Element::row(vec![
+        // The page fills what it is given: its column is what holds it to the list's width.
+        Element::column(vec![list.children(list_pane(state, list_content)).render()]).size(Some(list_width), None),
+        Separator::vertical(palette).render(),
+        detail.children(detail_pane(state, detail_content)).render().flex(1.0),
+    ])
+}
+
 pub fn build_automations(state: &AutomationViewState, width: f32) -> Element {
+    if width >= SPLIT_WIDTH {
+        return split_page(state, width);
+    }
     let page =
         PageColumn::new("automation_page", width, theme::component_palette()).min_width(240.0);
     let content_width = page.content_width();
@@ -1742,15 +1958,15 @@ mod tests {
     #[test]
     fn list_empty_and_editor_expose_expected_actions() {
         let mut state = state();
-        let empty = UiTree::new(build_automations(&state, 960.0)).layout(Size::new(960.0, 780.0));
+        let empty = UiTree::new(build_automations(&state, 840.0)).layout(Size::new(840.0, 780.0));
         assert!(empty.regions.iter().any(|r| r.id == "automation_new"));
         assert!(empty
             .regions
             .iter()
             .any(|r| r.id == "automation_template:risk_scan"));
         state.screen = AutomationScreen::Edit;
-        let mut tree = UiTree::new(build_automations(&state, 960.0));
-        let editor = tree.layout(Size::new(960.0, 780.0));
+        let mut tree = UiTree::new(build_automations(&state, 840.0));
+        let editor = tree.layout(Size::new(840.0, 780.0));
         assert_eq!(tree.focused_id(), Some("automation_title"));
         assert!(editor
             .regions
@@ -1765,8 +1981,8 @@ mod tests {
         }
         assert!(!editor.regions.iter().any(|r| r.id == "automation_save"));
         state.editor_step = AutomationEditorStep::Schedule;
-        tree.set_root(build_automations(&state, 960.0));
-        let schedule = tree.layout(Size::new(960.0, 780.0));
+        tree.set_root(build_automations(&state, 840.0));
+        let schedule = tree.layout(Size::new(840.0, 780.0));
         for id in [
             "automation_frequency:once",
             "automation_time",
@@ -1776,8 +1992,8 @@ mod tests {
         }
         assert!(!schedule.regions.iter().any(|r| r.id == "automation_prompt"));
         state.editor_step = AutomationEditorStep::Agent;
-        tree.set_root(build_automations(&state, 960.0));
-        let agent = tree.layout(Size::new(960.0, 780.0));
+        tree.set_root(build_automations(&state, 840.0));
+        let agent = tree.layout(Size::new(840.0, 780.0));
         for id in ["automation_previous", "automation_save"] {
             assert!(agent.regions.iter().any(|r| r.id == id), "missing {id}");
         }
@@ -2205,27 +2421,63 @@ mod tests {
     fn editor_restores_focus_to_its_trigger() {
         for trigger in ["automation_new", "automation_template:risk_scan"] {
             let mut state = state();
-            let mut tree = UiTree::new(build_automations(&state, 960.0));
-            tree.layout(Size::new(960.0, 780.0));
+            let mut tree = UiTree::new(build_automations(&state, 840.0));
+            tree.layout(Size::new(840.0, 780.0));
             assert!(tree.focus(trigger), "cannot focus {trigger}");
 
             state.screen = AutomationScreen::Edit;
-            tree.set_root(build_automations(&state, 960.0));
-            tree.layout(Size::new(960.0, 780.0));
+            tree.set_root(build_automations(&state, 840.0));
+            tree.layout(Size::new(840.0, 780.0));
             assert_eq!(tree.focused_id(), Some("automation_title"));
 
             state.screen = AutomationScreen::List;
-            tree.set_root(build_automations(&state, 960.0));
-            tree.layout(Size::new(960.0, 780.0));
+            tree.set_root(build_automations(&state, 840.0));
+            tree.layout(Size::new(840.0, 780.0));
             assert_eq!(tree.focused_id(), Some(trigger));
         }
+    }
+
+    #[test]
+    fn a_wide_window_lists_the_tasks_beside_the_one_in_view_with_all_of_it_at_once() {
+        let mut state = state();
+        state.items.push(sample());
+        let viewport = Size::new(1100.0, 780.0);
+        let has = |state: &AutomationViewState, id: &str| {
+            UiTree::new(build_automations(state, viewport.width)).layout(viewport).regions.iter().any(|r| r.id == id)
+        };
+        // Nothing open: the list, and the templates where the task would be.
+        assert!(has(&state, "automation_edit:one") && has(&state, "automation_template:risk_scan"));
+        assert!(!has(&state, "automation_title"));
+        // Open: what it does, when and who runs it together, with its own
+        // actions and one save, over no modal.
+        state.screen = AutomationScreen::Edit;
+        state.selected_id = Some("one".into());
+        for id in [
+            "automation_edit:one",
+            "automation_title",
+            "automation_prompt",
+            "automation_frequency:once",
+            "automation_save_all",
+            "automation_cancel",
+            "automation_run:one",
+            "automation_toggle:one",
+            "automation_delete_request:one",
+        ] {
+            assert!(has(&state, id), "missing {id}");
+        }
+        for id in ["automation_next", "modal_body:automation_cancel", "automation_template:risk_scan"] {
+            assert!(!has(&state, id), "unexpected {id}");
+        }
+        // A new one has nothing to run, pause or delete yet.
+        state.selected_id = None;
+        assert!(has(&state, "automation_save_all") && !has(&state, "automation_run:one"));
     }
 
     #[test]
     fn run_now_is_not_clickable_while_its_automation_is_busy() {
         let mut state = state();
         state.items.push(sample());
-        let viewport = Size::new(960.0, 780.0);
+        let viewport = Size::new(840.0, 780.0);
         let ready = UiTree::new(build_automations(&state, viewport.width)).layout(viewport);
         assert!(ready.regions.iter().any(|r| r.id == "automation_run:one"));
 

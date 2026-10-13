@@ -91,6 +91,8 @@ pub struct MarketplaceReadme {
 
 #[derive(Clone, Debug)]
 pub struct MarketplaceViewState {
+    /// Which of the section's tabs is in view.
+    pub tab: MarketplaceTab,
     pub snapshot: MarketplaceSnapshot,
     pub filter: MarketplaceFilter,
     pub category: Option<String>,
@@ -133,6 +135,7 @@ impl Default for MarketplaceViewState {
             filter: MarketplaceFilter::All,
             category: None,
             filter_menu_open: false,
+            tab: MarketplaceTab::Skills,
             visible: GROUP_STEP,
             visible_by: Default::default(),
             explore: MarketplaceExploreState::default(),
@@ -1184,6 +1187,41 @@ fn featured_card(item: &MarketplaceItem, width: f32, select_prefix: &str) -> Ele
 
 /// The editor area with nothing selected: where to start, what is installed
 /// and where the catalog comes from. It never repeats the list.
+/// What the add-ons section holds, a tab each: the skills, the plugins and
+/// MCP servers that Settings also shows, and where skills come from.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MarketplaceTab {
+    #[default]
+    Skills,
+    Plugins,
+    Mcp,
+    Sources,
+}
+
+impl MarketplaceTab {
+    pub const ALL: [(Self, &'static str, &'static str); 4] = [
+        (Self::Skills, "skills", "Skills"),
+        (Self::Plugins, "plugins", "Plugins"),
+        (Self::Mcp, "mcp", "MCP"),
+        (Self::Sources, "sources", "Orígenes"),
+    ];
+
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|(_, id, _)| *id == key).map(|(tab, ..)| tab)
+    }
+}
+
+/// The section's tabs, with the host's own control before them.
+pub(crate) fn section_tabs(active: MarketplaceTab, navigation: Option<Element>) -> Element {
+    let tabs = MarketplaceTab::ALL
+        .into_iter()
+        .map(|(tab, id, title)| openide_ui::Tab::new(format!("marketplace_tab:{id}"), title, 86.0).active(tab == active))
+        .collect();
+    let mut row: Vec<Element> = navigation.into_iter().collect();
+    row.push(openide_ui::Tabs::new(tabs, theme::segmented_palette()).id("marketplace_tabs").size(ControlSize::Compact).render());
+    Element::row(row).gap(8.0).padding(12.0)
+}
+
 pub(crate) fn landing(
     state: &MarketplaceViewState,
     available_width: f32,

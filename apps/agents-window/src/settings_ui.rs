@@ -1415,7 +1415,7 @@ fn reason_is_empty(status: Option<&crate::mcp_inspection::McpServerStatus>) -> b
     matches!(status, Some(crate::mcp_inspection::McpServerStatus::Failed(reason)) if reason.trim().is_empty())
 }
 
-fn mcp_page(state: &ViewState, compact: bool) -> Vec<Element> {
+pub(crate) fn mcp_page(state: &ViewState, compact: bool) -> Vec<Element> {
     let editable = state.mcp_load_error.is_none();
     let mut content = Vec::new();
     if let Some(error) = &state.mcp_load_error {
@@ -2090,7 +2090,7 @@ pub fn native_skill_reset_modal(state: &ViewState, base: Element, viewport_width
 /// Render the MCP editor above the full window, keeping the saved servers in
 /// the Settings page behind it. The modal owns the scrollable form and footer.
 pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -> Element {
-    if !state.show_settings || state.settings_page != SettingsPage::Mcp || !state.mcp_editor_open {
+    if !state.shows(SettingsPage::Mcp) || !state.mcp_editor_open {
         return base;
     }
 
