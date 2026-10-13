@@ -414,11 +414,15 @@ fn reverting_restores_the_files_rewinds_and_an_undo_puts_back_what_did_not_chang
     assert!(confirm.skipped.is_empty());
     assert_eq!(confirm.opaque.commands, 1);
 
+    // The file tree is in view: it shows the files again, not an empty folder.
+    fixture.app.view.side_tab = crate::view::SideTab::Files;
     click(&mut fixture.app, "message_edit_revert");
     assert!(fixture.app.view.message_edit.editing.is_none(), "{:?}", fixture.app.view.message_edit.confirm);
     assert_eq!(disk(&fixture, "a.txt").as_deref(), Some("original a\n"));
     assert_eq!(disk(&fixture, "b.txt").as_deref(), Some("original b\n"));
     assert_eq!(disk(&fixture, "new.txt"), None);
+    let listed: Vec<&str> = fixture.app.view.file_rows.iter().map(|row| row.name.as_str()).collect();
+    assert!(listed.contains(&"a.txt") && !listed.contains(&"new.txt"), "{listed:?}");
     assert_eq!(admitted_prompts(&events(&fixture)), vec!["Primero, editado"]);
     let notice = fixture.app.view.message_edit.undo.clone().unwrap();
     assert_eq!((notice.restored_files, notice.skipped_files.len(), notice.undone), (3, 0, false));
