@@ -8131,6 +8131,13 @@ impl AgentsWindow {
     fn handle_automation_action(&mut self, id: &str) {
         // What the last action said has been read by the time of the next.
         self.view.automations.notice = None;
+        // Beside the list the whole task is in view: saving is one step.
+        let id = if id == "automation_save_all" {
+            self.view.automations.editor_step = crate::automation_view::AutomationEditorStep::Agent;
+            "automation_save"
+        } else {
+            id
+        };
         let now_ms = chrono::Utc::now().timestamp_millis();
         let current_native = self.native_settings();
         let state = &mut self.view.automations;
