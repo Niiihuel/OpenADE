@@ -13,7 +13,6 @@ use openide_browser::{
 use openide_harness::{McpCallResult, McpError, McpStdioConfig, McpTool, McpToolClient};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
@@ -593,7 +592,6 @@ struct BrowserHandle {
     visible: Arc<AtomicBool>,
     view: Arc<LiveView>,
     scope: BrowserScope,
-    identity_digest: String,
     /// The address the server this conversation's agent started answers on:
     /// what `open_preview` opens when it is given none.
     preview: Arc<Mutex<Option<String>>>,
@@ -768,15 +766,6 @@ impl BrowserRuntime {
         if !scope.workspace.is_dir() {
             return Err("La carpeta del navegador debe ser un directorio".into());
         }
-        let runtime_id = Uuid::new_v4().to_string();
-        let identity_digest = hex_digest(
-            format!(
-                "openide-browser-v1\0{}\0{}\0{runtime_id}",
-                scope.workspace.display(),
-                scope.session_id
-            )
-            .as_bytes(),
-        );
         let listener = TcpListener::bind(("127.0.0.1", 0))
             .map_err(|error| format!("Broker de navegador: {error}"))?;
         listener
@@ -801,7 +790,6 @@ impl BrowserRuntime {
             visible: Arc::new(AtomicBool::new(true)),
             view,
             scope,
-            identity_digest,
             preview: Arc::default(),
             reveal: Arc::default(),
         };
@@ -2057,10 +2045,6 @@ fn open_preview_tool() -> McpTool {
 }
 
 impl BrowserMcpClient {
-    pub(crate) fn identity_digest(&self) -> &str {
-        &self.handle.identity_digest
-    }
-
     /// What `open_preview` navigates to, or why it will not: an address of
     /// this machine, the given one or the conversation's server's.
     fn preview_command(&self, arguments: &Value) -> Result<BrowserCommand, String> {
@@ -2492,13 +2476,6 @@ fn bounded_string(value: &str, limit: usize) -> String {
         length -= 1;
     }
     value[..length].to_owned()
-}
-
-fn hex_digest(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
 }
 
 #[cfg(target_os = "linux")]

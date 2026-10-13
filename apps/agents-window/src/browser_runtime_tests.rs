@@ -51,7 +51,6 @@ pub(crate) fn fixture(
         visible: Arc::new(AtomicBool::new(false)),
         view: Arc::default(),
         scope,
-        identity_digest: "fixture".into(),
         preview: Arc::default(),
         reveal: Arc::default(),
     };
@@ -81,7 +80,6 @@ fn handle() -> BrowserHandle {
             workspace: PathBuf::from("/fixture"),
             session_id: "browser-test".into(),
         },
-        identity_digest: "fixture".into(),
         preview: Arc::default(),
         reveal: Arc::default(),
     }

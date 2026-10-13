@@ -360,6 +360,12 @@ fn a_conversation_opened_while_it_continues_reads_as_running_and_takes_no_second
     let paused = paused_turn(&mut app, root.path());
     look_elsewhere(&mut app, root.path());
     assert!(app.arm_auto_resume());
+    // Its worker is asking the model: what it prepares first takes its time.
+    let asking = Instant::now() + Duration::from_secs(10);
+    while provider.requests().len() < 2 {
+        assert!(Instant::now() < asking, "the worker never asked the model");
+        std::thread::sleep(Duration::from_millis(1));
+    }
 
     // The person goes to look at it before its worker is through.
     app.open_session(&paused);
