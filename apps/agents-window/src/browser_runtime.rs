@@ -83,6 +83,8 @@ pub(crate) struct BrowserSnapshot {
     pub can_go_forward: bool,
     /// The tabs of the context, in the order they were opened.
     pub tabs: Vec<BrowserTabView>,
+    /// What its pages asked to save, oldest first.
+    pub downloads: Vec<BrowserDownloadView>,
     // Returned only to the request which asked for it, never retained in state
     // or exposed by the MCP snapshot serializer.
     pub clipboard: Option<BrowserClipboard>,
@@ -101,6 +103,18 @@ pub(crate) struct BrowserTabView {
     pub title: String,
     pub url: String,
     pub active: bool,
+}
+
+/// A file a page of the context asked to save.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub(crate) struct BrowserDownloadView {
+    pub name: String,
+    pub path: String,
+    pub received_bytes: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_bytes: Option<u64>,
+    /// `in_progress`, `complete` or `failed`.
+    pub state: &'static str,
 }
 
 #[derive(Clone, Debug)]
@@ -133,6 +147,7 @@ impl Default for BrowserSnapshot {
             can_go_back: false,
             can_go_forward: false,
             tabs: Vec::new(),
+            downloads: Vec::new(),
             clipboard: None,
             output: None,
             screenshot: None,
@@ -335,6 +350,8 @@ pub(crate) enum BrowserCommand {
     },
     /// The tabs of the context, without touching any.
     TabList {},
+    /// What the context's pages asked to save, without touching any.
+    Downloads {},
     /// Opens a tab, shows it, and takes it to `url` if one is given.
     TabNew {
         url: Option<String>,
@@ -607,6 +624,7 @@ impl BrowserCommand {
                 | Self::ConsoleMessages { .. }
                 | Self::NetworkRequests {}
                 | Self::TabList {}
+                | Self::Downloads {}
                 | Self::TakeScreenshot { .. }
         )
     }
@@ -1462,8 +1480,10 @@ impl Worker {
             });
         }
         tabs.sort_by_key(|tab| tab.id);
-        if state.tabs != tabs {
+        let downloads = downloads(&self.handle.view);
+        if state.tabs != tabs || state.downloads != downloads {
             state.tabs = tabs.clone();
+            state.downloads = downloads;
             state.generation = state.generation.saturating_add(1);
         }
         tabs
@@ -1474,6 +1494,13 @@ impl Worker {
     fn tab_command(&mut self, command: &BrowserCommand, agent: bool) -> Result<BrowserCommand, Result<BrowserSnapshot, String>> {
         use BrowserCommand::*;
         let done = match command {
+            Downloads {} => {
+                self.publish_tabs();
+                return Err(apply_refresh(&self.handle, PageReply {
+                    output: Some(BrowserToolOutput { data: data("downloads", json!(downloads(&self.handle.view))), ..Default::default() }),
+                    ..Default::default()
+                }));
+            }
             TabList {} => Ok(None),
             TabNew { url } => self.open_tab().map(|()| Some(url.clone().map_or(
                 Snapshot { interactive_only: false, max_depth: None, selector: None },
@@ -1650,6 +1677,11 @@ impl Drop for Worker {
     }
 }
 
+/// The downloads of a context as the window and the agent are told them.
+fn downloads(view: &LiveView) -> Vec<BrowserDownloadView> {
+    view.embedded.downloads()
+}
+
 /// One command against the page. An error is the driver's own, whose kind
 /// says what it means for the caller.
 fn execute(
@@ -1696,7 +1728,7 @@ fn execute(
     }
     match command {
         // Done by the worker before a page is asked.
-        TabList {} | TabNew { .. } | TabSelect { .. } | TabClose { .. } => {}
+        TabList {} | TabNew { .. } | TabSelect { .. } | TabClose { .. } | Downloads {} => {}
         Navigate { url } => driver.navigate(url)?,
         Back => driver.back()?,
         Forward => driver.forward()?,
@@ -2284,13 +2316,14 @@ pub(crate) fn native_tool_names() -> Vec<String> {
 
 /// The tools that only read the page. They never ask: what they return is
 /// what the user already sees in the tab.
-const READ_TOOLS: [&str; 6] = [
+const READ_TOOLS: [&str; 7] = [
     "browser_snapshot",
     "browser_wait_for",
     "browser_console_messages",
     "browser_network_requests",
     "browser_take_screenshot",
     "browser_tabs",
+    "browser_downloads",
 ];
 
 /// Whether a call to the native agent's tool `name` goes ahead without
@@ -2775,6 +2808,12 @@ pub(crate) fn browser_mcp_tools() -> Vec<McpTool> {
         vec![],
     );
     add(
+        "browser_downloads",
+        "List the files this browser's pages saved: each one's `name`, absolute `path`, `state` (`in_progress`, `complete` or `failed`) and bytes. A download starts when a page asks for one, as after clicking a download link, and goes to the user's downloads folder under a name no file there has. Read a finished file from its `path` with the file tools.",
+        json!({}),
+        vec![],
+    );
+    add(
         "browser_tab_new",
         "Open a new tab and make it active, at `url` if given (http or https) and otherwise blank. It shares cookies and sign-ins with the other tabs. At most 8 tabs.",
         json!({"url":{"type":"string","minLength":1,"maxLength":4096}}),
@@ -2830,6 +2869,7 @@ pub(crate) fn browser_tool_command(name: &str, arguments: Value) -> Result<Brows
         "browser_handle_dialog" => "handle_dialog",
         "browser_file_upload" => "file_upload",
         "browser_tabs" => "tab_list",
+        "browser_downloads" => "downloads",
         "browser_tab_new" => "tab_new",
         "browser_tab_select" => "tab_select",
         "browser_tab_close" => "tab_close",
@@ -2901,6 +2941,9 @@ mod cef {
         }
         pub(super) fn close_tab(&self, _: u64) -> bool {
             false
+        }
+        pub(super) fn downloads(&self) -> Vec<BrowserDownloadView> {
+            Vec::new()
         }
         pub(super) fn start(_: &Arc<LiveView>, _: &Path, _: (u32, u32), _: f32) -> Result<Driver, StartFailure> {
             Err(StartFailure {

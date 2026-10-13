@@ -5037,6 +5037,7 @@ impl AgentsWindow {
         self.view.browser.can_go_back = snapshot.can_go_back;
         self.view.browser.can_go_forward = snapshot.can_go_forward;
         self.view.browser.pages = snapshot.tabs;
+        self.view.browser.downloads = snapshot.downloads;
         previous != self.view.browser
     }
 
@@ -16649,6 +16650,16 @@ impl AgentsWindow {
                     }
                 },
                 "browser_restart" => { self.view.browser.more_open = false; self.restart_browser(); },
+                "browser_downloads_reveal" => {
+                    self.view.browser.more_open = false;
+                    // The folder is outside the project: the desktop's file manager shows it.
+                    let folder = self.view.browser.downloads.last().and_then(|download| {
+                        reqwest::Url::from_directory_path(Path::new(&download.path).parent()?).ok()
+                    });
+                    if let Some(folder) = folder {
+                        ctx.open_url(egui::OpenUrl::new_tab(folder.to_string()));
+                    }
+                }
                 "browser_tab_new" => {
                     self.view.browser.more_open = false;
                     self.submit_browser_command(BrowserCommand::TabNew { url: None });

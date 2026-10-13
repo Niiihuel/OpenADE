@@ -492,7 +492,7 @@ mod tests {
             .into_iter()
             .chain(["mcp__openide_browser__open_preview".to_owned()])
             .collect();
-        assert_eq!(advertised.len(), 26);
+        assert_eq!(advertised.len(), 27);
         for name in &expected {
             assert!(advertised.contains(name), "{name} is not advertised");
             // Reading the page the user has open is the one thing not asked.

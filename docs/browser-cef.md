@@ -178,7 +178,9 @@ ventana:
   como siempre; CEF sólo lo deja abierto hasta entonces.
 - El selector de archivos no llega a CEF: el driver lo intercepta por DevTools
   y entrega los archivos que el agente armó, o lo deja cerrado. El menú
-  contextual queda vacío y las descargas se rechazan.
+  contextual queda vacío. Las descargas se guardan en la carpeta de
+  descargas del usuario (`Page::save_downloads_to`); una página a la que no
+  se le dio carpeta no guarda nada.
 
 **Escala.** En la plataforma headless CEF respeta la escala que declara la
 vista: una vista de 1280 × 800 a escala 2 se pinta en 2560 × 1600 con

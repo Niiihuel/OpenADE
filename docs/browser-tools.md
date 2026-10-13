@@ -44,6 +44,7 @@ o `selector` (un selector que identifique un único elemento).
 | `browser_handle_dialog` | `accept`, `prompt_text` opcional | Modifica |
 | `browser_file_upload` | `paths`: de 1 a 16 rutas absolutas | Modifica |
 | `browser_tabs` | ninguno | Lee |
+| `browser_downloads` | ninguno | Lee |
 | `browser_tab_new` | `url` opcional (`http` o `https`) | Modifica |
 | `browser_tab_select` | `id` | Modifica |
 | `browser_tab_close` | `id` | Modifica |
@@ -309,6 +310,18 @@ pestaña no se cierra. Un enlace con `target="_blank"` o un `window.open` detrá
 de un clic abre una pestaña y la deja activa: `browser_click` responde con esa
 página. El usuario ve las pestañas en una tira bajo la barra de direcciones en
 cuanto hay más de una.
+
+### Descargas
+
+Lo que una página pide guardar (un enlace con `download`, una respuesta con
+`Content-Disposition: attachment`) va a la carpeta de descargas del usuario,
+la que nombra `XDG_DOWNLOAD_DIR` o `~/Downloads`, con un nombre que ningún
+archivo de ahí tiene: `informe.pdf`, `informe (1).pdf`… Nunca se pisa un
+archivo. `browser_downloads` lista cada una con `name`, `path` absoluto,
+`state` (`in_progress`, `complete`, `failed`) y bytes; el archivo terminado se
+lee con las herramientas de archivos. La barra de estado del navegador muestra
+la más reciente y el menú tiene **Mostrar descargas**. Un navegador recuerda
+hasta 64 descargas; no se pide permiso para descargar.
 
 ### Subir archivos
 
