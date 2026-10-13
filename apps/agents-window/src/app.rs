@@ -5176,13 +5176,10 @@ impl AgentsWindow {
         // A wheel notch still gliding: the page gets this frame's share.
         if let Some((dx, dy)) = self.browser_wheel.step(Instant::now()) {
             if dx != 0.0 || dy != 0.0 {
-                self.submit_browser_command(crate::browser_runtime::BrowserCommand::Scroll {
-                    dx: f64::from(dx),
-                    dy: f64::from(dy),
-                    // Control pressed while a notch still glides does not
-                    // turn what is left of it into a zoom.
-                    modifiers: self.browser_modifiers & !openide_browser::modifiers::CONTROL,
-                });
+                // Control pressed while a notch still glides does not
+                // turn what is left of it into a zoom.
+                let modifiers = self.browser_modifiers & !openide_browser::modifiers::CONTROL;
+                self.scroll_browser(f64::from(dx), f64::from(dy), modifiers);
             }
             ctx.request_repaint();
         }
@@ -5366,6 +5363,17 @@ impl AgentsWindow {
 
     fn submit_browser_command(&mut self, command: crate::browser_runtime::BrowserCommand) {
         let _ = self.try_submit_browser_command(command);
+    }
+
+    /// The user's wheel on the page in view. It goes straight to Chromium
+    /// and not behind what the agent is doing there; with no page yet, it
+    /// is a command like any other.
+    fn scroll_browser(&mut self, dx: f64, dy: f64, modifiers: u8) -> bool {
+        let taken = self
+            .active_browser_id()
+            .and_then(|id| self.browsers.get(&id))
+            .is_some_and(|browser| browser.wheel(dx, dy, modifiers));
+        taken || self.try_submit_browser_command(crate::browser_runtime::BrowserCommand::Scroll { dx, dy, modifiers })
     }
 
     fn try_submit_browser_command(
@@ -5747,11 +5755,11 @@ impl AgentsWindow {
                 }
                 let scale = if direct { 1.0 } else { f64::from(BROWSER_NOTCH_SCALE) };
                 let (delta_x, delta_y) = (f64::from(delta_x) * scale, f64::from(delta_y) * scale);
-                return self.try_submit_browser_command(BrowserCommand::Scroll {
-                    dx: (-delta_x).clamp(-100_000.0, 100_000.0),
-                    dy: (-delta_y).clamp(-100_000.0, 100_000.0),
-                    modifiers: self.browser_modifiers,
-                });
+                return self.scroll_browser(
+                    (-delta_x).clamp(-100_000.0, 100_000.0),
+                    (-delta_y).clamp(-100_000.0, 100_000.0),
+                    self.browser_modifiers,
+                );
             }
         }
         if self.tree.focused_id() != Some("browser_viewport") {

@@ -354,7 +354,11 @@ impl Driver {
             };
             let pause = Duration::from_millis(pauses.next().unwrap_or(500));
             if self.deadline.saturating_duration_since(Instant::now()) <= pause {
-                return Err(failed(format!("{} Todavía {reason}.", timed_out())));
+                let message = format!("{} Todavía {reason}.", timed_out());
+                // Nothing was sent to the page while it waited: unless a
+                // drag already holds the button down, this is the tool's
+                // own answer and the action can be tried again.
+                return Err(if self.buttons == 0 { tool(message) } else { failed(message) });
             }
             std::thread::sleep(pause);
         }

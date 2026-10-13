@@ -1021,6 +1021,12 @@ impl BrowserRuntime {
     pub(crate) fn snapshot(&self) -> BrowserSnapshot {
         self.handle.snapshot()
     }
+    /// The window's wheel, handed to Chromium at once: it waits for no
+    /// command of the agent's that the page is busy with. False when there
+    /// is no page to take it, and the turn of the wheel is then a command.
+    pub(crate) fn wheel(&self, dx: f64, dy: f64, modifiers: u8) -> bool {
+        !self.handle.closed.load(Ordering::Acquire) && self.handle.view.embedded.wheel(dx, dy, modifiers)
+    }
     /// Returns whether the surface was visible until now.
     pub(crate) fn set_visible(&self, visible: bool) -> bool {
         let was = self.handle.visible.swap(visible, Ordering::AcqRel);

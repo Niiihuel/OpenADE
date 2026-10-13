@@ -1091,7 +1091,8 @@ fn real_cef_driver_actions_wait_for_an_element_to_be_ready_and_give_up_with_the_
     evaluate(&mut driver, "() => { const cover = document.createElement('div'); cover.id = 'cover'; document.body.append(cover); scrollTo(0, 0); }");
     let started = Instant::now();
     let covered = driver.click(&Target::Selector("#covered")).unwrap_err();
-    assert_eq!(covered.kind, ErrorKind::Failed);
+    // The click was never sent: the tool's own answer, not an unknown effect.
+    assert_eq!(covered.kind, ErrorKind::Tool);
     assert!(covered.message.starts_with("Timeout 10000ms exceeded.") && covered.message.contains("<div id=\"cover\">"), "{covered}");
     assert!(started.elapsed() >= Duration::from_secs(9) && started.elapsed() < Duration::from_secs(12));
     let readonly = driver.fill(&Target::Selector("#locked"), "x").unwrap_err();
