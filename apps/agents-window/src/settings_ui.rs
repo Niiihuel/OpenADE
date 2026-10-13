@@ -2171,6 +2171,22 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
                 .rows(),
             );
         }
+        fields.extend(
+            form_field(
+                "Encabezados desde variables de entorno (opcional)",
+                TextArea::new(
+                    "mcp_draft_http_env_headers",
+                    &state.mcp_draft_http_env_headers,
+                    "X-Api-Key=MI_API_KEY",
+                    control_palette(),
+                )
+                .width(body_width)
+                .height(60.0)
+                .render(),
+            )
+            .hint("Uno por línea, como Nombre=VARIABLE. El valor se lee de la variable al conectar y no se guarda. Authorization y los encabezados del protocolo no se pueden definir acá.")
+            .rows(),
+        );
         fields.push(Text::new("Streamable HTTP negocia el protocolo al conectar: 2026-07-28 o las versiones compatibles de 2025. Solicitudes de entrada adicional aún no están disponibles.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
     } else {
         fields.extend([

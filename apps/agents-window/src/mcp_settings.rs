@@ -63,6 +63,17 @@ pub(crate) struct McpServerSettings {
     /// Public client registration only. Tokens are stored by TokenStore.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub http_oauth: Option<McpHttpOAuthSettings>,
+    /// Headers sent with every HTTP request, each from an environment
+    /// variable: only its name is persisted, as with the bearer token.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub http_env_headers: Vec<McpEnvHeader>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct McpEnvHeader {
+    pub header: String,
+    pub env_name: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -131,6 +142,14 @@ impl McpServerSettings {
             config.bearer_token = Some(value.into_string().map_err(|_| {
                 format!("La variable de credenciales MCP {name} debe ser texto UTF-8")
             })?);
+        }
+        for entry in &self.http_env_headers {
+            let name = &entry.env_name;
+            let value = resolve_env(name)
+                .ok_or_else(|| format!("Falta la variable de entorno MCP {name}"))?
+                .into_string()
+                .map_err(|_| format!("La variable de entorno MCP {name} debe ser texto UTF-8"))?;
+            config.env_headers.push((entry.header.clone(), value));
         }
         config.validate().map_err(|error| error.to_string())?;
         Ok(config)
@@ -332,6 +351,22 @@ impl McpSettings {
                 if let Some(name) = &server.http_bearer_token_env_name {
                     validate_env_names(std::slice::from_ref(name), &server.id)?;
                 }
+                let names: Vec<String> =
+                    server.http_env_headers.iter().map(|entry| entry.env_name.clone()).collect();
+                validate_env_names(&names, &server.id)?;
+                // The transport refuses a header it owns; a placeholder value checks the names.
+                let mut probe = McpHttpConfig::new(url);
+                probe.env_headers =
+                    server.http_env_headers.iter().map(|entry| (entry.header.clone(), "x".to_owned())).collect();
+                let mut unique = BTreeSet::new();
+                if probe.validate().is_err()
+                    || !server.http_env_headers.iter().all(|entry| unique.insert(entry.header.to_ascii_lowercase()))
+                {
+                    return Err(format!(
+                        "Encabezado MCP HTTP no válido, reservado o duplicado en {}",
+                        server.id
+                    ));
+                }
                 if let Some(oauth) = &server.http_oauth {
                     if server.http_bearer_token_env_name.is_some() {
                         return Err(format!(
@@ -342,7 +377,10 @@ impl McpSettings {
                     validate_oauth(oauth, &server.id)?;
                 }
             } else {
-                if server.http_bearer_token_env_name.is_some() || server.http_oauth.is_some() {
+                if server.http_bearer_token_env_name.is_some()
+                    || server.http_oauth.is_some()
+                    || !server.http_env_headers.is_empty()
+                {
                     return Err(format!(
                         "El servidor MCP stdio {} no puede tener autenticación HTTP",
                         server.id
@@ -606,6 +644,7 @@ mod tests {
             url: None,
             http_bearer_token_env_name: None,
             http_oauth: None,
+            http_env_headers: Vec::new(),
         }
     }
 
@@ -620,6 +659,7 @@ mod tests {
             url: Some(url.to_owned()),
             http_bearer_token_env_name: Some("MCP_HTTP_TOKEN".to_owned()),
             http_oauth: None,
+            http_env_headers: Vec::new(),
         }
     }
 
@@ -648,6 +688,49 @@ mod tests {
         assert!(settings.servers[0]
             .runtime_http_config_with(|_| None)
             .is_err());
+    }
+
+    #[test]
+    fn http_headers_persist_names_only_resolve_at_launch_and_refuse_what_the_transport_owns() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("does-not-exist");
+        let header = |header: &str, env_name: &str| McpEnvHeader { header: header.into(), env_name: env_name.into() };
+        let mut server = http_server("https://example.com/mcp");
+        server.http_env_headers = vec![header("X-Api-Key", "MCP_API_KEY"), header("X-Team", "MCP_TEAM")];
+        let settings = McpSettings { servers: vec![server.clone()] };
+        settings.save(root.path(), &workspace).unwrap();
+        assert_eq!(McpSettings::load(root.path(), &workspace).unwrap(), settings);
+        let saved = fs::read_to_string(root.path().join(SETTINGS_FILE)).unwrap();
+        assert!(saved.contains("MCP_API_KEY") && !saved.contains("secret-key"));
+
+        let env = |name: &str| match name {
+            "MCP_HTTP_TOKEN" => Some(OsString::from("secret-token")),
+            "MCP_API_KEY" => Some(OsString::from("secret-key")),
+            "MCP_TEAM" => Some(OsString::from("plataforma")),
+            _ => None,
+        };
+        let config = server.runtime_http_config_with(env).unwrap();
+        assert_eq!(
+            config.env_headers,
+            [("X-Api-Key".to_owned(), "secret-key".to_owned()), ("X-Team".to_owned(), "plataforma".to_owned())]
+        );
+        // A variable that is not set stops the launch instead of sending the request without it.
+        assert!(server.runtime_http_config_with(|name| env(name).filter(|_| name != "MCP_TEAM")).is_err());
+
+        let refused = |entries: Vec<McpEnvHeader>| {
+            let mut server = server.clone();
+            server.http_env_headers = entries;
+            McpSettings { servers: vec![server] }.validate_structure().is_err()
+        };
+        for owned in ["Authorization", "authorization", "Mcp-Session-Id", "Content-Type", "Host", "con espacio", ""] {
+            assert!(refused(vec![header(owned, "MCP_API_KEY")]), "{owned}");
+        }
+        assert!(refused(vec![header("X-Api-Key", "minuscula")]));
+        assert!(refused(vec![header("X-Api-Key", "MCP_API_KEY"), header("x-api-key", "MCP_TEAM")]));
+        // Headers are for an HTTP server only.
+        let mut stdio = super::tests::server();
+        stdio.http_env_headers = vec![header("X-Api-Key", "MCP_API_KEY")];
+        assert!(McpSettings { servers: vec![stdio] }.validate_structure().is_err());
     }
 
     #[test]

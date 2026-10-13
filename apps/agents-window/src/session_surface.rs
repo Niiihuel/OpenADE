@@ -4397,6 +4397,7 @@ mod tests {
             mcp_draft_http: false,
             mcp_draft_url: String::new(),
             mcp_draft_http_bearer_token_env_name: String::new(),
+            mcp_draft_http_env_headers: String::new(),
             mcp_draft_oauth_enabled: false,
             mcp_draft_oauth_client_id: String::new(),
             mcp_draft_oauth_issuer: String::new(),

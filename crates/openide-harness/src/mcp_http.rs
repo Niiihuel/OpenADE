@@ -43,6 +43,9 @@ pub struct McpHttpConfig {
     pub url: String,
     /// Resolved only at launch; never saved in the MCP settings document.
     pub bearer_token: Option<String>,
+    /// The user's own headers for the endpoint, as name and value. Resolved
+    /// only at launch; never saved in the MCP settings document.
+    pub env_headers: Vec<(String, String)>,
     pub request_timeout: Duration,
     pub max_message_bytes: usize,
     pub client_name: String,
@@ -54,6 +57,7 @@ impl McpHttpConfig {
         Self {
             url: url.into(),
             bearer_token: None,
+            env_headers: Vec::new(),
             request_timeout: Duration::from_secs(30),
             max_message_bytes: MAX_MCP_MESSAGE_BYTES,
             client_name: "openide".to_owned(),
@@ -62,7 +66,40 @@ impl McpHttpConfig {
     }
 
     pub fn validate(&self) -> Result<(), McpError> {
+        self.user_headers()?;
         self.validated_endpoint().map(|_| ())
+    }
+
+    /// The user's headers for every request to the endpoint. Never one the
+    /// protocol, the transport or the authorization owns.
+    fn user_headers(&self) -> Result<Vec<(HeaderName, HeaderValue)>, McpError> {
+        self.env_headers
+            .iter()
+            .map(|(name, value)| {
+                let header = HeaderName::from_bytes(name.as_bytes()).ok().filter(|header| {
+                    let name = header.as_str();
+                    !name.starts_with("mcp-")
+                        && ![
+                            "authorization",
+                            "accept",
+                            "content-type",
+                            "content-length",
+                            "host",
+                            "connection",
+                            "transfer-encoding",
+                            "last-event-id",
+                        ]
+                        .contains(&name)
+                });
+                let value = HeaderValue::from_str(value).ok().map(|mut value| {
+                    value.set_sensitive(true);
+                    value
+                });
+                header
+                    .zip(value)
+                    .ok_or_else(|| McpError::Protocol(format!("invalid MCP HTTP header {name:?}")))
+            })
+            .collect()
     }
 
     fn validated_endpoint(&self) -> Result<(Url, Option<HeaderValue>), McpError> {
@@ -467,7 +504,9 @@ impl McpHttpClient {
         &self,
         id: impl Into<String>,
     ) -> Option<McpHttpServerIdentity> {
-        if !self.is_modern()
+        // A header's value may be a credential no vault vouches for.
+        if !self.config.env_headers.is_empty()
+            || !self.is_modern()
             || self.endpoint.scheme() != "https"
             || is_loopback_host(&self.endpoint)
             || self.closed.is_cancelled()
@@ -695,7 +734,7 @@ impl McpHttpClient {
         else {
             return Err(McpError::Protocol("legacy headers on modern client".into()));
         };
-        let mut headers = HeaderMap::new();
+        let mut headers = HeaderMap::from_iter(self.config.user_headers()?);
         headers.insert(
             ACCEPT,
             HeaderValue::from_static("application/json, text/event-stream"),
@@ -1205,7 +1244,7 @@ impl McpHttpClient {
                 limit: self.config.max_message_bytes,
             });
         }
-        let mut headers = HeaderMap::new();
+        let mut headers = HeaderMap::from_iter(self.config.user_headers()?);
         headers.insert(
             ACCEPT,
             HeaderValue::from_static("application/json, text/event-stream"),
@@ -3471,7 +3510,15 @@ mod tests {
             }
         });
         let cancellation = CancellationToken::new();
-        let client = McpHttpClient::connect(McpHttpConfig::new(url), &cancellation)
+        let mut config = McpHttpConfig::new(url);
+        config.env_headers = vec![("X-Api-Key".into(), "clave".into())];
+        // A header the protocol or the authorization owns is not the user's to set.
+        for owned in ["Authorization", "mcp-method", "Accept", "no válido"] {
+            let mut refused = config.clone();
+            refused.env_headers.push((owned.into(), "x".into()));
+            assert!(refused.validate().is_err(), "{owned}");
+        }
+        let client = McpHttpClient::connect(config, &cancellation)
             .await
             .unwrap();
         assert_eq!(client.server_info().await.name, "fixture");
@@ -3497,6 +3544,7 @@ mod tests {
                 MCP_HTTP_PROTOCOL_VERSION
             );
             assert_eq!(request.headers["mcp-method"], request.body["method"]);
+            assert_eq!(request.headers["x-api-key"], "clave", "request {index}");
             assert!(request.headers["accept"].contains("application/json"));
             assert!(request.headers["accept"].contains("text/event-stream"));
             assert_eq!(

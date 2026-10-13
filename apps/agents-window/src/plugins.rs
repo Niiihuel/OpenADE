@@ -411,6 +411,7 @@ fn validate_manifest(manifest: &PluginManifest) -> Result<(), String> {
             url: None,
             http_bearer_token_env_name: None,
             http_oauth: None,
+            http_env_headers: Vec::new(),
         }],
     }
     .validate_structure()
@@ -458,6 +459,7 @@ fn runtime_server(
         url: None,
         http_bearer_token_env_name: None,
         http_oauth: None,
+        http_env_headers: Vec::new(),
     })
 }
 

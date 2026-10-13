@@ -227,6 +227,7 @@ mod tests {
             url: Some("http://127.0.0.1:7777/mcp".into()),
             http_bearer_token_env_name: None,
             http_oauth: None,
+            http_env_headers: Vec::new(),
         }
     }
 
