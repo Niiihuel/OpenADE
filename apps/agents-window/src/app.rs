@@ -1568,6 +1568,11 @@ fn browser_modifiers(held: egui::Modifiers) -> u8 {
         .sum()
 }
 
+/// Contexts that may run at once, the conversations' and the CLIs' together.
+const MAX_BROWSERS: usize = 4;
+const BROWSER_LIMIT: &str =
+    "Hay cuatro navegadores abiertos. Cerrá una pestaña de navegador para iniciar otra.";
+
 fn browser_restart_url(value: &str) -> Option<String> {
     let value = value.trim();
     if value == "about:blank" {
@@ -4705,7 +4710,10 @@ impl AgentsWindow {
         let scope = self.dock_scope();
         self.dock
             .active_tab(&scope)
-            .filter(|tab| tab.kind == DockTabKind::Browser && tab.owner == scope.owner)
+            .filter(|tab| {
+                matches!(tab.kind, DockTabKind::Browser | DockTabKind::CliBrowser { .. })
+                    && tab.owner == scope.owner
+            })
             .map(|tab| tab.id.get())
     }
 
@@ -4842,21 +4850,44 @@ impl AgentsWindow {
         {
             return false;
         }
-        if self.browsers.len() + self.browser_starts.len() >= 4 {
-            self.view.browser.loading = false;
-            self.view.browser.error = Some("Hay cuatro navegadores abiertos. Cerrá una pestaña de navegador para iniciar otra.".into());
+        let Some(launch_scope) = self.browser_launch_scope(id) else {
             return false;
+        };
+        self.view.browser.loading = true;
+        self.view.browser.error = None;
+        if let Err(error) = self.start_browser(id, launch_scope) {
+            self.view.browser.loading = false;
+            self.view.browser.error = Some(error);
         }
-        let scope = self.dock_scope();
-        let session_id = match scope.owner {
-            DockOwner::Task(session) => session,
-            DockOwner::Draft => format!("draft:{id}"),
-            DockOwner::Workspace => return false,
+        false
+    }
+
+    /// Whose pages the context of browser tab `id` holds: its conversation's,
+    /// or those of the CLI session that runs in the tab's terminal.
+    fn browser_launch_scope(&self, id: u64) -> Option<crate::browser_runtime::BrowserScope> {
+        let tab = self.dock.tab(id)?;
+        let session_id = match (&tab.kind, &tab.owner) {
+            (DockTabKind::CliBrowser { terminal }, _) => self.external_session(*terminal)?.to_owned(),
+            (_, DockOwner::Task(session)) => session.clone(),
+            (_, DockOwner::Draft) => format!("draft:{id}"),
+            (_, DockOwner::Workspace) => return None,
         };
-        let launch_scope = crate::browser_runtime::BrowserScope {
-            workspace: PathBuf::from(scope.workspace_id),
+        Some(crate::browser_runtime::BrowserScope {
+            workspace: PathBuf::from(&tab.workspace_id),
             session_id,
-        };
+        })
+    }
+
+    /// Starts the context of browser tab `id` off this thread;
+    /// `update_browser` takes it once it is there.
+    fn start_browser(
+        &mut self,
+        id: u64,
+        launch_scope: crate::browser_runtime::BrowserScope,
+    ) -> Result<(), String> {
+        if self.browsers.len() + self.browser_starts.len() >= MAX_BROWSERS {
+            return Err(BROWSER_LIMIT.into());
+        }
         let data_root = self.data_root.clone();
         let (viewport_width, viewport_height) = self.browser_dimensions();
         let launch_options = crate::browser_runtime::BrowserLaunchOptions {
@@ -4866,9 +4897,7 @@ impl AgentsWindow {
             ..Default::default()
         };
         let (sender, receiver) = mpsc::sync_channel(1);
-        self.view.browser.loading = true;
-        self.view.browser.error = None;
-        match std::thread::Builder::new()
+        std::thread::Builder::new()
             .name("openide-browser-start".into())
             .spawn(move || {
                 let result = crate::browser_runtime::BrowserRuntime::start(
@@ -4880,16 +4909,10 @@ impl AgentsWindow {
                     runtime.set_visible(false);
                 }
                 let _ = sender.send(result);
-            }) {
-            Ok(_) => {
-                self.browser_starts.insert(id, receiver);
-            }
-            Err(error) => {
-                self.view.browser.loading = false;
-                self.view.browser.error = Some(format!("No se pudo iniciar el navegador: {error}"));
-            }
-        }
-        false
+            })
+            .map_err(|error| format!("No se pudo iniciar el navegador: {error}"))?;
+        self.browser_starts.insert(id, receiver);
+        Ok(())
     }
 
     fn apply_browser_snapshot(
@@ -5703,6 +5726,9 @@ impl AgentsWindow {
                                 .map(|name| name.to_string_lossy().into_owned())
                         })
                         .unwrap_or_else(|| tab.title()),
+                    DockTabKind::CliBrowser { terminal } => self
+                        .terminal_agent(*terminal)
+                        .map_or_else(|| tab.title(), |agent| format!("Navegador · {}", agent.label)),
                     _ => tab.title(),
                 },
                 active: active
@@ -5715,7 +5741,7 @@ impl AgentsWindow {
                     DockTabKind::CodeReview => SideTab::CodeReview,
                     DockTabKind::SessionChanges => SideTab::SessionChanges,
                     DockTabKind::Terminal => SideTab::Terminal,
-                    DockTabKind::Browser => SideTab::Browser,
+                    DockTabKind::Browser | DockTabKind::CliBrowser { .. } => SideTab::Browser,
                     DockTabKind::FilePreview { .. } => SideTab::FilePreview,
                     DockTabKind::CodeSnapshot { .. } => SideTab::CodeSnapshot,
                 },
@@ -5767,7 +5793,7 @@ impl AgentsWindow {
                     DockTabKind::CodeReview => SideTab::CodeReview,
                     DockTabKind::SessionChanges => SideTab::SessionChanges,
                     DockTabKind::Terminal => SideTab::Terminal,
-                    DockTabKind::Browser => SideTab::Browser,
+                    DockTabKind::Browser | DockTabKind::CliBrowser { .. } => SideTab::Browser,
                     DockTabKind::FilePreview { .. } => SideTab::FilePreview,
                     DockTabKind::CodeSnapshot { .. } => SideTab::CodeSnapshot,
                 },
@@ -5808,7 +5834,7 @@ impl AgentsWindow {
                 DockTabKind::CodeReview => SideTab::CodeReview,
                 DockTabKind::SessionChanges => SideTab::SessionChanges,
                 DockTabKind::Terminal => SideTab::Terminal,
-                DockTabKind::Browser => SideTab::Browser,
+                DockTabKind::Browser | DockTabKind::CliBrowser { .. } => SideTab::Browser,
                 DockTabKind::CodeSnapshot { .. } => SideTab::CodeSnapshot,
                 DockTabKind::FilePreview { path } => {
                     let path_text = path.to_string_lossy().into_owned();
@@ -20548,6 +20574,7 @@ impl eframe::App for AgentsWindow {
         self.guard_debugger_close(&ctx);
         early_changed |= quit_confirm_before != self.view.code_editor_quit_confirm;
         early_changed |= self.sync_external_approval(&ctx);
+        early_changed |= self.serve_external_browser_calls(&ctx);
         early_changed |= self.follow_file_tree(&ctx);
         early_changed |= self.follow_agent_clis();
         early_changed |= self.follow_ide_agent_tabs();

@@ -2389,6 +2389,48 @@ impl BrowserMcpClient {
         command.validate()?;
         Ok(command)
     }
+    /// One call from a thread without a runtime of its own, as a CLI on the
+    /// loopback bridge makes it: the native agent's own call, with its
+    /// validation, queue and result. Returns the result's content blocks;
+    /// `Err` is the text of a call that failed or never ran.
+    pub(crate) fn call_blocking(&self, name: &str, arguments: Value) -> Result<Vec<Value>, String> {
+        let result = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .map_err(|error| error.to_string())?
+            .block_on(self.call_tool(name, arguments, &CancellationToken::new()))
+            .map_err(|error| match error {
+                McpError::Protocol(refusal) => refusal,
+                McpError::EffectUncertain(reason) => format!(
+                    "La acción pudo comenzar; inspeccioná el navegador antes de repetirla. {reason}"
+                ),
+                other => other.to_string(),
+            })?;
+        // What the broker allows one answer to an external client.
+        if serde_json::to_vec(&result.content).map_or(true, |content| content.len() > MAX_RESPONSE_BYTES) {
+            return Err("Respuesta MCP de navegador demasiado extensa".into());
+        }
+        if result.is_error {
+            return Err(result
+                .content
+                .first()
+                .and_then(|block| block["text"].as_str())
+                .unwrap_or("Falló la operación de navegador")
+                .to_owned());
+        }
+        // The native runner's rule for a tool image a model may be given.
+        // One that does not fit is left out, and the result says why.
+        let mut content = result.content;
+        for block in content.iter_mut().filter(|block| block["type"] == "image") {
+            let image = base64::engine::general_purpose::STANDARD
+                .decode(block["data"].as_str().unwrap_or_default())
+                .unwrap_or_default();
+            if let Err(why) = openide_core::tool_image_for_model(openide_core::UserImageMime::Png, &image) {
+                *block = json!({"type":"text","text":format!("[image omitted (image/png, {} bytes): {why}]", image.len())});
+            }
+        }
+        Ok(content)
+    }
     /// The accessible tree the agent last read: what its refs name.
     pub(crate) fn last_snapshot(&self) -> Arc<str> {
         self.handle
@@ -2681,7 +2723,7 @@ pub(crate) fn browser_mcp_tools() -> Vec<McpTool> {
     tools
 }
 
-fn browser_tool_command(name: &str, arguments: Value) -> Result<BrowserCommand, String> {
+pub(crate) fn browser_tool_command(name: &str, arguments: Value) -> Result<BrowserCommand, String> {
     let mut object = arguments
         .as_object()
         .cloned()

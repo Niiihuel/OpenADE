@@ -13,8 +13,7 @@ fn tool_row(
         title,
         description,
         state.external_agents.allows(tool),
-        state.external_agents.enabled()
-            && !matches!(tool, ExternalTool::Browser | ExternalTool::Subagents),
+        state.external_agents.enabled() && tool != ExternalTool::Subagents,
         compact,
     )
 }
@@ -27,7 +26,7 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
     };
     vec![
         settings_parts::feedback_banner(
-            "Funciona con Claude Code y Codex iniciados desde el menú de perfiles de la terminal. Navegador y subagentes todavía no se ofrecen: sus interruptores se guardan para cuando estén disponibles.",
+            "Funciona con Claude Code y Codex iniciados desde el menú de perfiles de la terminal. Los subagentes todavía no se ofrecen: su interruptor se guarda para cuando estén disponibles.",
             FeedbackTone::Info,
             None,
             compact,
@@ -87,7 +86,7 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
                     state,
                     ExternalTool::Browser,
                     "Navegador",
-                    "Todavía no disponible. Controlará el navegador integrado que ves en el panel lateral.",
+                    "Cada CLI maneja un navegador propio, que se abre en una pestaña del panel lateral con su primera llamada y se cierra con su terminal. No comparte páginas ni sesiones iniciadas con el navegador de una conversación.",
                     compact,
                 ),
                 tool_row(
@@ -128,7 +127,7 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
                 ),
                 settings_parts::settings_row(
                     "Reglas de ejecución",
-                    "Las herramientas ofrecidas hoy solo leen. Cuando alguna ejecute comandos, las reglas que los deniegan valdrán también para las llamadas externas.",
+                    "Ninguna herramienta ofrecida hoy ejecuta comandos. Cuando alguna lo haga, las reglas que los deniegan valdrán también para las llamadas externas.",
                     outline("settings_page:commands", "Ver reglas").icon(Icon::ArrowRight).render(),
                     compact,
                 ),
