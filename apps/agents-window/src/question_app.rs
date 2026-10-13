@@ -5,6 +5,9 @@
 use super::*;
 use crate::question_ui::{self, QuestionDraft};
 
+/// Marks the attachment worker's key of a paste that belongs to a question.
+const QUESTION_PASTE: &str = "question:";
+
 impl AgentsWindow {
     fn pending_question(&self, request_id: &str) -> Option<Vec<question_ui::Question>> {
         self.view
@@ -23,11 +26,7 @@ impl AgentsWindow {
     pub(super) fn apply_question_action(&mut self, action: &UiAction, ctx: &egui::Context) -> bool {
         match action {
             UiAction::InputChanged { id, value } => {
-                let Some((request_id, question)) = id
-                    .strip_prefix("question_text:")
-                    .and_then(|rest| rest.rsplit_once(':'))
-                    .and_then(|(request, question)| Some((request, question.parse().ok()?)))
-                else {
+                let Some((request_id, question)) = question_ui::text_target(id) else {
                     return false;
                 };
                 if let Some(questions) = self.pending_question(request_id) {
@@ -57,11 +56,14 @@ impl AgentsWindow {
                 };
                 let draft: &mut QuestionDraft =
                     self.view.question_drafts.entry(request_id.clone()).or_default();
+                // The two numbers after the request: a question and an
+                // option of it, or an image attached to it.
+                let mut parts = target.split(':').skip(1).map(str::parse::<usize>);
+                let numbers = (parts.next(), parts.next());
+                let page = draft.page.min(questions.len().saturating_sub(1));
                 match verb {
                     "pick" => {
-                        let mut parts = target.split(':').skip(1).map(str::parse::<usize>);
-                        if let (Some(Ok(question)), Some(Ok(option))) = (parts.next(), parts.next())
-                        {
+                        if let (Some(Ok(question)), Some(Ok(option))) = numbers {
                             draft.pick(&questions, question, option);
                         }
                     }
@@ -70,10 +72,23 @@ impl AgentsWindow {
                     "send" => {
                         if draft.any_answer(questions.len()) {
                             let answer = question_ui::answer_json(&questions, draft);
-                            self.answer_question(&request_id, Some(answer));
+                            let images = draft.attached();
+                            self.answer_question(&request_id, Some((answer, images)));
                         }
                     }
                     "skip" => self.answer_question(&request_id, None),
+                    "detach" => {
+                        if let (Some(Ok(question)), Some(Ok(index))) = numbers {
+                            draft.detach(question, index);
+                            draft.image_error = None;
+                        }
+                    }
+                    "attach" => {
+                        // The composer's file picker, answering this question.
+                        self.open_composer_file_picker();
+                        self.question_attach_target = Some((request_id, page));
+                    }
+                    "paste" => self.request_question_paste(&request_id, page, None, ctx),
                     _ => return false,
                 }
             }
@@ -83,8 +98,110 @@ impl AgentsWindow {
         true
     }
 
-    /// `answer` is the user's answer; `None` is the user skipping the question.
-    fn answer_question(&mut self, request_id: &str, answer: Option<String>) {
+    /// Asks the composer's attachment worker for what the clipboard holds,
+    /// for this question: `hint` is a pasted list of files, none the image.
+    pub(super) fn request_question_paste(
+        &mut self,
+        request_id: &str,
+        question: usize,
+        hint: Option<String>,
+        ctx: &egui::Context,
+    ) {
+        if self.pending_question(request_id).is_none() {
+            return;
+        }
+        // The worker reads the workspace from the key and hands the key back;
+        // its second half names the question instead of a session.
+        let key = (
+            self.view.workspace.clone(),
+            Some(format!("{QUESTION_PASTE}{request_id}:{question}")),
+        );
+        let draft = self.view.question_drafts.entry(request_id.to_owned()).or_default();
+        let available = openide_core::MAX_TOOL_MEDIA_IMAGES
+            .saturating_sub(draft.images.iter().map(Vec::len).sum());
+        draft.image_error = if self.attachment_pastes_pending.contains(&key) {
+            Some("El pegado anterior todavía se está preparando".to_owned())
+        } else if available == 0 {
+            Some(format!(
+                "Máximo de {} imágenes por respuesta",
+                openide_core::MAX_TOOL_MEDIA_IMAGES
+            ))
+        } else if self
+            .attachment_worker
+            .as_ref()
+            .is_some_and(|worker| worker.paste(key.clone(), hint, available))
+        {
+            self.attachment_pastes_pending.insert(key);
+            ctx.request_repaint_after(Duration::from_millis(50));
+            None
+        } else {
+            Some("No se pudo iniciar el pegado de la imagen".to_owned())
+        };
+    }
+
+    /// What the worker pasted for a question, if `owner` names one.
+    pub(super) fn attach_pasted_question_images(
+        &mut self,
+        workspace: &str,
+        owner: Option<&str>,
+        result: &Result<Vec<PathBuf>, String>,
+    ) -> bool {
+        let Some((request_id, question)) = owner
+            .and_then(|owner| owner.strip_prefix(QUESTION_PASTE))
+            .and_then(|target| target.rsplit_once(':'))
+            .and_then(|(request_id, question)| Some((request_id, question.parse().ok()?)))
+        else {
+            return false;
+        };
+        match result {
+            Ok(paths) => {
+                for path in paths {
+                    self.attach_question_image(request_id, question, Path::new(workspace), path);
+                }
+            }
+            Err(error) => {
+                if let Some(draft) = self.view.question_drafts.get_mut(request_id) {
+                    draft.image_error = Some(error.clone());
+                }
+            }
+        }
+        true
+    }
+
+    /// Reads `path` as the composer reads an image it sends, refuses what a
+    /// model would not be given, and attaches it to the question.
+    pub(super) fn attach_question_image(
+        &mut self,
+        request_id: &str,
+        question: usize,
+        workspace: &Path,
+        path: &Path,
+    ) {
+        let Some(questions) = self.pending_question(request_id) else {
+            return;
+        };
+        let image = composer_attachment_for_path(workspace, path).and_then(|attachment| {
+            let image = native_image_from_attachment(workspace, &attachment)?;
+            if !image.verified_bytes().is_ok_and(|bytes| {
+                openide_core::tool_image_for_model(image.mime_type, &bytes).is_ok()
+            }) {
+                return Err(
+                    "La imagen no se puede enviar a un modelo: supera 3,75 MB u 8000 px por lado, o no se pudo medir"
+                        .to_owned(),
+                );
+            }
+            question_ui::QuestionImage::new(attachment.label, image)
+                .ok_or_else(|| "La imagen no está disponible".to_owned())
+        });
+        let draft = self.view.question_drafts.entry(request_id.to_owned()).or_default();
+        draft.image_error = image
+            .and_then(|image| draft.attach(questions.len(), question, image))
+            .err();
+    }
+
+    /// `answer` is the user's answer with the images attached to it; `None`
+    /// is the user skipping the question.
+    fn answer_question(&mut self, request_id: &str, answer: Option<(String, Vec<UserImage>)>) {
         let (Some(session_id), Some(store)) =
             (self.view.selected_session.clone(), self.store.clone())
         else {
@@ -92,7 +209,9 @@ impl AgentsWindow {
             return;
         };
         let recorded = match &answer {
-            Some(answer) => store.record_user_answer(&session_id, request_id, answer),
+            Some((answer, images)) => {
+                store.record_user_answer_with_images(&session_id, request_id, answer, images)
+            }
             None => {
                 store.record_permission_decision(&session_id, request_id, PermissionDecision::Deny)
             }

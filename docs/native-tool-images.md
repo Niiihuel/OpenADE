@@ -9,6 +9,15 @@ texto en su lugar.
 Sólo se interpretan resultados de herramientas `mcp__…` con la forma de MCP
 (`{"content":[…]}`); la salida de las herramientas locales nunca se analiza.
 
+La otra fuente son las imágenes que el usuario adjunta a su respuesta a una
+pregunta del agente (`ask_user`). No salen del texto del resultado: la
+aplicación las registra con la respuesta en el journal de decisiones
+(`answer_images`) y el motor las pasa al evento `ToolResultMedia` de esa
+llamada, todas marcadas para el modelo. Desde ahí siguen el mismo camino, con
+los mismos límites y la misma línea de texto donde el modelo no lee imágenes.
+Una imagen que un modelo no recibiría (más de 3,75 MB u 8000 px por lado, o sin
+medida legible) se rechaza al adjuntarla en vez de registrarse.
+
 ## Qué recibe cada proveedor
 
 | Protocolo (rutas) | Dónde viaja la imagen | Qué documenta la API | Sin lectura de imágenes |

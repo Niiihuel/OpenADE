@@ -15,7 +15,8 @@ mod store;
 mod tool_media;
 
 pub use tool_media::{
-    model_tool_images, tool_image_for_model, validate_tool_result_media, ToolResultMediaError, MAX_TOOL_MEDIA_BYTES,
+    model_tool_images, tool_carries_media, tool_image_for_model, validate_answer_images,
+    validate_tool_result_media, ToolResultMediaError, ASK_USER_TOOL, MAX_TOOL_MEDIA_BYTES,
     MAX_TOOL_MEDIA_IMAGES, MAX_TOOL_MEDIA_NOTICES, MAX_TOOL_MEDIA_NOTICE_BYTES,
     MAX_TOOL_MEDIA_TEXT_BYTES, MAX_TOOL_MODEL_IMAGE_BYTES, MAX_TOOL_MODEL_IMAGE_SIDE,
 };

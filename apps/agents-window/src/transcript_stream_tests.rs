@@ -1277,6 +1277,75 @@ fn typed_media_rejects_orphan_late_duplicate_and_over_budget_payloads_before_ret
 }
 
 #[test]
+fn the_images_of_an_answer_belong_to_the_question_they_answered() {
+    let image = media_image();
+    let ask = ToolCall {
+        id: "ask".into(),
+        name: openide_harness::ASK_USER_TOOL.into(),
+        arguments: json!({"questions": []}),
+    };
+    let kinds = vec![
+        AgentEventKind::TurnStarted { prompt: "Ask".into() },
+        AgentEventKind::PermissionRequested {
+            request_id: "request".into(),
+            tool_call: ask.clone(),
+        },
+        AgentEventKind::PermissionResolved {
+            request_id: "request".into(),
+            tool_call_id: "ask".into(),
+            resolution: PermissionResolution::Allowed,
+        },
+        AgentEventKind::ToolStarted { tool_call: ask },
+        AgentEventKind::ToolResultMedia {
+            tool_call_id: "ask".into(),
+            images: vec![image.clone()],
+            text: String::new(),
+            notices: vec![],
+            model_images: vec![0],
+        },
+        AgentEventKind::ToolFinished {
+            tool_call_id: "ask".into(),
+            output: "{\"answered_by\":\"user\",\"answers\":[]}".into(),
+            is_error: false,
+        },
+    ];
+    let mut live = TranscriptProjection::new();
+    for kind in &kinds {
+        live.apply_kind(kind);
+    }
+    let events = kinds
+        .into_iter()
+        .enumerate()
+        .map(|(index, kind)| AgentEvent::new("session", index as u64 + 1, kind))
+        .collect::<Vec<_>>();
+    // Live and after reopening the conversation: the answered row, then its images.
+    for items in [live.items(), TranscriptProjection::from_events(&events).items()] {
+        let at = items
+            .iter()
+            .position(|item| matches!(item, TranscriptItem::Tool { id, .. } if id == "ask"))
+            .unwrap();
+        assert!(
+            matches!(
+                &items[at],
+                TranscriptItem::Tool { output: Some(_), activity: ActivityStatus::Completed, .. }
+            ),
+            "{:?}",
+            items[at]
+        );
+        assert!(
+            matches!(
+                items.get(at + 1),
+                Some(TranscriptItem::ToolMedia { tool_call_id, images, .. })
+                    if tool_call_id == "ask"
+                        && images[0].raster.as_ref().unwrap().sha256() == image.sha256
+            ),
+            "{:?}",
+            items.get(at + 1).map(std::mem::discriminant)
+        );
+    }
+}
+
+#[test]
 fn typed_media_snapshot_shares_encoded_pixels_and_keeps_existing_allocations_during_other_deltas() {
     let image = media_image();
     let mut projection = TranscriptProjection::new();

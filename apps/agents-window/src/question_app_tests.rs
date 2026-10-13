@@ -170,6 +170,144 @@ fn a_question_is_not_answerable_through_the_permission_card_actions() {
     let _ = &mut app;
 }
 
+/// A PNG of this size as far as its header says, padded to `len` bytes.
+fn png(width: u32, height: u32, len: usize) -> Vec<u8> {
+    let mut bytes = [
+        b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".as_slice(),
+        &width.to_be_bytes(),
+        &height.to_be_bytes(),
+    ]
+    .concat();
+    bytes.resize(len.max(bytes.len()), 0);
+    bytes
+}
+
+fn draft_images(app: &AgentsWindow) -> Vec<Vec<String>> {
+    app.view.question_drafts.get(REQUEST).map_or_else(Vec::new, |draft| {
+        draft
+            .images
+            .iter()
+            .map(|images| images.iter().map(|image| image.label.clone()).collect())
+            .collect()
+    })
+}
+
+#[test]
+fn images_chosen_or_pasted_for_an_answer_are_recorded_with_it() {
+    let (root, mut app, owner) = fixture();
+    let workspace = PathBuf::from(&app.view.workspace);
+    let ctx = egui::Context::default();
+    std::fs::write(workspace.join("mockup.png"), png(1280, 800, 0)).unwrap();
+    // Outside the project, as a file copied in the file manager is.
+    let outside = root.path().join("captura.png");
+    std::fs::write(&outside, png(640, 480, 0)).unwrap();
+
+    // Chosen with the composer's file picker, for the question on screen.
+    press(&mut app, &question_ui::action(REQUEST, "attach"));
+    assert!(app.view.show_command_center && app.command_center_attaches_file);
+    assert_eq!(app.view.command_scope, Scope::Files);
+    app.view.command_results = vec![command_center::ResultItem {
+        target: Target::OpenFile(PathBuf::from("mockup.png")),
+        section: Scope::Files,
+        title: "mockup.png".into(),
+        subtitle: String::new(),
+    }];
+    app.activate_command_result(0);
+    assert!(!app.view.show_command_center);
+    assert_eq!(draft_images(&app)[0], ["mockup.png"]);
+    assert!(app.view.composer_attachments.is_empty(), "not the composer's");
+    // The picker opened for anything else attaches nothing to the question.
+    app.open_command_center();
+    assert!(app.question_attach_target.is_none());
+    app.view.show_command_center = false;
+
+    // Pasted as a file: the composer's worker imports it into the project.
+    press(&mut app, &question_ui::action(REQUEST, "next"));
+    let url = reqwest::Url::from_file_path(&outside).unwrap().to_string();
+    app.request_question_paste(REQUEST, 1, Some(url), &ctx);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !app.attachment_pastes_pending.is_empty() {
+        assert!(Instant::now() < deadline, "the paste never came back");
+        app.poll_composer_attachments(&ctx);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(draft_images(&app), [vec!["mockup.png"], vec!["captura.png"]]);
+    assert!(app.view.composer_attachments.is_empty() && app.attachment_drafts.is_empty());
+
+    // Removed from its card, then put back.
+    press(&mut app, &question_ui::detach_action(REQUEST, 1, 0));
+    assert!(draft_images(&app)[1].is_empty());
+    app.attach_question_image(REQUEST, 1, &workspace, &outside);
+    assert!(draft_images(&app)[1].is_empty(), "outside the project it is not read");
+    assert!(app.view.question_drafts[REQUEST].image_error.is_some());
+    std::fs::write(workspace.join("captura.png"), png(640, 480, 0)).unwrap();
+    app.attach_question_image(REQUEST, 1, &workspace, Path::new("captura.png"));
+    assert!(app.view.question_drafts[REQUEST].image_error.is_none());
+
+    // Nothing picked and nothing written: the images are the answer.
+    press(&mut app, &question_ui::action(REQUEST, "send"));
+    let decisions = recorded(&app, &owner);
+    assert_eq!(decisions.len(), 1);
+    assert_eq!(decisions[0].decision, PermissionDecision::Allow);
+    let expected = [png(1280, 800, 0), png(640, 480, 0)]
+        .map(|bytes| UserImage::from_bytes(UserImageMime::Png, &bytes).unwrap());
+    assert_eq!(decisions[0].answer_images, expected);
+    let answer: serde_json::Value =
+        serde_json::from_str(decisions[0].answer.as_deref().unwrap()).unwrap();
+    assert_eq!(answer["answers"][0]["attached_images"], serde_json::json!([1]));
+    assert_eq!(answer["answers"][1]["attached_images"], serde_json::json!([2]));
+    assert!(app.view.pending_permissions.is_empty());
+    assert!(app.view.question_drafts.is_empty());
+}
+
+#[test]
+fn an_image_a_model_would_not_be_given_is_refused_on_the_card() {
+    let (_root, mut app, owner) = fixture();
+    let workspace = PathBuf::from(&app.view.workspace);
+    let refused = [
+        ("pesada.png", png(64, 64, openide_core::MAX_TOOL_MODEL_IMAGE_BYTES + 1), "3,75 MB"),
+        ("alta.png", png(64, openide_core::MAX_TOOL_MODEL_IMAGE_SIDE + 1, 0), "8000 px"),
+        ("sin-medida.png", b"\x89PNG\r\n\x1a\nfixture".to_vec(), "no se pudo medir"),
+        ("enorme.png", png(64, 64, openide_core::MAX_USER_IMAGE_BYTES + 1), "8 MiB"),
+        ("falsa.png", b"not a png".to_vec(), "no válida"),
+        ("notas.md", b"# notas".to_vec(), "no es una imagen"),
+    ];
+    for (name, bytes, why) in refused {
+        std::fs::write(workspace.join(name), bytes).unwrap();
+        app.attach_question_image(REQUEST, 0, &workspace, Path::new(name));
+        let draft = &app.view.question_drafts[REQUEST];
+        assert!(draft.images.iter().all(Vec::is_empty), "{name}");
+        assert!(draft.image_error.as_deref().unwrap().contains(why), "{name}: {:?}", draft.image_error);
+    }
+    // The card says why, and the question still cannot be sent empty.
+    let size = Size::new(900.0, 720.0);
+    let mut tree = UiTree::new(crate::view::build_window_view(&app.view, size.width, size.height));
+    tree.set_reduced_motion(true);
+    let frame = tree.layout(size);
+    assert!(frame
+        .text_layouts()
+        .iter()
+        .any(|layout| layout.source.contains("no es una imagen")));
+
+    // No more than a tool result keeps: the fifth is refused.
+    for side in 1..=5 {
+        let name = format!("{side}.png");
+        std::fs::write(workspace.join(&name), png(side, side, 0)).unwrap();
+        app.attach_question_image(REQUEST, 0, &workspace, Path::new(&name));
+    }
+    let draft = &app.view.question_drafts[REQUEST];
+    assert_eq!(draft.images[0].len(), 4);
+    assert!(draft.image_error.as_deref().unwrap().contains("Máximo de 4"));
+    // A paste asks the worker for nothing once the answer is full.
+    app.request_question_paste(REQUEST, 0, None, &egui::Context::default());
+    assert!(app.attachment_pastes_pending.is_empty());
+    assert!(recorded(&app, &owner).is_empty());
+
+    // An image for a question that is no longer open goes nowhere.
+    app.attach_question_image("gone", 0, &workspace, Path::new("1.png"));
+    assert!(!app.view.question_drafts.contains_key("gone"));
+}
+
 fn propose(app: &mut AgentsWindow, mode: &str) {
     app.view.pending_permissions.clear();
     app.view.pending_permissions.push(PermissionView {

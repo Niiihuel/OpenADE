@@ -1474,6 +1474,9 @@ pub struct AgentsWindow {
     navigation: NavigationHistory,
     command_tree: UiTree,
     command_center_attaches_file: bool,
+    /// The question, by request and position, the file picker is choosing an
+    /// image for instead of a composer attachment.
+    question_attach_target: Option<(String, usize)>,
     command_focus_pending: bool,
     prompt_focus_pending: bool,
     github_sign_in_focus_pending: Option<&'static str>,
@@ -7108,6 +7111,7 @@ impl AgentsWindow {
             navigation,
             command_tree,
             command_center_attaches_file: false,
+            question_attach_target: None,
             command_focus_pending: false,
             prompt_focus_pending: false,
             github_sign_in_focus_pending: None,
@@ -15518,6 +15522,7 @@ impl AgentsWindow {
         self.view.ide.sessions_open = false;
         self.close_composer_floating_controls();
         self.command_center_attaches_file = false;
+        self.question_attach_target = None;
         self.view.composer_add_menu_open = false;
         self.view.composer_project_menu_open = false;
         self.view.show_command_center = true;
@@ -15687,6 +15692,9 @@ impl AgentsWindow {
                 }
                 crate::composer_attachments::Response::Pasted { key, result } => {
                     self.attachment_pastes_pending.remove(&key);
+                    if self.attach_pasted_question_images(&key.0, key.1.as_deref(), &result) {
+                        continue;
+                    }
                     match result {
                         Ok(paths) if key == self.draft_key() => {
                             for path in paths {
@@ -15853,15 +15861,31 @@ impl AgentsWindow {
     }
 
     fn handle_composer_clipboard_input(&mut self, ctx: &egui::Context, modal_open: bool) -> bool {
+        // A paste into a question's answer field attaches to that answer,
+        // also while the turn that asked is running.
+        let question = self
+            .tree
+            .focused_id()
+            .and_then(crate::question_ui::text_target)
+            .map(|(request_id, question)| (request_id.to_owned(), question));
         let allowed = !modal_open
             && self.pending_text_paste.is_none()
             && !self.tree.context_menu_open()
             && !self.view.show_command_center
             && !self.view.show_settings
             && self.view.main_page == MainPage::Workspace
-            && !self.view.running
-            && !self.view.background_run_selected
-            && self.tree.focused_id() == Some("prompt");
+            && (question.is_some()
+                || (!self.view.running
+                    && !self.view.background_run_selected
+                    && self.tree.focused_id() == Some("prompt")));
+        let paste = |app: &mut Self, hint: Option<String>| match &question {
+            Some((request_id, question)) => {
+                app.request_question_paste(request_id, *question, hint, ctx)
+            }
+            None => {
+                app.request_composer_attachment_paste(hint, ctx);
+            }
+        };
         let (pastes, released_v, command_held) = ctx.input(|input| {
             let pastes: Vec<_> = input
                 .events
@@ -15886,7 +15910,7 @@ impl AgentsWindow {
         if allowed {
             for text in &pastes {
                 if crate::composer_attachments::is_file_paste(text) {
-                    self.request_composer_attachment_paste(Some(text.clone()), ctx);
+                    paste(self, Some(text.clone()));
                     changed = true;
                     ctx.input_mut(|input| {
                         input.events.retain(
@@ -15902,7 +15926,7 @@ impl AgentsWindow {
             // event for an image. Its key-up event lets the host read images
             // without reading the clipboard for ordinary text pastes.
             if released_v == Some(true) && pastes.is_empty() && !self.keyboard_paste_handled {
-                self.request_composer_attachment_paste(None, ctx);
+                paste(self, None);
                 changed = true;
             }
         }
@@ -15923,6 +15947,7 @@ impl AgentsWindow {
         };
         self.view.show_command_center = false;
         let attach_file = std::mem::take(&mut self.command_center_attaches_file);
+        let question = self.question_attach_target.take();
         match target {
             Target::CompactContext => self.start_compact(),
             Target::ResumeTurn => self.start_resume(),
@@ -16005,7 +16030,13 @@ impl AgentsWindow {
             }
             Target::OpenFile(path) => {
                 if attach_file {
-                    self.attach_composer_file(&path);
+                    match question {
+                        Some((request_id, question)) => {
+                            let workspace = PathBuf::from(&self.view.workspace);
+                            self.attach_question_image(&request_id, question, &workspace, &path);
+                        }
+                        None => self.attach_composer_file(&path),
+                    }
                     return;
                 }
                 let workspace = Path::new(&self.view.workspace);

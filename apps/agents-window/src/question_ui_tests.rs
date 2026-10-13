@@ -153,16 +153,152 @@ fn the_finished_call_shows_what_the_user_answered() {
         {"header": "Pruebas", "skipped": true}
     ]})
     .to_string();
-    let text = texts(&frame(answered(&arguments(3), &output), 360.0));
+    let text = texts(&frame(answered(&arguments(3), &output, None, OWNER), 360.0));
     assert!(text.contains("Tu respuesta"));
     assert!(text.contains("SQLite (recomendado)"));
     assert!(text.contains("Linux · macOS · FreeBSD después"));
     assert!(text.contains("Omitida"));
+    assert!(!text.contains("adjunta"));
     let skipped = texts(&frame(
-        answered(&arguments(1), "The user skipped this question without answering."),
+        answered(
+            &arguments(1),
+            "The user skipped this question without answering.",
+            None,
+            OWNER,
+        ),
         360.0,
     ));
     assert!(skipped.contains("Pregunta omitida"));
+}
+
+/// A PNG of this size as far as its header says, padded to `len` bytes.
+fn png(width: u32, height: u32, len: usize) -> UserImage {
+    let mut bytes = [
+        b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".as_slice(),
+        &width.to_be_bytes(),
+        &height.to_be_bytes(),
+    ]
+    .concat();
+    bytes.resize(len.max(bytes.len()), 0);
+    UserImage::from_bytes(UserImageMime::Png, &bytes).unwrap()
+}
+
+fn attached(label: &str, image: UserImage) -> QuestionImage {
+    QuestionImage::new(label, image).unwrap()
+}
+
+#[test]
+fn images_attach_to_a_question_within_one_results_limits_and_are_its_answer() {
+    let questions = parse(&arguments(2));
+    let mut draft = QuestionDraft::default();
+    assert!(!draft.any_answer(2));
+    let images = [png(640, 480, 0), png(800, 600, 0), png(320, 200, 0)];
+    draft.attach(2, 1, attached("b.png", images[1].clone())).unwrap();
+    draft.attach(2, 0, attached("a.png", images[0].clone())).unwrap();
+    draft.attach(2, 1, attached("c.png", images[2].clone())).unwrap();
+    // Only images, and the questions are answered.
+    assert!(draft.any_answer(2));
+    assert!(draft
+        .attach(2, 0, attached("again.png", images[0].clone()))
+        .unwrap_err()
+        .contains("ya está adjunta"));
+    assert!(draft.attach(2, 9, attached("d.png", png(1, 1, 0))).is_err());
+
+    // The result's images in the order the answer numbers them.
+    assert_eq!(
+        draft.attached(),
+        vec![images[0].clone(), images[1].clone(), images[2].clone()]
+    );
+    let answer: Value = serde_json::from_str(&answer_json(&questions, &draft)).unwrap();
+    assert_eq!(answer["answers"][0]["selected"], json!([]));
+    assert_eq!(answer["answers"][0]["attached_images"], json!([1]));
+    assert_eq!(answer["answers"][1]["attached_images"], json!([2, 3]));
+    assert!(answer["answers"][0].get("skipped").is_none());
+    assert!(answer["attached_images_note"].is_string());
+    // Without images the answer is written as it always was.
+    let plain: Value =
+        serde_json::from_str(&answer_json(&questions, &QuestionDraft::default())).unwrap();
+    assert!(plain.get("attached_images_note").is_none());
+
+    // Four images and 8 MiB in all, as any tool result.
+    draft.attach(2, 0, attached("d.png", png(64, 64, 0))).unwrap();
+    assert!(draft
+        .attach(2, 0, attached("e.png", png(65, 65, 0)))
+        .unwrap_err()
+        .contains("Máximo de 4"));
+    let mut heavy = QuestionDraft::default();
+    for side in [1, 2] {
+        heavy.attach(1, 0, attached("big.png", png(side, side, 3_700_000))).unwrap();
+    }
+    assert!(heavy
+        .attach(1, 0, attached("big.png", png(3, 3, 3_700_000)))
+        .unwrap_err()
+        .contains("8 MiB"));
+    assert_eq!(heavy.images[0].len(), 2);
+
+    draft.detach(1, 0);
+    draft.detach(1, 7);
+    assert_eq!(draft.attached(), vec![images[0].clone(), png(64, 64, 0), images[2].clone()]);
+}
+
+#[test]
+fn the_card_shows_attached_images_with_their_controls_and_the_answered_card_keeps_them() {
+    for width in [360.0, 900.0] {
+        let mut state = state(2);
+        let has = |frame: &Frame, id: String| frame.regions.iter().any(|region| region.id == id);
+        let empty = frame(card(&state.pending_permissions[0], &state, width < 470.0), width);
+        assert!(has(&empty, action(REQUEST, "attach")) && has(&empty, action(REQUEST, "paste")));
+        assert!(!has(&empty, detach_action(REQUEST, 0, 0)));
+
+        let draft = state.question_drafts.entry(REQUEST.into()).or_default();
+        draft.attach(2, 0, attached("captura.png", png(640, 480, 0))).unwrap();
+        draft.attach(2, 0, attached("diseño.png", png(800, 600, 0))).unwrap();
+        draft.attach(2, 1, attached("otra.png", png(320, 200, 0))).unwrap();
+        draft.image_error = Some("La imagen ya está adjunta".into());
+        let first = frame(card(&state.pending_permissions[0], &state, width < 470.0), width);
+        assert!(has(&first, detach_action(REQUEST, 0, 0)));
+        assert!(has(&first, detach_action(REQUEST, 0, 1)));
+        // The other question's image is on its own page.
+        assert!(!has(&first, detach_action(REQUEST, 1, 0)));
+        assert!(texts(&first).contains("La imagen ya está adjunta"));
+        for region in first.regions.iter().filter(|region| !region.id.starts_with("question_detach")) {
+            assert!(region.rect.x >= 0.0 && region.rect.x + region.rect.width <= width + 0.5);
+        }
+        state.question_drafts.get_mut(REQUEST).unwrap().turn(2, true);
+        let second = frame(card(&state.pending_permissions[0], &state, width < 470.0), width);
+        assert!(has(&second, detach_action(REQUEST, 1, 0)));
+        // Images alone are an answer: it can be sent.
+        assert!(has(&second, action(REQUEST, "send")));
+    }
+
+    // Answered: the count per question, and the result's images to open.
+    let output = json!({"answered_by": "user", "answers": [
+        {"header": "Almacenamiento", "selected": [], "attached_images": [1, 2]},
+        {"header": "Plataformas", "selected": ["Linux"], "attached_images": [3]}
+    ]})
+    .to_string();
+    let media = TranscriptItem::ToolMedia {
+        tool_call_id: "call".into(),
+        images: [png(640, 480, 0), png(800, 600, 0), png(320, 200, 0)]
+            .into_iter()
+            .map(|image| crate::transcript::TranscriptImage {
+                raster: Some(attached("x", image).raster),
+                alt: "Imagen".into(),
+            })
+            .collect(),
+        text: String::new(),
+        notices: vec![],
+    };
+    let done = frame(answered(&arguments(2), &output, Some(&media), OWNER), 360.0);
+    let text = texts(&done);
+    assert!(text.contains("2 imágenes adjuntas") && text.contains("Linux · 1 imagen adjunta"));
+    let opened = done
+        .regions
+        .iter()
+        .filter(|region| region.id.starts_with("tool_image:"))
+        .map(|region| region.id.as_str())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(opened.len(), 3, "each image opens in the viewer");
 }
 
 fn preview(arguments: &str, status: ModelStreamStatus) -> TranscriptItem {
@@ -308,6 +444,64 @@ fn export_question_card_visual_review() {
             ),
         ];
         shots.push(("question-skipped", skipped));
+
+        // Real pictures: the export paints them.
+        let picture = |width: u32, height: u32, tint: [u8; 3]| {
+            let pixels = image::RgbImage::from_fn(width, height, |x, y| {
+                let shade = ((x + y) * 160 / (width + height)) as u8;
+                image::Rgb(tint.map(|channel| channel.saturating_sub(shade)))
+            });
+            let mut encoded = std::io::Cursor::new(Vec::new());
+            pixels.write_to(&mut encoded, image::ImageFormat::Png).unwrap();
+            UserImage::from_bytes(UserImageMime::Png, &encoded.into_inner()).unwrap()
+        };
+        let pictures = [picture(640, 400, [70, 130, 230]), picture(400, 640, [230, 140, 70])];
+
+        for (name, error) in [
+            ("question-pending-images", None),
+            ("question-pending-image-refused", Some("Máximo de 4 imágenes por respuesta")),
+        ] {
+            let mut with_images = state(3);
+            with_images.running = true;
+            with_images.transcript =
+                vec![user.clone(), tool(ActivityStatus::WaitingPermission, None)];
+            let draft = with_images.question_drafts.entry(REQUEST.into()).or_default();
+            draft.pick(&parse(&arguments(3)), 0, 0);
+            draft.attach(3, 0, attached("captura.png", pictures[0].clone())).unwrap();
+            draft.attach(3, 0, attached("diseño.png", pictures[1].clone())).unwrap();
+            draft.image_error = error.map(str::to_owned);
+            shots.push((name, with_images));
+        }
+
+        let mut done_images = crate::view::tests::empty_state();
+        done_images.selected_session = Some(OWNER.into());
+        done_images.transcript = vec![
+            user.clone(),
+            tool(
+                ActivityStatus::Completed,
+                Some(
+                    json!({"answered_by": "user", "answers": [
+                        {"header": "Almacenamiento", "selected": ["SQLite (recomendado)"], "attached_images": [1, 2]},
+                        {"header": "Plataformas", "selected": ["Linux"]},
+                        {"header": "Pruebas", "skipped": true}
+                    ]})
+                    .to_string(),
+                ),
+            ),
+            TranscriptItem::ToolMedia {
+                tool_call_id: "call".into(),
+                images: pictures
+                    .iter()
+                    .map(|image| crate::transcript::TranscriptImage {
+                        raster: Some(attached("x", image.clone()).raster),
+                        alt: "Imagen de la respuesta".into(),
+                    })
+                    .collect(),
+                text: String::new(),
+                notices: vec![],
+            },
+        ];
+        shots.push(("question-answered-images", done_images));
 
         // After a restart the turn is interrupted: the recovery card offers
         // to resume, and resuming brings the same question back.

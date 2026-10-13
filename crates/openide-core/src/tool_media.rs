@@ -35,6 +35,28 @@ pub fn tool_image_for_model(
     }
 }
 
+/// The built-in tool that asks the user: the images attached to the answer
+/// are that tool result's images.
+pub const ASK_USER_TOOL: &str = "ask_user";
+
+/// Whether a result of this tool may carry `ToolResultMedia`: the image
+/// blocks of an MCP tool, or the images of the user's answer to a question.
+pub fn tool_carries_media(name: &str) -> bool {
+    name.starts_with("mcp__") || name == ASK_USER_TOOL
+}
+
+/// Whether these can be the images of the user's answer to a question. They
+/// travel as that tool result's images, so they obey a result's budget, and
+/// an image no model would be given is refused instead of recorded.
+pub fn validate_answer_images(images: &[UserImage]) -> Result<(), ToolResultMediaError> {
+    validate_tool_result_media(images, "", &[])?;
+    for image in images {
+        tool_image_for_model(image.mime_type, &image.verified_bytes()?)
+            .map_err(|_| ToolResultMediaError::Limit)?;
+    }
+    Ok(())
+}
+
 /// The images of a `ToolResultMedia` event that its model-facing result
 /// carries. None when the positions are not ascending positions of `images`.
 pub fn model_tool_images(images: &[UserImage], model_images: &[u8]) -> Option<Vec<UserImage>> {
@@ -114,6 +136,39 @@ mod tests {
         assert_eq!(model_tool_images(&images, &[2]), None);
         // The limit is what base64 turns into 5 MB.
         assert_eq!(MAX_TOOL_MODEL_IMAGE_BYTES.div_ceil(3) * 4, 5_000_000);
+    }
+
+    #[test]
+    fn answer_images_obey_a_results_budget_and_what_a_model_accepts() {
+        let image = |width, height, len| {
+            UserImage::from_bytes(UserImageMime::Png, &png(width, height, len)).unwrap()
+        };
+        assert!(validate_answer_images(&[]).is_ok());
+        assert!(validate_answer_images(&vec![image(64, 64, 0); MAX_TOOL_MEDIA_IMAGES]).is_ok());
+        assert_eq!(
+            validate_answer_images(&vec![image(64, 64, 0); MAX_TOOL_MEDIA_IMAGES + 1]),
+            Err(ToolResultMediaError::Limit)
+        );
+        // Each within what a model accepts, together over a result's 8 MiB.
+        assert_eq!(
+            validate_answer_images(&vec![image(64, 64, MAX_TOOL_MODEL_IMAGE_BYTES); 3]),
+            Err(ToolResultMediaError::Limit)
+        );
+        for refused in [
+            image(64, 64, MAX_TOOL_MODEL_IMAGE_BYTES + 1),
+            image(64, MAX_TOOL_MODEL_IMAGE_SIDE + 1, 0),
+            UserImage::from_bytes(UserImageMime::Png, b"\x89PNG\r\n\x1a\nfixture").unwrap(),
+        ] {
+            assert_eq!(validate_answer_images(&[refused]), Err(ToolResultMediaError::Limit));
+        }
+        let mut tampered = image(64, 64, 0);
+        tampered.sha256 = "0".repeat(64);
+        assert!(matches!(
+            validate_answer_images(&[tampered]),
+            Err(ToolResultMediaError::Image(_))
+        ));
+        assert!(tool_carries_media("mcp__server__shot") && tool_carries_media(ASK_USER_TOOL));
+        assert!(!tool_carries_media("read_file") && !tool_carries_media("switch_mode"));
     }
 
     #[test]

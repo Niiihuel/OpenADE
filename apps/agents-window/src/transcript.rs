@@ -1876,12 +1876,14 @@ impl TranscriptProjection {
         let Some(tool_index) = self.tool_rows.get(call_id).copied() else {
             return false;
         };
-        // One typed observation belongs to one confirmed, executing MCP call.
-        // A duplicate, late or orphan payload cannot replace the captured result.
+        // One typed observation belongs to one confirmed, executing call of
+        // a tool whose result carries media: an MCP tool, or a question the
+        // user answered with images. A duplicate, late or orphan payload
+        // cannot replace the captured result.
         if self.tool_media_rows.contains_key(call_id)
             || !matches!(&self.items[tool_index], TranscriptItem::Tool {
                 name, output: None, activity: ActivityStatus::Running, ..
-            } if name.starts_with("mcp__"))
+            } if openide_core::tool_carries_media(name))
             || validate_tool_result_media(images, text, notices).is_err()
         {
             return false;

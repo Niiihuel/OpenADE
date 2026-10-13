@@ -1181,7 +1181,12 @@ pub(crate) fn tool_line_with_output(
             }
             (ActivityStatus::Completed, Some(output)) if !*is_error => {
                 return if name == crate::question_ui::TOOL {
-                    crate::question_ui::answered(arguments, output)
+                    crate::question_ui::answered(
+                        arguments,
+                        output,
+                        media,
+                        state.selected_session.as_deref().unwrap_or("draft"),
+                    )
                 } else {
                     crate::mode_proposal_ui::resolved(arguments, output)
                 };
