@@ -128,6 +128,27 @@ impl Default for BrowserSnapshot {
     }
 }
 
+/// A key the agent holds with a click, named as Playwright names it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) enum ClickModifier {
+    Alt,
+    Control,
+    Meta,
+    Shift,
+}
+
+fn click_modifiers(held: &[ClickModifier]) -> u8 {
+    use openide_browser::modifiers::{ALT, CONTROL, META, SHIFT};
+    held.iter().fold(0, |bits, key| {
+        bits | match key {
+            ClickModifier::Alt => ALT,
+            ClickModifier::Control => CONTROL,
+            ClickModifier::Meta => META,
+            ClickModifier::Shift => SHIFT,
+        }
+    })
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum BrowserCommand {
@@ -140,6 +161,12 @@ pub(crate) enum BrowserCommand {
     Click {
         x: f64,
         y: f64,
+        #[serde(default)]
+        button: MouseButton,
+        #[serde(default, rename = "doubleClick")]
+        double_click: bool,
+        #[serde(default)]
+        modifiers: Vec<ClickModifier>,
     },
     /// Pointer input from the window, in the same CSS pixels as `Click`.
     /// `modifiers` are the keys held with it (`openide_browser::modifiers`):
@@ -173,6 +200,12 @@ pub(crate) enum BrowserCommand {
         name: Option<String>,
         #[serde(rename = "ref")]
         reference: Option<String>,
+        #[serde(default)]
+        button: MouseButton,
+        #[serde(default, rename = "doubleClick")]
+        double_click: bool,
+        #[serde(default)]
+        modifiers: Vec<ClickModifier>,
     },
     Type {
         text: String,
@@ -314,7 +347,7 @@ impl BrowserCommand {
                     }
                 }
             }
-            Self::Click { x, y }
+            Self::Click { x, y, .. }
                 if !x.is_finite()
                     || !y.is_finite()
                     || *x < 0.0
@@ -434,6 +467,7 @@ impl BrowserCommand {
                 role,
                 name,
                 reference,
+                ..
             }
             | Self::Fill {
                 selector,
@@ -638,7 +672,7 @@ impl BrowserHandle {
             );
         }
         let quiet = command.quiet();
-        if let BrowserCommand::Click { x, y }
+        if let BrowserCommand::Click { x, y, .. }
         | BrowserCommand::PointerMove { x, y, .. }
         | BrowserCommand::PointerDown { x, y, .. }
         | BrowserCommand::PointerUp { x, y, .. } = &command
@@ -1420,7 +1454,15 @@ fn execute(
         Back => driver.back()?,
         Forward => driver.forward()?,
         Reload => driver.reload()?,
-        Click { x, y } => driver.click_at(*x, *y)?,
+        Click {
+            x,
+            y,
+            button,
+            double_click,
+            modifiers,
+        } => held(driver, click_modifiers(modifiers), |driver| {
+            driver.click_at_with(*x, *y, *button, 1 + u8::from(*double_click))
+        })?,
         // A move answers without page state: only its frames matter.
         PointerMove { x, y, modifiers } => {
             held(driver, *modifiers, |driver| driver.pointer_move(*x, *y))?;
@@ -1454,7 +1496,15 @@ fn execute(
             role,
             name,
             reference,
-        } => driver.click(&target(selector, role, name, reference)?)?,
+            button,
+            double_click,
+            modifiers,
+        } => {
+            let target = target(selector, role, name, reference)?;
+            held(driver, click_modifiers(modifiers), |driver| {
+                driver.click_with(&target, *button, 1 + u8::from(*double_click))
+            })?
+        }
         Type { text } => driver.type_text(text)?,
         Fill {
             selector,
@@ -2359,7 +2409,10 @@ pub(crate) fn browser_mcp_tools() -> Vec<McpTool> {
     let mut click = target.clone();
     click["x"] = json!({"type":"number","minimum":0,"maximum":1600});
     click["y"] = json!({"type":"number","minimum":0,"maximum":1200});
-    add("browser_click", "Click one element: a `ref` from the latest snapshot (preferred), an exact accessible `role` and `name`, or a unique `selector`; alternatively click viewport CSS coordinates `x`,`y` from a fresh screenshot. A ref that no longer resolves fails without clicking: take a new browser_snapshot.", click, vec![]);
+    click["button"] = json!({"type":"string","enum":["left","middle","right"]});
+    click["doubleClick"] = json!({"type":"boolean"});
+    click["modifiers"] = json!({"type":"array","maxItems":4,"items":{"type":"string","enum":["Alt","Control","Meta","Shift"]}});
+    add("browser_click", "Click one element: a `ref` from the latest snapshot (preferred), an exact accessible `role` and `name`, or a unique `selector`; alternatively click viewport CSS coordinates `x`,`y` from a fresh screenshot. Optional: `button` (left by default), `doubleClick`, and `modifiers` held with the click. A ref that no longer resolves fails without clicking: take a new browser_snapshot.", click, vec![]);
     let mut fill = target.clone();
     fill["text"] = json!({"type":"string","maxLength":16384});
     add(

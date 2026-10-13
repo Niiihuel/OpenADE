@@ -250,8 +250,8 @@ recibe los eventos del puntero en su lugar.»
   trata como ausente hasta agotar el plazo.
 - Desmarcar un botón de radio no da el error específico de Playwright; falla
   porque el clic no cambia su estado.
-- No hay doble clic como acción del agente (sí como entrada cruda), ni
-  `force`, `trial`, `position` o `modifiers` por acción.
+- El clic del agente acepta botón, doble clic y modificadores
+  (`click_with`, `hold_modifiers`); no hay `force`, `trial` ni `position`.
 - El teclado es la distribución estadounidense. Un carácter fuera de ella
   (`ñ`, `é`) se escribe a sí mismo sin código de tecla; no hay teclado
   numérico.

@@ -80,17 +80,27 @@ impl Driver {
     /// Clicks one element once it is visible, still, enabled and what the
     /// click would actually reach.
     pub fn click(&mut self, target: &Target) -> Outcome<()> {
+        self.click_with(target, MouseButton::Left, 1)
+    }
+
+    /// `click` with another button, or `clicks` presses in a row: 2 is a
+    /// double click. Keys set by `hold_modifiers` are held with it.
+    pub fn click_with(&mut self, target: &Target, button: MouseButton, clicks: u8) -> Outcome<()> {
         self.run(TIMEOUT, |driver| {
             let resolved = driver.resolve(target)?;
             let point = driver.shown(Cue::Click, &resolved, POINTER)?;
-            driver.click_point(point)
+            driver.click_point(point, button, clicks)
         })
     }
 
     /// Clicks viewport CSS coordinates, as from a fresh screenshot.
     pub fn click_at(&mut self, x: f64, y: f64) -> Outcome<()> {
+        self.click_at_with(x, y, MouseButton::Left, 1)
+    }
+
+    pub fn click_at_with(&mut self, x: f64, y: f64, button: MouseButton, clicks: u8) -> Outcome<()> {
         coordinates(x, y)?;
-        self.run(TIMEOUT, |driver| driver.click_point((x, y)))
+        self.run(TIMEOUT, |driver| driver.click_point((x, y), button, clicks))
     }
 
     /// Moves the pointer over one element.
@@ -221,7 +231,7 @@ impl Driver {
             if driver.cue(Cue::Click, point) {
                 point = locate(driver)?;
             }
-            driver.click_point(point)?;
+            driver.click_point(point, MouseButton::Left, 1)?;
             // The click happened: what goes wrong from here is an uncertain effect, not a refusal.
             match driver.checked(&resolved) {
                 Ok(now) if now == checked => Ok(()),
@@ -350,11 +360,13 @@ impl Driver {
         }
     }
 
-    fn click_point(&mut self, point: (f64, f64)) -> Outcome<()> {
+    fn click_point(&mut self, point: (f64, f64), button: MouseButton, clicks: u8) -> Outcome<()> {
         let before = self.navigation_mark();
         self.move_to(point)?;
-        self.pointer_event("mousePressed", point, MouseButton::Left, 1)?;
-        self.pointer_event("mouseReleased", point, MouseButton::Left, 1)?;
+        for count in 1..=clicks.max(1) {
+            self.pointer_event("mousePressed", point, button, count)?;
+            self.pointer_event("mouseReleased", point, button, count)?;
+        }
         self.settle_navigation(before);
         Ok(())
     }
