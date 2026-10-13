@@ -4333,7 +4333,6 @@ mod tests {
             dock_tabs: vec![],
             dock_recently_closed: vec![],
             dock_overview_query: String::new(),
-            show_dock_overview: false,
             show_dock_add_menu: false,
             notifications: Default::default(),
             show_dock_tabs_menu: false,

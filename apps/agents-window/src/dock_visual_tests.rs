@@ -1324,15 +1324,17 @@ fn export_converged_chrome_visual_review() {
             restorable: false,
         },
     ];
+    state.show_dock_tabs_menu = true;
     for (name, hover) in [("idle", None), ("hover", Some(Hover("dock_reopen:9")))] {
         export_with_interaction(
-            dock_overview::content(&state, 360.0).padding(12.0),
+            side_pane(&state, 360.0),
             360.0,
             360.0,
             &format!("converged-overview-reopen-{name}"),
             hover,
         );
     }
+    state.show_dock_tabs_menu = false;
 
     for (name, hover) in [
         ("idle", None),
@@ -1425,15 +1427,17 @@ fn export_converged_controls_visual_review() {
             closable: true,
         })
         .collect();
+    state.show_dock_tabs_menu = true;
     for (name, hover) in [("idle", None), ("close-all-hover", Some(Hover("dock_close_all")))] {
         export_with_interaction(
-            dock_overview::content(&state, 360.0).padding(12.0),
+            side_pane(&state, 360.0),
             360.0,
             520.0,
             &format!("converged-dock-overview-{name}"),
             hover,
         );
     }
+    state.show_dock_tabs_menu = false;
 
     state.selected_session = Some("session-1".into());
     state.selected_backend = "native".into();

@@ -18,6 +18,9 @@ pub(crate) const TAB_GAP: f32 = 0.0;
 pub(crate) const STRIP_BACKGROUND: openide_ui::Color = crate::theme::PANEL;
 /// Widest tab outside the IDE's editor group, which allows longer file names.
 pub(crate) const TAB_MAX_WIDTH: f32 = 208.0;
+/// The least a tab shrinks to before the strip scrolls: its icon, the start
+/// of its name and its close control.
+pub(crate) const TAB_MIN_WIDTH: f32 = 72.0;
 
 pub(crate) fn tab_width(title: &str, available: f32, max: f32) -> f32 {
     // This estimate reserves ordinary Sans13 names. The native measurer still

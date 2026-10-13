@@ -61,7 +61,6 @@ impl AgentsWindow {
             }
         ) || self.view.main_page != MainPage::Workspace
             || self.view.show_settings
-            || self.view.show_dock_overview
             || self.view.ide.extensions_open
             || !self.resource_pane_visible()
         {
@@ -117,7 +116,6 @@ impl AgentsWindow {
         }
         self.view.ide.extensions_open = false;
         self.view.ide.compact_panel = None;
-        self.view.show_dock_overview = false;
         self.view.show_dock_add_menu = false;
         self.view.show_dock_tabs_menu = false;
         self.view.editor_workbench.menu_open = false;

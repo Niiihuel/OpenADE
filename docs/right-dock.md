@@ -12,10 +12,22 @@ franja continua con scroll horizontal; la rueda sobre la barra, Shift+rueda y
 el gesto horizontal del touchpad recorren el contenido. La selección revela la
 pestaña completa, incluido su cierre, al cambiar de pestaña o ancho. Una
 reconstrucción con la misma selección conserva el desplazamiento manual. Los
-botones de terminal, nueva pestaña, menú, maximizar y ocultar panel permanecen
-fijos a la derecha.
-El menú da acceso al conjunto completo y a la administración de abiertas y
-cerradas recientemente.
+botones de nueva pestaña, menú de pestañas, maximizar y ocultar panel
+permanecen fijos a la derecha. La terminal no tiene botón en esta barra: el
+menú **+** la muestra y la oculta (**Mostrar terminal** / **Ocultar
+terminal**, con su atajo) además de abrir una nueva, y el panel de la terminal
+tiene su propio **Ocultar panel**.
+
+Antes de desplazarse, las pestañas que no entran ceden ancho: la activa
+conserva su nombre entero y las más anchas de las demás bajan a un mismo
+ancho, nunca menos de 72 px (icono, comienzo del nombre y cierre).
+
+El menú de pestañas (**≡**) reúne el conjunto completo en un solo lugar: un
+buscador, las abiertas con su cierre y **Cerrar todas**, y las cerradas
+recientemente, que se reabren con un clic. Reemplaza a la vista «Administrar
+pestañas», que ocupaba el panel entero. Cerrar las demás, cerrar todas y mover
+una pestaña a la izquierda o a la derecha están en el menú contextual de cada
+pestaña; arrastrarla también la reordena.
 
 La barra mide 32 px y las pestañas 28 px, con ancho según el título. La activa
 comparte el fondo del contenido: tiene radio de 8 px sólo arriba y llega hasta

@@ -9,12 +9,9 @@ pub(super) struct TabDrag {
 
 impl AgentsWindow {
     fn tab_at(&self, point: openide_ui::Point) -> Option<DockTabId> {
-        // Overview rows are actions rather than draggable strip tabs. Floating
-        // menus retain pointer ownership, including clicks over their backdrop.
-        if self.view.show_dock_overview
-            || self.view.show_dock_tabs_menu
-            || self.view.show_dock_add_menu
-        {
+        // Floating menus retain pointer ownership, including clicks over
+        // their backdrop.
+        if self.view.show_dock_tabs_menu || self.view.show_dock_add_menu {
             return None;
         }
         let id = self.tree.frame().hit_test(point)?;
@@ -49,7 +46,6 @@ impl AgentsWindow {
             (index + 1) % ids.len()
         };
         self.dock.activate(&scope, ids[next]);
-        self.view.show_dock_overview = false;
         self.view.show_dock_add_menu = false;
         self.view.show_dock_tabs_menu = false;
         self.sync_dock_view();
@@ -83,7 +79,6 @@ impl AgentsWindow {
                 self.dock_tab_drag = Some(TabDrag { id, start: *point });
                 let scope = self.dock_scope();
                 self.dock.activate(&scope, id);
-                self.view.show_dock_overview = false;
                 self.sync_dock_view();
                 self.tree
                     .focus_from_pointer(&format!("dock_tab:{}", id.get()));
@@ -226,10 +221,6 @@ mod tests {
         assert!(!app.handle_dock_tab_event(&UiEvent::PointerDown(point)));
         assert!(app.dock_tab_drag.is_none());
         app.view.show_dock_tabs_menu = false;
-        app.view.show_dock_overview = true;
-        assert!(!app.handle_dock_tab_event(&UiEvent::PointerDown(point)));
-        assert!(app.dock_tab_drag.is_none());
-        app.view.show_dock_overview = false;
         app.view.show_dock_add_menu = true;
         assert!(!app.handle_dock_tab_event(&UiEvent::PointerDown(point)));
         assert!(app.dock_tab_drag.is_none());

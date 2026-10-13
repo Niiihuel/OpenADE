@@ -817,7 +817,6 @@ impl AgentsWindow {
                     .open(&scope, DockTabKind::FilePreview { path: path.into() });
                 self.dock.activate(&scope, tab);
                 self.dock.set_collapsed(&scope, false);
-                self.view.show_dock_overview = false;
                 self.sync_dock_view();
                 self.refresh_clean_code_editor();
             }

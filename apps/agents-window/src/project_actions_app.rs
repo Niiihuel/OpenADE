@@ -208,7 +208,6 @@ impl AgentsWindow {
         let scope = self.dock_scope();
         let tab = self.dock.new_terminal(&scope);
         self.dock.activate(&scope, tab);
-        self.view.show_dock_overview = false;
         self.view.show_dock_add_menu = false;
         self.close_environment();
         self.sync_dock_view();

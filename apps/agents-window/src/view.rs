@@ -10,9 +10,9 @@ use openide_harness::{
     SubagentStatus, ToolPermissions,
 };
 use openide_ui::{
-    ActiveHover, AlertDialog, Button, ButtonSizing, ButtonVariant, Card, CardDensity, Color, Component, ControlSize,
+    ActiveHover, AlertDialog, Button, ButtonVariant, Card, CardDensity, Color, Component, ControlSize,
     DropdownMenu, DropdownMenuEntry, DropdownMenuItem, Element, Empty, FontFamily,
-    Icon, IconButton as UiIconButton, Kbd, ListRow, OutputBlock, PopoverPlacement, RadiusRole, ScrollArea, Search, SegmentedControl,
+    Icon, IconButton as UiIconButton, Kbd, ListRow, OutputBlock, PopoverPlacement, RadiusRole, ScrollArea, SegmentedControl,
     Separator, Skeleton, Tab, Text as UiText, TextRole, TextSpan, Tooltip, TooltipPlacement, TooltipSpec, TreeGuides,
     TreeRow,
 };
@@ -682,7 +682,6 @@ pub struct ViewState {
     pub dock_tabs: Vec<DockTabView>,
     pub dock_recently_closed: Vec<DockRecentlyClosedView>,
     pub dock_overview_query: String,
-    pub show_dock_overview: bool,
     pub show_dock_add_menu: bool,
     pub notifications: crate::notifications::NotificationCenter,
     pub show_dock_tabs_menu: bool,
@@ -739,24 +738,6 @@ pub struct ViewState {
     pub github_account_notice: Option<String>,
     pub github_sign_in: Option<GithubSignInView>,
     pub github_contributions: GithubContributionsStatus,
-}
-
-fn button(
-    id: impl Into<String>,
-    title: impl Into<String>,
-    fill: Color,
-    ink: Color,
-    sizing: ButtonSizing,
-) -> Button {
-    Button::new(id, title, theme::action_palette(fill, ink))
-        .variant(if fill == theme::BRAND || fill == theme::DESTRUCTIVE {
-            ButtonVariant::Solid
-        } else {
-            ButtonVariant::Subtle
-        })
-        .sizing(sizing)
-        .radius(RadiusRole::Card)
-        .active(fill == theme::SELECTED)
 }
 
 /// A labelled navigation button with a leading icon.
@@ -2965,6 +2946,27 @@ fn dock_add_menu(state: &ViewState) -> Element {
                 .icon(Icon::Code)
                 .into(),
         );
+    } else {
+        // The terminal is a panel of its own under the conversation: shown
+        // and hidden from here, where it is opened, and by its shortcut.
+        menu.push(DropdownMenuEntry::Separator);
+        menu.push(
+            DropdownMenuItem::new(
+                "terminal_toggle",
+                if state.show_terminal_panel {
+                    "Ocultar terminal"
+                } else {
+                    "Mostrar terminal"
+                },
+            )
+            .icon(Icon::Terminal)
+            .shortcut(
+                state
+                    .keymap_profile
+                    .shortcut(crate::keymap::ShortcutAction::ToggleTerminal),
+            )
+            .into(),
+        );
     }
     let anchor = UiIconButton::new(
         "dock_add_tab",
@@ -3021,11 +3023,7 @@ fn side_pane(state: &ViewState, width: f32) -> Element {
 }
 
 fn side_pane_sized(state: &ViewState, width: f32, height: f32) -> Element {
-    let Some(preview) = state
-        .markdown_preview
-        .as_ref()
-        .filter(|_| !state.show_dock_overview)
-    else {
+    let Some(preview) = state.markdown_preview.as_ref() else {
         return side_pane_primary_sized(state, width, height);
     };
     if dock_chrome::visible_tabs(state).is_empty() {
@@ -3056,10 +3054,7 @@ fn side_pane_sized(state: &ViewState, width: f32, height: f32) -> Element {
 }
 
 fn side_pane_primary_sized(state: &ViewState, width: f32, height: f32) -> Element {
-    if crate::ide_workspace::active(state)
-        && !state.show_dock_overview
-        && dock_chrome::visible_tabs(state).is_empty()
-    {
+    if crate::ide_workspace::active(state) && dock_chrome::visible_tabs(state).is_empty() {
         return crate::ide_editor_empty::build(state.keymap_profile, width, height)
             .size(Some(width), Some(height));
     }
@@ -3067,7 +3062,6 @@ fn side_pane_primary_sized(state: &ViewState, width: f32, height: f32) -> Elemen
     // A single document status row belongs to this editor group. It does not
     // consume the scroll viewport or appear under a preview-only resource.
     let document_status = !crate::ide_workspace::active(state)
-        && !state.show_dock_overview
         && crate::ide_status_ui::document_scope(state).is_some();
     let status_height = if document_status {
         crate::ide_workspace::STATUSBAR_HEIGHT
@@ -3075,15 +3069,12 @@ fn side_pane_primary_sized(state: &ViewState, width: f32, height: f32) -> Elemen
         0.0
     };
     let body = if crate::ide_workspace::active(state)
-        && !state.show_dock_overview
         && (state.dock_tabs.is_empty()
             || matches!(state.side_tab, SideTab::Files | SideTab::Context))
     {
         crate::ide_editor_empty::build(state.keymap_profile, width, (height - crate::dock_tab_ui::HEADER_HEIGHT).max(0.0))
-    } else if state.dock_tabs.is_empty() && !state.show_dock_overview {
+    } else if state.dock_tabs.is_empty() {
         dock_empty_content(width)
-    } else if state.show_dock_overview {
-        dock_overview::content(state, width)
     } else {
         match state.side_tab {
             SideTab::Context => dock_empty_content(width),
@@ -3142,8 +3133,7 @@ fn side_pane_primary_sized(state: &ViewState, width: f32, height: f32) -> Elemen
             }
         }
     };
-    let body = if !state.show_dock_overview
-        && (state.dock_tabs.is_empty()
+    let body = if state.dock_tabs.is_empty()
             || matches!(
                 state.side_tab,
                 SideTab::Files
@@ -3155,27 +3145,21 @@ fn side_pane_primary_sized(state: &ViewState, width: f32, height: f32) -> Elemen
                     | SideTab::CodeSnapshot
             )
             || (state.side_tab == SideTab::FilePreview
-                && (state.code_editor.is_some() || state.document_preview.is_some())))
+                && (state.code_editor.is_some() || state.document_preview.is_some()))
     {
         // Files and Activity own their virtual lists; Terminal displays a
         // bounded PTY screen and keeps its command line visible below it.
         body.flex(1.0)
     } else {
-        // Each surface keeps its own scroll offset. In particular, opening
-        // the overview must reveal its search field even after scrolling a
-        // long activity or preview pane.
-        let scroll_id = if state.show_dock_overview {
-            "side_pane_overview"
-        } else {
-            match state.side_tab {
-                SideTab::Context => "side_pane_context",
-                SideTab::CodeReview => "side_pane_review",
-                SideTab::SessionChanges => "side_pane_session_changes",
-                SideTab::Browser => "side_pane_browser",
-                SideTab::FilePreview => "side_pane_preview",
-                SideTab::CodeSnapshot => "side_pane_code_snapshot",
-                SideTab::Files | SideTab::Activity | SideTab::Terminal => unreachable!(),
-            }
+        // Each surface keeps its own scroll offset.
+        let scroll_id = match state.side_tab {
+            SideTab::Context => "side_pane_context",
+            SideTab::CodeReview => "side_pane_review",
+            SideTab::SessionChanges => "side_pane_session_changes",
+            SideTab::Browser => "side_pane_browser",
+            SideTab::FilePreview => "side_pane_preview",
+            SideTab::CodeSnapshot => "side_pane_code_snapshot",
+            SideTab::Files | SideTab::Activity | SideTab::Terminal => unreachable!(),
         };
         ScrollArea::new(scroll_id, body)
             .tint(theme::FOREGROUND_SUBTLE)
@@ -4234,7 +4218,6 @@ pub(crate) mod tests {
             ],
             dock_recently_closed: Vec::new(),
             dock_overview_query: String::new(),
-            show_dock_overview: false,
             show_dock_add_menu: false,
             notifications: Default::default(),
             show_dock_tabs_menu: false,
@@ -5075,9 +5058,9 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn dock_overview_filters_open_and_recent_tabs_and_keeps_reopen_reachable() {
+    fn the_tabs_menu_filters_open_and_recent_tabs_and_keeps_reopen_reachable() {
         let mut state = empty_state();
-        state.show_dock_overview = true;
+        state.show_dock_tabs_menu = true;
         state.dock_tabs.push(DockTabView {
             full_path: None,
             id: 3,
@@ -5109,7 +5092,7 @@ pub(crate) mod tests {
         assert!(!filtered
             .regions
             .iter()
-            .any(|region| region.id == "dock_move_down:3"));
+            .any(|region| region.id == "dock_tab_menu:3"));
         assert!(!filtered
             .regions
             .iter()
@@ -5129,7 +5112,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn dock_overview_search_starts_visible_after_scrolling_activity_with_twenty_tabs() {
+    fn the_activity_log_scrolls_with_twenty_tabs_open() {
         let mut state = empty_state();
         state.side_tab = SideTab::Activity;
         for index in 0..20 {
@@ -5163,17 +5146,6 @@ pub(crate) mod tests {
         }
         assert!(tree.scroll_offset("dock_activity_tools") > 0.0);
 
-        state.show_dock_overview = true;
-        tree.set_root(side_pane(&state, viewport.width));
-        let overview = tree.layout(viewport);
-        assert_eq!(tree.scroll_offset("side_pane_overview"), 0.0);
-        let search = overview
-            .regions
-            .iter()
-            .find(|region| region.id == "dock_overview_query")
-            .expect("overview search remains visible");
-        assert!(search.rect.y >= RIGHT_HEADER_HEIGHT);
-        assert!(search.rect.y + search.rect.height <= 160.0);
     }
 
     #[test]
