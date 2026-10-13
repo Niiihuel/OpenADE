@@ -365,6 +365,7 @@ impl MarketplaceStore {
         let registry = self.load_registry()?;
         let mut updates = Vec::new();
         let mut heads = HashMap::<String, String>::new();
+        let mut scanned = None;
         for entry in registry
             .installed
             .iter()
@@ -396,6 +397,25 @@ impl MarketplaceStore {
                         item_id: entry.item_id.clone(),
                         installed_revision: entry.provenance.as_ref().map(|p| p.revision.clone()),
                         available_revision: head,
+                    });
+                }
+            } else {
+                // One of the user's own sources: its files as they are now
+                // against the copy that was installed. A source that is gone
+                // has nothing to offer, which is not an error of the check.
+                let scanned = scanned.get_or_insert_with(|| {
+                    registry.sources.iter().filter_map(|source| self.scan_source(source).ok()).flatten().collect::<Vec<_>>()
+                });
+                let Some(skill) = scanned.iter().find(|skill| skill.item.id == entry.item_id) else {
+                    continue;
+                };
+                let installed = tree_digest(&self.destination(&entry.name, entry.scope))?;
+                let available = tree_digest(&skill.directory)?;
+                if installed != available {
+                    updates.push(SkillUpdate {
+                        item_id: entry.item_id.clone(),
+                        installed_revision: Some(installed[..12].to_owned()),
+                        available_revision: available[..12].to_owned(),
                     });
                 }
             }
@@ -1022,3 +1042,33 @@ fn atomic_metadata(path: &Path, bytes: &[u8]) -> io::Result<()> {
 #[cfg(test)]
 #[path = "marketplace_remote_tests.rs"]
 mod tests;
+
+/// What a skill's folder holds, as one digest of its files' paths and
+/// contents in a fixed order. Links are not followed.
+fn tree_digest(root: &Path) -> io::Result<String> {
+    fn files(directory: &Path, found: &mut Vec<PathBuf>) -> io::Result<()> {
+        for entry in fs::read_dir(directory)? {
+            let entry = entry?;
+            let kind = entry.file_type()?;
+            if kind.is_dir() {
+                files(&entry.path(), found)?;
+            } else if kind.is_file() {
+                found.push(entry.path());
+            }
+        }
+        Ok(())
+    }
+    let mut found = Vec::new();
+    files(root, &mut found)?;
+    found.sort();
+    let mut digest = Sha256::new();
+    for path in found {
+        let relative = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
+        let bytes = fs::read(&path)?;
+        digest.update(relative.as_bytes());
+        digest.update([0]);
+        digest.update((bytes.len() as u64).to_le_bytes());
+        digest.update(&bytes);
+    }
+    Ok(digest.finalize().iter().map(|byte| format!("{byte:02x}")).collect())
+}
