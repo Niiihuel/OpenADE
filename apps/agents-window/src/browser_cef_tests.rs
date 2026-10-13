@@ -1166,6 +1166,34 @@ fn tabs_of_one_context() {
     assert!(session.runtime.snapshot().error.is_none());
 }
 
+/// A page's own Copy button works: what the user copied with it is theirs,
+/// what the agent's click copied stays in the browser for the agent to read.
+fn what_a_page_copies() {
+    let origin = site();
+    let session = launch((640, 480), 2.0);
+    session.open(format!("{origin}/links"));
+    value(&session, "document.body.insertAdjacentHTML('beforeend', '<button id=\"copia\" style=\"top:340px\">Copiar</button>'); document.querySelector('#copia').onclick = () => navigator.clipboard.writeText('texto ' + (window.veces = (window.veces || 0) + 1)); 0");
+    assert!(session.runtime.snapshot().copied.is_none());
+    let copied = |serial: u64| {
+        session.until("the copy to reach the browser", || session.runtime.snapshot().copied.is_some_and(|copied| copied.serial == serial));
+        session.runtime.snapshot().copied.unwrap()
+    };
+    // The user's click, in the window.
+    let at = value(&session, "(box => [box.left + box.width / 2, box.top + box.height / 2])(document.querySelector('#copia').getBoundingClientRect())");
+    let (x, y) = (at[0].as_f64().unwrap(), at[1].as_f64().unwrap());
+    let (button, clicks, modifiers) = (MouseButton::Left, 1, 0);
+    session.window(BrowserCommand::PointerDown { x, y, button, clicks, modifiers }).unwrap();
+    session.window(BrowserCommand::PointerUp { x, y, button, clicks, modifiers }).unwrap();
+    let first = copied(1);
+    assert_eq!((first.text.as_ref(), first.by_user), ("texto 1", true));
+    // The agent's click copies too, and that one is not the user's.
+    assert!(!session.agent("browser_click", json!({"selector": "#copia"})).is_error);
+    let second = copied(2);
+    assert_eq!((second.text.as_ref(), second.by_user), ("texto 2", false));
+    let read = session.agent("browser_clipboard_read", json!({}));
+    assert!(!read.is_error && format!("{:?}", read.content).contains("texto 2"), "{:?}", read.content);
+}
+
 /// What a page asks to save goes to the downloads folder under a name no
 /// file there has, and the window and the agent are told how it stands.
 fn downloads_of_a_context() {
@@ -1779,6 +1807,12 @@ fn real_cef_takes_what_a_spanish_keyboard_types_and_its_editing_keys() {
 #[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
 fn real_cef_opens_in_a_tab_what_a_click_asked_to_see_in_another_tab() {
     what_a_click_asked_to_see_in_another_tab();
+}
+
+#[test]
+#[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
+fn real_cef_takes_what_a_page_copies_and_tells_the_users_copy_from_the_agents() {
+    what_a_page_copies();
 }
 
 #[test]

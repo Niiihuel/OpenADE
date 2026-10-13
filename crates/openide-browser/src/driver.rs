@@ -1039,6 +1039,12 @@ impl Driver {
         self.shared.state().windows_as_tabs = on;
     }
 
+    /// What the page last copied (its own Copy button, a script's copy with a
+    /// gesture of the user's behind it), once. The page cannot read it back.
+    pub fn take_copied(&self) -> Option<String> {
+        self.shared.state().copied.take()
+    }
+
     /// The address the page last asked to open in another tab, once.
     pub fn take_window_request(&self) -> Option<String> {
         self.shared.state().window_request.take()

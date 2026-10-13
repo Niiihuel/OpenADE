@@ -178,7 +178,9 @@ ventana:
   como siempre; CEF sólo lo deja abierto hasta entonces.
 - El selector de archivos no llega a CEF: el driver lo intercepta por DevTools
   y entrega los archivos que el agente armó, o lo deja cerrado. El menú
-  contextual queda vacío. Las descargas se guardan en la carpeta de
+  contextual queda vacío. El portapapeles le está negado a las páginas; lo que
+  una copia llega por un reemplazo que instala el driver (ver «Copiar desde
+  una página» en `browser-tools.md`). Las descargas se guardan en la carpeta de
   descargas del usuario (`Page::save_downloads_to`); una página a la que no
   se le dio carpeta no guarda nada.
 

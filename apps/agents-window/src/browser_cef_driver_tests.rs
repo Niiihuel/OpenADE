@@ -394,6 +394,10 @@ fn tools_server() -> Server {
                 <label>Correo <input id=\"mail\"></label><input id=\"busca\" placeholder=\"Buscar…\"><input aria-label=\"Teléfono\" id=\"phone\">\
                 <button data-testid=\"enviar\" onclick=\"out.textContent='envió'\">OK</button><span>Repetido</span><span>Repetido</span>\
                 <a href=\"/quiet?llegada=1\">Ir a silencio</a><p id=\"out\">nada</p>"),
+            "/copy" => Response::html("<!doctype html><title>Copiar</title>\
+                <button id=\"api\" onclick=\"navigator.clipboard.writeText('por la API').then(() => out.textContent = 'api ok', error => out.textContent = 'api no: ' + error.name)\">API</button>\
+                <button id=\"old\" onclick=\"const area = document.createElement('textarea'); area.value = 'a la antigua'; document.body.append(area); area.select(); out.textContent = 'viejo ' + document.execCommand('copy'); area.remove()\">Viejo</button>\
+                <p id=\"out\">nada</p>"),
             "/upload" => Response::html("<!doctype html><title>Subida</title><input id=\"one\" type=\"file\"><input id=\"many\" type=\"file\" multiple><p id=\"got\">nada</p>\
                 <script>for (const input of document.querySelectorAll('input')) input.onchange = async () => { got.textContent = (await Promise.all([...input.files].map(async file => file.name + '=' + await file.text()))).join(); }</script>"),
             _ => fixture("tools.html").unwrap(),
@@ -621,6 +625,36 @@ fn real_cef_driver_names_elements_by_what_they_show_and_waits_for_an_address_and
     driver.wait_for_load(false).unwrap();
     assert_eq!(evaluate(&mut driver, "document.title"), "\"Silencio\"");
     assert_eq!(driver.wait_for_url("").unwrap_err().kind, ErrorKind::Invalid);
+}
+
+#[test]
+#[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
+fn real_cef_driver_takes_what_a_page_copies_behind_a_click_and_nothing_else() {
+    let server = tools_server();
+    let (_page, mut driver) = open(640, 480, 1.0);
+    driver.navigate(&format!("{}/copy", server.origin)).unwrap();
+    assert_eq!(driver.take_copied(), None);
+
+    // The page's Copy button works, through the clipboard API and the old command.
+    driver.click(&Target::Selector("#api")).unwrap();
+    driver.wait_for_text("api ok").unwrap();
+    assert_eq!(driver.take_copied().as_deref(), Some("por la API"));
+    assert_eq!(driver.take_copied(), None, "taken once");
+    driver.click(&Target::Selector("#old")).unwrap();
+    driver.wait_for_text("viejo true").unwrap();
+    assert_eq!(driver.take_copied().as_deref(), Some("a la antigua"));
+
+    // The page has no way of its own to hand text over, and cannot read any back.
+    assert_eq!(evaluate(&mut driver, "typeof window.__openide_copy"), "\"undefined\"");
+    assert_eq!(
+        evaluate(&mut driver, "() => navigator.clipboard.readText().then(() => 'leyó', error => error.name)"),
+        "\"NotAllowedError\""
+    );
+    // After a navigation the stand-in is there again.
+    driver.navigate(&format!("{}/copy?otra", server.origin)).unwrap();
+    driver.click(&Target::Selector("#api")).unwrap();
+    driver.wait_for_text("api ok").unwrap();
+    assert_eq!(driver.take_copied().as_deref(), Some("por la API"));
 }
 
 #[test]

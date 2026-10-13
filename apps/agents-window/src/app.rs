@@ -1449,6 +1449,10 @@ pub struct AgentsWindow {
     /// one ends, by conversation. Kept for this run of the application.
     turn_queue: HashMap<String, TurnQueue>,
     turn_queue_next: u64,
+    /// The last copy seen from each browser's pages, and one the user made
+    /// that is on its way to the system clipboard.
+    browser_copied: HashMap<u64, crate::browser_runtime::BrowserCopied>,
+    browser_copy_out: Option<String>,
     /// The user's shell search path, filled in by a start-up probe.
     login_path: Arc<std::sync::Mutex<Option<std::ffi::OsString>>>,
     terminal_focus_pending: bool,
@@ -5089,11 +5093,24 @@ impl AgentsWindow {
         self.view.browser.can_go_forward = snapshot.can_go_forward;
         self.view.browser.pages = snapshot.tabs;
         self.view.browser.downloads = snapshot.downloads;
+        // What the user copied with a page's own button is theirs to paste
+        // anywhere; what the agent's action copied stays in the browser.
+        if let Some(copied) = snapshot.copied.filter(|copied| self.browser_copied.get(&id) != Some(copied)) {
+            if copied.by_user {
+                self.browser_copy_out = Some(copied.text.to_string());
+            }
+            self.browser_copied.insert(id, copied);
+        }
         previous != self.view.browser
     }
 
     fn update_browser(&mut self, ctx: &egui::Context) -> bool {
         let mut changed = false;
+        if let Some(text) = self.browser_copy_out.take() {
+            ctx.copy_text(text);
+            self.view.status = "Copiado desde la página".to_owned();
+            changed = true;
+        }
         self.browser_scale = crate::browser_runtime::device_scale(ctx.pixels_per_point());
         // A page keeps the scale its context started with. One whose window
         // has another now starts again at its address instead of staying
@@ -7336,6 +7353,8 @@ impl AgentsWindow {
             commit_generation: None,
             turn_queue: HashMap::new(),
             turn_queue_next: 1,
+            browser_copied: HashMap::new(),
+            browser_copy_out: None,
             github_status: GithubStatus::Loading,
             github_in_flight: false,
             github_account_worker: GithubAccountWorker::spawn(github_preference).ok(),

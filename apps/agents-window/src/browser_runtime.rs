@@ -85,6 +85,8 @@ pub(crate) struct BrowserSnapshot {
     pub tabs: Vec<BrowserTabView>,
     /// What its pages asked to save, oldest first.
     pub downloads: Vec<BrowserDownloadView>,
+    /// What a page of the context last copied.
+    pub copied: Option<BrowserCopied>,
     // Returned only to the request which asked for it, never retained in state
     // or exposed by the MCP snapshot serializer.
     pub clipboard: Option<BrowserClipboard>,
@@ -103,6 +105,17 @@ pub(crate) struct BrowserTabView {
     pub title: String,
     pub url: String,
     pub active: bool,
+}
+
+/// Text a page copied: its own Copy button, or a script's copy behind a click.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct BrowserCopied {
+    pub text: Arc<str>,
+    /// Counts the copies of this context: the same text copied twice is two.
+    pub serial: u64,
+    /// The click behind it was the user's, in the window: it is theirs to
+    /// paste elsewhere. What the agent's own action copied is not.
+    pub by_user: bool,
 }
 
 /// A file a page of the context asked to save.
@@ -148,6 +161,7 @@ impl Default for BrowserSnapshot {
             can_go_forward: false,
             tabs: Vec::new(),
             downloads: Vec::new(),
+            copied: None,
             clipboard: None,
             output: None,
             screenshot: None,
@@ -352,6 +366,8 @@ pub(crate) enum BrowserCommand {
     TabList {},
     /// What the context's pages asked to save, without touching any.
     Downloads {},
+    /// What a page of the context last copied, without touching any.
+    ClipboardRead {},
     /// Opens a tab, shows it, and takes it to `url` if one is given.
     TabNew {
         url: Option<String>,
@@ -625,6 +641,7 @@ impl BrowserCommand {
                 | Self::NetworkRequests {}
                 | Self::TabList {}
                 | Self::Downloads {}
+                | Self::ClipboardRead {}
                 | Self::TakeScreenshot { .. }
         )
     }
@@ -911,6 +928,7 @@ impl BrowserRuntime {
             tab: cef::FIRST_TAB,
             parked: Vec::new(),
             next_tab: cef::FIRST_TAB + 1,
+            agent_acted: false,
             shown: false,
         };
         let (finishing, finished) = mpsc::channel();
@@ -1219,6 +1237,8 @@ struct Worker {
     tab: u64,
     parked: Vec<ParkedTab>,
     next_tab: u64,
+    /// The last command that reached a page was the agent's.
+    agent_acted: bool,
     /// The page's paints are let through to the view.
     shown: bool,
 }
@@ -1480,6 +1500,15 @@ impl Worker {
             });
         }
         tabs.sort_by_key(|tab| tab.id);
+        // What the page shown copied since the last look.
+        if let Some(text) = self.driver.as_ref().and_then(Driver::take_copied) {
+            state.copied = Some(BrowserCopied {
+                text: Arc::from(text),
+                serial: state.copied.as_ref().map_or(1, |copied| copied.serial + 1),
+                by_user: !self.agent_acted,
+            });
+            state.generation = state.generation.saturating_add(1);
+        }
         let downloads = downloads(&self.handle.view);
         if state.tabs != tabs || state.downloads != downloads {
             state.tabs = tabs.clone();
@@ -1494,6 +1523,14 @@ impl Worker {
     fn tab_command(&mut self, command: &BrowserCommand, agent: bool) -> Result<BrowserCommand, Result<BrowserSnapshot, String>> {
         use BrowserCommand::*;
         let done = match command {
+            ClipboardRead {} => {
+                self.publish_tabs();
+                let copied = self.handle.snapshot().copied.map(|copied| copied.text);
+                return Err(apply_refresh(&self.handle, PageReply {
+                    output: Some(BrowserToolOutput { data: data("clipboard", json!(copied.as_deref())), ..Default::default() }),
+                    ..Default::default()
+                }));
+            }
             Downloads {} => {
                 self.publish_tabs();
                 return Err(apply_refresh(&self.handle, PageReply {
@@ -1593,6 +1630,10 @@ impl Worker {
             return Err("Navegador no disponible".into());
         };
         let agent = pending.include_aria;
+        // Passing over the page and reading it are nobody's action.
+        if command.mutating() && !command.quiet() {
+            self.agent_acted = agent;
+        }
         let view = &self.handle.view;
         // The page is as large as its view, which changes first.
         if let BrowserCommand::Resize { width, height } = *command {
@@ -1728,7 +1769,7 @@ fn execute(
     }
     match command {
         // Done by the worker before a page is asked.
-        TabList {} | TabNew { .. } | TabSelect { .. } | TabClose { .. } | Downloads {} => {}
+        TabList {} | TabNew { .. } | TabSelect { .. } | TabClose { .. } | Downloads {} | ClipboardRead {} => {}
         Navigate { url } => driver.navigate(url)?,
         Back => driver.back()?,
         Forward => driver.forward()?,
@@ -2316,7 +2357,7 @@ pub(crate) fn native_tool_names() -> Vec<String> {
 
 /// The tools that only read the page. They never ask: what they return is
 /// what the user already sees in the tab.
-const READ_TOOLS: [&str; 7] = [
+const READ_TOOLS: [&str; 8] = [
     "browser_snapshot",
     "browser_wait_for",
     "browser_console_messages",
@@ -2324,6 +2365,7 @@ const READ_TOOLS: [&str; 7] = [
     "browser_take_screenshot",
     "browser_tabs",
     "browser_downloads",
+    "browser_clipboard_read",
 ];
 
 /// Whether a call to the native agent's tool `name` goes ahead without
@@ -2814,6 +2856,12 @@ pub(crate) fn browser_mcp_tools() -> Vec<McpTool> {
         vec![],
     );
     add(
+        "browser_clipboard_read",
+        "Read what a page of this browser last copied, as after clicking a site's Copy button: the text, or null when nothing was copied. Pages here cannot read a clipboard, and this is never the user's own.",
+        json!({}),
+        vec![],
+    );
+    add(
         "browser_tab_new",
         "Open a new tab and make it active, at `url` if given (http or https) and otherwise blank. It shares cookies and sign-ins with the other tabs. At most 8 tabs.",
         json!({"url":{"type":"string","minLength":1,"maxLength":4096}}),
@@ -2870,6 +2918,7 @@ pub(crate) fn browser_tool_command(name: &str, arguments: Value) -> Result<Brows
         "browser_file_upload" => "file_upload",
         "browser_tabs" => "tab_list",
         "browser_downloads" => "downloads",
+        "browser_clipboard_read" => "clipboard_read",
         "browser_tab_new" => "tab_new",
         "browser_tab_select" => "tab_select",
         "browser_tab_close" => "tab_close",
