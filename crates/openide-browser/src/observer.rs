@@ -25,6 +25,45 @@ pub const MAX_REQUEST_URL_BYTES: usize = 512;
 pub const MAX_REPORT_BYTES: usize = 12 * 1024;
 const MAX_LOCATION_BYTES: usize = 512;
 const MAX_WINDOW_URL_BYTES: usize = 4096;
+/// Text a page may hand over as copied.
+pub const MAX_COPIED_BYTES: usize = 256 * 1024;
+/// The page's way to say what it copies. Its script takes it for itself and
+/// removes it before any script of the page runs.
+const COPY_BINDING: &str = "__openide_copy";
+/// Chromium refuses a page the clipboard here, so a site's own Copy button
+/// would do nothing. This stands in for writing to it: the text reaches the
+/// driver, never a clipboard the page could read back. Only with a gesture of
+/// the user's behind it, as a browser asks; reading stays refused.
+const COPY_SHIM: &str = r#"(() => {
+  const send = window.__openide_copy;
+  if (typeof send !== 'function') return;
+  try { delete window.__openide_copy; } catch (_) {}
+  try { window.__openide_copy = undefined; } catch (_) {}
+  const active = () => !navigator.userActivation || navigator.userActivation.isActive;
+  const refused = () => new DOMException('Write permission denied.', 'NotAllowedError');
+  const copy = text => { text = String(text); if (!active() || !text) return false; send(text.slice(0, 262144)); return true; };
+  const clipboard = navigator.clipboard;
+  if (clipboard) {
+    const write = text => copy(text) ? Promise.resolve() : Promise.reject(refused());
+    const items = async list => {
+      for (const item of list) {
+        if (item.types.includes('text/plain')) return write(await (await item.getType('text/plain')).text());
+      }
+      throw refused();
+    };
+    for (const [name, value] of [['writeText', write], ['write', items]]) {
+      try { Object.defineProperty(clipboard, name, {value, configurable: true}); } catch (_) {}
+    }
+  }
+  const exec = Document.prototype.execCommand;
+  Document.prototype.execCommand = function (command, ...rest) {
+    if (String(command).toLowerCase() !== 'copy') return exec.call(this, command, ...rest);
+    const field = this.activeElement;
+    const inField = field && typeof field.selectionStart === 'number' && typeof field.value === 'string'
+      ? field.value.slice(field.selectionStart, field.selectionEnd) : '';
+    return copy(inField || String(this.getSelection() || ''));
+  };
+})();"#;
 const MAX_FAILURE_BYTES: usize = 256;
 /// Out-of-process frames and script contexts tracked at once. A page that
 /// creates more keeps working; the ones beyond are not addressable.
@@ -179,6 +218,8 @@ pub(crate) struct State {
     /// own: the address is kept in `window_request` for it to take.
     pub windows_as_tabs: bool,
     pub window_request: Option<String>,
+    /// What a page last handed over as copied, until it is taken.
+    pub copied: Option<String>,
     /// Out-of-process frames by the id of their root frame.
     pub children: HashMap<String, ChildSession>,
     /// The page's own script world of each frame, by session and frame id.
@@ -278,6 +319,13 @@ impl EventSink for Observer {
                     answer["promptText"] = Value::from(prompt);
                 }
                 let _ = client.post(session, "Page.handleJavaScriptDialog", answer);
+            }
+            "Runtime.bindingCalled" if text(&params, "name") == COPY_BINDING => {
+                let copied = limited(text(&params, "payload"), MAX_COPIED_BYTES);
+                if !copied.is_empty() {
+                    state.copied = Some(copied.to_owned());
+                    self.shared.changed.notify_all();
+                }
             }
             "Page.fileChooserOpened" => {
                 // No chooser opens on the user's desktop: the page gets the
@@ -408,10 +456,12 @@ impl EventSink for Observer {
 }
 
 /// What a session needs enabled to be observed like the page itself.
-pub(crate) fn child_setup() -> [(&'static str, Value); 7] {
+pub(crate) fn child_setup() -> [(&'static str, Value); 9] {
     [
         ("Page.enable", json!({})),
         ("Page.setInterceptFileChooserDialog", json!({"enabled": true})),
+        ("Runtime.addBinding", json!({"name": COPY_BINDING})),
+        ("Page.addScriptToEvaluateOnNewDocument", json!({"source": COPY_SHIM})),
         ("Runtime.enable", json!({})),
         ("Network.enable", json!({})),
         ("Log.enable", json!({})),

@@ -45,6 +45,7 @@ o `selector` (un selector que identifique un único elemento).
 | `browser_file_upload` | `paths`: de 1 a 16 rutas absolutas | Modifica |
 | `browser_tabs` | ninguno | Lee |
 | `browser_downloads` | ninguno | Lee |
+| `browser_clipboard_read` | ninguno | Lee |
 | `browser_tab_new` | `url` opcional (`http` o `https`) | Modifica |
 | `browser_tab_select` | `id` | Modifica |
 | `browser_tab_close` | `id` | Modifica |
@@ -322,6 +323,27 @@ archivo. `browser_downloads` lista cada una con `name`, `path` absoluto,
 lee con las herramientas de archivos. La barra de estado del navegador muestra
 la más reciente y el menú tiene **Mostrar descargas**. Un navegador recuerda
 hasta 64 descargas; no se pide permiso para descargar.
+
+### Copiar desde una página
+
+El Chromium embebido le niega el portapapeles a toda página, así que el botón
+«Copiar» de un sitio no haría nada. En su lugar, antes que cualquier script de
+la página se instala un reemplazo (`COPY_SHIM`, `observer.rs`) de
+`navigator.clipboard.writeText`, `navigator.clipboard.write` (su parte de
+texto) y `document.execCommand('copy')`: el texto llega al driver por un canal
+que el reemplazo se guarda para sí y borra de la página. Sólo con un gesto del
+usuario detrás, como pide un navegador, y hasta 256 KiB.
+
+- Lo que el **usuario** copió con un clic suyo en la ventana va al
+  portapapeles del sistema.
+- Lo que copió una acción del **agente** queda en el navegador:
+  `browser_clipboard_read` devuelve lo último copiado por una página de ese
+  navegador, o `null`. Nunca es el portapapeles del usuario.
+- Leer el portapapeles sigue negado a las páginas (`readText`, `read`), y una
+  página no puede poner texto en el portapapeles sin un gesto.
+
+Es código nuestro dentro de cada página: una página puede notar que
+`writeText` no es la función nativa.
 
 ### Subir archivos
 

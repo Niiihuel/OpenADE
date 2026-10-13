@@ -217,7 +217,7 @@ fn the_bridge_offers_the_native_browser_tools_and_refuses_what_their_validation_
         .filter(|tool| tool.group == "browser")
         .collect();
     let native = browser_mcp_tools();
-    assert_eq!(offered.len(), 26);
+    assert_eq!(offered.len(), 27);
     for (tool, native) in offered.iter().zip(&native) {
         assert_eq!(tool.name, native.name);
         assert_eq!(tool.input_schema, native.input_schema, "{}", tool.name);
@@ -266,7 +266,7 @@ fn with_the_browser_switch_off_its_tools_are_refused_and_no_browser_starts() {
         tools.iter().filter(|tool| tool["name"].as_str().unwrap().starts_with("browser_")).count()
     };
     let navigate = || json!({ "url": "http://localhost:3000/" });
-    assert_eq!(listed(&fixture), 26);
+    assert_eq!(listed(&fixture), 27);
 
     fixture.app.apply_action(clicked("external_tool:browser"), &fixture.ctx);
     assert!(!fixture.app.view.external_agents.allows(ExternalTool::Browser));

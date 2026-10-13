@@ -34,7 +34,7 @@ pub use driver::{
     MAX_INPUT_TEXT_BYTES, MAX_SCREENSHOT_BYTES, MAX_SELECTION_BYTES, MAX_URL_BYTES, TIMEOUT,
 };
 pub use observer::{
-    ConsoleEntry, ConsoleLevel, NetworkEntry, Report, MAX_CONSOLE_TEXT_BYTES, MAX_EVENTS, MAX_REPORT_BYTES,
+    ConsoleEntry, ConsoleLevel, NetworkEntry, Report, MAX_CONSOLE_TEXT_BYTES, MAX_COPIED_BYTES, MAX_EVENTS, MAX_REPORT_BYTES,
     MAX_REQUEST_URL_BYTES,
 };
 pub use snapshot::{element_of, SnapshotOptions};

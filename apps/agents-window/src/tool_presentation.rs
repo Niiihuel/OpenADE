@@ -320,6 +320,7 @@ fn meta(name: &str) -> Meta<'_> {
         ),
         "browser_tabs" => ("Pestañas del navegador", "Leyendo pestañas", "Pestañas leídas", &[], Web, Icon::Globe),
         "browser_downloads" => ("Descargas del navegador", "Leyendo descargas", "Descargas leídas", &[], Web, Icon::Globe),
+        "browser_clipboard_read" => ("Copiado en la página", "Leyendo lo copiado", "Copiado leído", &[], Web, Icon::Globe),
         "browser_tab_new" => ("Pestaña nueva", "Abriendo pestaña", "Pestaña abierta", &["url"], Web, Icon::Globe),
         "browser_tab_select" => ("Cambio de pestaña", "Cambiando de pestaña", "Pestaña mostrada", &[], Web, Icon::Globe),
         "browser_tab_close" => ("Cierre de pestaña", "Cerrando pestaña", "Pestaña cerrada", &[], Web, Icon::Globe),
