@@ -204,7 +204,6 @@ impl AgentsWindow {
                 match self.reveal_editor_folder(&relative) {
                     Ok(()) => {
                         self.close_environment();
-                        self.view.show_dock_overview = false;
                     }
                     Err(error) => self.view.status = error,
                 }
@@ -237,7 +236,6 @@ impl AgentsWindow {
             self.view.side_tab = SideTab::Activity;
             let scope = self.dock_scope();
             self.dock.open(&scope, DockTabKind::Activity);
-            self.view.show_dock_overview = false;
             self.sync_dock_view();
             return true;
         }
@@ -300,7 +298,6 @@ impl AgentsWindow {
                 .open_file(Path::new(&self.view.workspace), &owner, &relative)
                 .is_some()
             {
-                self.view.show_dock_overview = false;
                 self.sync_dock_view();
                 self.refresh_clean_code_editor();
             }
@@ -323,7 +320,6 @@ impl AgentsWindow {
             self.close_environment();
             self.dock.activate(&scope, id);
             self.dock.set_collapsed(&scope, false);
-            self.view.show_dock_overview = false;
             self.sync_dock_view();
             return true;
         }
@@ -384,7 +380,6 @@ impl AgentsWindow {
                 content,
             },
         );
-        self.view.show_dock_overview = false;
         self.sync_dock_view();
         true
     }

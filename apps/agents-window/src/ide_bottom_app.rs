@@ -125,7 +125,6 @@ impl AgentsWindow {
             }
             let position = self.view.editor_workbench.diagnostics[index].range.start;
             if let Some(offset) = openide_language::utf16_to_offset(&snapshot, position) {
-                self.view.show_dock_overview = false;
                 self.reveal_document_preview_source();
                 if !self.ide_workspace_active() && !self.view.show_side_pane {
                     self.dock.set_collapsed(&scope, false);
@@ -427,10 +426,8 @@ mod tests {
         app.dock.set_collapsed(&app.dock_scope(), true);
         app.sync_dock_view();
         assert!(!app.view.show_side_pane);
-        app.view.show_dock_overview = true;
         app.apply_ide_bottom_action(&action, &egui::Context::default());
         assert!(app.view.show_side_pane);
-        assert!(!app.view.show_dock_overview);
         assert_eq!(app.active_editor().unwrap().3.selection(), openide_editor::Selection::caret(9));
         assert_eq!(app.editor_services.focus_next, Some(crate::code_editor_ui::view_id(tab.get())));
         app.hide_ide_bottom();

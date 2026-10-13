@@ -5992,7 +5992,6 @@ impl AgentsWindow {
         let tab = self.dock.open(&workspace_scope, DockTabKind::Files);
         self.dock.activate(&scope, tab);
         self.dock.set_collapsed(&scope, false);
-        self.view.show_dock_overview = false;
         self.sync_dock_view();
         if !self.view.sidebar_collapsed && self.nominal_dock_layout().right.is_none() {
             self.view.sidebar_collapsed = true;
@@ -6861,7 +6860,6 @@ impl AgentsWindow {
             dock_tabs: Vec::new(),
             dock_recently_closed: Vec::new(),
             dock_overview_query: String::new(),
-            show_dock_overview: false,
             show_dock_add_menu: false,
             notifications: crate::notifications::NotificationCenter::with_settings(
                 crate::notifications::NotificationSettings::load(&root),
@@ -16682,7 +16680,6 @@ impl AgentsWindow {
                                 .open_file(Path::new(&self.view.workspace), owner, &relative)
                                 .is_some()
                             {
-                                self.view.show_dock_overview = false;
                                 self.sync_dock_view();
                             }
                         } else {
@@ -17887,7 +17884,6 @@ impl AgentsWindow {
                                 .open_file(workspace, owner, &row.relative)
                                 .is_some()
                             {
-                                self.view.show_dock_overview = false;
                                 if self.view.ide.compact_panel == Some(crate::ide_workspace::IdePanel::Explorer) {
                                     self.view.ide.compact_panel = None;
                                 }
@@ -17922,7 +17918,6 @@ impl AgentsWindow {
                         self.sync_dock_view();
                     }
                 }
-                self.view.show_dock_overview = false;
             }
             UiAction::Clicked { id }
                 if id.starts_with("dock_tab:") || id.starts_with("dock_tab_menu:") =>
@@ -17945,7 +17940,6 @@ impl AgentsWindow {
                             {
                                 self.refresh_file_rows();
                             }
-                            self.view.show_dock_overview = false;
                             self.sync_dock_view();
                         }
                     }
@@ -17953,13 +17947,13 @@ impl AgentsWindow {
             }
             UiAction::Clicked { id } if id == "dock_close_all" => {
                 self.view.show_dock_add_menu = false;
+                self.view.show_dock_tabs_menu = false;
                 let scope = self.dock_scope();
                 for tab in self.dock.right_tabs(&scope) {
                     self.tree
                         .forget_code_view(&crate::code_editor_ui::view_id(tab.id.get()));
                 }
                 self.dock.close_all_visible(&scope);
-                self.view.show_dock_overview = false;
                 self.sync_dock_view();
             }
             UiAction::Clicked { id } if id.starts_with("dock_close_others:") => {
@@ -17974,7 +17968,6 @@ impl AgentsWindow {
                             }
                         }
                         self.dock.close_others(&scope, tab_id);
-                        self.view.show_dock_overview = false;
                         self.sync_dock_view();
                     }
                 }
@@ -18022,7 +18015,7 @@ impl AgentsWindow {
                     if let Some(closed_id) = DockTabId::from_raw(raw) {
                         let scope = self.dock_scope();
                         if self.dock.reopen_recent(&scope, closed_id).is_some() {
-                            self.view.show_dock_overview = false;
+                            self.view.show_dock_tabs_menu = false;
                             self.sync_dock_view();
                         }
                     }
@@ -18043,19 +18036,15 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id == "dock_tabs_menu" => {
                 self.view.show_dock_tabs_menu = !self.view.show_dock_tabs_menu;
                 self.view.show_dock_add_menu = false;
+                // Each opening starts from every tab.
+                self.view.dock_overview_query.clear();
             }
             UiAction::Clicked { id } if id == "dock_tabs_menu_dismiss" => {
                 self.view.show_dock_tabs_menu = false;
             }
-            UiAction::Clicked { id } if id == "dock_overview_toggle" => {
-                self.view.show_dock_tabs_menu = false;
-                self.view.show_dock_overview = !self.view.show_dock_overview;
-                self.view.show_dock_add_menu = false;
-            }
             UiAction::Clicked { id } if id == "dock_add_tab" => {
                 self.view.show_dock_tabs_menu = false;
                 self.view.show_dock_add_menu = !self.view.show_dock_add_menu;
-                self.view.show_dock_overview = false;
             }
             UiAction::Clicked { id } if id == "dock_add_dismiss" => {
                 self.view.show_dock_add_menu = false;
@@ -18125,6 +18114,7 @@ impl AgentsWindow {
                 }
             }
             UiAction::Clicked { id } if id == "terminal_toggle" => {
+                self.view.show_dock_add_menu = false;
                 let scope = self.dock_scope();
                 if self.dock.active_terminal(&scope).is_none() {
                     self.dock.new_terminal(&scope);
@@ -26815,7 +26805,7 @@ mod tests {
     }
 
     #[test]
-    fn dock_overview_reorders_and_reopens_a_recent_tab() {
+    fn tabs_reorder_and_the_tabs_menu_filters_and_reopens_a_recent_tab() {
         let root = tempfile::tempdir().unwrap();
         let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
         let ctx = egui::Context::default();
@@ -26834,8 +26824,9 @@ mod tests {
             .find(|tab| tab.restorable)
             .expect("closed dock tab is available to restore")
             .id;
-        app.apply_action(clicked("dock_overview_toggle"), &ctx);
-        assert!(app.view.show_dock_overview);
+        app.view.dock_overview_query = "de la vez anterior".into();
+        app.apply_action(clicked("dock_tabs_menu"), &ctx);
+        assert!(app.view.show_dock_tabs_menu && app.view.dock_overview_query.is_empty());
         app.apply_action(
             UiAction::InputChanged {
                 id: "dock_overview_query".into(),
@@ -26845,7 +26836,7 @@ mod tests {
         );
         assert_eq!(app.view.dock_overview_query, "actividad");
         app.apply_action(clicked(format!("dock_reopen:{closed}")), &ctx);
-        assert!(!app.view.show_dock_overview);
+        assert!(!app.view.show_dock_tabs_menu);
         assert_eq!(app.view.dock_tabs.len(), 1);
         assert!(app.view.dock_tabs[0].active);
         assert_ne!(app.view.dock_tabs[0].id, closed);
@@ -26864,7 +26855,6 @@ mod tests {
         let original_count = app.view.dock_tabs.len();
         app.apply_action(clicked("dock_add_tab"), &ctx);
         assert!(app.view.show_dock_add_menu);
-        assert!(!app.view.show_dock_overview);
         app.apply_action(clicked("dock_add_dismiss"), &ctx);
         assert!(!app.view.show_dock_add_menu);
 
@@ -26875,9 +26865,15 @@ mod tests {
         assert_eq!(app.view.side_tab, SideTab::Files);
 
         app.apply_action(clicked("dock_add_tab"), &ctx);
-        app.apply_action(clicked("dock_overview_toggle"), &ctx);
+        app.apply_action(clicked("dock_tabs_menu"), &ctx);
         assert!(!app.view.show_dock_add_menu);
-        assert!(app.view.show_dock_overview);
+        assert!(app.view.show_dock_tabs_menu);
+        // The terminal is shown and hidden from the menu that opens it.
+        app.apply_action(clicked("dock_add_tab"), &ctx);
+        let shown = app.view.show_terminal_panel;
+        app.apply_action(clicked("terminal_toggle"), &ctx);
+        assert!(!app.view.show_dock_add_menu);
+        assert_ne!(app.view.show_terminal_panel, shown);
     }
 
     #[test]

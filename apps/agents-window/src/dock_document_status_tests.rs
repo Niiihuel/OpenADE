@@ -196,22 +196,17 @@ fn dock_document_status_reserves_space_for_markdown_source_and_split_but_not_pre
 }
 
 #[test]
-fn dock_document_status_is_not_duplicated_in_ide_or_shown_over_the_tab_overview() {
-    for (ide, overview) in [(true, false), (false, true)] {
-        let mut state = state();
-        if ide {
-            state.ide.mode = crate::ide_workspace::WindowMode::Ide;
-        }
-        state.show_dock_overview = overview;
-        let mut tree = UiTree::new(side_pane_primary_sized(&state, 640.0, 640.0));
-        let frame = tree.layout(Size::new(640.0, 640.0));
-        assert!(
-            !frame
-                .regions
-                .iter()
-                .any(|r| r.id == "ide_editor_diagnostics")
-        );
-    }
+fn dock_document_status_is_not_duplicated_in_ide() {
+    let mut state = state();
+    state.ide.mode = crate::ide_workspace::WindowMode::Ide;
+    let mut tree = UiTree::new(side_pane_primary_sized(&state, 640.0, 640.0));
+    let frame = tree.layout(Size::new(640.0, 640.0));
+    assert!(
+        !frame
+            .regions
+            .iter()
+            .any(|r| r.id == "ide_editor_diagnostics")
+    );
 }
 
 #[test]

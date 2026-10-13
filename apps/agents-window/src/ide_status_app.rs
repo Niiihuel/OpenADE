@@ -38,7 +38,6 @@ impl AgentsWindow {
     /// is closing may still be painted, but must not accept stale footer input.
     pub(super) fn document_status_visible(&self) -> bool {
         self.ide_status_visible()
-            && !self.view.show_dock_overview
             && self.view.side_tab == SideTab::FilePreview
             && self
                 .view
@@ -632,7 +631,6 @@ mod tests {
             }),
             ("narrow viewport", |app| app.viewport_width = 600.0),
             ("environment", |app| app.open_environment()),
-            ("overview", |app| app.view.show_dock_overview = true),
             ("settings", |app| app.view.show_settings = true),
             ("command center", |app| app.view.show_command_center = true),
             ("marketplace", |app| app.view.main_page = MainPage::Marketplace),

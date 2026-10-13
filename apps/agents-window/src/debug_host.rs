@@ -207,7 +207,6 @@ impl AgentsWindow {
         self.select_ide_activity(IdeActivity::Debug, false);
         self.view.debug_open = true;
         self.view.show_dock_add_menu = false;
-        self.view.show_dock_overview = false;
         self.view.debug.breakpoints = self.debug_breakpoint_views().into();
         if self.debugger.configurations.is_empty() {
             self.load_debug_config(false);

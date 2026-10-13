@@ -19,26 +19,6 @@ pub const NAV_BUTTON: ButtonSizing = ButtonSizing {
     inner_spacing: 6.0,
 };
 
-/// A tab row of the dock overview.
-pub const OVERVIEW_TAB: ButtonSizing = ButtonSizing {
-    height: 28.0,
-    font_size: 12.0,
-    ..NAV_BUTTON
-};
-
-/// "Solo", beside a tab row of the overview.
-pub const OVERVIEW_TAB_ACTION: ButtonSizing = ButtonSizing {
-    font_size: 10.0,
-    ..OVERVIEW_TAB
-};
-
-/// "Cerrar todas", on the overview's 24 px heading line.
-pub const OVERVIEW_HEADING_ACTION: ButtonSizing = ButtonSizing {
-    height: 24.0,
-    font_size: 11.0,
-    ..NAV_BUTTON
-};
-
 /// A Compact button with an 11 px label: the repository links and "Añadir".
 pub const SMALL_LABEL_BUTTON: ButtonSizing = ButtonSizing {
     height: 28.0,
@@ -56,16 +36,6 @@ pub const GRANT_ACTION: ButtonSizing = ButtonSizing {
 
 /// The terminal's "Copiar": that label again, in the 32 px of its toolbar.
 pub const TERMINAL_COPY: ButtonSizing = GRANT_ACTION;
-
-/// A closed tab the overview can reopen: a Regular button's insets around a
-/// 12 px label, as tall as a tab row.
-pub const OVERVIEW_REOPEN: ButtonSizing = ButtonSizing {
-    height: 28.0,
-    font_size: 12.0,
-    icon_size: 16.0,
-    horizontal_padding: 8.0,
-    inner_spacing: 6.0,
-};
 
 /// A destination of the settings sidebar, and the way back above them.
 pub const SETTINGS_NAV: ButtonSizing = ButtonSizing {

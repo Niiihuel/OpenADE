@@ -98,7 +98,6 @@ impl AgentsWindow {
                 .open_file(Path::new(&self.view.workspace), owner, &relative)
                 .is_some()
             {
-                self.view.show_dock_overview = false;
                 self.sync_dock_view();
                 self.refresh_clean_code_editor();
             }

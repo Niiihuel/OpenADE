@@ -218,7 +218,6 @@ impl AgentsWindow {
             self.view.ide.sessions_open = false;
             self.view.ide.compact_panel = None;
             self.view.show_command_center = false;
-            self.view.show_dock_overview = false;
             self.view.show_dock_add_menu = false;
             self.view.show_dock_tabs_menu = false;
             self.view.editor_workbench.menu_open = false;

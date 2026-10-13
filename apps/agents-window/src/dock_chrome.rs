@@ -12,7 +12,7 @@ use openide_ui::{
 #[cfg(test)]
 const HEADER_PADDING: f32 = 2.0;
 #[cfg(test)]
-const TOOLBAR_WIDTH: f32 = TOOL_SIZE * 5.0;
+const TOOLBAR_WIDTH: f32 = TOOL_SIZE * 4.0;
 
 /// The control that maximizes the right dock over the conversation and
 /// restores it.
@@ -136,7 +136,27 @@ const UNSAVED_MARK: f32 = 8.0;
 /// A file tab in the IDE's editor group opens the file menu on right click.
 fn editor_tab(state: &ViewState, tab_view: &DockTabView, surface: Element) -> Element {
     if !crate::ide_workspace::active(state) || tab_view.kind != SideTab::FilePreview {
-        return surface;
+        // What the tab strip does to a tab, where a tab's menu is looked for.
+        let id = tab_view.id;
+        let item = |action: String, title| ContextMenuEntry::Item(ContextMenuItem::new(action, title));
+        let mut entries = Vec::new();
+        if tab_view.closable {
+            entries.push(item(format!("dock_close:{id}"), "Cerrar"));
+        }
+        entries.extend([
+            item(format!("dock_close_others:{id}"), "Cerrar las demás pestañas"),
+            item("dock_close_all".into(), "Cerrar todas las pestañas"),
+            ContextMenuEntry::Separator,
+            item(format!("dock_move_up:{id}"), "Mover a la izquierda"),
+            item(format!("dock_move_down:{id}"), "Mover a la derecha"),
+        ]);
+        return ContextMenu::new(
+            format!("dock_tab_context:{id}"),
+            surface,
+            entries,
+            theme::menu_palette(),
+        )
+        .render();
     }
     let action = |operation| file_action(state, tab_view.id, operation);
     let item =
@@ -166,21 +186,98 @@ fn editor_tab(state: &ViewState, tab_view: &DockTabView, surface: Element) -> El
     .render()
 }
 
+/// Whether a tab answers the query of the tabs menu, by its title or by the
+/// words its kind is known by.
+fn matches_query(query: &str, title: &str, kind: SideTab) -> bool {
+    let kind_name = match kind {
+        SideTab::Context => "entorno",
+        SideTab::Files => "archivos",
+        SideTab::Activity => "actividad",
+        SideTab::CodeReview => "repositorio git",
+        SideTab::SessionChanges => "cambios chat conversación",
+        SideTab::Browser => "navegador web",
+        SideTab::Terminal => "terminal",
+        SideTab::FilePreview => "vista de archivo",
+        SideTab::CodeSnapshot => "vista previa capturada",
+    };
+    query.is_empty() || title.to_lowercase().contains(query) || kind_name.contains(query)
+}
+
+/// Every tab of the dock in one menu: a search, the open ones, each with its
+/// close, and the ones closed recently, which reopen.
 fn all_tabs_menu(state: &ViewState) -> Element {
-    let mut entries: Vec<DropdownMenuEntry> = visible_tabs(state)
-        .into_iter()
-        .map(|tab| {
-            DropdownMenuItem::new(format!("dock_tab_menu:{}", tab.id), &tab.title)
-                .icon(resource_icon(tab))
-                .annotation(if tab.active { "Actual" } else { "" })
-                .into()
-        })
+    const WIDTH: f32 = 288.0;
+    let query = state.dock_overview_query.trim().to_lowercase();
+    let note = |text: &str| {
+        DropdownMenuEntry::custom(
+            UiText::new(text, theme::menu_palette())
+                .role(TextRole::Small)
+                .muted()
+                .render()
+                .padding(8.0),
+        )
+    };
+    let open = visible_tabs(state);
+    let mut entries = vec![DropdownMenuEntry::Heading(format!("Abiertas · {}", open.len()))];
+    let shown: Vec<_> = open
+        .iter()
+        .filter(|tab| matches_query(&query, &tab.title, tab.kind))
         .collect();
-    entries.push(
-        DropdownMenuItem::new("dock_overview_toggle", "Administrar pestañas")
-            .icon(Icon::Menu)
-            .into(),
-    );
+    if shown.is_empty() {
+        entries.push(note(if open.is_empty() {
+            "No hay pestañas abiertas"
+        } else {
+            "Sin coincidencias abiertas"
+        }));
+    }
+    for tab in shown {
+        let mut row = openide_ui::MenuItem::new(
+            format!("dock_tab_menu:{}", tab.id),
+            &tab.title,
+            theme::menu_palette(),
+        )
+        .icon(resource_icon(tab));
+        if tab.active {
+            row = row.trailing("Actual");
+        }
+        if tab.closable {
+            // Its own target beside the tab's: closing one leaves the menu open.
+            row = row
+                .trailing_action(
+                    format!("dock_tab_menu_close:{}", tab.id),
+                    Icon::Close,
+                    TooltipSpec::new("Cerrar pestaña").placement(TooltipPlacement::Above),
+                )
+                .trailing_dispatch_as(format!("dock_close:{}", tab.id));
+        }
+        entries.push(DropdownMenuEntry::custom(row.render().size(None, Some(26.0))));
+    }
+    if open.len() > 1 && query.is_empty() {
+        entries.push(
+            DropdownMenuItem::new("dock_close_all", "Cerrar todas")
+                .icon(Icon::Close)
+                .into(),
+        );
+    }
+    let recent: Vec<_> = state
+        .dock_recently_closed
+        .iter()
+        .filter(|tab| matches_query(&query, &tab.title, tab.kind))
+        .collect();
+    if !recent.is_empty() {
+        entries.push(DropdownMenuEntry::Separator);
+        entries.push(DropdownMenuEntry::Heading("Cerradas recientemente".into()));
+        for tab in recent {
+            let item = DropdownMenuItem::new(format!("dock_reopen:{}", tab.id), &tab.title)
+                .icon(Icon::History)
+                .truncate();
+            entries.push(if tab.restorable {
+                item.into()
+            } else {
+                item.annotation("Sesión cerrada").disabled().into()
+            });
+        }
+    }
     let anchor = UiIconButton::new(
         "dock_tabs_menu",
         Icon::Menu,
@@ -188,10 +285,12 @@ fn all_tabs_menu(state: &ViewState) -> Element {
     )
     .variant(ButtonVariant::Ghost)
     .size(ControlSize::Dense)
+    .active(state.show_dock_tabs_menu)
     .tooltip_with(
         TooltipSpec::new("Todas las pestañas")
             .shortcut("Ctrl+Tab")
-            .placement(TooltipPlacement::Below),
+            .placement(TooltipPlacement::Below)
+            .suppressed(state.show_dock_tabs_menu),
     )
     .render();
     DropdownMenu::new(
@@ -201,10 +300,23 @@ fn all_tabs_menu(state: &ViewState) -> Element {
         "dock_tabs_menu_dismiss",
         theme::menu_palette(),
     )
+    .header({
+        // The search paints the field's fill, as the composer's menus do.
+        let mut palette = theme::menu_palette();
+        palette.raised = theme::INPUT;
+        openide_ui::MenuHeader::new(palette)
+            .title("Pestañas")
+            .search("dock_overview_query", &state.dock_overview_query, "Buscar pestañas…")
+            // Inside the menu's own margin.
+            .width(WIDTH - 8.0)
+            .render()
+    })
     .placement(PopoverPlacement::BottomEnd)
     .context_menu_style()
-    .width(260.0)
+    .width(WIDTH)
+    .max_visible_items(12)
     .render()
+    .popover_return_focus("dock_tabs_menu")
 }
 
 pub(super) fn header(state: &ViewState, width: f32) -> Element {
@@ -212,7 +324,7 @@ pub(super) fn header(state: &ViewState, width: f32) -> Element {
     let visible_tabs = visible_tabs(state);
     let mut controls = Vec::new();
     let mut editor_controls = Vec::new();
-    if ide && !state.show_dock_overview && state.side_tab == SideTab::FilePreview {
+    if ide && state.side_tab == SideTab::FilePreview {
         if let Some(editor) = state.code_editor.as_ref().filter(|editor| {
             visible_tabs
                 .iter()
@@ -224,32 +336,6 @@ pub(super) fn header(state: &ViewState, width: f32) -> Element {
                 state.keymap_profile,
             ));
         }
-    }
-    if !ide {
-        controls.push(
-            UiIconButton::new(
-                "terminal_toggle",
-                Icon::Terminal,
-                theme::action_palette(Color::TRANSPARENT, theme::FOREGROUND),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .active(state.show_terminal_panel)
-            .tooltip_with(
-                TooltipSpec::new(if state.show_terminal_panel {
-                    "Ocultar terminal"
-                } else {
-                    "Mostrar terminal"
-                })
-                .shortcut(
-                    state
-                        .keymap_profile
-                        .shortcut(crate::keymap::ShortcutAction::ToggleTerminal),
-                )
-                .placement(TooltipPlacement::Below),
-            )
-            .render(),
-        );
     }
     // The resource launcher and overview belong to the Agents dock. IDE
     // exposes activities and browser navigation in its own rail and menus.
@@ -314,25 +400,49 @@ pub(super) fn header(state: &ViewState, width: f32) -> Element {
         TOOL_SIZE * (controls.len() + editor_controls.len()) as f32 + group_separator;
     let toolbar_gap = if toolbar_width > 0.0 { 8.0 } else { 0.0 };
     let available = (width - HEADER_SIDE_INSET * 2.0 - toolbar_gap - toolbar_width).max(0.0);
-    let tabs = if state.show_dock_overview {
-        UiText::new("Pestañas", theme::component_palette())
-            .role(TextRole::Label)
-            .render()
-            .size(None, Some(RIGHT_HEADER_HEIGHT))
-            .flex(1.0)
-    } else {
+    let tabs = {
         let decorations = crate::git_decorations::for_state(state);
-        let items = visible_tabs
+        // Fit ordinary filenames before fading; the close target and fixed
+        // group actions always retain their own space.
+        let natural: Vec<f32> = visible_tabs
             .iter()
             .map(|item| {
-                // Fit ordinary filenames before fading; the close target
-                // and fixed group actions always retain their own space.
                 let max = if ide && item.kind == SideTab::FilePreview {
                     360.0
                 } else {
                     dock_tab_ui::TAB_MAX_WIDTH
                 };
-                tab(state, decorations.as_deref(), item, dock_tab_ui::tab_width(item.title.trim_end_matches(" •"), available, max))
+                dock_tab_ui::tab_width(item.title.trim_end_matches(" •"), available, max)
+            })
+            .collect();
+        // Tabs that do not fit give up width before the strip scrolls: the
+        // active one keeps its name whole, and the widest of the others come
+        // down to one width, never under the least a tab shows.
+        let mut cap = f32::INFINITY;
+        if natural.iter().sum::<f32>() > available {
+            let mut others: Vec<f32> = visible_tabs
+                .iter()
+                .zip(&natural)
+                .filter(|(item, _)| !item.active)
+                .map(|(_, width)| *width)
+                .collect();
+            others.sort_by(f32::total_cmp);
+            let mut rest = (available - natural.iter().sum::<f32>() + others.iter().sum::<f32>()).max(0.0);
+            for (index, width) in others.iter().enumerate() {
+                let even = rest / (others.len() - index) as f32;
+                if *width > even {
+                    cap = even.max(dock_tab_ui::TAB_MIN_WIDTH);
+                    break;
+                }
+                rest -= width;
+            }
+        }
+        let items = visible_tabs
+            .iter()
+            .zip(natural)
+            .map(|(item, width)| {
+                let width = if item.active { width } else { width.min(cap) };
+                tab(state, decorations.as_deref(), item, width)
             })
             .collect();
         TabStrip::new("right_dock_tabs", items, theme::tab_strip_palette())
@@ -606,18 +716,20 @@ mod tests {
                 state.show_dock_add_menu = menu == "add";
                 state.show_dock_tabs_menu = menu == "tabs";
                 let frame = UiTree::new(header(&state, 520.0)).layout(Size::new(520.0, 400.0));
-                for id in [
-                    "dock_add_tab",
-                    "dock_tabs_menu",
-                    "terminal_toggle",
-                    "toggle_side_pane",
-                ] {
+                for id in ["dock_add_tab", "dock_tabs_menu", "toggle_side_pane"] {
                     assert_eq!(
                         frame.regions.iter().any(|region| region.id == id),
                         !ide,
                         "{id} with {menu} menu, IDE={ide}"
                     );
                 }
+                // The terminal has no button of its own: the menu that opens
+                // it shows and hides it.
+                assert_eq!(
+                    frame.regions.iter().any(|region| region.id == "terminal_toggle"),
+                    !ide && menu == "add",
+                    "terminal_toggle with {menu} menu, IDE={ide}"
+                );
                 let menu_item = if menu == "add" {
                     "dock_open:browser"
                 } else {
@@ -810,7 +922,6 @@ mod tests {
         let center = RIGHT_HEADER_HEIGHT / 2.0;
         for id in [
             "dock_close:1",
-            "terminal_toggle",
             "dock_add_tab",
             "dock_tabs_menu",
             "toggle_side_pane",
@@ -984,63 +1095,90 @@ mod tests {
     }
 
     #[test]
-    fn terminal_toggle_remains_discoverable_and_keeps_creation_separate() {
-        for visible in [false, true] {
-            let mut state = tab_state();
-            state.show_terminal_panel = visible;
-            // Tooltips use the window viewport, while the bar retains its
-            // compact explicit height inside the column.
-            let size = Size::new(320.0, 400.0);
-            let root = |state: &ViewState| {
-                Element::column(vec![header(state, size.width), Element::spacer().flex(1.0)])
-            };
-            let mut tree = UiTree::new(root(&state));
-            tree.set_reduced_motion(true);
-            let frame = tree.layout(size);
-            let toggle = frame
-                .regions
+    #[ignore = "exports the dock header, its tabs menu and its add menu as PNG under docs/ui-separation/shots/dock-header"]
+    fn export_dock_header_visual_review() {
+        let tabs = |titles: &[(&str, SideTab)], active: usize| -> Vec<DockTabView> {
+            titles
                 .iter()
-                .find(|r| r.id == "terminal_toggle")
-                .unwrap()
-                .rect;
-            let point = Point::new(
-                toggle.x + toggle.width / 2.0,
-                toggle.y + toggle.height / 2.0,
-            );
-            assert_eq!((toggle.width, toggle.height), (TOOL_SIZE, TOOL_SIZE));
-            assert!(toggle.y >= 0.0 && toggle.y + toggle.height <= RIGHT_HEADER_HEIGHT);
-            assert_eq!(frame.hit_test(point), Some("terminal_toggle"));
-            for (id, expected_icon) in [
-                ("terminal_toggle", Icon::Terminal),
-                ("dock_add_tab", Icon::Add),
-                ("dock_tabs_menu", Icon::Menu),
-                ("toggle_side_pane", Icon::PanelRightClose),
-            ] {
-                let action = frame.regions.iter().find(|region| region.id == id).unwrap();
-                assert!(frame.commands.iter().any(|command| matches!(command,
-                    DrawCommand::Icon { icon, rect, tint }
-                        if *icon == expected_icon && *tint == theme::FOREGROUND
-                            && (rect.x + rect.width / 2.0 - action.rect.x - action.rect.width / 2.0).abs() < 0.01
-                            && (rect.y + rect.height / 2.0 - action.rect.y - action.rect.height / 2.0).abs() < 0.01
-                )), "available dock action: {id}");
-            }
-            assert_eq!(
-                frame.commands.iter().any(|command| matches!(command,
-                    DrawCommand::FillRect { rect, color, .. }
-                        if *rect == toggle && *color == theme::SELECTED
-                )),
-                visible
-            );
-            tree.handle_event(UiEvent::PointerDown(point));
-            assert_eq!(
-                tree.handle_event(UiEvent::PointerUp(point)),
-                vec![UiAction::Clicked {
-                    id: "terminal_toggle".into(),
-                }]
-            );
-            assert!(tree.focus("terminal_toggle"));
-            let hint = tree.layout(size);
-            let hint_text = hint
+                .enumerate()
+                .map(|(index, (title, kind))| DockTabView {
+                    full_path: None,
+                    id: index as u64 + 1,
+                    title: (*title).into(),
+                    kind: *kind,
+                    active: index == active,
+                    closable: true,
+                })
+                .collect()
+        };
+        let four = [
+            ("Archivos", SideTab::Files),
+            ("Actividad", SideTab::Activity),
+            ("Cambios de Git", SideTab::CodeReview),
+            ("Navegador", SideTab::Browser),
+        ];
+        let many: Vec<(String, SideTab)> = (0..12)
+            .map(|index| (format!("modulo_{index}.rs"), SideTab::FilePreview))
+            .collect();
+        let many: Vec<(&str, SideTab)> = many.iter().map(|(title, kind)| (title.as_str(), *kind)).collect();
+        let directory = std::path::PathBuf::from(format!(
+            "{}/../../docs/ui-separation/shots/dock-header",
+            env!("CARGO_MANIFEST_DIR")
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let shot = |state: &ViewState, width: f32, name: &str| {
+            let name = format!("dock-header-{name}-{width:.0}");
+            super::super::dock_visual_tests::export(side_pane(state, width), width, 420.0, &name);
+            std::fs::copy(
+                format!("/tmp/openade-dock-review/{name}.png"),
+                directory.join(format!("{}.png", name.trim_start_matches("dock-header-"))),
+            )
+            .unwrap();
+        };
+        for width in [368.0, 520.0] {
+            let mut state = super::super::tests::empty_state();
+            state.dock_tabs = tabs(&four[..1], 0);
+            shot(&state, width, "one-tab");
+            state.dock_tabs = tabs(&four[..2], 1);
+            shot(&state, width, "two-tabs");
+            state.dock_tabs = tabs(&four, 1);
+            shot(&state, width, "four-tabs");
+            state.show_dock_add_menu = true;
+            shot(&state, width, "add-menu");
+            state.show_dock_add_menu = false;
+            state.dock_recently_closed = vec![
+                DockRecentlyClosedView {
+                    id: 9,
+                    title: "src/terminal_ui.rs".into(),
+                    kind: SideTab::FilePreview,
+                    restorable: true,
+                },
+                DockRecentlyClosedView {
+                    id: 10,
+                    title: "Cambios del chat".into(),
+                    kind: SideTab::SessionChanges,
+                    restorable: true,
+                },
+            ];
+            state.show_dock_tabs_menu = true;
+            shot(&state, width, "tabs-menu");
+            state.dock_overview_query = "git".into();
+            shot(&state, width, "tabs-menu-search");
+            state.dock_overview_query.clear();
+            state.show_dock_tabs_menu = false;
+            state.dock_tabs = tabs(&many, 5);
+            shot(&state, width, "many-tabs");
+        }
+    }
+
+    #[test]
+    fn the_terminal_is_shown_and_hidden_from_the_menu_that_opens_it() {
+        let size = Size::new(320.0, 400.0);
+        let root = |state: &ViewState| {
+            Element::column(vec![header(state, size.width), Element::spacer().flex(1.0)])
+        };
+        let words = |frame: &openide_ui::Frame| {
+            frame
                 .commands
                 .iter()
                 .filter_map(|command| match command {
@@ -1048,23 +1186,51 @@ mod tests {
                     _ => None,
                 })
                 .collect::<Vec<_>>()
-                .join(" ");
-            let hint_text = hint_text.split_whitespace().collect::<Vec<_>>().join(" ");
-            assert!(
-                hint_text.contains(if visible {
-                    "Ocultar terminal Ctrl + `"
-                } else {
-                    "Mostrar terminal Ctrl + `"
-                }),
-                "missing readable terminal action hint: {hint_text}"
-            );
+                .join(" ")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        for visible in [false, true] {
+            let mut state = tab_state();
+            state.show_terminal_panel = visible;
+            // The header keeps its tools to the dock's own: no terminal button.
+            let closed = UiTree::new(root(&state)).layout(size);
+            assert!(!closed.regions.iter().any(|region| region.id == "terminal_toggle"));
+            for (id, expected_icon) in [
+                ("dock_add_tab", Icon::Add),
+                ("dock_tabs_menu", Icon::Menu),
+                ("toggle_side_pane", Icon::PanelRightClose),
+            ] {
+                let action = closed.regions.iter().find(|region| region.id == id).unwrap();
+                assert!(closed.commands.iter().any(|command| matches!(command,
+                    DrawCommand::Icon { icon, rect, tint }
+                        if *icon == expected_icon && *tint == theme::FOREGROUND
+                            && (rect.x + rect.width / 2.0 - action.rect.x - action.rect.width / 2.0).abs() < 0.01
+                            && (rect.y + rect.height / 2.0 - action.rect.y - action.rect.height / 2.0).abs() < 0.01
+                )), "available dock action: {id}");
+            }
+            // The menu that opens a terminal also shows and hides the panel,
+            // with its shortcut, apart from starting a new one.
             state.show_dock_add_menu = true;
-            tree.set_root(root(&state));
-            let menu = tree.layout(Size::new(size.width, 400.0));
-            assert!(menu
-                .regions
-                .iter()
-                .any(|region| region.id == "dock_open:terminal"));
+            let mut tree = UiTree::new(root(&state));
+            tree.set_reduced_motion(true);
+            let open = tree.layout(size);
+            let said = words(&open);
+            assert!(
+                said.contains(if visible { "Ocultar terminal" } else { "Mostrar terminal" })
+                    && said.contains("Ctrl + `")
+                    && said.contains("Nueva terminal"),
+                "{said}"
+            );
+            let toggle = open.regions.iter().find(|region| region.id == "terminal_toggle").unwrap().rect;
+            assert!(open.regions.iter().any(|region| region.id == "dock_open:terminal"));
+            let point = Point::new(toggle.x + toggle.width / 2.0, toggle.y + toggle.height / 2.0);
+            tree.handle_event(UiEvent::PointerDown(point));
+            assert_eq!(
+                tree.handle_event(UiEvent::PointerUp(point)),
+                vec![UiAction::Clicked { id: "terminal_toggle".into() }]
+            );
         }
     }
 
@@ -1184,7 +1350,6 @@ mod tests {
                     format!("dock_tab:{}", selected + 1),
                     format!("dock_close:{}", selected + 1),
                     "dock_add_tab".into(),
-                    "terminal_toggle".into(),
                     "dock_tabs_menu".into(),
                     "toggle_side_pane".into(),
                 ] {
@@ -1282,7 +1447,7 @@ mod tests {
     }
 
     #[test]
-    fn overflow_menu_has_unique_actions_and_overview_has_no_duplicate_tabs() {
+    fn the_tabs_menu_has_unique_actions() {
         let mut state = super::super::tests::empty_state();
         state.show_dock_tabs_menu = true;
         let frame = UiTree::new(header(&state, 400.0)).layout(Size::new(400.0, 600.0));
@@ -1294,12 +1459,6 @@ mod tests {
             .regions
             .iter()
             .any(|region| region.id.starts_with("dock_tab_menu:")));
-        state.show_dock_tabs_menu = false;
-        state.show_dock_overview = true;
-        let frame = UiTree::new(header(&state, 400.0)).layout(Size::new(400.0, 600.0));
-        assert!(!frame.regions.iter().any(
-            |region| region.id.starts_with("dock_tab:") || region.id.starts_with("dock_close:")
-        ));
     }
 
     #[test]
@@ -1364,7 +1523,8 @@ mod tests {
             }
         }
         let edge = Point::new(strip.x + strip.width - 2.0, strip.y + strip.height / 2.0);
-        assert_eq!(first.hit_test(edge), Some("dock_tab:2"));
+        // The fade takes no pointer: under it is still the tab, or its close.
+        assert!(matches!(first.hit_test(edge), Some("dock_tab:2" | "dock_close:2")));
         for tab in &mut state.dock_tabs {
             tab.active = tab.id == 8;
         }
