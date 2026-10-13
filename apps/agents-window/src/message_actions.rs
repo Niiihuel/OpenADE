@@ -118,7 +118,64 @@ pub(crate) fn turn_items(transcript: &[TranscriptItem], start: usize) -> &[Trans
     &rest[..end]
 }
 
-/// "hace 5 min · 14 s · model": only what the journal recorded.
+/// What the agent did in a turn, in one line: "leyó 6 archivos, ejecutó 3
+/// comandos, editó 2 archivos". Counted from the turn's own tool calls, each
+/// of which keeps its row above; a turn that used no tool says nothing.
+pub(crate) fn activity_summary(items: &[TranscriptItem]) -> String {
+    // read, searched, ran, edited, browsed, delegated, anything else
+    let mut counts = [0usize; 7];
+    let mut edited = std::collections::BTreeSet::new();
+    for item in items {
+        let TranscriptItem::Tool { name, arguments, .. } = item else {
+            continue;
+        };
+        let name = name.rsplit("__").next().unwrap_or(name);
+        let slot = match name {
+            "read_file" | "batch_read" | "get_diagnostics" | "list_files" | "find_files" => 0,
+            "search_files" | "search_text" | "codebase_search" | "codebase_explore" | "web_search" => 1,
+            "run_command" | "exec_command" | "start_command" => 2,
+            "write_file" | "edit_file" | "apply_patch" | "delete_file" | "rename_file" => 3,
+            "web_fetch" | "open_preview" => 4,
+            "spawn_agent" | "delegate_task" => 5,
+            // Following a command or a subagent already counted is not another action.
+            "poll_command" | "write_stdin" | "terminal_send" | "terminate_command" | "resize_command" | "wait_agent"
+            | "await_subagent" | "send_input" | "send_message" | "message_conversation" | "cancel_agent"
+            | "cancel_subagent" | "list_agents" | "update_plan" => continue,
+            _ if name.starts_with("browser_") => 4,
+            _ => 6,
+        };
+        counts[slot] += 1;
+        if slot == 3 {
+            // The same file edited twice is one file; a patch names its own.
+            match ["path", "file_path"].into_iter().find_map(|key| arguments.get(key)?.as_str()) {
+                Some(path) => drop(edited.insert(path.to_owned())),
+                None => drop(edited.insert(format!("#{}", counts[3]))),
+            }
+        }
+    }
+    counts[3] = edited.len();
+    let phrases = [
+        ("leyó 1 archivo", "leyó {} archivos"),
+        ("buscó 1 vez", "buscó {} veces"),
+        ("ejecutó 1 comando", "ejecutó {} comandos"),
+        ("editó 1 archivo", "editó {} archivos"),
+        ("usó el navegador", "usó el navegador {} veces"),
+        ("delegó en 1 subagente", "delegó en {} subagentes"),
+        ("usó 1 herramienta", "usó {} herramientas"),
+    ];
+    counts
+        .into_iter()
+        .zip(phrases)
+        .filter_map(|(count, (one, many))| match count {
+            0 => None,
+            1 => Some(one.to_owned()),
+            _ => Some(many.replace("{}", &count.to_string())),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// "hace 5 min · 14 s · model · leyó 2 archivos": only what the journal recorded.
 fn caption(state: &ViewState, turn: &Turn<'_>) -> String {
     let id = turn_time_id(turn.user_row);
     let model = turn.items.iter().rev().find_map(|item| match item {
@@ -131,6 +188,7 @@ fn caption(state: &ViewState, turn: &Turn<'_>) -> String {
         state.item_times.ended_ms(&id).map(|ended| elapsed_label(ended, now_ms())),
         state.item_times.duration_ms(&id).map(duration_label),
         model,
+        Some(activity_summary(turn.items)).filter(|summary| !summary.is_empty()),
     ]
     .into_iter()
     .flatten()
@@ -274,4 +332,45 @@ pub(crate) fn apply_action(state: &mut ViewState, id: &str) -> Option<Effect> {
     // Choosing from the menu closes it.
     state.message_actions.menu = None;
     Some(effect)
+}
+
+#[cfg(test)]
+mod summary_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn tool(name: &str, arguments: serde_json::Value) -> TranscriptItem {
+        TranscriptItem::Tool {
+            id: format!("call-{name}"),
+            name: name.into(),
+            arguments,
+            output: Some(String::new()),
+            is_error: false,
+            activity: ActivityStatus::Completed,
+        }
+    }
+
+    #[test]
+    fn a_turn_says_in_one_line_what_the_agent_did() {
+        assert_eq!(activity_summary(&[]), "");
+        let turn = [
+            tool("read_file", json!({"path": "src/a.rs"})),
+            tool("read_file", json!({"path": "src/b.rs"})),
+            tool("search_text", json!({"query": "foo"})),
+            tool("run_command", json!({"command": "cargo test"})),
+            // Following that command is not another command.
+            tool("poll_command", json!({"command_id": "1"})),
+            tool("edit_file", json!({"path": "src/a.rs"})),
+            // The same file edited again is still one file.
+            tool("edit_file", json!({"path": "src/a.rs"})),
+            tool("write_file", json!({"path": "src/c.rs"})),
+            tool("mcp__openide_browser__browser_click", json!({"ref": "e1"})),
+            tool("mcp__github__list_issues", json!({})),
+        ];
+        assert_eq!(
+            activity_summary(&turn),
+            "leyó 2 archivos, buscó 1 vez, ejecutó 1 comando, editó 2 archivos, usó el navegador, usó 1 herramienta"
+        );
+        assert_eq!(activity_summary(&turn[..1]), "leyó 1 archivo");
+    }
 }
