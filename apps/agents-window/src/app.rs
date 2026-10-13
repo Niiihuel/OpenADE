@@ -6095,6 +6095,7 @@ impl AgentsWindow {
                         workspace: workspace.clone(),
                         generation: self.review_generation,
                         account: self.github_query_account().map(str::to_owned),
+                        create_pull: None,
                     })
                     .is_ok()
             });
@@ -17959,6 +17960,25 @@ impl AgentsWindow {
                 if let GithubStatus::Ready(github) = &self.github_status {
                     let url = github.repository.web_url();
                     ctx.open_url(egui::OpenUrl::new_tab(url));
+                }
+            }
+            UiAction::Clicked { id } if id == "github_pr_create" || id == "github_pr_create_draft" => {
+                if let (Some(worker), Some(workspace)) =
+                    (&self.github_worker, self.review_active_workspace.clone())
+                {
+                    let request = GithubRequest {
+                        workspace,
+                        generation: self.review_generation,
+                        account: self.github_query_account().map(str::to_owned),
+                        create_pull: Some(id == "github_pr_create_draft"),
+                    };
+                    if !self.github_in_flight && worker.submit(request).is_ok() {
+                        self.github_in_flight = true;
+                        self.github_status = GithubStatus::Loading;
+                        if let Some(Ok(review)) = &mut self.view.git_review {
+                            Arc::make_mut(review).github = GithubStatus::Loading;
+                        }
+                    }
                 }
             }
             UiAction::Clicked { id } if id.starts_with("github_pr_open:") => {

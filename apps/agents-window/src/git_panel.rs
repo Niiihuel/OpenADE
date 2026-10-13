@@ -858,6 +858,18 @@ fn github_footer(status: &GithubStatus, surface: Color) -> Option<Element> {
                     .sizing(crate::ui_sizing::SMALL_LABEL_BUTTON)
                     .render(),
                 );
+            } else if github.branch != "HEAD separado" {
+                for (id, label) in [
+                    ("github_pr_create", "Crear pull request"),
+                    ("github_pr_create_draft", "Crear pull request en borrador"),
+                ] {
+                    rows.push(
+                        Button::new(id, label, palette)
+                            .variant(ButtonVariant::Ghost)
+                            .sizing(crate::ui_sizing::SMALL_LABEL_BUTTON)
+                            .render(),
+                    );
+                }
             }
             // Keep repository access issues visible without making them the
             // first thing above local changes, which work independently.
@@ -2020,6 +2032,33 @@ mod tests {
         // Asked in another project, it is not this project's question.
         state.workspace = "/workspace/other".into();
         assert!(dialog(&state).0.regions.is_empty());
+    }
+
+    #[test]
+    fn a_branch_without_a_pull_request_offers_to_open_one() {
+        let offered = |branch: &str, pulls: Vec<crate::github::GithubPull>| {
+            let status = GithubStatus::Ready(crate::github::GithubOverview {
+                repository: crate::github::parse_remote("git@github.com:team/project.git", "origin").unwrap(),
+                branch: branch.into(),
+                pulls,
+                notice: None,
+            });
+            let mut tree = UiTree::new(github_footer(&status, theme::BACKGROUND).unwrap());
+            let frame = tree.layout(Size::new(320.0, 200.0));
+            ["github_pr_create", "github_pr_create_draft"]
+                .map(|id| frame.regions.iter().any(|region| region.id == id))
+        };
+        assert_eq!(offered("topic", vec![]), [true, true]);
+        assert_eq!(offered("HEAD separado", vec![]), [false, false]);
+        let open = crate::github::GithubPull {
+            number: 7,
+            title: "Listo".into(),
+            url: "https://github.com/team/project/pull/7".into(),
+            author: "ana".into(),
+            base: "main".into(),
+            draft: false,
+        };
+        assert_eq!(offered("topic", vec![open]), [false, false]);
     }
 
     #[test]

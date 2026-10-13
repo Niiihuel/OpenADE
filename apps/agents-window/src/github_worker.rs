@@ -1,6 +1,6 @@
 //! Serial background GitHub requests. Network latency never holds the UI loop.
 
-use crate::github::{load_overview, GithubOverview};
+use crate::github::{create_pull, load_overview, GithubOverview};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, SendError, Sender};
@@ -12,6 +12,8 @@ pub struct GithubRequest {
     pub generation: u64,
     /// None means public requests with no credential lookup.
     pub account: Option<String>,
+    /// Open a pull request for the current branch first; true asks for a draft.
+    pub create_pull: Option<bool>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -68,10 +70,26 @@ fn run_worker(request_rx: Receiver<GithubRequest>, result_tx: Sender<GithubRespo
         let mut request = first;
         while let Ok(next) = request_rx.try_recv() {
             if next.generation >= request.generation {
-                request = next;
+                // A read may replace a read; a pull request asked for is still opened.
+                let create_pull = next.create_pull.or(request.create_pull);
+                request = GithubRequest { create_pull, ..next };
             }
         }
-        let overview = load_overview(&request.workspace, request.account.as_deref());
+        let created = request.create_pull.map(|draft| match request.account.as_deref() {
+            Some(account) => create_pull(&request.workspace, account, draft),
+            None => Err("Conectá una cuenta de GitHub para crear el pull request".to_owned()),
+        });
+        let mut overview = load_overview(&request.workspace, request.account.as_deref());
+        if let Some(overview) = &mut overview {
+            match created {
+                // The list may not show a pull request opened a moment ago.
+                Some(Ok(pull)) if !overview.pulls.iter().any(|known| known.number == pull.number) => {
+                    overview.pulls.insert(0, pull)
+                }
+                Some(Err(error)) => overview.notice = Some(error),
+                _ => {}
+            }
+        }
         if result_tx
             .send(GithubResponse {
                 workspace: request.workspace,

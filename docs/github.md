@@ -85,6 +85,12 @@ fallo de consulta. La carga tiene tiempo y tamaño máximos. Si GitHub no
 responde, el diff local sigue disponible. También presenta el upstream local
 y los commits por delante o detrás cuando Git los conoce.
 
+Cuando la rama no tiene un PR abierto, el dock ofrece **Crear pull request** y
+**Crear pull request en borrador**. `create_pull` lo abre contra la rama por
+defecto del repositorio con el asunto y el cuerpo del último commit, usando el
+token de la cuenta conectada. No hace push: si la rama no está en GitHub, si no
+tiene commits nuevos o si ya existe un PR, el motivo aparece en el mismo dock.
+
 ## Calendario de contribuciones
 
 Configuración → GitHub muestra las contribuciones de la cuenta verificada
@@ -116,8 +122,8 @@ configuración de la cuenta. No se solicitan permisos adicionales al abrir el gr
 
 ## Alcance pendiente
 
-- Crear, comentar, aprobar y fusionar PR requiere un flujo de autenticación y
-  permisos de escritura propios, con estados de confirmación y errores.
+- Comentar, aprobar y fusionar PR requiere estados de confirmación y errores
+  propios. Al crear un PR no se puede elegir la base ni editar título y cuerpo.
 - Faltan remotos GitHub Enterprise y casos de fork con nombres de remotos no
   convencionales.
 - Check runs, reviews, conflictos y conversaciones de PR aún no se presentan.

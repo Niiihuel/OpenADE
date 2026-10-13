@@ -247,6 +247,114 @@ fn fetch_pulls(
     Ok(parse_pulls(&value, repository, branch))
 }
 
+/// What GitHub is asked to open: the branch into `base`, described by the
+/// branch's last commit.
+fn pull_payload(
+    repository: &GithubRepository,
+    branch: &str,
+    base: &str,
+    title: &str,
+    body: &str,
+    draft: bool,
+) -> Value {
+    serde_json::json!({
+        "title": title,
+        "body": body,
+        "head": format!("{}:{branch}", repository.head_owner),
+        "base": base,
+        "draft": draft,
+    })
+}
+
+/// Why GitHub refused to open the pull request, in the user's terms where
+/// the reason is a known one.
+fn pull_refusal(status: u16, body: &[u8]) -> String {
+    let value: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
+    let first = value.get("errors").and_then(|errors| errors.get(0));
+    let reason = first
+        .and_then(|error| error.get("message"))
+        .or_else(|| value.get("message"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let field = first.and_then(|error| error.get("field")).and_then(Value::as_str);
+    match status {
+        401 | 403 => "La cuenta de GitHub no tiene permiso para crear el pull request".to_owned(),
+        404 => "El repositorio no está disponible con las credenciales actuales".to_owned(),
+        422 if reason.starts_with("A pull request already exists") => {
+            "Ya existe un pull request para esta rama".to_owned()
+        }
+        422 if reason.starts_with("No commits between") => {
+            "La rama no tiene commits nuevos para un pull request".to_owned()
+        }
+        422 if field == Some("head") => "Publicá la rama antes de crear el pull request".to_owned(),
+        _ => {
+            let reason: String = reason.chars().filter(|ch| !ch.is_control()).take(200).collect();
+            format!("GitHub no creó el pull request (HTTP {status}). {reason}")
+        }
+    }
+}
+
+fn api_json(request: reqwest::blocking::RequestBuilder, token: &str) -> Result<(u16, Vec<u8>), String> {
+    let response = request
+        .bearer_auth(token)
+        .header(reqwest::header::USER_AGENT, "OpenIDE-Agent-Window")
+        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+        .send()
+        .map_err(|_| "No se pudo consultar GitHub".to_owned())?;
+    let status = response.status().as_u16();
+    let mut bytes = Vec::new();
+    response
+        .take(MAX_RESPONSE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "No se pudo leer la respuesta de GitHub".to_owned())?;
+    if bytes.len() as u64 > MAX_RESPONSE_BYTES {
+        return Err("La respuesta de GitHub excede el límite de tamaño".to_owned());
+    }
+    Ok((status, bytes))
+}
+
+/// Opens a pull request for the current branch into the repository's default
+/// branch. The branch must already be on GitHub: nothing is pushed from here.
+pub fn create_pull(workspace: &Path, account: &str, draft: bool) -> Result<GithubPull, String> {
+    let repository =
+        discover_repository(workspace).ok_or("Este proyecto no tiene un remoto de GitHub")?;
+    let branch = current_branch(workspace)
+        .ok_or("HEAD separado: elegí una rama antes de crear el pull request")?;
+    let title = git_output(workspace, &["log", "-1", "--format=%s"])
+        .filter(|title| !title.is_empty())
+        .ok_or("Creá un commit antes de crear el pull request")?;
+    let body = git_output(workspace, &["log", "-1", "--format=%b"]).unwrap_or_default();
+    let token = crate::github_account::auth_token_for_account(account)
+        .ok_or_else(|| format!("Reconecta la cuenta {account} para crear el pull request."))?;
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|_| "No se pudo preparar la conexión con GitHub".to_owned())?;
+    let api = format!(
+        "https://api.github.com/repos/{}/{}",
+        repository.owner, repository.name
+    );
+    let (status, bytes) = api_json(client.get(&api), &token)?;
+    let base = serde_json::from_slice::<Value>(&bytes)
+        .ok()
+        .filter(|_| status == 200)
+        .and_then(|value| value.get("default_branch")?.as_str().map(str::to_owned))
+        .ok_or_else(|| pull_refusal(status, &bytes))?;
+    if base == branch && repository.head_owner.eq_ignore_ascii_case(&repository.owner) {
+        return Err("Cambiá a una rama de trabajo antes de crear el pull request".to_owned());
+    }
+    let payload = pull_payload(&repository, &branch, &base, &title, &body, draft);
+    let (status, bytes) = api_json(client.post(format!("{api}/pulls")).json(&payload), &token)?;
+    if status != 201 {
+        return Err(pull_refusal(status, &bytes));
+    }
+    let created: Value = serde_json::from_slice(&bytes)
+        .map_err(|_| "GitHub devolvió una respuesta no válida".to_owned())?;
+    parse_pulls(&Value::Array(vec![created]), &repository, &branch)
+        .pop()
+        .ok_or_else(|| "GitHub devolvió una respuesta no válida".to_owned())
+}
+
 pub fn load_overview(workspace: &Path, account: Option<&str>) -> Option<GithubOverview> {
     let repository = discover_repository(workspace)?;
     let branch = current_branch(workspace).unwrap_or_else(|| "HEAD separado".to_owned());
@@ -272,6 +380,34 @@ pub fn load_overview(workspace: &Path, account: Option<&str>) -> Option<GithubOv
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_new_pull_names_the_forks_branch_and_a_refusal_is_told_in_the_users_terms() {
+        let mut repository = parse_remote("git@github.com:owner/repo.git", "origin").unwrap();
+        repository.head_owner = "fork".into();
+        let payload = pull_payload(&repository, "topic", "main", "Título", "Cuerpo", true);
+        assert_eq!(
+            payload,
+            serde_json::json!({"title":"Título","body":"Cuerpo","head":"fork:topic","base":"main","draft":true})
+        );
+        let refused = |status, body: &str| pull_refusal(status, body.as_bytes());
+        assert_eq!(
+            refused(422, r#"{"message":"Validation Failed","errors":[{"message":"A pull request already exists for fork:topic."}]}"#),
+            "Ya existe un pull request para esta rama"
+        );
+        assert_eq!(
+            refused(422, r#"{"errors":[{"message":"No commits between main and topic"}]}"#),
+            "La rama no tiene commits nuevos para un pull request"
+        );
+        assert_eq!(
+            refused(422, r#"{"errors":[{"resource":"PullRequest","field":"head","code":"invalid"}]}"#),
+            "Publicá la rama antes de crear el pull request"
+        );
+        assert_eq!(refused(403, "{}"), "La cuenta de GitHub no tiene permiso para crear el pull request");
+        // An unknown reason is shown bounded, without control characters.
+        let odd = refused(500, &format!(r#"{{"message":"a\nb{}"}}"#, "x".repeat(400)));
+        assert!(odd.starts_with("GitHub no creó el pull request (HTTP 500). ab") && odd.chars().count() < 260, "{odd}");
+    }
 
     #[test]
     fn remote_parser_accepts_supported_github_forms_only() {
