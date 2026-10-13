@@ -166,7 +166,17 @@ pub(super) fn extensions_center(
     height: f32,
     sidebar_list_visible: bool,
 ) -> Element {
-    let body = if sidebar_list_visible {
+    use marketplace_view::MarketplaceTab;
+    let tab = state.marketplace.tab;
+    let body = if let Some(page) = crate::view::addons_settings_tab(state, width) {
+        page
+    } else if tab == MarketplaceTab::Sources {
+        marketplace_view::with_source_modal(
+            &state.marketplace,
+            marketplace_view::landing(&state.marketplace, width, "ide_extension:", Some(("Orígenes", None))),
+            width,
+        )
+    } else if sidebar_list_visible {
         marketplace_view::with_source_modal(
             &state.marketplace,
             marketplace_view::detail_or_landing(
@@ -208,6 +218,7 @@ pub(super) fn extensions_center(
             .width(width)
             .sizing(crate::ui_sizing::PANE_HEADER)
             .render(),
+        marketplace_view::section_tabs(tab, None),
         body.flex(1.0),
     ])
     .background(theme::BACKGROUND)
@@ -277,7 +288,15 @@ mod tests {
         assert!(has(&sidebar, "ide_extensions_search"));
         assert!(has(&sidebar, "marketplace_row_menu:source:review"));
 
-        // Nothing selected: the landing page, which lists sources and no rows.
+        // Nothing selected: the section's tabs over a skill to choose. The
+        // sources' tab lists sources and no rows.
+        tree.set_root(extensions_center(&state, 800.0, 700.0, true));
+        let chosen = tree.layout(Size::new(800.0, 700.0));
+        for tab in ["skills", "plugins", "mcp", "sources"] {
+            assert!(has(&chosen, &format!("marketplace_tab:{tab}")), "{tab}");
+        }
+        assert!(!has(&chosen, "marketplace_add_menu"));
+        state.marketplace.tab = crate::marketplace_view::MarketplaceTab::Sources;
         tree.set_root(extensions_center(&state, 800.0, 700.0, true));
         let landing = tree.layout(Size::new(800.0, 700.0));
         assert!(has(&landing, "marketplace_add_menu"));
@@ -286,6 +305,8 @@ mod tests {
         assert!(!has(&landing, "ide_extensions_search"));
         assert!(!landing.regions.iter().any(|r| r.id.contains("page_next")));
 
+        // Opening a skill is done in the skills' tab.
+        state.marketplace.tab = crate::marketplace_view::MarketplaceTab::Skills;
         state.marketplace.selected_item_id = Some("source:review".into());
         tree.set_root(extensions_center(&state, 800.0, 700.0, true));
         let detail = tree.layout(Size::new(800.0, 700.0));

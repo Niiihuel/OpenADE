@@ -187,6 +187,8 @@ impl AgentsWindow {
                 .map(|tab| tab.id.get());
             self.view.ide.extensions_open = true;
             self.view.marketplace.selected_item_id = None;
+            // Where the catalog comes from is the sources' tab.
+            self.view.marketplace.tab = crate::marketplace_view::MarketplaceTab::Sources;
             self.view.ide.compact_panel = None;
             return true;
         }
@@ -197,6 +199,8 @@ impl AgentsWindow {
         if let Some(item_id) = id.strip_prefix("ide_extension:") {
             if self.view.marketplace.find_item(item_id).is_some() {
                 self.view.marketplace.selected_item_id = Some(item_id.to_owned());
+                // A skill opens in the skills' tab, whichever was in view.
+                self.view.marketplace.tab = crate::marketplace_view::MarketplaceTab::Skills;
                 self.view.marketplace.menu_item = None;
                 self.view.ide.extensions_editor_tab = self
                     .dock

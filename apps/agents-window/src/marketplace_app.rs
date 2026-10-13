@@ -602,6 +602,7 @@ impl AgentsWindow {
                             state.status = None;
                         }
                         state.selected_item_id = Some(item.to_owned());
+                        state.tab = crate::marketplace_view::MarketplaceTab::Skills;
                     }
                 } else if let Some(item) = id.strip_prefix("marketplace_install_user:") {
                     self.install_marketplace_item(item, InstallScope::User);
