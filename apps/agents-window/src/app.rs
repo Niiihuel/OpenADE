@@ -1120,6 +1120,8 @@ struct DockMotion {
     bottom_maximized: bool,
     ide: bool,
     maximized: bool,
+    /// The right dock moves because it was maximized or restored.
+    covering: bool,
 }
 
 impl DockMotion {
@@ -1137,6 +1139,7 @@ impl DockMotion {
             bottom_maximized: false,
             ide: false,
             maximized: false,
+            covering: false,
         }
     }
 
@@ -1152,9 +1155,12 @@ impl DockMotion {
         let resized = (self.viewport_width - viewport_width).abs() > 0.5;
         self.viewport_width = viewport_width;
         // Maximizing or restoring the right dock moves it as a toggle does.
+        let maximize_changed = std::mem::replace(&mut self.maximized, maximized) != maximized;
         let visibility_changed = (self.left.target() > 0.5) != (target_left > 0.5)
             || (self.right.target() > 0.5) != (target_right > 0.5)
-            || std::mem::replace(&mut self.maximized, maximized) != maximized;
+            || maximize_changed;
+        // A toggle of either dock in between takes the move over.
+        self.covering = maximize_changed || (self.covering && !visibility_changed);
         for (transition, content_width, target) in [
             (&mut self.left, &mut self.content_left, target_left),
             (&mut self.right, &mut self.content_right, target_right),
@@ -1174,6 +1180,7 @@ impl DockMotion {
                 *content_width = target;
             }
         }
+        self.covering &= self.right.is_active(now);
         (
             self.left.is_active(now).then(|| self.left.value(now)),
             self.right.is_active(now).then(|| self.right.value(now)),
@@ -6888,6 +6895,7 @@ impl AgentsWindow {
             terminal_menu_open: false,
             terminal_maximized: false,
             dock_maximized: false,
+            dock_covering: false,
             show_terminal_panel: false,
             terminal_panel_height: 240.0,
             terminal_snapshot: None,
@@ -20514,6 +20522,7 @@ impl AgentsWindow {
         }
         if self.dock_drag.is_some() {
             self.dock_motion = None;
+            self.view.dock_covering = false;
             self.view.left_presentation_width = None;
             self.view.right_presentation_width = None;
             self.view.bottom_presentation_height = None;
@@ -20537,6 +20546,7 @@ impl AgentsWindow {
         );
         self.view.left_presentation_width = left;
         self.view.right_presentation_width = right;
+        self.view.dock_covering = motion.covering && right.is_some();
         self.view.ide.explorer_content_width =
             (ide && left.is_some()).then_some(motion.content_left);
         self.view.ide.agent_content_width =

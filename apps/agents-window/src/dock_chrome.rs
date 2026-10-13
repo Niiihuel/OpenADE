@@ -253,6 +253,7 @@ fn all_tabs_menu(state: &ViewState) -> Element {
         entries.push(DropdownMenuEntry::custom(row.render().size(None, Some(26.0))));
     }
     if open.len() > 1 && query.is_empty() {
+        entries.push(DropdownMenuEntry::Separator);
         entries.push(
             DropdownMenuItem::new("dock_close_all", "Cerrar todas")
                 .icon(Icon::Close)
@@ -1162,6 +1163,23 @@ mod tests {
             ];
             state.show_dock_tabs_menu = true;
             shot(&state, width, "tabs-menu");
+            // The pointer over a row, then over its close: the row's fill
+            // behind both, and the close's own over it.
+            for (name, target) in [("row", "dock_tab_menu:2"), ("close", "dock_tab_menu_close:2")] {
+                let name = format!("dock-header-tabs-menu-hover-{name}-{width:.0}");
+                super::super::dock_visual_tests::export_with_interaction(
+                    side_pane(&state, width),
+                    width,
+                    420.0,
+                    &name,
+                    Some(super::super::dock_visual_tests::ExportInteraction::Hover(target)),
+                );
+                std::fs::copy(
+                    format!("/tmp/openade-dock-review/{name}.png"),
+                    directory.join(format!("{}.png", name.trim_start_matches("dock-header-"))),
+                )
+                .unwrap();
+            }
             state.dock_overview_query = "git".into();
             shot(&state, width, "tabs-menu-search");
             state.dock_overview_query.clear();

@@ -711,6 +711,9 @@ pub struct ViewState {
     pub terminal_maximized: bool,
     /// The right dock takes the room of the conversation and its composer.
     pub dock_maximized: bool,
+    /// The right dock is on its way to or from maximized: it moves over the
+    /// conversation, which keeps the place it has at rest.
+    pub dock_covering: bool,
     pub show_terminal_panel: bool,
     pub terminal_panel_height: f32,
     pub terminal_snapshot: Option<TerminalSnapshot>,
@@ -830,6 +833,17 @@ pub struct DockLayout {
 }
 
 pub fn dock_layout(state: &ViewState, viewport: f32) -> DockLayout {
+    dock_layout_for(state, viewport, state.dock_maximized, state.right_presentation_width)
+}
+
+/// The layout with the right dock `maximized` or not and at `presented`
+/// width, whatever the state says of either: at rest it is `(false, None)`.
+fn dock_layout_for(
+    state: &ViewState,
+    viewport: f32,
+    maximized: bool,
+    presented: Option<f32>,
+) -> DockLayout {
     if crate::ide_workspace::active(state) {
         return crate::ide_workspace::layout(state, viewport);
     }
@@ -851,18 +865,13 @@ pub fn dock_layout(state: &ViewState, viewport: f32) -> DockLayout {
         .left_presentation_width
         .unwrap_or(if left_visible { 200.0 } else { 0.0 })
         .max(0.0);
-    let right_for_threshold = state
-        .right_presentation_width
-        .unwrap_or(MIN_RIGHT_DOCK)
-        .max(0.0);
+    let right_for_threshold = presented.unwrap_or(MIN_RIGHT_DOCK).max(0.0);
     let side_threshold = (2.0 + f32::from(left_visible)) * GAP
         + RIGHT_DIVIDER
         + left_for_threshold
         + right_for_threshold
         + center_min_with_right;
-    let side_requested = state
-        .right_presentation_width
-        .map_or(state.show_side_pane, |width| width > 1.0);
+    let side_requested = presented.map_or(state.show_side_pane, |width| width > 1.0);
     let side_visible = side_requested
         && !state.show_settings
         && state.main_page == MainPage::Workspace
@@ -888,7 +897,7 @@ pub fn dock_layout(state: &ViewState, viewport: f32) -> DockLayout {
     };
     let right = side_visible.then(|| {
         let max_width = (viewport - gaps - left - center_min_with_right).max(0.0);
-        if let Some(width) = state.right_presentation_width {
+        if let Some(width) = presented {
             width.clamp(0.0, max_width)
         } else {
             state
@@ -901,15 +910,13 @@ pub fn dock_layout(state: &ViewState, viewport: f32) -> DockLayout {
     // Maximized, the right dock takes the conversation's room beside the
     // sidebar as it stands: it shows in a window of any width, and has no
     // center to keep nor divider to drag.
-    if state.dock_maximized
+    if maximized
         && side_requested
         && !state.show_settings
         && state.main_page == MainPage::Workspace
     {
         let room = (viewport - (2.0 + f32::from(left_visible)) * GAP - left).max(0.0);
-        let right = state
-            .right_presentation_width
-            .map_or(room, |width| width.clamp(0.0, room));
+        let right = presented.map_or(room, |width| width.clamp(0.0, room));
         return DockLayout {
             left,
             right: Some(right),
@@ -3272,14 +3279,21 @@ pub(crate) fn build_view_sized(state: &ViewState, viewport_width: f32, viewport_
             viewport_width,
         );
     }
-    let layout = dock_layout(state, viewport_width);
+    // A dock on its way to or from maximized moves over the conversation,
+    // which is laid out as it stands at rest: nothing in it reflows, and it
+    // is covered or uncovered as the dock passes.
+    let covering = state.right_presentation_width.filter(|_| state.dock_covering);
+    let layout = match covering {
+        Some(_) => dock_layout_for(state, viewport_width, false, None),
+        None => dock_layout(state, viewport_width),
+    };
     let terminal_height = terminal_panel_height(state, viewport_height);
     let workspace_height = (viewport_height - terminal_height).max(0.0);
     let left = layout.left;
     let left_visible = left > 1.0;
     // Maximized, the right dock is the whole workspace surface: the
     // conversation and its composer are not built until it is restored.
-    if let Some(right) = layout.right.filter(|_| state.dock_maximized) {
+    if let Some(right) = layout.right.filter(|_| state.dock_maximized && covering.is_none()) {
         let mut docks = Vec::new();
         if left_visible {
             docks.push(
@@ -3288,17 +3302,14 @@ pub(crate) fn build_view_sized(state: &ViewState, viewport_width: f32, viewport_
                     .clip_children(),
             );
         }
-        // While it grows, the dock keeps to the right edge it started from,
-        // over the room the conversation left.
         let mut workspace = vec![Element::row(vec![
-            Element::spacer().size(Some(layout.center), None),
             side_pane_sized(state, right, workspace_height).clip_children(),
         ])
         .flex(1.0)
         .clip_children()];
         if terminal_height > 0.0 {
             workspace.push(
-                ide_ui::bottom::build(state, layout.center + right, terminal_height)
+                ide_ui::bottom::build(state, right, terminal_height)
                     .size(None, Some(terminal_height)),
             );
         }
@@ -3557,14 +3568,32 @@ pub(crate) fn build_view_sized(state: &ViewState, viewport_width: f32, viewport_
     } else {
         center
     };
-    let mut workspace = vec![center];
-    if let Some(right) = layout.right {
-        workspace.push(Separator::vertical(theme::component_palette()).render());
-        workspace.push(side_pane_sized(state, right, workspace_height).clip_children());
-    }
+    // The room the conversation and the dock share.
+    let room = layout.center + layout.right.map_or(0.0, |right| right + RIGHT_DIVIDER);
+    let workspace = match covering {
+        Some(width) => {
+            let width = width.clamp(0.0, room);
+            vec![
+                // What the dock has not reached of the conversation, which
+                // stays as wide as it is at rest.
+                Element::row(vec![center.flex(0.0).size(Some(layout.center), None)])
+                    .size(Some(room - width), None)
+                    .clip_children(),
+                side_pane_sized(state, width, workspace_height).clip_children(),
+            ]
+        }
+        None => {
+            let mut workspace = vec![center];
+            if let Some(right) = layout.right {
+                workspace.push(Separator::vertical(theme::component_palette()).render());
+                workspace.push(side_pane_sized(state, right, workspace_height).clip_children());
+            }
+            workspace
+        }
+    };
     let top = Element::row(workspace).flex(1.0).clip_children();
     let workspace = if terminal_height > 0.0 {
-        let width = layout.center + layout.right.map_or(0.0, |right| right + RIGHT_DIVIDER);
+        let width = room;
         Element::column(vec![
             top,
             ide_ui::bottom::build(state, width, terminal_height)
@@ -4244,6 +4273,7 @@ pub(crate) mod tests {
             terminal_controls: Default::default(),
             terminal_maximized: false,
             dock_maximized: false,
+            dock_covering: false,
             show_terminal_panel: false,
             terminal_panel_height: 240.0,
             terminal_snapshot: None,
