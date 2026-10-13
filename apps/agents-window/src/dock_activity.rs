@@ -131,6 +131,8 @@ pub(crate) struct ActivityUi {
     pub grants_open: bool,
     /// The call just jumped to in the transcript, highlighted for a moment.
     pub revealed: Option<(String, std::time::Instant)>,
+    /// The call whose detail was just closed: it closes under its line.
+    pub closing: Option<String>,
 }
 
 /// Apply the part of a `dock_activity:` action after its prefix. Returns
@@ -171,7 +173,7 @@ pub(crate) fn apply_action(state: &mut ViewState, action: &str) -> Option<String
             }
         }
         ("grants", _) => ui.grants_open = !ui.grants_open,
-        ("close", _) => state.selected_tool_id = None,
+        ("close", _) => ui.closing = state.selected_tool_id.take(),
         ("data", _) => ui.data_open = !ui.data_open,
         ("copy", _) => {
             let selected = state.selected_tool_id.as_deref()?;
@@ -383,6 +385,22 @@ fn rail(node: Element, above: bool, below: bool) -> Element {
     ])
     .gap(2.0)
     .size(Some(RAIL), Some(ROW_HEIGHT))
+}
+
+/// The rail beside what a line opened under itself: the line alone, on to
+/// the next node, or nothing where the turn ends.
+fn rail_through(shown: bool) -> Element {
+    let ink = theme::FOREGROUND_SUBTLE;
+    Element::row(vec![
+        Element::spacer().flex(1.0),
+        Element::spacer().size(Some(1.0), None).background(if shown {
+            Color::rgba(ink.r, ink.g, ink.b, ink.a / 3)
+        } else {
+            Color::TRANSPARENT
+        }),
+        Element::spacer().flex(1.0),
+    ])
+    .size(Some(RAIL), None)
 }
 
 /// One line of the timeline: its node on the rail and, beside it, what it
@@ -921,13 +939,48 @@ pub(super) fn content(state: &ViewState, width: f32, height: f32) -> Element {
     running_strip(&mut head, state, &live, &started, width);
     let rows = log_rows(state, &turns, selected, &started);
     let count = rows.len();
+    // The selected call's detail opens under its own line, and the one just
+    // closed closes there. A call the log does not list (a folded turn, a
+    // filter) shows its detail under the log instead.
+    let line = |id: &str| {
+        rows.iter().enumerate().find_map(|(position, row)| match row {
+            Row::Call { row, last, .. } if row.id == id => Some((position, *last)),
+            _ => None,
+        })
+    };
+    let opened = match (selected, state.selected_tool_id.as_deref()) {
+        (Some(index), Some(id)) => line(id).map(|at| (at, id, Some(index))),
+        _ => ui.closing.as_deref().and_then(|id| Some((line(id)?, id, None))),
+    };
+    let selected = selected.filter(|_| opened.is_none());
     if count > 0 {
-        let list =
+        let mut list =
             ScrollArea::uniform_list("dock_activity_tools", count, ROW_HEIGHT, move |index| {
                 log_row(&rows[index], width)
-            })
-            .render()
-            .top_fade(theme::BACKGROUND, 12.0);
+            });
+        if let Some(((position, last), id, index)) = opened {
+            let inner = (width - 8.0 - RAIL).max(140.0);
+            let detail = index.map(|index| {
+                Element::column(vec![
+                    Element::row(vec![
+                        // The rail runs on beside it to the next line.
+                        rail_through(!last),
+                        inset_card(
+                            detail(state, index, &state.transcript[index], inner - 16.0, false),
+                            inner,
+                        ),
+                    ]),
+                    Element::spacer().size(None, Some(6.0)),
+                ])
+            });
+            list = list.expansion(
+                position,
+                openide_ui::Collapse::new(format!("dock_activity:detail:{id}"), detail)
+                    .expand()
+                    .render(),
+            );
+        }
+        let list = list.render().top_fade(theme::BACKGROUND, 12.0);
         // With a detail under it the log keeps to its rows, up to two fifths
         // of the pane; alone it fills the pane.
         head.push(if selected.is_some() {
@@ -956,7 +1009,7 @@ pub(super) fn content(state: &ViewState, width: f32, height: f32) -> Element {
     let mut items = Vec::new();
     if let Some(index) = selected {
         items.push(inset_card(
-            detail(state, index, &state.transcript[index], width - 16.0),
+            detail(state, index, &state.transcript[index], width - 16.0, true),
             width,
         ));
     }
@@ -1157,7 +1210,15 @@ fn command_output(
 /// The selected call, shown as what it is: a command with its output, an
 /// edit with its diff, a read with what it found. The raw call stays one
 /// disclosure away.
-fn detail(state: &ViewState, index: usize, item: &TranscriptItem, width: f32) -> Element {
+/// What the selected call did, in full. Under its own line the line is its
+/// heading and closes it; under the log it brings a heading of its own.
+fn detail(
+    state: &ViewState,
+    index: usize,
+    item: &TranscriptItem,
+    width: f32,
+    heading: bool,
+) -> Element {
     let (
         Some(row),
         TranscriptItem::Tool {
@@ -1180,20 +1241,25 @@ fn detail(state: &ViewState, index: usize, item: &TranscriptItem, width: f32) ->
     } else {
         theme::FOREGROUND_SUBTLE
     };
-    let mut detail = vec![Element::row(vec![
-        status_icon(&row, false).size(Some(16.0), Some(20.0)),
-        UiText::new(&row.title, theme::component_palette())
-            .role(TextRole::Label)
-            .render()
-            .flex(1.0),
-        small(row.duration.as_deref().unwrap_or_default(), theme::FOREGROUND_SUBTLE).centered_y(),
-        UiIconButton::new("dock_activity:close", Icon::Close, theme::component_palette())
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .tooltip("Cerrar detalle")
-            .render(),
-    ])
-    .gap(8.0)];
+    let mut detail = Vec::new();
+    if heading {
+        detail.push(
+            Element::row(vec![
+                status_icon(&row, false).size(Some(16.0), Some(20.0)),
+                UiText::new(&row.title, theme::component_palette())
+                    .role(TextRole::Label)
+                    .render()
+                    .flex(1.0),
+                small(row.duration.as_deref().unwrap_or_default(), theme::FOREGROUND_SUBTLE).centered_y(),
+                UiIconButton::new("dock_activity:close", Icon::Close, theme::component_palette())
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Dense)
+                    .tooltip("Cerrar detalle")
+                    .render(),
+            ])
+            .gap(8.0),
+        );
+    }
     let navigation = state.selected_session.as_deref().and_then(|owner| {
         Some(link(
             tool_presentation::navigation_action(owner, id),
@@ -2016,6 +2082,56 @@ mod tests {
             titles.push(title);
         }
         assert!(titles[0] < titles[1], "{titles:?}");
+    }
+
+    #[test]
+    fn the_selected_calls_detail_opens_under_its_line_and_closes_there() {
+        let mut state = review_state();
+        let top = |frame: &openide_ui::Frame, id: &str| {
+            frame
+                .regions
+                .iter()
+                .find(|region| region.id == id)
+                .unwrap_or_else(|| panic!("missing {id}"))
+                .rect
+        };
+        let closed = frame(&state);
+        let apart = top(&closed, "tool:mcp-1").y - top(&closed, "tool:cmd-2").y;
+        assert_eq!(apart, ROW_HEIGHT);
+
+        state.selected_tool_id = Some("cmd-2".into());
+        let open = frame(&state);
+        let (line, close, next) = (
+            top(&open, "tool:cmd-2"),
+            top(&open, "dock_activity:data"),
+            top(&open, "tool:mcp-1"),
+        );
+        // Its line is its heading: it brings no second one, nor a close button.
+        assert!(!open.regions.iter().any(|region| region.id == "dock_activity:close"));
+        assert_eq!(visible(&open).matches("Falló · Ejecución de comando").count(), 1);
+        // Between its own line and the next one, inside the log, beside the rail.
+        assert!(line.y + line.height <= close.y && close.y + close.height <= next.y, "{line:?} {close:?} {next:?}");
+        let log = top(&open, "dock_activity_tools");
+        assert!(log.y <= close.y && close.y + close.height <= log.y + log.height);
+        assert!(close.x > line.x + RAIL);
+        assert!(next.y - line.y > ROW_HEIGHT + 60.0, "the lines after it move down");
+        // Nothing else holds a detail: the log has the pane to itself.
+        assert!(!open.regions.iter().any(|region| region.id == "side_pane_activity"));
+
+        // Closed, it closes where it was open.
+        apply_action(&mut state, "close");
+        assert_eq!((state.selected_tool_id.as_deref(), state.activity.closing.as_deref()), (None, Some("cmd-2")));
+        let closed = frame(&state);
+        assert_eq!(top(&closed, "tool:mcp-1").y - top(&closed, "tool:cmd-2").y, ROW_HEIGHT);
+        assert!(!closed.regions.iter().any(|region| region.id == "dock_activity:data"));
+
+        // A call the log does not list keeps its detail under the log.
+        state.selected_tool_id = Some("edit-1".into());
+        state.activity.status = Some(StatusFilter::Errors);
+        let filtered = frame(&state);
+        assert_eq!(rows(&filtered), ["tool:cmd-2"]);
+        let (log, close) = (top(&filtered, "dock_activity_tools"), top(&filtered, "dock_activity:close"));
+        assert!(close.y >= log.y + log.height, "{log:?} {close:?}");
     }
 
     #[test]

@@ -8955,12 +8955,12 @@ impl AgentsWindow {
     }
 
     /// Open Activity on one tool call. A row of the list `toggles` its own
-    /// selection off again in a narrow window.
+    /// detail closed again, as the heading of what it opened.
     fn show_tool_activity(&mut self, tool_id: &str, toggles: bool) {
         self.view.selected_tool_id = if toggles
-            && self.viewport_width < 800.0
             && self.view.selected_tool_id.as_deref() == Some(tool_id)
         {
+            self.view.activity.closing = Some(tool_id.to_owned());
             None
         } else {
             Some(tool_id.to_owned())
