@@ -7,12 +7,12 @@
 //! and that recorded answer becomes the tool result. These tools have no
 //! effect of their own, need no permission and run no hooks.
 
-use crate::{ToolCatalog, ToolDefinition, ToolOutput};
-use openide_core::{PermissionResolution, ToolCall, TurnMode};
+use crate::{tool_media::ToolMedia, ToolCatalog, ToolDefinition, ToolOutput};
+use openide_core::{PermissionResolution, RecordedPermissionDecision, ToolCall, TurnMode};
 use serde_json::json;
 use std::collections::HashSet;
 
-pub const ASK_USER_TOOL: &str = "ask_user";
+pub const ASK_USER_TOOL: &str = openide_core::ASK_USER_TOOL;
 
 pub fn ask_user_tool_definition() -> ToolDefinition {
     ToolDefinition {
@@ -226,6 +226,24 @@ pub(crate) fn outcome(
     }
 }
 
+/// The tool result for a resolved request from what the host recorded for
+/// it, and the images the user attached when it is an answered question.
+pub(crate) fn recorded_outcome(
+    call: &ToolCall,
+    resolution: PermissionResolution,
+    decision: Option<RecordedPermissionDecision>,
+) -> (ToolOutput, Option<ToolMedia>) {
+    let (answer, images) = decision
+        .map(|decision| (decision.answer, decision.answer_images))
+        .unwrap_or_default();
+    let media = (call.name == ASK_USER_TOOL
+        && resolution == PermissionResolution::Allowed
+        && answer.is_some())
+    .then(|| crate::tool_media::answer_media(call, images))
+    .flatten();
+    (outcome(call, resolution, answer), media)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -320,5 +338,54 @@ mod tests {
         let skipped = outcome(&call, PermissionResolution::Denied, None);
         assert!(!skipped.is_error && skipped.content.contains("skipped"));
         assert!(outcome(&call, PermissionResolution::Allowed, None).is_error);
+    }
+
+    #[test]
+    fn only_an_answered_question_carries_the_images_recorded_with_it() {
+        let image = openide_core::UserImage::from_bytes(
+            openide_core::UserImageMime::Png,
+            &crate::tool_media::test_png(640, 480, 0),
+        )
+        .unwrap();
+        let decision = |answer: Option<&str>| {
+            Some(RecordedPermissionDecision {
+                session_id: "session".into(),
+                request_id: "request".into(),
+                decision: openide_core::PermissionDecision::Allow,
+                recorded_at_ms: 1,
+                grant: None,
+                revoked_at_ms: None,
+                answer: answer.map(str::to_owned),
+                answer_images: vec![image.clone(), image.clone()],
+            })
+        };
+        let ask = call(json!({"questions": [question("A", &["a", "b"])]}));
+        let (output, media) =
+            recorded_outcome(&ask, PermissionResolution::Allowed, decision(Some("{}")));
+        assert_eq!((output.content.as_str(), output.is_error), ("{}", false));
+        let media = media.unwrap();
+        assert_eq!(media.model_images(), vec![image.clone(), image.clone()]);
+        assert!(matches!(
+            &media.event,
+            openide_core::AgentEventKind::ToolResultMedia { tool_call_id, model_images, text, notices, .. }
+                if tool_call_id == "call-1" && *model_images == [0, 1] && text.is_empty() && notices.is_empty()
+        ));
+        // No answer, a skip, or a mode proposal: nothing to carry.
+        assert!(recorded_outcome(&ask, PermissionResolution::Allowed, decision(None)).1.is_none());
+        assert!(recorded_outcome(&ask, PermissionResolution::Denied, decision(Some("{}"))).1.is_none());
+        assert!(recorded_outcome(&ask, PermissionResolution::Allowed, None).1.is_none());
+        let propose = ToolCall {
+            name: SWITCH_MODE_TOOL.into(),
+            arguments: json!({"mode": "plan", "reason": "x"}),
+            ..ask.clone()
+        };
+        assert!(recorded_outcome(&propose, PermissionResolution::Allowed, decision(Some("{}")))
+            .1
+            .is_none());
+        // Images the store would not record are not carried either.
+        let mut tampered = decision(Some("{}")).unwrap();
+        tampered.answer_images[0].sha256 = "0".repeat(64);
+        let (output, media) = recorded_outcome(&ask, PermissionResolution::Allowed, Some(tampered));
+        assert!(media.is_none() && output.content == "{}");
     }
 }

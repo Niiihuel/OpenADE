@@ -1755,6 +1755,182 @@ mod tests {
         }
     }
 
+    /// What the journal gains from the request's resolution on, without what
+    /// differs between two runs of the same turn.
+    fn written(kind: &AgentEventKind) -> String {
+        match kind {
+            AgentEventKind::PermissionResolved { request_id, tool_call_id, resolution } => {
+                format!("resolved {request_id} {tool_call_id} {resolution:?}")
+            }
+            AgentEventKind::ToolStarted { tool_call } => format!("started {}", tool_call.name),
+            AgentEventKind::ToolResultMedia { tool_call_id, images, model_images, .. } => {
+                format!("media {tool_call_id} {} {model_images:?}", images.len())
+            }
+            AgentEventKind::ToolFinished { tool_call_id, output, is_error } => {
+                format!("finished {tool_call_id} {is_error} {output}")
+            }
+            other => serde_json::to_value(other).unwrap()["type"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned(),
+        }
+    }
+
+    #[test]
+    fn a_question_answered_before_the_turn_resumes_writes_what_one_answered_through_it_writes() {
+        let image = openide_core::UserImage::from_bytes(
+            openide_core::UserImageMime::Png,
+            b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\x02\x80\0\0\x01\xe0",
+        )
+        .unwrap();
+        let answer = r#"{"answered_by":"user","answers":[{"header":"Layout","selected":["B"],"attached_images":[1]}]}"#;
+        // `direct`: the card came back with the conversation and its answer
+        // was recorded before any worker ran. Otherwise the worker asks and
+        // the answer is recorded while it waits, as "Responder y reanudar" does.
+        let resumed = |direct: bool| {
+            let dir = tempfile::tempdir().unwrap();
+            let sessions = Arc::new(SessionStore::open(dir.path()).unwrap());
+            let checkpoints = Arc::new(CheckpointFileStore::new(dir.path()).unwrap());
+            let session = sessions.create(dir.path(), "native").unwrap();
+            let local = Arc::new(LocalTools::new());
+            // What a Build turn freezes: the executor's tools, the plan
+            // tool and the tools that wait for the user.
+            let planned =
+                catalog_with_plan_tool(&ToolCatalog::from_executor(local.as_ref()).unwrap())
+                    .unwrap()
+                    .unwrap();
+            let asked = openide_harness::catalogs_with_user_interaction(&planned).swap_remove(0);
+            sessions
+                .admit_native_turn(&session.id, "turn-1", "Ask me", "test-model", TurnMode::Build)
+                .unwrap();
+            let workspace = sessions.load(&session.id).unwrap().unwrap().session.workspace;
+            let ask = ToolCall {
+                id: "call-ask".into(),
+                name: openide_harness::ASK_USER_TOOL.into(),
+                arguments: json!({"questions": [{
+                    "header": "Layout",
+                    "question": "Which mockup?",
+                    "options": [{"label": "A"}, {"label": "B"}],
+                    "multi_select": false
+                }]}),
+            };
+            for kind in [
+                AgentEventKind::TurnStarted { prompt: "Ask me".into() },
+                AgentEventKind::ToolCatalogCommitted { digest: asked.digest_hex() },
+                AgentEventKind::HooksCommitted {
+                    version: openide_core::HOOK_CONFIG_IDENTITY_VERSION,
+                    digest: CommandHooks::default().digest_hex().unwrap(),
+                },
+                AgentEventKind::ExecPolicyCommitted {
+                    version: openide_core::EXEC_POLICY_IDENTITY_VERSION,
+                    digest: PermissionPolicy::new().digest_hex(),
+                },
+                AgentEventKind::ModelContextCommitted {
+                    version: MODEL_CONTEXT_VERSION,
+                    digest: native_model_context_digest(
+                        "test",
+                        "https://test.example/v1",
+                        "test-model",
+                        TurnMode::Build,
+                        &workspace,
+                        &asked,
+                        "",
+                        [7; 32],
+                    )
+                    .unwrap(),
+                },
+                AgentEventKind::ModelRequestStarted { step: 1, model: "test-model".into() },
+                AgentEventKind::ModelResponseCommitted {
+                    step: 1,
+                    assistant: AgentMessage::assistant("", vec![ask.clone()]),
+                    response_id: None,
+                    usage: None,
+                },
+                AgentEventKind::PermissionRequested {
+                    request_id: "request-1".into(),
+                    tool_call: ask,
+                },
+            ] {
+                append(&sessions, &session.id, kind);
+            }
+            let asked_at = sessions.load(&session.id).unwrap().unwrap().events.len();
+            let record = || {
+                sessions
+                    .record_user_answer_with_images(
+                        &session.id,
+                        "request-1",
+                        answer,
+                        std::slice::from_ref(&image),
+                    )
+                    .unwrap();
+            };
+            if direct {
+                record();
+            }
+            let handle = ResumeWorkerHandle::start(ResumeWorkerRequest {
+                native_automation: None,
+                session_id: session.id.clone(),
+                provider: "test".into(),
+                endpoint: "https://test.example/v1".into(),
+                sessions: sessions.clone(),
+                checkpoints,
+                compatibility: compatibility(),
+                model: Arc::new(ImmediateModel),
+                base_tools: local.clone(),
+                child_command_profile: None,
+                child_tools: local,
+                event_bridge: None,
+                tool_preparation: None,
+                permission_policy: PermissionPolicy::new(),
+                command_isolation: CommandIsolation::HostUnrestricted,
+                command_hooks: Arc::new(CommandHooks::default()),
+                budget_policy: Some(budget()),
+                child_identity_budget: None,
+                system_instructions: String::new(),
+                pre_context_instructions: None,
+                limits: RunLimits::default(),
+            })
+            .unwrap();
+            if !direct {
+                let asked = handle.updates.recv_timeout(Duration::from_secs(5)).unwrap();
+                assert!(
+                    matches!(&asked, ResumeUpdate::NeedsPermission { request_id, .. } if request_id == "request-1"),
+                    "{asked:?}"
+                );
+                record();
+                assert!(handle.resolve_permission("request-1", PermissionChoice::Allow));
+            }
+            loop {
+                // Answered beforehand, the worker never asks.
+                match handle.updates.recv_timeout(Duration::from_secs(5)).unwrap() {
+                    ResumeUpdate::Events(_) => {}
+                    ResumeUpdate::Finished(Ok(ResumeDisposition::Complete)) => break,
+                    update => panic!("unexpected resume update: {update:?}"),
+                }
+            }
+            let stored = sessions.load(&session.id).unwrap().unwrap();
+            assert!(sessions.load_permission_decisions(&session.id).unwrap()[0]
+                .answer_images
+                .is_empty());
+            stored.events[asked_at..]
+                .iter()
+                .map(|event| written(&event.kind))
+                .collect::<Vec<_>>()
+        };
+        let through_the_turn = resumed(false);
+        assert_eq!(
+            through_the_turn[..4],
+            [
+                "resolved request-1 call-ask Allowed".to_owned(),
+                "started ask_user".to_owned(),
+                "media call-ask 1 [0]".to_owned(),
+                format!("finished call-ask false {answer}"),
+            ]
+        );
+        assert!(through_the_turn.last().unwrap().contains("turn_completed"), "{through_the_turn:?}");
+        assert_eq!(resumed(true), through_the_turn);
+    }
+
     #[test]
     fn native_goal_receipt_recovery_reports_exact_state_without_replaying_or_publishing_result() {
         use openide_core::{NativeGoalCriterion, NativeGoalStore};

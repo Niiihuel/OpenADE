@@ -1,5 +1,5 @@
 use super::*;
-use openide_ui::{HitKind, Point, Size, UiEvent, UiTree};
+use openide_ui::{DrawCommand, HitKind, Icon, Point, Size, UiEvent, UiTree};
 
 const REQUEST: &str = "pending-question";
 
@@ -168,6 +168,380 @@ fn a_question_is_not_answerable_through_the_permission_card_actions() {
         .any(|region| region.id == question_ui::action(REQUEST, "skip")));
     assert!(recorded(&app, &owner).is_empty());
     let _ = &mut app;
+}
+
+/// A PNG of this size as far as its header says, padded to `len` bytes.
+fn png(width: u32, height: u32, len: usize) -> Vec<u8> {
+    let mut bytes = [
+        b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".as_slice(),
+        &width.to_be_bytes(),
+        &height.to_be_bytes(),
+    ]
+    .concat();
+    bytes.resize(len.max(bytes.len()), 0);
+    bytes
+}
+
+fn draft_images(app: &AgentsWindow) -> Vec<Vec<String>> {
+    app.view.question_drafts.get(REQUEST).map_or_else(Vec::new, |draft| {
+        draft
+            .images
+            .iter()
+            .map(|images| images.iter().map(|image| image.label.clone()).collect())
+            .collect()
+    })
+}
+
+#[test]
+fn images_chosen_or_pasted_for_an_answer_are_recorded_with_it() {
+    let (root, mut app, owner) = fixture();
+    let workspace = PathBuf::from(&app.view.workspace);
+    let ctx = egui::Context::default();
+    std::fs::write(workspace.join("mockup.png"), png(1280, 800, 0)).unwrap();
+    // Outside the project, as a file copied in the file manager is.
+    let outside = root.path().join("captura.png");
+    std::fs::write(&outside, png(640, 480, 0)).unwrap();
+
+    // Chosen with the composer's file picker, for the question on screen.
+    press(&mut app, &question_ui::action(REQUEST, "attach"));
+    assert!(app.view.show_command_center && app.command_center_attaches_file);
+    assert_eq!(app.view.command_scope, Scope::Files);
+    app.view.command_results = vec![command_center::ResultItem {
+        target: Target::OpenFile(PathBuf::from("mockup.png")),
+        section: Scope::Files,
+        title: "mockup.png".into(),
+        subtitle: String::new(),
+    }];
+    app.activate_command_result(0);
+    assert!(!app.view.show_command_center);
+    assert_eq!(draft_images(&app)[0], ["mockup.png"]);
+    assert!(app.view.composer_attachments.is_empty(), "not the composer's");
+    // The picker opened for anything else attaches nothing to the question.
+    app.open_command_center();
+    assert!(app.question_attach_target.is_none());
+    app.view.show_command_center = false;
+
+    // Pasted as a file: the composer's worker imports it into the project.
+    press(&mut app, &question_ui::action(REQUEST, "next"));
+    let url = reqwest::Url::from_file_path(&outside).unwrap().to_string();
+    app.request_question_paste(REQUEST, 1, Some(url), &ctx);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !app.attachment_pastes_pending.is_empty() {
+        assert!(Instant::now() < deadline, "the paste never came back");
+        app.poll_composer_attachments(&ctx);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(draft_images(&app), [vec!["mockup.png"], vec!["captura.png"]]);
+    assert!(app.view.composer_attachments.is_empty() && app.attachment_drafts.is_empty());
+
+    // Removed from its card, then put back.
+    press(&mut app, &question_ui::detach_action(REQUEST, 1, 0));
+    assert!(draft_images(&app)[1].is_empty());
+    app.attach_question_image(REQUEST, 1, &workspace, &outside);
+    assert!(draft_images(&app)[1].is_empty(), "outside the project it is not read");
+    assert!(app.view.question_drafts[REQUEST].image_error.is_some());
+    std::fs::write(workspace.join("captura.png"), png(640, 480, 0)).unwrap();
+    app.attach_question_image(REQUEST, 1, &workspace, Path::new("captura.png"));
+    assert!(app.view.question_drafts[REQUEST].image_error.is_none());
+
+    // Nothing picked and nothing written: the images are the answer.
+    press(&mut app, &question_ui::action(REQUEST, "send"));
+    let decisions = recorded(&app, &owner);
+    assert_eq!(decisions.len(), 1);
+    assert_eq!(decisions[0].decision, PermissionDecision::Allow);
+    let expected = [png(1280, 800, 0), png(640, 480, 0)]
+        .map(|bytes| UserImage::from_bytes(UserImageMime::Png, &bytes).unwrap());
+    assert_eq!(decisions[0].answer_images, expected);
+    let answer: serde_json::Value =
+        serde_json::from_str(decisions[0].answer.as_deref().unwrap()).unwrap();
+    assert_eq!(answer["answers"][0]["attached_images"], serde_json::json!([1]));
+    assert_eq!(answer["answers"][1]["attached_images"], serde_json::json!([2]));
+    assert!(app.view.pending_permissions.is_empty());
+    assert!(app.view.question_drafts.is_empty());
+}
+
+#[test]
+fn an_image_a_model_would_not_be_given_is_refused_on_the_card() {
+    let (_root, mut app, owner) = fixture();
+    let workspace = PathBuf::from(&app.view.workspace);
+    let refused = [
+        ("pesada.png", png(64, 64, openide_core::MAX_TOOL_MODEL_IMAGE_BYTES + 1), "3,75 MB"),
+        ("alta.png", png(64, openide_core::MAX_TOOL_MODEL_IMAGE_SIDE + 1, 0), "8000 px"),
+        ("sin-medida.png", b"\x89PNG\r\n\x1a\nfixture".to_vec(), "no se pudo medir"),
+        ("enorme.png", png(64, 64, openide_core::MAX_USER_IMAGE_BYTES + 1), "8 MiB"),
+        ("falsa.png", b"not a png".to_vec(), "no válida"),
+        ("notas.md", b"# notas".to_vec(), "no es una imagen"),
+    ];
+    for (name, bytes, why) in refused {
+        std::fs::write(workspace.join(name), bytes).unwrap();
+        app.attach_question_image(REQUEST, 0, &workspace, Path::new(name));
+        let draft = &app.view.question_drafts[REQUEST];
+        assert!(draft.images.iter().all(Vec::is_empty), "{name}");
+        assert!(draft.image_error.as_deref().unwrap().contains(why), "{name}: {:?}", draft.image_error);
+    }
+    // The card says why, and the question still cannot be sent empty.
+    let size = Size::new(900.0, 720.0);
+    let mut tree = UiTree::new(crate::view::build_window_view(&app.view, size.width, size.height));
+    tree.set_reduced_motion(true);
+    let frame = tree.layout(size);
+    assert!(frame
+        .text_layouts()
+        .iter()
+        .any(|layout| layout.source.contains("no es una imagen")));
+
+    // No more than a tool result keeps: the fifth is refused.
+    for side in 1..=5 {
+        let name = format!("{side}.png");
+        std::fs::write(workspace.join(&name), png(side, side, 0)).unwrap();
+        app.attach_question_image(REQUEST, 0, &workspace, Path::new(&name));
+    }
+    let draft = &app.view.question_drafts[REQUEST];
+    assert_eq!(draft.images[0].len(), 4);
+    assert!(draft.image_error.as_deref().unwrap().contains("Máximo de 4"));
+    // A paste asks the worker for nothing once the answer is full.
+    app.request_question_paste(REQUEST, 0, None, &egui::Context::default());
+    assert!(app.attachment_pastes_pending.is_empty());
+    assert!(recorded(&app, &owner).is_empty());
+
+    // An image for a question that is no longer open goes nowhere.
+    app.attach_question_image("gone", 0, &workspace, Path::new("1.png"));
+    assert!(!app.view.question_drafts.contains_key("gone"));
+}
+
+/// A conversation whose turn stopped with `call` waiting for the user, as
+/// closing the app leaves it.
+fn interrupted(store: &SessionStore, workspace: &Path, call: ToolCall) -> String {
+    let session = store.create(workspace, "native").unwrap();
+    let admission = store
+        .admit_native_turn(&session.id, "turn", "Elegí", "former-model", TurnMode::Build)
+        .unwrap();
+    let mut sequence = admission.sequence;
+    for kind in [
+        AgentEventKind::TurnStarted { prompt: "Elegí".into() },
+        AgentEventKind::ModelRequestStarted { step: 1, model: "former-model".into() },
+        AgentEventKind::ModelResponseCommitted {
+            step: 1,
+            assistant: AgentMessage::assistant("", vec![call.clone()]),
+            response_id: None,
+            usage: None,
+        },
+        AgentEventKind::PermissionRequested { request_id: REQUEST.into(), tool_call: call },
+    ] {
+        sequence += 1;
+        store
+            .append_native_event(&AgentEvent::new(&session.id, sequence, kind))
+            .unwrap();
+    }
+    session.id
+}
+
+fn ask() -> ToolCall {
+    ToolCall {
+        id: "call-ask".into(),
+        name: question_ui::TOOL.into(),
+        arguments: serde_json::from_str(&arguments()).unwrap(),
+    }
+}
+
+/// The app opened again on `data_root`, with a route no turn can resume on:
+/// nothing here reaches a provider.
+fn reopened(data_root: &Path, session: &str) -> AgentsWindow {
+    let mut app = AgentsWindow::with_data_root(data_root.to_path_buf());
+    app.open_session(session);
+    assert_eq!(app.view.selected_session.as_deref(), Some(session));
+    app.view.native_provider_id = "custom".into();
+    app.view.model = "different-current-model".into();
+    app.view.show_settings = false;
+    app.view.main_page = MainPage::Workspace;
+    app
+}
+
+fn window(app: &AgentsWindow) -> (String, Vec<String>) {
+    let size = Size::new(900.0, 720.0);
+    let mut tree = UiTree::new(crate::view::build_window_view(&app.view, size.width, size.height));
+    tree.set_reduced_motion(true);
+    let frame = tree.layout(size);
+    let text = frame
+        .text_layouts()
+        .iter()
+        .map(|layout| layout.source.clone())
+        .collect::<Vec<_>>()
+        .join(" | ");
+    (text, frame.regions.iter().map(|region| region.id.clone()).collect())
+}
+
+#[test]
+fn reopening_shows_the_open_question_itself_and_its_answer_is_recorded_before_the_turn_resumes() {
+    for skip in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let data_root = root.path().join("data");
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let app = AgentsWindow::with_data_root(data_root.clone());
+        let store = app.store.as_ref().unwrap().clone();
+        let session = interrupted(&store, &workspace, ask());
+        drop(app);
+
+        let mut app = reopened(&data_root, &session);
+        assert!(!app.view.running && app.active_resume.is_none());
+        // The question itself, nothing chosen, instead of a recovery step.
+        assert_eq!(app.view.pending_permissions.len(), 1);
+        assert_eq!(app.view.pending_permissions[0].request_id, REQUEST);
+        assert!(app.view.question_drafts.is_empty());
+        let (text, regions) = window(&app);
+        assert!(text.contains("¿Dónde guardamos las sesiones?"), "{text}");
+        assert_eq!(text.matches("Almacenamiento").count(), 1, "one card, no second row: {text}");
+        assert!(!text.contains("Responder y reanudar") && !text.contains("sin responder"), "{text}");
+        // An open question is not an error of the conversation.
+        assert!(!text.contains("Turno interrumpido"), "{text}");
+        assert!(regions.contains(&question_ui::pick_action(REQUEST, 0, 0)));
+        assert!(!regions.iter().any(|id| id.starts_with("session_recover:")));
+        // Refreshing the list neither drops the card nor asks twice.
+        app.refresh_sessions();
+        assert_eq!(app.view.pending_permissions.len(), 1);
+
+        let journaled = store.load(&session).unwrap().unwrap().events.len();
+        if skip {
+            press(&mut app, &question_ui::action(REQUEST, "skip"));
+        } else {
+            press(&mut app, &question_ui::pick_action(REQUEST, 0, 1));
+            press(&mut app, &question_ui::action(REQUEST, "next"));
+            press(&mut app, &question_ui::action(REQUEST, "send"));
+        }
+        // What the card records is what it records in a running turn.
+        let decisions = recorded(&app, &session);
+        assert_eq!(decisions.len(), 1);
+        assert_eq!(decisions[0].request_id, REQUEST);
+        if skip {
+            assert_eq!((decisions[0].decision, &decisions[0].answer), (PermissionDecision::Deny, &None));
+        } else {
+            assert_eq!(decisions[0].decision, PermissionDecision::Allow);
+            let answer: serde_json::Value =
+                serde_json::from_str(decisions[0].answer.as_deref().unwrap()).unwrap();
+            assert_eq!(answer["answers"][0]["selected"], serde_json::json!(["Archivos JSONL"]));
+        }
+        // The request itself is resolved by the resumed turn, after the
+        // record: the card writes nothing to the events.
+        assert_eq!(store.load(&session).unwrap().unwrap().events.len(), journaled);
+        assert!(app.view.pending_permissions.is_empty() && app.view.question_drafts.is_empty());
+        // This app has no route to resume on. The answer stays, nothing is
+        // asked again, and the conversation offers to resume with it.
+        assert!(app.active_resume.is_none() && !app.view.running);
+        assert_eq!(app.view.session_recovery.get(&session), Some(&SessionRecoveryView::Resume));
+        let (text, regions) = window(&app);
+        assert!(text.contains("No se pudo reanudar") && text.contains("puede reanudarse"), "{text}");
+        assert!(!text.contains("¿Dónde guardamos las sesiones?"), "{text}");
+        assert!(regions.contains(&format!("session_recover:{session}")));
+        drop(app);
+
+        // And after another restart: still answered, still only to resume.
+        let app = reopened(&data_root, &session);
+        assert!(app.view.pending_permissions.is_empty());
+        assert_eq!(app.view.session_recovery.get(&session), Some(&SessionRecoveryView::Resume));
+        assert_eq!(recorded(&app, &session).len(), 1);
+    }
+}
+
+#[test]
+fn only_a_question_comes_back_as_its_card_a_mode_proposal_is_answered_through_the_resumed_turn() {
+    let root = tempfile::tempdir().unwrap();
+    let data_root = root.path().join("data");
+    let workspace = root.path().join("project");
+    std::fs::create_dir(&workspace).unwrap();
+    let app = AgentsWindow::with_data_root(data_root.clone());
+    let store = app.store.as_ref().unwrap().clone();
+    let proposal = interrupted(
+        &store,
+        &workspace,
+        ToolCall {
+            id: "call-mode".into(),
+            name: crate::mode_proposal_ui::TOOL.into(),
+            arguments: serde_json::json!({"mode": "plan", "reason": "Hay que diseñar antes."}),
+        },
+    );
+    // A question whose options never arrived has no card to draw.
+    let empty = interrupted(
+        &store,
+        &workspace,
+        ToolCall {
+            id: "call-ask".into(),
+            name: question_ui::TOOL.into(),
+            arguments: serde_json::json!({"questions": []}),
+        },
+    );
+    drop(app);
+    for session in [proposal, empty] {
+        let app = reopened(&data_root, &session);
+        assert_eq!(app.view.session_recovery.get(&session), Some(&SessionRecoveryView::Question));
+        assert!(app.view.pending_permissions.is_empty());
+        let (text, regions) = window(&app);
+        assert!(text.contains("Responder y reanudar"), "{text}");
+        assert!(regions.contains(&format!("session_recover:{session}")));
+    }
+}
+
+/// Whether the list marks `session` as waiting for the user's answer.
+fn marked(app: &AgentsWindow, session: &str) -> bool {
+    let size = Size::new(900.0, 720.0);
+    let mut tree = UiTree::new(crate::view::build_window_view(&app.view, size.width, size.height));
+    tree.set_reduced_motion(true);
+    let frame = tree.layout(size);
+    let row = frame
+        .regions
+        .iter()
+        .find(|region| region.id == format!("session:{session}"))
+        .unwrap_or_else(|| panic!("no row for {session}"))
+        .rect;
+    frame.commands.iter().any(|command| {
+        matches!(command, DrawCommand::Icon { icon: Icon::Chat, tint, rect }
+            if *tint == crate::theme::BRAND
+                && rect.y >= row.y
+                && rect.y + rect.height <= row.y + row.height
+                && rect.x < row.x + 40.0)
+    })
+}
+
+#[test]
+fn the_list_marks_a_conversation_waiting_for_an_answer_until_it_is_answered_or_skipped() {
+    for skip in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let data_root = root.path().join("data");
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let app = AgentsWindow::with_data_root(data_root.clone());
+        let store = app.store.as_ref().unwrap().clone();
+        let waiting = interrupted(&store, &workspace, ask());
+        let other = store.create(&workspace, "native").unwrap().id;
+        drop(app);
+
+        // After a restart, with another conversation open: only the one
+        // whose agent asked is marked.
+        let mut app = reopened(&data_root, &other);
+        assert!(marked(&app, &waiting));
+        assert!(!marked(&app, &other));
+        // Opening it brings the question back; the mark stays while it is open.
+        app.open_session(&waiting);
+        app.view.native_provider_id = "custom".into();
+        app.view.model = "different-current-model".into();
+        assert_eq!(app.view.pending_permissions.len(), 1);
+        assert!(marked(&app, &waiting));
+
+        if skip {
+            press(&mut app, &question_ui::action(REQUEST, "skip"));
+        } else {
+            press(&mut app, &question_ui::pick_action(REQUEST, 0, 0));
+            press(&mut app, &question_ui::action(REQUEST, "next"));
+            press(&mut app, &question_ui::action(REQUEST, "send"));
+        }
+        assert_eq!(recorded(&app, &waiting).len(), 1);
+        assert!(!marked(&app, &waiting));
+        // Not from another conversation either, nor after another restart.
+        app.open_session(&other);
+        assert!(!marked(&app, &waiting));
+        drop(app);
+        let app = reopened(&data_root, &other);
+        assert!(!marked(&app, &waiting));
+    }
 }
 
 fn propose(app: &mut AgentsWindow, mode: &str) {

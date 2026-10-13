@@ -1474,6 +1474,9 @@ pub struct AgentsWindow {
     navigation: NavigationHistory,
     command_tree: UiTree,
     command_center_attaches_file: bool,
+    /// The question, by request and position, the file picker is choosing an
+    /// image for instead of a composer attachment.
+    question_attach_target: Option<(String, usize)>,
     command_focus_pending: bool,
     prompt_focus_pending: bool,
     github_sign_in_focus_pending: Option<&'static str>,
@@ -2880,13 +2883,14 @@ fn recovery_status(recovery: &ReplayRecovery) -> &'static str {
 
 fn native_session_views(
     data_root: &Path,
+    store: &SessionStore,
     stored: &StoredSession,
 ) -> (
     Option<SessionRecoveryView>,
     Option<SessionPlanView>,
     Option<crate::pause::PausedTurn>,
 ) {
-    let (recovery, plan, pause) = native_session_views_inner(data_root, stored);
+    let (recovery, plan, pause) = native_session_views_inner(data_root, store, stored);
     // A pause is a mark on a turn that can simply be resumed, nothing else.
     let pause = pause.filter(|_| recovery == Some(SessionRecoveryView::Resume));
     (recovery, plan, pause)
@@ -2894,6 +2898,7 @@ fn native_session_views(
 
 fn native_session_views_inner(
     data_root: &Path,
+    store: &SessionStore,
     stored: &StoredSession,
 ) -> (
     Option<SessionRecoveryView>,
@@ -2920,10 +2925,21 @@ fn native_session_views_inner(
         Ok(replay) => {
             let recovery = match &replay.recovery {
                 ReplayRecovery::Idle => None,
-                ReplayRecovery::PermissionPending { tool_call, .. }
+                ReplayRecovery::PermissionPending { request_id, tool_call }
                     if openide_harness::is_user_interaction_tool(&tool_call.name) =>
                 {
-                    Some(SessionRecoveryView::Question)
+                    // Answered before the turn stopped: nothing is left to
+                    // ask, and resuming resolves the request from that record.
+                    let answered = store
+                        .load_permission_decisions(&stored.session.id)
+                        .is_ok_and(|decisions| {
+                            decisions.iter().any(|decision| decision.request_id == *request_id)
+                        });
+                    Some(if answered {
+                        SessionRecoveryView::Resume
+                    } else {
+                        SessionRecoveryView::Question
+                    })
                 }
                 ReplayRecovery::PermissionPending { .. } => Some(SessionRecoveryView::Permission),
                 ReplayRecovery::ToolOutcomeUncertain { .. } => {
@@ -7134,6 +7150,7 @@ impl AgentsWindow {
             navigation,
             command_tree,
             command_center_attaches_file: false,
+            question_attach_target: None,
             command_focus_pending: false,
             prompt_focus_pending: false,
             github_sign_in_focus_pending: None,
@@ -8129,6 +8146,55 @@ impl AgentsWindow {
         }
     }
 
+    /// The question an interrupted turn of the selected conversation left
+    /// open comes back as its card, drawn from the journal with nothing
+    /// chosen. Answering it records the answer and resumes the turn, which
+    /// resolves the request from that record. Without the card the recovery
+    /// card offers "Responder y reanudar", which asks through the resumed turn.
+    fn restore_pending_question(&mut self) {
+        let Some(session_id) = self.view.selected_session.clone() else {
+            return;
+        };
+        if self.view.running
+            || self.active_run.is_some()
+            || self.active_resume.is_some()
+            || self.view.session_recovery.get(&session_id) != Some(&SessionRecoveryView::Question)
+        {
+            return;
+        }
+        let Some(stored) = self
+            .store
+            .as_ref()
+            .and_then(|store| store.load(&session_id).ok().flatten())
+        else {
+            return;
+        };
+        // A subagent's turn and an automation's are resumed by their own paths.
+        if stored.session.subagent.is_some() || stored.session.native_automation.is_some() {
+            return;
+        }
+        let Ok(ReplayRecovery::PermissionPending { request_id, tool_call }) =
+            replay_stored_native(&self.data_root, &stored).map(|replay| replay.recovery)
+        else {
+            return;
+        };
+        if tool_call.name != crate::question_ui::TOOL
+            || crate::question_ui::parse(&tool_call.arguments).is_empty()
+            || self
+                .view
+                .pending_permissions
+                .iter()
+                .any(|permission| permission.request_id == request_id)
+        {
+            return;
+        }
+        self.view.pending_permissions.push(PermissionView {
+            request_id,
+            tool_name: tool_call.name,
+            arguments: serde_json::to_string_pretty(&tool_call.arguments).unwrap_or_default(),
+        });
+    }
+
     fn refresh_sessions(&mut self) {
         if let Some(store) = self.store.clone() {
             // A durable journal is intentionally incomplete while its worker is
@@ -8158,7 +8224,7 @@ impl AgentsWindow {
                             switches.insert(record.session.id.clone(), switch);
                         }
                         let (recovery, plan, pause) =
-                            native_session_views(&self.data_root, record);
+                            native_session_views(&self.data_root, &store, record);
                         if let Some(recovery) = recovery {
                             let selected_running = self.view.running
                                 && self.view.selected_session.as_deref()
@@ -8196,6 +8262,7 @@ impl AgentsWindow {
                     self.view.model_switch.usage = usage;
                     self.view.model_switch.subagent_usage = subagent_usage;
                     self.view.session_recovery = recoveries;
+                    self.restore_pending_question();
                     self.view.pause.sessions = pauses;
                     // While the switch is being carried out the card would
                     // only offer what is already happening.
@@ -15544,6 +15611,7 @@ impl AgentsWindow {
         self.view.ide.sessions_open = false;
         self.close_composer_floating_controls();
         self.command_center_attaches_file = false;
+        self.question_attach_target = None;
         self.view.composer_add_menu_open = false;
         self.view.composer_project_menu_open = false;
         self.view.show_command_center = true;
@@ -15713,6 +15781,9 @@ impl AgentsWindow {
                 }
                 crate::composer_attachments::Response::Pasted { key, result } => {
                     self.attachment_pastes_pending.remove(&key);
+                    if self.attach_pasted_question_images(&key.0, key.1.as_deref(), &result) {
+                        continue;
+                    }
                     match result {
                         Ok(paths) if key == self.draft_key() => {
                             for path in paths {
@@ -15879,15 +15950,31 @@ impl AgentsWindow {
     }
 
     fn handle_composer_clipboard_input(&mut self, ctx: &egui::Context, modal_open: bool) -> bool {
+        // A paste into a question's answer field attaches to that answer,
+        // also while the turn that asked is running.
+        let question = self
+            .tree
+            .focused_id()
+            .and_then(crate::question_ui::text_target)
+            .map(|(request_id, question)| (request_id.to_owned(), question));
         let allowed = !modal_open
             && self.pending_text_paste.is_none()
             && !self.tree.context_menu_open()
             && !self.view.show_command_center
             && !self.view.show_settings
             && self.view.main_page == MainPage::Workspace
-            && !self.view.running
-            && !self.view.background_run_selected
-            && self.tree.focused_id() == Some("prompt");
+            && (question.is_some()
+                || (!self.view.running
+                    && !self.view.background_run_selected
+                    && self.tree.focused_id() == Some("prompt")));
+        let paste = |app: &mut Self, hint: Option<String>| match &question {
+            Some((request_id, question)) => {
+                app.request_question_paste(request_id, *question, hint, ctx)
+            }
+            None => {
+                app.request_composer_attachment_paste(hint, ctx);
+            }
+        };
         let (pastes, released_v, command_held) = ctx.input(|input| {
             let pastes: Vec<_> = input
                 .events
@@ -15912,7 +15999,7 @@ impl AgentsWindow {
         if allowed {
             for text in &pastes {
                 if crate::composer_attachments::is_file_paste(text) {
-                    self.request_composer_attachment_paste(Some(text.clone()), ctx);
+                    paste(self, Some(text.clone()));
                     changed = true;
                     ctx.input_mut(|input| {
                         input.events.retain(
@@ -15928,7 +16015,7 @@ impl AgentsWindow {
             // event for an image. Its key-up event lets the host read images
             // without reading the clipboard for ordinary text pastes.
             if released_v == Some(true) && pastes.is_empty() && !self.keyboard_paste_handled {
-                self.request_composer_attachment_paste(None, ctx);
+                paste(self, None);
                 changed = true;
             }
         }
@@ -15949,6 +16036,7 @@ impl AgentsWindow {
         };
         self.view.show_command_center = false;
         let attach_file = std::mem::take(&mut self.command_center_attaches_file);
+        let question = self.question_attach_target.take();
         match target {
             Target::CompactContext => self.start_compact(),
             Target::ResumeTurn => self.start_resume(),
@@ -16031,7 +16119,13 @@ impl AgentsWindow {
             }
             Target::OpenFile(path) => {
                 if attach_file {
-                    self.attach_composer_file(&path);
+                    match question {
+                        Some((request_id, question)) => {
+                            let workspace = PathBuf::from(&self.view.workspace);
+                            self.attach_question_image(&request_id, question, &workspace, &path);
+                        }
+                        None => self.attach_composer_file(&path),
+                    }
                     return;
                 }
                 let workspace = Path::new(&self.view.workspace);

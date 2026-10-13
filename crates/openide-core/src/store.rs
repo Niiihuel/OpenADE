@@ -757,6 +757,11 @@ pub struct RecordedPermissionDecision {
     /// permission. User-authored content; older journals omit this field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub answer: Option<String>,
+    /// The images the user attached to that answer, kept here until the tool
+    /// result that carries them is in the session's events. Older journals
+    /// omit this field.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub answer_images: Vec<UserImage>,
 }
 
 /// Bound of one recorded answer, well above what the question card produces.
@@ -2887,7 +2892,7 @@ impl SessionStore {
         decision: PermissionDecision,
         grant: Option<SessionApprovalGrantRecord>,
     ) -> Result<RecordedPermissionDecision, StoreError> {
-        self.record_decision(session_id, request_id, decision, grant, None)
+        self.record_decision(session_id, request_id, decision, grant, None, &[])
     }
 
     /// Durably record what the user answered to a question the agent asked,
@@ -2899,7 +2904,19 @@ impl SessionStore {
         request_id: &str,
         answer: &str,
     ) -> Result<RecordedPermissionDecision, StoreError> {
-        if answer.len() > MAX_USER_ANSWER_BYTES {
+        self.record_user_answer_with_images(session_id, request_id, answer, &[])
+    }
+
+    /// The same record with the images the user attached to the answer. They
+    /// are refused unless they can be that tool result's images for a model.
+    pub fn record_user_answer_with_images(
+        &self,
+        session_id: &str,
+        request_id: &str,
+        answer: &str,
+        images: &[UserImage],
+    ) -> Result<RecordedPermissionDecision, StoreError> {
+        if answer.len() > MAX_USER_ANSWER_BYTES || crate::validate_answer_images(images).is_err() {
             return Err(StoreError::InvalidUserAnswer);
         }
         self.record_decision(
@@ -2908,7 +2925,34 @@ impl SessionStore {
             PermissionDecision::Allow,
             None,
             Some(answer.to_owned()),
+            images,
         )
+    }
+
+    /// Drop the images of a recorded answer once the tool result that carries
+    /// them is committed: the session's events own them from then on, and
+    /// this journal stays within its size limit however many answers follow.
+    pub fn release_user_answer_images(
+        &self,
+        session_id: &str,
+        request_id: &str,
+    ) -> Result<(), StoreError> {
+        validate_session_id(session_id)?;
+        let _guard = self
+            .operation_lock
+            .lock()
+            .map_err(|_| StoreError::PoisonedLock)?;
+        let _session_transaction = self.lock_native_journal(session_id)?;
+        let mut journal = self.read_permission_journal(session_id)?;
+        let Some(entry) = journal
+            .entries
+            .iter_mut()
+            .find(|entry| entry.request_id == request_id && !entry.answer_images.is_empty())
+        else {
+            return Ok(());
+        };
+        entry.answer_images.clear();
+        self.write_permission_journal_atomically(session_id, &journal)
     }
 
     fn record_decision(
@@ -2918,6 +2962,7 @@ impl SessionStore {
         decision: PermissionDecision,
         grant: Option<SessionApprovalGrantRecord>,
         answer: Option<String>,
+        answer_images: &[UserImage],
     ) -> Result<RecordedPermissionDecision, StoreError> {
         validate_session_id(session_id)?;
         validate_permission_request_id(request_id)?;
@@ -2942,6 +2987,7 @@ impl SessionStore {
             return if existing.decision == decision
                 && existing.grant == grant
                 && existing.answer == answer
+                && existing.answer_images == answer_images
             {
                 Ok(existing.clone())
             } else {
@@ -2958,6 +3004,7 @@ impl SessionStore {
             grant,
             revoked_at_ms: None,
             answer,
+            answer_images: answer_images.to_vec(),
         };
         journal.entries.push(record.clone());
         self.write_permission_journal_atomically(session_id, &journal)?;
@@ -5609,6 +5656,76 @@ mod tests {
     }
 
     #[test]
+    fn an_answers_images_are_recorded_with_it_and_released_once_the_result_owns_them() {
+        let png = |side: u32, len: usize| {
+            let mut bytes = [
+                b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".as_slice(),
+                &side.to_be_bytes(),
+                &side.to_be_bytes(),
+            ]
+            .concat();
+            bytes.resize(len.max(bytes.len()), 0);
+            UserImage::from_bytes(crate::UserImageMime::Png, &bytes).unwrap()
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::open(dir.path()).unwrap();
+        let session = store.create("/workspace", "native").unwrap();
+        let images = vec![png(640, 0), png(320, 0)];
+        let answered = store
+            .record_user_answer_with_images(&session.id, "question-1", "{}", &images)
+            .unwrap();
+        assert_eq!(answered.answer_images, images);
+        // The same answer again is the same record; other images are not.
+        assert_eq!(
+            store
+                .record_user_answer_with_images(&session.id, "question-1", "{}", &images)
+                .unwrap(),
+            answered
+        );
+        for other in [&images[..1], &[]] {
+            assert!(matches!(
+                store.record_user_answer_with_images(&session.id, "question-1", "{}", other),
+                Err(StoreError::ConflictingPermissionDecision(_))
+            ));
+        }
+        // Refused whole: more than a result keeps, or an image no model takes.
+        for refused in [
+            vec![png(64, 0); crate::MAX_TOOL_MEDIA_IMAGES + 1],
+            vec![png(64, crate::MAX_TOOL_MODEL_IMAGE_BYTES + 1)],
+            vec![png(crate::MAX_TOOL_MODEL_IMAGE_SIDE + 1, 0)],
+            vec![png(64, crate::MAX_TOOL_MODEL_IMAGE_BYTES); 3],
+        ] {
+            assert!(matches!(
+                store.record_user_answer_with_images(&session.id, "question-2", "{}", &refused),
+                Err(StoreError::InvalidUserAnswer)
+            ));
+        }
+        // An answer without images is written as it always was.
+        store.record_user_answer(&session.id, "question-3", "{}").unwrap();
+        let written: serde_json::Value = serde_json::from_slice(
+            &fs::read(store.permission_journal_path(&session.id).unwrap()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(written["entries"].as_array().unwrap().len(), 2);
+        assert_eq!(written["entries"][0]["answer_images"].as_array().unwrap().len(), 2);
+        assert!(written["entries"][1].get("answer_images").is_none());
+        drop(store);
+
+        // A restart before the turn continues finds the images with the answer.
+        let reopened = SessionStore::open(dir.path()).unwrap();
+        assert_eq!(
+            reopened.load_permission_decisions(&session.id).unwrap()[0],
+            answered
+        );
+        reopened.release_user_answer_images(&session.id, "question-1").unwrap();
+        reopened.release_user_answer_images(&session.id, "question-1").unwrap();
+        reopened.release_user_answer_images(&session.id, "unknown").unwrap();
+        let released = reopened.load_permission_decisions(&session.id).unwrap();
+        assert!(released[0].answer_images.is_empty());
+        assert_eq!(released[0].answer.as_deref(), Some("{}"));
+    }
+
+    #[test]
     fn permission_decisions_are_durable_idempotent_and_separate_from_agent_events() {
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(SessionStore::open(dir.path()).unwrap());
@@ -5922,6 +6039,7 @@ mod tests {
                 grant: Some(valid),
                 revoked_at_ms: None,
                 answer: None,
+                answer_images: vec![],
             }],
         };
         fs::write(&path, serde_json::to_vec(&malformed).unwrap()).unwrap();
@@ -5940,6 +6058,7 @@ mod tests {
                 grant: None,
                 revoked_at_ms: Some(3),
                 answer: None,
+                answer_images: vec![],
             }],
         };
         fs::write(&path, serde_json::to_vec(&malformed_revocation).unwrap()).unwrap();

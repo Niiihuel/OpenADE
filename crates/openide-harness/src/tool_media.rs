@@ -245,6 +245,26 @@ pub(crate) fn extract_tool_result_media(call: &ToolCall, output: &str) -> Option
     })
 }
 
+/// The images the user attached to their answer to a question, as that tool
+/// result's media: every one is given to the model, in the order the answer's
+/// own text numbers them. The store refused anything else when it recorded
+/// the answer; images it would refuse now are not carried.
+pub(crate) fn answer_media(call: &ToolCall, images: Vec<UserImage>) -> Option<ToolMedia> {
+    if images.is_empty() || openide_core::validate_answer_images(&images).is_err() {
+        return None;
+    }
+    Some(ToolMedia {
+        event: AgentEventKind::ToolResultMedia {
+            tool_call_id: call.id.clone(),
+            model_images: (0..images.len() as u8).collect(),
+            images,
+            text: String::new(),
+            notices: Vec::new(),
+        },
+        notes: Vec::new(),
+    })
+}
+
 /// The text of the result as the model reads it: the same MCP JSON with each
 /// image block replaced by a line that numbers the image given alongside it
 /// (`media`) or says why there is none. The base64 itself would only fill the

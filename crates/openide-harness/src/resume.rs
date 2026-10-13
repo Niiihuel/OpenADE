@@ -1793,6 +1793,9 @@ impl ResumeEngine {
         let project_activation_marker = project_preflight
             .as_ref()
             .and_then(|output| activation_hook_id(&output.content));
+        // The images of the user's answer, with the request they were
+        // recorded for.
+        let mut answer_media = None;
         let denied = if let Some(error) = validation_error {
             Some(ToolOutput::error(error.to_string()))
         } else if project_preflight.is_some() {
@@ -1808,16 +1811,18 @@ impl ResumeEngine {
             match (user_interaction::invalid(call, turn_mode), prior_resolution) {
                 (Some(invalid), _) => Some(invalid),
                 (None, Some(resolution)) => {
-                    let answer = match (resolution, resolved_request.as_deref()) {
+                    let decision = match (resolution, resolved_request.as_deref()) {
                         (PermissionResolution::Allowed, Some(request_id)) => self
                             .sessions
                             .load_permission_decisions(lease.session_id())?
                             .into_iter()
-                            .find(|decision| decision.request_id == request_id)
-                            .and_then(|decision| decision.answer),
+                            .find(|decision| decision.request_id == request_id),
                         _ => None,
                     };
-                    Some(user_interaction::outcome(call, resolution, answer))
+                    let (output, media) =
+                        user_interaction::recorded_outcome(call, resolution, decision);
+                    answer_media = resolved_request.clone().zip(media);
+                    Some(output)
                 }
                 (None, None) => {
                     self.append(
@@ -1964,7 +1969,13 @@ impl ResumeEngine {
                 },
             )?;
         }
-        let media = crate::tool_media::extract_tool_result_media(call, &result.content);
+        let (answered_request, media) = match answer_media {
+            Some((request_id, media)) => (Some(request_id), Some(media)),
+            None => (
+                None,
+                crate::tool_media::extract_tool_result_media(call, &result.content),
+            ),
+        };
         let content = crate::tool_media::without_image_data(call, &result.content, media.as_ref())
             .chars()
             .take(self.limits.max_tool_output_chars)
@@ -1983,6 +1994,13 @@ impl ResumeEngine {
                 is_error: result.is_error,
             },
         )?;
+        if let Some(request_id) = answered_request {
+            // The events own the images now. A failure here only leaves them
+            // recorded in both journals.
+            let _ = self
+                .sessions
+                .release_user_answer_images(lease.session_id(), &request_id);
+        }
         Ok(None)
     }
 
@@ -3583,6 +3601,107 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[tokio::test]
+    async fn an_answer_with_images_survives_a_restart_and_replays_with_them() {
+        let ask = ToolCall {
+            id: "call-ask".into(),
+            name: crate::ASK_USER_TOOL.into(),
+            arguments: json!({"questions": [{
+                "header": "Layout",
+                "question": "Which mockup?",
+                "options": [{"label": "A"}, {"label": "B"}],
+                "multi_select": false
+            }]}),
+        };
+        let fixture = Fixture::new(vec![
+            ModelOutput {
+                content: String::new(),
+                tool_calls: vec![ask.clone()],
+            },
+            done(),
+        ]);
+        fixture.admit();
+        let lease = fixture
+            .sessions
+            .try_acquire_native_lease(&fixture.session_id)
+            .unwrap();
+        let engine = fixture.engine(PermissionMode::Deny).with_user_interaction(true);
+        let paused = engine
+            .run_until_pause(&lease, CancellationToken::new())
+            .await
+            .unwrap();
+        let ResumeDisposition::NeedsPermission { request_id, .. } = paused.disposition else {
+            panic!("the turn waits for the user: {:?}", paused.disposition);
+        };
+        let image = |side| {
+            openide_core::UserImage::from_bytes(
+                openide_core::UserImageMime::Png,
+                &crate::tool_media::test_png(side, side, 0),
+            )
+            .unwrap()
+        };
+        let images = vec![image(800), image(400)];
+        let answer = r#"{"answered_by":"user","answers":[{"header":"Layout","selected":["B"],"attached_images":[1,2]}]}"#;
+        // The answer is recorded and the app stops before the request is
+        // resolved: the reopened store still has the images with it.
+        fixture
+            .sessions
+            .record_user_answer_with_images(&fixture.session_id, &request_id, answer, &images)
+            .unwrap();
+        let reopened = Arc::new(SessionStore::open(fixture._dir.path()).unwrap());
+        assert_eq!(
+            reopened.load_permission_decisions(&fixture.session_id).unwrap()[0].answer_images,
+            images
+        );
+        let mut resumed = fixture.engine(PermissionMode::Deny).with_user_interaction(true);
+        resumed.sessions = reopened.clone();
+        resumed
+            .resolve_permission(&lease, &request_id, PermissionChoice::Allow)
+            .unwrap();
+        let completed = resumed
+            .run_until_pause(&lease, CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(completed.disposition, ResumeDisposition::Complete);
+        let events = reopened.load(&fixture.session_id).unwrap().unwrap().events;
+        let media = events
+            .iter()
+            .position(|event| matches!(&event.kind,
+                AgentEventKind::ToolResultMedia { tool_call_id, images: journaled, model_images, .. }
+                    if tool_call_id == "call-ask" && *journaled == images && *model_images == [0, 1]))
+            .expect("the answer's images are journaled with its result");
+        assert!(matches!(
+            &events[media - 1].kind,
+            AgentEventKind::ToolStarted { tool_call } if *tool_call == ask
+        ));
+        assert!(matches!(
+            &events[media + 1].kind,
+            AgentEventKind::ToolFinished { tool_call_id, output, is_error: false }
+                if tool_call_id == "call-ask" && output == answer
+        ));
+        // The model that continues the turn is given the images, and so is
+        // every later replay of the journal.
+        let replay = resumed.inspect(&lease).unwrap();
+        let result = replay
+            .history
+            .iter()
+            .find(|message| message.content == answer)
+            .unwrap();
+        assert_eq!(result.images, images);
+        assert!(fixture
+            .model
+            .seen_histories
+            .lock()
+            .unwrap()
+            .last()
+            .unwrap()
+            .iter()
+            .any(|message| message.content == answer && message.images == images));
+        assert!(reopened.load_permission_decisions(&fixture.session_id).unwrap()[0]
+            .answer_images
+            .is_empty());
     }
 
     #[tokio::test]

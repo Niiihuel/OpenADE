@@ -1200,13 +1200,13 @@ impl ReplayBuilder {
                     || !self
                         .started_tools
                         .iter()
-                        .any(|call| call.id == *tool_call_id && call.name.starts_with("mcp__"))
+                        .any(|call| call.id == *tool_call_id && crate::tool_carries_media(&call.name))
                     || crate::validate_tool_result_media(images, text, notices).is_err()
                     || for_model.is_none()
                 {
                     return Err(Self::conflict(
                         event,
-                        "tool media is invalid or has no matching started MCP call",
+                        "tool media is invalid or has no matching started call that carries it",
                     ));
                 }
                 // Media completes nothing and grants no authority; the images
@@ -3633,6 +3633,67 @@ mod tests {
         assert_eq!(compacted.history.len(), 2, "the retained prompt and the summary");
         assert!(compacted.history.iter().all(|message| message.images.is_empty()));
         assert!(compacted.committed_messages.is_empty());
+    }
+
+    #[test]
+    fn an_answer_replays_with_the_images_the_user_attached_to_it() {
+        let image =
+            crate::UserImage::from_bytes(crate::UserImageMime::Png, b"\x89PNG\r\n\x1a\nshot")
+                .unwrap();
+        let journal = |tool: &str, with_images: bool| {
+            let ask = ToolCall {
+                id: "ask".into(),
+                name: tool.into(),
+                arguments: serde_json::json!({}),
+            };
+            let mut kinds = vec![
+                admitted(),
+                AgentEventKind::TurnStarted { prompt: "Build this".into() },
+                AgentEventKind::ModelRequestStarted { step: 1, model: "gpt-example".into() },
+                response(1, AgentMessage::assistant("", vec![ask.clone()])),
+                AgentEventKind::PermissionRequested {
+                    request_id: "request-1".into(),
+                    tool_call: ask.clone(),
+                },
+                AgentEventKind::PermissionResolved {
+                    request_id: "request-1".into(),
+                    tool_call_id: "ask".into(),
+                    resolution: crate::PermissionResolution::Allowed,
+                },
+                AgentEventKind::ToolStarted { tool_call: ask },
+            ];
+            if with_images {
+                kinds.push(AgentEventKind::ToolResultMedia {
+                    tool_call_id: "ask".into(),
+                    images: vec![image.clone()],
+                    text: String::new(),
+                    notices: vec![],
+                    model_images: vec![0],
+                });
+            }
+            kinds.push(AgentEventKind::ToolFinished {
+                tool_call_id: "ask".into(),
+                output: "{\"answered_by\":\"user\"}".into(),
+                is_error: false,
+            });
+            kinds
+                .into_iter()
+                .enumerate()
+                .map(|(index, kind)| event(index as u64 + 1, kind))
+                .collect::<Vec<_>>()
+        };
+        let replay = |events: &[AgentEvent]| replay_native("session-1", events, None, &compatibility());
+        let answered = replay(&journal(crate::ASK_USER_TOOL, true)).unwrap();
+        assert_eq!(answered.history.last().unwrap().content, "{\"answered_by\":\"user\"}");
+        assert_eq!(answered.history.last().unwrap().images, vec![image.clone()]);
+        // An answer journaled before answers carried images replays as it did.
+        let plain = replay(&journal(crate::ASK_USER_TOOL, false)).unwrap();
+        assert!(plain.history.last().unwrap().images.is_empty());
+        // No other local tool's result carries media.
+        assert!(matches!(
+            replay(&journal("read_file", true)),
+            Err(ReplayError::Conflict { sequence: 8, .. })
+        ));
     }
 
     #[test]

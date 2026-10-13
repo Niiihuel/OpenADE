@@ -1666,6 +1666,9 @@ impl AgentRunner {
                 };
                 let call = &scheduled[index].call;
                 tool_count += 1;
+                // The images of the user's answer, with the request they
+                // were recorded for.
+                let mut answer_media = None;
                 // The call is checked against the frozen catalog before any
                 // permission prompt or external tool effect.
                 let denied = match catalog.require_valid_call(call) {
@@ -1678,10 +1681,11 @@ impl AgentRunner {
                         if self.user_interaction.is_some()
                             && user_interaction::is_builtin(&catalog, call) =>
                     {
-                        Some(
-                            self.wait_for_user(call, mode, &cancel, &pending_permissions, sink)
-                                .await?,
-                        )
+                        let (output, media) = self
+                            .wait_for_user(call, mode, &cancel, &pending_permissions, sink)
+                            .await?;
+                        answer_media = media;
+                        Some(output)
                     }
                     Ok(_) => {
                         self.check_permission(
@@ -1755,7 +1759,13 @@ impl AgentRunner {
                         })?;
                     }
                 }
-                let media = crate::tool_media::extract_tool_result_media(call, &result.content);
+                let (answered_request, media) = match answer_media {
+                    Some((request_id, media)) => (Some(request_id), Some(media)),
+                    None => (
+                        None,
+                        crate::tool_media::extract_tool_result_media(call, &result.content),
+                    ),
+                };
                 let content = truncate_chars(
                     &crate::tool_media::without_image_data(call, &result.content, media.as_ref()),
                     self.limits.max_tool_output_chars,
@@ -1771,6 +1781,13 @@ impl AgentRunner {
                     output: content,
                     is_error: result.is_error,
                 })?;
+                if let (Some(request_id), Some(sessions)) =
+                    (answered_request, self.user_interaction.as_ref())
+                {
+                    // The events own the images now. A failure here only
+                    // leaves them recorded in both journals.
+                    let _ = sessions.release_user_answer_images(&sink.session_id, &request_id);
+                }
                 messages.push(message);
             }
         }
@@ -2012,7 +2029,8 @@ impl AgentRunner {
     /// Ask the user and wait, with no timeout, for the host to resolve the
     /// request. The answer is read from the decision journal the host wrote
     /// before resolving, so a live turn and a recovered one take it from the
-    /// same durable place.
+    /// same durable place. Images recorded with the answer come back with
+    /// the request they belong to.
     async fn wait_for_user(
         &self,
         call: &ToolCall,
@@ -2020,9 +2038,10 @@ impl AgentRunner {
         cancel: &CancellationToken,
         pending: &PendingPermissions,
         sink: &mut EventSink,
-    ) -> Result<crate::ToolOutput, AgentError> {
+    ) -> Result<(crate::ToolOutput, Option<(String, crate::tool_media::ToolMedia)>), AgentError>
+    {
         if let Some(invalid) = user_interaction::invalid(call, mode) {
-            return Ok(invalid);
+            return Ok((invalid, None));
         }
         let request_id = Uuid::new_v4().to_string();
         let (reply_sender, reply_receiver) = tokio::sync::oneshot::channel();
@@ -2045,24 +2064,24 @@ impl AgentRunner {
             },
         };
         pending.remove(&request_id);
-        let answer = match (resolution, self.user_interaction.as_ref()) {
+        let decision = match (resolution, self.user_interaction.as_ref()) {
             (PermissionResolution::Allowed, Some(sessions)) => sessions
                 .load_permission_decisions(&sink.session_id)
                 .map_err(|error| AgentError::Runtime(format!("user answer load failed: {error}")))?
                 .into_iter()
-                .find(|decision| decision.request_id == request_id)
-                .and_then(|decision| decision.answer),
+                .find(|decision| decision.request_id == request_id),
             _ => None,
         };
         sink.emit(AgentEventKind::PermissionResolved {
-            request_id,
+            request_id: request_id.clone(),
             tool_call_id: call.id.clone(),
             resolution,
         })?;
         if resolution == PermissionResolution::Cancelled {
             return Err(AgentError::Cancelled);
         }
-        Ok(user_interaction::outcome(call, resolution, answer))
+        let (output, media) = user_interaction::recorded_outcome(call, resolution, decision);
+        Ok((output, media.map(|media| (request_id, media))))
     }
 
     async fn check_permission(
@@ -5748,6 +5767,100 @@ mod tests {
             assert!(seen[0][0].content.contains("ask_user"), "advertised to the model");
             assert!(seen[1].iter().any(|message| message.content == output));
         }
+    }
+
+    #[test]
+    fn an_answers_images_reach_the_model_as_that_results_images_and_replay_with_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(SessionStore::open(dir.path().join("sessions")).unwrap());
+        let request = journaled_request(&store, dir.path());
+        let session_id = request.session_id.clone().unwrap();
+        let lease = store.try_acquire_native_lease(&session_id).unwrap();
+        let model = model_asking_the_user();
+        let runner = AgentRunner::new(
+            model.clone(),
+            Arc::new(CountingTool {
+                executions: AtomicUsize::new(0),
+            }),
+        )
+        .with_permission_policy(PermissionPolicy::new().with_default_mode(PermissionMode::Deny))
+        .with_native_runtime_identity("test", "https://test.example/v1")
+        .with_event_journal(store.clone())
+        .with_user_interaction(store.clone());
+        let handle = runner.start_with_lease(request, lease);
+        let request_id = loop {
+            let event = handle
+                .events
+                .recv_timeout(Duration::from_secs(30))
+                .expect("the question");
+            if let AgentEventKind::PermissionRequested { request_id, .. } = event.kind {
+                break request_id;
+            }
+        };
+        let image = |side| {
+            openide_core::UserImage::from_bytes(
+                openide_core::UserImageMime::Png,
+                &crate::tool_media::test_png(side, side, 0),
+            )
+            .unwrap()
+        };
+        let images = vec![image(640), image(320)];
+        // Only images: the answer names no option and is an answer all the same.
+        let answer = r#"{"answered_by":"user","answers":[{"header":"Storage","selected":[],"attached_images":[1,2]}]}"#;
+        store
+            .record_user_answer_with_images(&session_id, &request_id, answer, &images)
+            .unwrap();
+        assert!(handle.resolve_permission(&request_id, PermissionChoice::Allow));
+        let events = receive_until_terminal(&handle);
+        assert!(matches!(
+            events.last().unwrap().kind,
+            AgentEventKind::TurnCompleted { .. }
+        ));
+        // Resolved, started, its images, its result: in that order.
+        let at = |wanted: fn(&AgentEventKind) -> bool| {
+            events.iter().position(|event| wanted(&event.kind)).unwrap()
+        };
+        let resolved = at(|kind| matches!(kind, AgentEventKind::PermissionResolved { .. }));
+        let started = at(|kind| matches!(kind, AgentEventKind::ToolStarted { .. }));
+        let media = at(|kind| matches!(kind, AgentEventKind::ToolResultMedia { .. }));
+        let finished = at(|kind| matches!(kind, AgentEventKind::ToolFinished { .. }));
+        assert!(resolved < started && started < media && media < finished);
+        assert!(matches!(
+            &events[media].kind,
+            AgentEventKind::ToolResultMedia { tool_call_id, images: journaled, model_images, .. }
+                if tool_call_id == "call_permission" && *journaled == images && *model_images == [0, 1]
+        ));
+        assert!(matches!(
+            &events[finished].kind,
+            AgentEventKind::ToolFinished { output, is_error: false, .. } if output == answer
+        ));
+        let seen = model.seen.lock().unwrap();
+        let result = seen[1].iter().find(|message| message.content == answer).unwrap();
+        assert_eq!(result.images, images);
+        // The journal alone gives the next request, or a reopened
+        // conversation, the same result.
+        let saved = store.load(&session_id).unwrap().unwrap();
+        let replay = replay_native(
+            &session_id,
+            &saved.events,
+            None,
+            &CheckpointCompatibility {
+                provider: "test".into(),
+                model: "scripted".into(),
+                context_format_key: "test".into(),
+            },
+        )
+        .unwrap();
+        let replayed = replay
+            .history
+            .iter()
+            .find(|message| message.content == answer)
+            .unwrap();
+        assert_eq!(replayed.images, images);
+        // The events own the images now; the decision keeps the answer.
+        let decision = &store.load_permission_decisions(&session_id).unwrap()[0];
+        assert!(decision.answer_images.is_empty());
+        assert_eq!(decision.answer.as_deref(), Some(answer));
     }
 
     #[test]
