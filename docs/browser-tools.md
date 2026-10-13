@@ -348,8 +348,10 @@ que leer. El archivo se lee en ejecución; la aplicación no lo incluye.
 El driver avisa dónde va a actuar antes de enviar la entrada
 (`Driver::watch_actions`, `Cue`), y sólo para las llamadas del agente: la
 entrada de la ventana no lo mueve. Mientras la pestaña está a la vista la
-acción espera a que el puntero llegue (entre 0,12 y 0,45 s según la distancia),
-para que se vean juntos; con la pestaña oculta no espera nada, y con
+acción espera a que el puntero llegue (entre 0,12 y 0,45 s según la distancia;
+nada si ya está ahí), para que se vean juntos, y al llegar vuelve a comprobar
+dónde está el elemento, porque la página pudo moverse en ese rato. Con la
+pestaña oculta no espera nada, y con
 **Reducir movimiento** el puntero aparece en el lugar sin recorrido ni espera.
 Lo pinta la ventana encima de la superficie (`agent_cursor.rs`): a la página
 no se le envía nada, así que ningún script lo lee y no sale en

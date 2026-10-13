@@ -1144,6 +1144,58 @@ async fn the_agent_reads_refs_acts_on_them_and_gets_each_tools_own_answer() {
 }
 
 #[tokio::test]
+async fn a_watched_click_waits_for_the_pointer_and_looks_again_at_where_the_element_is() {
+    let (runtime, endpoint, _workspace) = scripted((640, 480), 1.0, |method, params, _| match method {
+        "Accessibility.getFullAXTree" => tree(),
+        "Runtime.callFunctionOn" if library(params, "connected") => {
+            Some(Ok(json!({"result": {"type": "boolean", "value": true}})))
+        }
+        "Runtime.callFunctionOn" if library(params, "state") => {
+            value(json!({"state": "ready", "x": 20, "y": 30}))
+        }
+        _ => None,
+    });
+    let client = runtime.mcp_client();
+    let click = || {
+        let client = client.clone();
+        async move {
+            let clicked = client
+                .call_tool("browser_click", json!({"ref":"e4"}), &CancellationToken::new())
+                .await
+                .unwrap();
+            assert!(!clicked.is_error);
+        }
+    };
+    let looks = || {
+        endpoint
+            .asked("Runtime.callFunctionOn")
+            .iter()
+            .filter(|params| library(params, "state"))
+            .count()
+    };
+    assert!(!client.call_tool("browser_snapshot", json!({}), &CancellationToken::new()).await.unwrap().is_error);
+
+    // The user watches the page: the pointer is given the time to get there,
+    // in which the page may move, so the element is looked at once more.
+    let began = Instant::now();
+    click().await;
+    let cue = runtime.agent_cue().unwrap();
+    assert!(!cue.travel.is_zero() && began.elapsed() >= cue.travel, "{cue:?}");
+    let watched = looks();
+    // The pointer is already there: nothing to wait for, one look.
+    let began = Instant::now();
+    click().await;
+    let there = runtime.agent_cue().unwrap();
+    assert!(there.travel.is_zero() && there.from == Some((20.0, 30.0)), "{there:?}");
+    assert!(began.elapsed() < cue.travel, "it took {:?}", began.elapsed());
+    assert_eq!(watched, (looks() - watched) * 2);
+    // Both clicks landed where the element is.
+    let pointer = endpoint.asked("Input.dispatchMouseEvent");
+    assert_eq!(pointer.len(), 6);
+    assert!(pointer.iter().all(|event| event["x"] == json!(20.0) && event["y"] == json!(30.0)));
+}
+
+#[tokio::test]
 async fn a_page_that_did_not_load_and_an_input_that_failed_are_told_apart_from_a_tools_answer() {
     let refused = Arc::new(AtomicBool::new(true));
     let refusing = refused.clone();

@@ -51,8 +51,9 @@ impl AgentCue {
     pub(crate) fn new(kind: Cue, from: Option<(f32, f32)>, to: (f32, f32), started: Instant) -> Self {
         // A first appearance comes in from nearby.
         let distance = from.map_or(240.0, |from| (to.0 - from.0).hypot(to.1 - from.1));
-        let travel = Duration::from_secs_f32((0.12 + distance * 0.0005).min(0.45));
-        Self { kind, from, to, started, travel }
+        // Already there: nothing to travel, and nothing for the action to wait for.
+        let seconds = if distance < 1.0 { 0.0 } else { (0.12 + distance * 0.0005).min(0.45) };
+        Self { kind, from, to, started, travel: Duration::from_secs_f32(seconds) }
     }
 
     /// The pointer at `now`. It starts from `origin` when it has no last
@@ -382,7 +383,9 @@ mod tests {
         let near = AgentCue::new(Cue::Move, Some((100.0, 100.0)), (130.0, 140.0), start);
         let far = AgentCue::new(Cue::Type, Some((100.0, 100.0)), (1500.0, 1100.0), start);
         assert!(near.travel < far.travel && far.travel <= Duration::from_millis(450));
-        assert!(near.travel >= Duration::from_millis(120));
+        assert!(near.travel > Duration::from_millis(119));
+        let there = AgentCue::new(Cue::Click, Some((100.0, 100.0)), (100.0, 100.0), start);
+        assert!(there.travel.is_zero() && at(&there, 0.01).unwrap().ring.is_some(), "a second click where it is");
         assert_eq!(at(&near, 0.0).unwrap().at, (100.0, 100.0));
         assert_eq!(at(&near, 0.0).unwrap().alpha, 1.0, "it was already on the page");
         // A hover moves the pointer and clicks nothing.

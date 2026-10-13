@@ -82,8 +82,7 @@ impl Driver {
     pub fn click(&mut self, target: &Target) -> Outcome<()> {
         self.run(TIMEOUT, |driver| {
             let resolved = driver.resolve(target)?;
-            let point = driver.actionable(&resolved, POINTER)?;
-            driver.cue(Cue::Click, point);
+            let point = driver.shown(Cue::Click, &resolved, POINTER)?;
             driver.click_point(point)
         })
     }
@@ -102,8 +101,7 @@ impl Driver {
                 enabled: false,
                 ..POINTER
             };
-            let point = driver.actionable(&resolved, wants)?;
-            driver.cue(Cue::Move, point);
+            let point = driver.shown(Cue::Move, &resolved, wants)?;
             driver.move_to(point)
         })
     }
@@ -215,11 +213,14 @@ impl Driver {
                 let found = driver.invoke(&resolved.session, Some(&object), None, function, json!([{"value": "stand_in"}]), false)?;
                 found["objectId"].as_str().map(str::to_owned)
             };
-            let point = match stand_in {
-                Some(stand_in) => driver.actionable_object(&resolved, &stand_in, POINTER)?,
-                None => driver.actionable(&resolved, POINTER)?,
+            let locate = |driver: &mut Driver| match &stand_in {
+                Some(stand_in) => driver.actionable_object(&resolved, stand_in, POINTER),
+                None => driver.actionable(&resolved, POINTER),
             };
-            driver.cue(Cue::Click, point);
+            let mut point = locate(driver)?;
+            if driver.cue(Cue::Click, point) {
+                point = locate(driver)?;
+            }
             driver.click_point(point)?;
             // The click happened: what goes wrong from here is an uncertain effect, not a refusal.
             match driver.checked(&resolved) {
@@ -248,8 +249,7 @@ impl Driver {
             let source = driver.resolve(from)?;
             let destination = driver.resolve(to)?;
             let session = driver.session.clone();
-            let start = driver.actionable(&source, POINTER)?;
-            driver.cue(Cue::Move, start);
+            let start = driver.shown(Cue::Move, &source, POINTER)?;
             driver.move_to(start)?;
             driver.pointer_event("mousePressed", start, MouseButton::Left, 1)?;
             let dropped = (|| -> Outcome<()> {
@@ -277,8 +277,7 @@ impl Driver {
             enabled: false,
             ..POINTER
         };
-        let end = self.actionable(destination, wants)?;
-        self.cue(Cue::Move, end);
+        let end = self.shown(Cue::Move, destination, wants)?;
         self.move_to(end)?;
         let world = self.world(&source.session, &source.frame)?;
         let started: bool = self.library(&source.session, None, Some(world), "drag_started", json!([]))?;
@@ -299,6 +298,16 @@ impl Driver {
         self.buttons &= !MouseButton::Left.bit();
         self.pointer = end;
         Ok(())
+    }
+
+    /// Where to act on an element once the watch was shown it. The page had
+    /// that time to move, so what the input reaches is checked again.
+    fn shown(&mut self, cue: Cue, resolved: &Resolved, wants: Wants) -> Outcome<(f64, f64)> {
+        let point = self.actionable(resolved, wants)?;
+        if self.cue(cue, point) {
+            return self.actionable(resolved, wants);
+        }
+        Ok(point)
     }
 
     /// Waits until the element can take the action and returns where to
