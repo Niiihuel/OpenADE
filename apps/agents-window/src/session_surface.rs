@@ -3775,12 +3775,71 @@ fn composer_with_height(state: &ViewState, width: f32, available_height: Option<
     };
     let mut rows = Vec::new();
     rows.extend(crate::message_edit::undo_notice(state, card_width));
+    rows.extend(queued_messages(state, card_width));
     rows.push(shell);
     Element::column(rows)
         .gap(8.0)
         .size(Some(card_width), None)
         .centered_x()
         .padding(16.0)
+}
+
+/// What was sent while the agent was working and it has not read yet: it
+/// waits here, above the composer, until the turn reaches a point where it
+/// can take it.
+fn queued_messages(state: &ViewState, width: f32) -> Option<Element> {
+    if state.queued_messages.is_empty() {
+        return None;
+    }
+    let count = state.queued_messages.len();
+    let mut rows = vec![Text::new(
+        if count == 1 { "1 mensaje en cola".to_owned() } else { format!("{count} mensajes en cola") },
+        theme::component_palette(),
+    )
+    .role(TextRole::Small)
+    .muted()
+    .render()];
+    rows.extend(state.queued_messages.iter().map(|message| {
+        let line = message.text.lines().find(|line| !line.trim().is_empty()).unwrap_or("").trim();
+        let mut row = vec![
+            Element::icon(Icon::Clock)
+                .foreground(theme::FOREGROUND_SUBTLE)
+                .size(Some(14.0), Some(18.0)),
+            Element::truncated_text(if line.is_empty() { "Imágenes adjuntas" } else { line })
+                .font_family(FontFamily::Sans)
+                .font_size(13.0)
+                .foreground(theme::FOREGROUND)
+                .flex(1.0),
+        ];
+        if message.images > 0 {
+            row.push(
+                Text::new(
+                    if message.images == 1 { "1 imagen".to_owned() } else { format!("{} imágenes", message.images) },
+                    theme::component_palette(),
+                )
+                .role(TextRole::Small)
+                .muted()
+                .render(),
+            );
+        }
+        Element::row(row).gap(8.0).min_size(0.0, 22.0)
+    }));
+    Some(
+        Tooltip::new(
+            Element::panel(Element::column(rows).gap(4.0))
+                .padding(10.0)
+                .background(theme::CARD)
+                .border(theme::BORDER, 1.0)
+                .radius(10.0)
+                .size(Some(width), None),
+            "queued_messages",
+            "Mensajes en cola",
+            theme::component_palette(),
+        )
+        .description("El agente los lee en cuanto termina el paso que está haciendo, sin detener el turno. Aparecen en la conversación cuando los toma.")
+        .max_width(340.0)
+        .render(),
+    )
 }
 
 fn automation_read_only_card(
@@ -4469,6 +4528,7 @@ mod tests {
             browser: Default::default(),
             browser_refs: std::sync::Arc::from(""),
             agent_page_url: String::new(),
+            queued_messages: Vec::new(),
             browser_sites: Vec::new(),
             browser_site_draft: String::new(),
             review_detail: None,

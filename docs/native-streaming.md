@@ -1038,3 +1038,19 @@ inventan estadísticas de cambios. El inventario completo de una carpeta puede
 probar que un archivo nuevo no existía aunque otra parte del proyecto haya
 excedido los límites del snapshot inicial. Las notas y el código confirmado
 comparten un margen interior de 8 px.
+
+## Mensajes enviados durante un turno
+
+Enviar mientras el agente trabaja no detiene el turno: el mensaje entra a la
+bandeja durable del turno (`enqueue_native_steer`) y el runner lo entrega al
+modelo en el próximo límite seguro, entre una respuesta y la herramienta que
+sigue. Hasta entonces se ve sobre el compositor, en **Mensajes en cola**: una
+fila por mensaje con su primera línea y cuántas imágenes lleva
+(`queued_messages` en `session_surface.rs`, `refresh_queued_messages` en
+`app.rs`). La fila desaparece cuando el turno lo toma (`TurnSteered`, que lo
+muestra en la conversación como un mensaje del usuario) o cuando el turno
+termina.
+
+Límites: un mensaje en cola no se puede editar ni quitar, ni enviarse antes de
+ese límite; la cola es del turno en curso de una conversación nativa, no una
+lista de turnos por venir, y las sesiones de CLI no la tienen.

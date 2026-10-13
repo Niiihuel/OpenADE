@@ -183,6 +183,13 @@ pub struct ReviewDetailView {
     pub content: Option<Result<Option<FileDiffDetail>, String>>,
 }
 
+/// A message waiting for the running turn to take it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QueuedMessageView {
+    pub text: String,
+    pub images: usize,
+}
+
 #[derive(Clone, Debug)]
 pub struct PermissionView {
     pub request_id: String,
@@ -728,6 +735,9 @@ pub struct ViewState {
     pub(crate) browser_refs: std::sync::Arc<str>,
     /// Where the page of the agent's own browser was when it last asked.
     pub(crate) agent_page_url: String,
+    /// What the user sent while the selected conversation's turn was
+    /// running, and the turn has not taken yet. Oldest first.
+    pub(crate) queued_messages: Vec<QueuedMessageView>,
     /// The sites with a permission of their own, and the one being added.
     pub(crate) browser_sites: Vec<crate::browser_sites::Site>,
     pub(crate) browser_site_draft: String,
@@ -4299,6 +4309,7 @@ pub(crate) mod tests {
             browser: Default::default(),
             browser_refs: std::sync::Arc::from(""),
             agent_page_url: String::new(),
+            queued_messages: Vec::new(),
             browser_sites: Vec::new(),
             browser_site_draft: String::new(),
             review_detail: None,
