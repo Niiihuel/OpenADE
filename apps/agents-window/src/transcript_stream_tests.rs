@@ -1466,6 +1466,50 @@ fn permission_promotes_committed_preview_in_place_before_tool_start_and_replays_
 }
 
 #[test]
+fn a_permission_that_was_denied_or_expired_is_one_error_on_the_calls_own_row() {
+    for (resolution, raw, shown) in [
+        (
+            PermissionResolution::TimedOut,
+            "Permission request timed out for read_file",
+            "El permiso venció sin respuesta",
+        ),
+        (PermissionResolution::Denied, "Permission denied for read_file", "Permiso denegado"),
+    ] {
+        let mut projection = TranscriptProjection::new();
+        projection.apply_kind(&AgentEventKind::PermissionRequested {
+            request_id: "approve".into(),
+            tool_call: call(),
+        });
+        projection.apply_kind(&AgentEventKind::PermissionResolved {
+            request_id: "approve".into(),
+            tool_call_id: call().id,
+            resolution,
+        });
+        projection.apply_kind(&AgentEventKind::ToolFinished {
+            tool_call_id: call().id,
+            output: raw.into(),
+            is_error: true,
+        });
+        // No card repeats under the row what the row already says.
+        assert!(!projection
+            .items()
+            .iter()
+            .any(|item| matches!(item, TranscriptItem::Notice { .. })));
+        let failed: Vec<_> = projection
+            .items()
+            .iter()
+            .filter_map(|item| match item {
+                TranscriptItem::Tool { output, is_error: true, activity: ActivityStatus::Failed, .. } => {
+                    output.as_deref()
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(failed, [shown]);
+    }
+}
+
+#[test]
 fn permission_without_stream_preview_still_has_one_truthful_file_row() {
     for (resolution, expected) in [
         (PermissionResolution::Denied, ActivityStatus::Failed),
