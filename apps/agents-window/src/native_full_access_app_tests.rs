@@ -540,6 +540,65 @@ fn what_is_sent_during_a_turn_waits_above_the_composer_until_the_turn_takes_it()
 }
 
 #[test]
+fn enter_during_a_turn_queues_for_the_next_one_and_a_queued_message_can_be_taken_out_or_brought_back() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app = fixture(root.path());
+    let ctx = egui::Context::default();
+    let session = app.view.selected_session.clone().unwrap();
+    let store = app.store.clone().unwrap();
+    store.admit_native_turn(&session, "turn-1", "Primero", "model", TurnMode::Build).unwrap();
+    app.view.running = true;
+    for text in ["Después corré los tests", "Y actualizá el changelog"] {
+        app.view.prompt = text.into();
+        app.start_run();
+        assert_eq!(app.view.prompt, "", "what was queued leaves the composer");
+    }
+    // One for the running turn itself waits with them, first.
+    store.enqueue_native_steer(&session, "turn-1", "input-1", "Ojo con el lint").unwrap();
+    app.refresh_queued_messages();
+    let waiting = |app: &AgentsWindow| -> Vec<(String, bool)> {
+        app.view.queued_messages.iter().map(|message| (message.id.clone(), message.next_turn)).collect()
+    };
+    assert_eq!(waiting(&app), [("steer:input-1".into(), false), ("next:1".into(), true), ("next:2".into(), true)]);
+
+    // Taken out of the running turn's inbox: the turn will not read it.
+    app.apply_action(UiAction::Clicked { id: "queue_remove:steer:input-1".into() }, &ctx);
+    assert!(store.pending_native_steers(&session, "turn-1").unwrap().is_empty());
+    assert_eq!(waiting(&app).len(), 2);
+
+    // Brought back to the composer to change it; not over something being written.
+    app.apply_action(UiAction::Clicked { id: "queue_edit:next:1".into() }, &ctx);
+    assert_eq!(app.view.prompt, "Después corré los tests");
+    assert_eq!(waiting(&app), [("next:2".into(), true)]);
+    app.apply_action(UiAction::Clicked { id: "queue_edit:next:2".into() }, &ctx);
+    assert_eq!(app.view.prompt, "Después corré los tests");
+    assert_eq!(waiting(&app).len(), 1);
+
+    // Handed to the running turn instead of waiting for the next.
+    app.view.prompt.clear();
+    app.apply_action(UiAction::Clicked { id: "queue_steer:next:2".into() }, &ctx);
+    assert!(waiting(&app).iter().all(|(_, next_turn)| !next_turn), "{:?}", waiting(&app));
+
+    // A turn that was stopped does not go on to the queue by itself.
+    app.view.prompt = "Otro más".into();
+    app.start_run();
+    app.turn_queue.get_mut(&session).unwrap().paused = true;
+    app.refresh_queued_messages();
+    assert!(app.view.queue_paused);
+    app.view.running = false;
+    assert!(!app.drain_turn_queue(&ctx), "a paused queue sends nothing");
+    app.apply_action(UiAction::Clicked { id: "queue_resume".into() }, &ctx);
+    assert!(!app.view.queue_paused);
+    // What the user is writing stays theirs while a queued message is sent.
+    app.view.prompt = "a medio escribir".into();
+    assert!(app.drain_turn_queue(&ctx));
+    assert_eq!(app.view.prompt, "a medio escribir");
+    // Sent, or kept waiting with the queue paused: never lost.
+    let kept = app.turn_queue.get(&session).is_some_and(|queue| queue.paused && queue.items.len() == 1);
+    assert!(app.view.running || kept);
+}
+
+#[test]
 fn a_sites_permission_is_saved_listed_changed_and_removed() {
     use crate::browser_sites::{BrowserSites, SiteAccess};
     let root = tempfile::tempdir().unwrap();

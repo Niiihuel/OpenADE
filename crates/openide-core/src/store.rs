@@ -2353,6 +2353,42 @@ impl SessionStore {
         Ok(input)
     }
 
+    /// Take back a queued input the turn has not read. `None` when it is no
+    /// longer queued: the turn took it, or it was never there. Under the same
+    /// lock as the turn's own acknowledgement, so it is one or the other.
+    pub fn withdraw_native_steer(
+        &self,
+        session_id: &str,
+        turn_id: &str,
+        input_id: &str,
+    ) -> Result<Option<NativeSteerInput>, StoreError> {
+        validate_session_id(session_id)?;
+        validate_turn_id(turn_id)?;
+        validate_native_steer_input_id(input_id)?;
+        let _guard = self
+            .operation_lock
+            .lock()
+            .map_err(|_| StoreError::PoisonedLock)?;
+        let _transaction = self.lock_native_journal(session_id)?;
+        self.ensure_not_pending_native_deletion(session_id)?;
+        let events = self.events.load(session_id)?;
+        let committed = committed_native_steers(&events)?;
+        if committed.contains_key(input_id) {
+            return Ok(None);
+        }
+        let mut inbox = self.read_native_steer_inbox(session_id)?;
+        let Some(index) = inbox
+            .entries
+            .iter()
+            .position(|entry| entry.input_id == input_id && entry.turn_id == turn_id)
+        else {
+            return Ok(None);
+        };
+        let withdrawn = inbox.entries.remove(index);
+        self.write_native_steer_inbox(session_id, &inbox)?;
+        Ok(Some(withdrawn))
+    }
+
     /// Read unacknowledged steering inputs in queue order. Reading never
     /// consumes them; only a synced TurnSteered journal event does.
     pub fn pending_native_steers(
@@ -6457,6 +6493,36 @@ mod tests {
                 },
             ))
             .unwrap();
+    }
+
+    #[test]
+    fn native_steer_taken_back_is_not_delivered_and_one_the_turn_took_stays() {
+        let root = tempfile::tempdir().unwrap();
+        let store = SessionStore::open(root.path()).unwrap();
+        let session = store.create("/workspace", "native").unwrap();
+        start_steer_test_turn(&store, &session.id);
+        store.enqueue_native_steer(&session.id, "turn-1", "input-1", "Uno").unwrap();
+        store.enqueue_native_steer(&session.id, "turn-1", "input-2", "Dos").unwrap();
+        let back = store.withdraw_native_steer(&session.id, "turn-1", "input-1").unwrap().unwrap();
+        assert_eq!(back.text, "Uno");
+        let waiting: Vec<String> = store
+            .pending_native_steers(&session.id, "turn-1")
+            .unwrap()
+            .into_iter()
+            .map(|input| input.text)
+            .collect();
+        assert_eq!(waiting, ["Dos"]);
+        // Taken back once; a turn that had read it finds it gone.
+        assert!(store.withdraw_native_steer(&session.id, "turn-1", "input-1").unwrap().is_none());
+        let lease = store.try_acquire_native_lease(&session.id).unwrap();
+        assert!(matches!(
+            store.ack_native_steer(&lease, "turn-1", "input-1", 3),
+            Err(StoreError::NativeSteerNotQueued(_))
+        ));
+        // What the turn took is the conversation's: it cannot be taken back.
+        store.ack_native_steer(&lease, "turn-1", "input-2", 3).unwrap();
+        assert!(store.withdraw_native_steer(&session.id, "turn-1", "input-2").unwrap().is_none());
+        assert!(store.pending_native_steers(&session.id, "turn-1").unwrap().is_empty());
     }
 
     #[test]

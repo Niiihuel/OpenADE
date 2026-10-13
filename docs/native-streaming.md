@@ -1041,16 +1041,32 @@ comparten un margen interior de 8 px.
 
 ## Mensajes enviados durante un turno
 
-Enviar mientras el agente trabaja no detiene el turno: el mensaje entra a la
-bandeja durable del turno (`enqueue_native_steer`) y el runner lo entrega al
-modelo en el próximo límite seguro, entre una respuesta y la herramienta que
-sigue. Hasta entonces se ve sobre el compositor, en **Mensajes en cola**: una
-fila por mensaje con su primera línea y cuántas imágenes lleva
-(`queued_messages` en `session_surface.rs`, `refresh_queued_messages` en
-`app.rs`). La fila desaparece cuando el turno lo toma (`TurnSteered`, que lo
-muestra en la conversación como un mensaje del usuario) o cuando el turno
-termina.
+Mientras el agente trabaja hay dos formas de enviar, y ninguna detiene el
+turno:
 
-Límites: un mensaje en cola no se puede editar ni quitar, ni enviarse antes de
-ese límite; la cola es del turno en curso de una conversación nativa, no una
-lista de turnos por venir, y las sesiones de CLI no la tienen.
+| Tecla | Qué hace | Dónde espera |
+| --- | --- | --- |
+| Enter | **Poner en cola**: se envía como un turno propio cuando termine el actual | En la aplicación, por conversación (`turn_queue`); no sobrevive a un reinicio |
+| Ctrl+Enter | **Redirigir**: el turno en curso lo lee en el próximo límite seguro, entre una respuesta y la herramienta que sigue | En la bandeja durable del turno (`enqueue_native_steer`) |
+
+Los dos se ven sobre el compositor, en **Mensajes en cola**, cada uno con su
+primera línea y la marca «Próximo turno» o «En este turno»
+(`queued_messages` en `session_surface.rs`, `refresh_queued_messages` en
+`app.rs`). Cada fila tiene:
+
+- **Quitar**: lo saca de la cola. Uno redirigido sale de la bandeja con
+  `SessionStore::withdraw_native_steer`, bajo el mismo bloqueo con que el turno
+  lo toma: o lo tomó el turno o se retiró, nunca las dos cosas. El runner
+  saltea uno retirado después de haberlo leído (`NativeSteerNotQueued`).
+- **Editar**: lo trae de vuelta al compositor, si el compositor está vacío. Un
+  mensaje redirigido con imágenes sólo se puede quitar.
+- **Redirigir** (en uno del próximo turno): lo pasa al turno en curso.
+
+Cuando el turno termina bien, el más antiguo de la cola se envía solo; lo que
+el usuario esté escribiendo queda en el compositor. Si el turno se detuvo o
+falló, la cola queda **en pausa** hasta que el usuario elija **Reanudar**, y lo
+mismo si un mensaje de la cola no se pudo enviar. Un mensaje que el turno ya
+tomó aparece en la conversación como mensaje del usuario y deja la cola.
+
+Límites: hasta 16 mensajes en cola por conversación, sin adjuntos (los
+adjuntos van con Ctrl+Enter); sólo en conversaciones nativas.

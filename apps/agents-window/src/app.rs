@@ -371,6 +371,16 @@ struct ActiveCompact {
     cancel: CancellationToken,
 }
 
+/// Messages one conversation may have waiting for turns of their own.
+const MAX_QUEUED_TURNS: usize = 16;
+
+#[derive(Default)]
+struct TurnQueue {
+    /// Each with a number of its own, oldest first.
+    items: Vec<(u64, String)>,
+    paused: bool,
+}
+
 pub(crate) fn native_model_backend(
     connection: RuntimeConnection,
     provider_id: &str,
@@ -1435,6 +1445,10 @@ pub struct AgentsWindow {
     /// The Settings notice on screen and when it appeared.
     settings_notice_seen: Option<(String, Instant)>,
     review_model_settings: crate::review_model::ReviewModelSettings,
+    /// What the user queued to send as turns of their own once the running
+    /// one ends, by conversation. Kept for this run of the application.
+    turn_queue: HashMap<String, TurnQueue>,
+    turn_queue_next: u64,
     /// The user's shell search path, filled in by a start-up probe.
     login_path: Arc<std::sync::Mutex<Option<std::ffi::OsString>>>,
     terminal_focus_pending: bool,
@@ -6994,6 +7008,7 @@ impl AgentsWindow {
             browser_refs: Arc::from(""),
             agent_page_url: String::new(),
             queued_messages: Vec::new(),
+            queue_paused: false,
             browser_sites: crate::browser_sites::BrowserSites::load(&root).unwrap_or_default().sites,
             browser_site_draft: String::new(),
             review_detail: None,
@@ -7319,6 +7334,8 @@ impl AgentsWindow {
             github_worker: GithubWorker::spawn().ok(),
             browser_sites: crate::browser_sites::BrowserSites::load(&root).unwrap_or_default(),
             commit_generation: None,
+            turn_queue: HashMap::new(),
+            turn_queue_next: 1,
             github_status: GithubStatus::Loading,
             github_in_flight: false,
             github_account_worker: GithubAccountWorker::spawn(github_preference).ok(),
@@ -12633,14 +12650,147 @@ impl AgentsWindow {
                 pending
                     .into_iter()
                     .map(|input| crate::view::QueuedMessageView {
+                        id: format!("steer:{}", input.input_id),
                         text: input.text.chars().take(2000).collect(),
                         images: input.images.len(),
+                        next_turn: false,
                     })
                     .collect::<Vec<_>>(),
             )
         })()
         .unwrap_or_default();
-        self.view.queued_messages = queued;
+        let waiting = self.view.selected_session.as_ref().and_then(|session| self.turn_queue.get(session));
+        self.view.queue_paused = waiting.is_some_and(|queue| queue.paused && !queue.items.is_empty());
+        self.view.queued_messages = queued
+            .into_iter()
+            .chain(waiting.into_iter().flat_map(|queue| &queue.items).map(|(id, text)| crate::view::QueuedMessageView {
+                id: format!("next:{id}"),
+                text: text.clone(),
+                images: 0,
+                next_turn: true,
+            }))
+            .collect();
+    }
+
+    fn clear_prompt_after_queueing(&mut self) {
+        let draft_key = self.draft_key();
+        self.view.prompt.clear();
+        self.drafts.remove(&draft_key);
+        self.draft_dirty_at = None;
+        self.draft_error = None;
+        self.tree.set_input_value("prompt", "");
+    }
+
+    /// Keeps what is in the composer to send as a turn of its own when the
+    /// running one ends.
+    fn queue_next_turn(&mut self) {
+        let text = self.view.prompt.trim().to_owned();
+        let Some(session) = self.view.selected_session.clone().filter(|_| !text.is_empty()) else {
+            return;
+        };
+        if !self.view.composer_attachments.is_empty() {
+            self.view.status = "Los adjuntos no van en cola. Ctrl+Enter los envía ahora, sin detener el turno.".to_owned();
+            return;
+        }
+        let queue = self.turn_queue.entry(session).or_default();
+        if queue.items.len() >= MAX_QUEUED_TURNS {
+            self.view.status = format!("La cola ya tiene {MAX_QUEUED_TURNS} mensajes");
+            return;
+        }
+        queue.items.push((self.turn_queue_next, text));
+        self.turn_queue_next += 1;
+        self.clear_prompt_after_queueing();
+        self.view.status = "En cola para cuando termine este turno. Ctrl+Enter lo envía ahora.".to_owned();
+        self.refresh_queued_messages();
+    }
+
+    /// Sends the oldest queued message as a turn once the conversation is
+    /// idle. What the user is writing meanwhile stays in the composer.
+    fn drain_turn_queue(&mut self, ctx: &egui::Context) -> bool {
+        if self.view.running || self.active_run.is_some() || self.view.background_run_selected {
+            return false;
+        }
+        let Some(session) = self.view.selected_session.clone() else {
+            return false;
+        };
+        if !self.view.composer_attachments.is_empty() || self.view.message_edit.editing.is_some() {
+            return false;
+        }
+        let Some(queue) = self.turn_queue.get_mut(&session).filter(|queue| !queue.paused && !queue.items.is_empty()) else {
+            return false;
+        };
+        let (id, text) = queue.items.remove(0);
+        let writing = std::mem::replace(&mut self.view.prompt, text.clone());
+        self.start_run();
+        if !self.view.running {
+            // It could not be sent: it waits, and so do the ones behind it.
+            let queue = self.turn_queue.entry(session).or_default();
+            queue.items.insert(0, (id, text));
+            queue.paused = true;
+        }
+        self.view.prompt.clear();
+        self.tree.set_input_value("prompt", &writing);
+        if !writing.is_empty() {
+            self.apply_action(UiAction::InputChanged { id: "prompt".into(), value: writing }, ctx);
+        }
+        self.refresh_queued_messages();
+        true
+    }
+
+    /// What a queued message's own controls do: take it out, bring it back
+    /// to the composer, send it to the running turn now, or let a paused
+    /// queue go on.
+    fn apply_queue_action(&mut self, id: &str, ctx: &egui::Context) -> bool {
+        if id == "queue_resume" {
+            if let Some(queue) = self.view.selected_session.as_ref().and_then(|session| self.turn_queue.get_mut(session)) {
+                queue.paused = false;
+            }
+            self.refresh_queued_messages();
+            return true;
+        }
+        let Some((action, target)) = id.split_once(':').filter(|(action, _)| matches!(*action, "queue_remove" | "queue_edit" | "queue_steer")) else {
+            return false;
+        };
+        let Some(session) = self.view.selected_session.clone() else {
+            return true;
+        };
+        if action != "queue_remove" && !self.view.prompt.trim().is_empty() {
+            self.view.status = "Enviá o borrá lo que estás escribiendo antes de traer un mensaje de la cola".to_owned();
+            return true;
+        }
+        // Out of where it waits first: the running turn's inbox, or this queue.
+        let text = match target.split_once(':') {
+            Some(("steer", input)) => self
+                .store
+                .as_ref()
+                .and_then(|store| {
+                    let turn = store.active_native_turn_id(&session).ok()??;
+                    store.withdraw_native_steer(&session, &turn, input).ok()?
+                })
+                .map(|input| input.text),
+            Some(("next", number)) => number.parse::<u64>().ok().and_then(|number| {
+                let queue = self.turn_queue.get_mut(&session)?;
+                let index = queue.items.iter().position(|(id, _)| *id == number)?;
+                Some(queue.items.remove(index).1)
+            }),
+            _ => None,
+        };
+        let Some(text) = text else {
+            // The turn took it a moment ago: it is in the conversation now.
+            self.view.status = "Ese mensaje ya no está en cola".to_owned();
+            self.refresh_queued_messages();
+            return true;
+        };
+        if action != "queue_remove" {
+            self.view.prompt = text.clone();
+            self.tree.set_input_value("prompt", &text);
+            self.apply_action(UiAction::InputChanged { id: "prompt".into(), value: text }, ctx);
+            if action == "queue_steer" {
+                self.queue_native_steer();
+            }
+        }
+        self.refresh_queued_messages();
+        true
     }
 
     fn queue_native_steer(&mut self) {
@@ -12886,8 +13036,10 @@ impl AgentsWindow {
         self.view.composer_error = None;
         self.stop_dictation();
         if self.view.running {
+            // Enter while the agent works queues for the next turn; Ctrl+Enter
+            // hands the message to the turn that is running.
             if self.view.selected_backend == "native" {
-                self.queue_native_steer();
+                self.queue_next_turn();
             }
             return;
         }
@@ -13827,6 +13979,13 @@ impl AgentsWindow {
                 | AgentEventKind::ModelRequestStarted { .. }
         ) {
             self.environment_dirty = true;
+        }
+        // A turn that was stopped or failed does not go on to what was queued
+        // behind it until the user says so.
+        if matches!(event.kind, AgentEventKind::TurnCancelled | AgentEventKind::TurnFailed { .. }) {
+            if let Some(queue) = self.turn_queue.get_mut(&event.session_id).filter(|queue| !queue.items.is_empty()) {
+                queue.paused = true;
+            }
         }
         // The turn took a queued message, or ended: the queue shown is stale.
         if !self.view.queued_messages.is_empty()
@@ -17851,6 +18010,7 @@ impl AgentsWindow {
                 self.cancel_selected_run();
             }
             UiAction::Clicked { id } if id == "run_steer" => self.queue_native_steer(),
+            UiAction::Clicked { id } if self.apply_queue_action(&id, ctx) => {}
             UiAction::Clicked { id } if id.starts_with("session_approval_revoke:") => {
                 if let Some(key_digest) = id.strip_prefix("session_approval_revoke:") {
                     self.revoke_selected_session_approval(key_digest);
@@ -21135,7 +21295,8 @@ impl eframe::App for AgentsWindow {
             | self.poll_composer_folder_picker()
             | self.poll_composer_branches(&ctx)
             | self.poll_environment_git(&ctx)
-            | self.poll_composer_attachments(&ctx);
+            | self.poll_composer_attachments(&ctx)
+            | self.drain_turn_queue(&ctx);
         if composer_was_running && !self.view.running && !self.view.background_run_selected {
             self.refresh_native_composer_choice_metadata();
             early_changed = true;

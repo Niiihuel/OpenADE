@@ -186,8 +186,13 @@ pub struct ReviewDetailView {
 /// A message waiting for the running turn to take it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct QueuedMessageView {
+    /// `steer:<input>` for one the running turn will read, `next:<n>` for
+    /// one that becomes a turn of its own.
+    pub id: String,
     pub text: String,
     pub images: usize,
+    /// Waits for the turn to end, and is then sent as the next one.
+    pub next_turn: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -738,6 +743,9 @@ pub struct ViewState {
     /// What the user sent while the selected conversation's turn was
     /// running, and the turn has not taken yet. Oldest first.
     pub(crate) queued_messages: Vec<QueuedMessageView>,
+    /// The turn was stopped or failed: what waits for the next turn is not
+    /// sent until the user says so.
+    pub(crate) queue_paused: bool,
     /// The sites with a permission of their own, and the one being added.
     pub(crate) browser_sites: Vec<crate::browser_sites::Site>,
     pub(crate) browser_site_draft: String,
@@ -4310,6 +4318,7 @@ pub(crate) mod tests {
             browser_refs: std::sync::Arc::from(""),
             agent_page_url: String::new(),
             queued_messages: Vec::new(),
+            queue_paused: false,
             browser_sites: Vec::new(),
             browser_site_draft: String::new(),
             review_detail: None,
