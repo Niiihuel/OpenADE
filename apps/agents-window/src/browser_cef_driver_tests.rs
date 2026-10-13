@@ -389,6 +389,11 @@ fn tools_server() -> Server {
                 const context=document.querySelector('canvas').getContext('2d'),image=context.createImageData(640,2400);\
                 for(let i=0;i<image.data.length;i++)image.data[i]=i%4===3?255:Math.random()*256;context.putImageData(image,0,0)</script>"),
             "/quiet" => Response::html("<!doctype html><title>Silencio</title><h1>Silencio</h1>"),
+            "/named" => Response::html("<!doctype html><title>Nombres</title>\
+                <div><button onclick=\"out.textContent='guardó'\">  Guardar   cambios </button><button onclick=\"out.textContent='otro'\">Guardar</button></div>\
+                <label>Correo <input id=\"mail\"></label><input id=\"busca\" placeholder=\"Buscar…\"><input aria-label=\"Teléfono\" id=\"phone\">\
+                <button data-testid=\"enviar\" onclick=\"out.textContent='envió'\">OK</button><span>Repetido</span><span>Repetido</span>\
+                <a href=\"/quiet?llegada=1\">Ir a silencio</a><p id=\"out\">nada</p>"),
             "/upload" => Response::html("<!doctype html><title>Subida</title><input id=\"one\" type=\"file\"><input id=\"many\" type=\"file\" multiple><p id=\"got\">nada</p>\
                 <script>for (const input of document.querySelectorAll('input')) input.onchange = async () => { got.textContent = (await Promise.all([...input.files].map(async file => file.name + '=' + await file.text()))).join(); }</script>"),
             _ => fixture("tools.html").unwrap(),
@@ -583,6 +588,39 @@ fn real_cef_driver_gives_a_file_chooser_the_files_armed_for_it_and_leaves_it_clo
         assert_eq!(driver.upload_files(&[bad]).unwrap_err().kind, ErrorKind::Invalid);
     }
     assert_eq!(driver.upload_files(&[]).unwrap_err().kind, ErrorKind::Invalid);
+}
+
+#[test]
+#[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
+fn real_cef_driver_names_elements_by_what_they_show_and_waits_for_an_address_and_a_load() {
+    let server = tools_server();
+    let (_page, mut driver) = open(640, 480, 1.0);
+    driver.navigate(&format!("{}/named", server.origin)).unwrap();
+    driver.wait_for_load(true).unwrap();
+
+    // The whole text of the smallest element, whatever its case and spacing.
+    driver.click(&Target::Selector("text=guardar cambios")).unwrap();
+    assert_eq!(evaluate(&mut driver, "out.textContent"), "\"guardó\"");
+    driver.click(&Target::Selector("text=Guardar")).unwrap();
+    assert_eq!(evaluate(&mut driver, "out.textContent"), "\"otro\"");
+    // A label, an aria-label, a placeholder and a test id.
+    driver.fill(&Target::Selector("label=Correo"), "ana@ejemplo.com").unwrap();
+    driver.fill(&Target::Selector("label=teléfono"), "123").unwrap();
+    driver.fill(&Target::Selector("placeholder=Buscar…"), "limn").unwrap();
+    assert_eq!(evaluate(&mut driver, "[mail.value, phone.value, busca.value].join()"), "\"ana@ejemplo.com,123,limn\"");
+    driver.click(&Target::Selector("testid=enviar")).unwrap();
+    assert_eq!(evaluate(&mut driver, "out.textContent"), "\"envió\"");
+    // It still has to be exactly one element.
+    tool_error(driver.click(&Target::Selector("text=Repetido")), "coincide con 2 elementos");
+    tool_error(driver.click(&Target::Selector("text=No está")), "coincide con 0 elementos");
+    tool_error(driver.click(&Target::Selector("testid=")), "coincide con 0 elementos");
+
+    // An address the page reaches, and one it never does.
+    driver.click(&Target::Selector("text=Ir a silencio")).unwrap();
+    driver.wait_for_url("/quiet?llegada=1").unwrap();
+    driver.wait_for_load(false).unwrap();
+    assert_eq!(evaluate(&mut driver, "document.title"), "\"Silencio\"");
+    assert_eq!(driver.wait_for_url("").unwrap_err().kind, ErrorKind::Invalid);
 }
 
 #[test]

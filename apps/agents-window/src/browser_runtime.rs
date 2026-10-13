@@ -140,6 +140,16 @@ impl Default for BrowserSnapshot {
     }
 }
 
+/// How far a page has loaded, named as Playwright names it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum LoadState {
+    /// The document is parsed.
+    DomContentLoaded,
+    /// What it refers to has loaded too.
+    Load,
+}
+
 /// A key the agent holds with a click, named as Playwright names it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum ClickModifier {
@@ -287,6 +297,9 @@ pub(crate) enum BrowserCommand {
         text: Option<String>,
         text_gone: Option<String>,
         seconds: Option<f64>,
+        /// A part of the address the page should reach.
+        url: Option<String>,
+        load_state: Option<LoadState>,
     },
     /// Page-context JavaScript only: the source is handed to the page and
     /// nothing in this process ever evaluates it.
@@ -442,13 +455,19 @@ impl BrowserCommand {
                 text,
                 text_gone,
                 seconds,
-            } => match (text.as_deref(), text_gone.as_deref(), seconds) {
-                (Some(text), None, None) | (None, Some(text), None) if short(text, 1024) => {}
+                url,
+                load_state,
+            } => match (text.as_deref(), text_gone.as_deref(), seconds, url.as_deref(), load_state) {
+                (Some(text), None, None, None, None)
+                | (None, Some(text), None, None, None)
+                | (None, None, None, Some(text), None)
+                    if short(text, 1024) => {}
                 // The shared queue serves the user too: no wait outlasts an action.
-                (None, None, Some(seconds)) if (0.0..=10.0).contains(seconds) => {}
+                (None, None, Some(seconds), None, None) if (0.0..=10.0).contains(seconds) => {}
+                (None, None, None, None, Some(_)) => {}
                 _ => {
                     return Err(
-                        "Indicá sólo uno: text, text_gone o seconds (de 0 a 10)".into(),
+                        "Indicá sólo uno: text, text_gone, url, load_state o seconds (de 0 a 10)".into(),
                     )
                 }
             },
@@ -1808,10 +1827,14 @@ fn execute(
             text,
             text_gone,
             seconds,
-        } => match (text, text_gone) {
-            (Some(text), _) => driver.wait_for_text(text)?,
-            (None, Some(text)) => driver.wait_for_text_gone(text)?,
-            (None, None) => driver.wait_seconds(seconds.unwrap_or(0.0))?,
+            url,
+            load_state,
+        } => match (text, text_gone, url, load_state) {
+            (Some(text), ..) => driver.wait_for_text(text)?,
+            (None, Some(text), ..) => driver.wait_for_text_gone(text)?,
+            (None, None, Some(url), _) => driver.wait_for_url(url)?,
+            (None, None, None, Some(state)) => driver.wait_for_load(*state == LoadState::Load)?,
+            (None, None, None, None) => driver.wait_seconds(seconds.unwrap_or(0.0))?,
         },
         Evaluate {
             expression,
@@ -2612,7 +2635,7 @@ fn mcp_snapshot_result(snapshot: BrowserSnapshot) -> McpCallResult {
 }
 
 pub(crate) fn browser_mcp_tools() -> Vec<McpTool> {
-    let target = json!({"ref":{"type":"string","minLength":2,"maxLength":32},"selector":{"type":"string","minLength":1,"maxLength":1024},"role":{"type":"string","minLength":1,"maxLength":64},"name":{"type":"string","minLength":1,"maxLength":1024}});
+    let target = json!({"ref":{"type":"string","minLength":2,"maxLength":32},"selector":{"type":"string","minLength":1,"maxLength":1024,"description":"A CSS selector, or what the element shows: `text=Guardar` (its whole text), `label=Correo` (its label), `placeholder=Buscar` or `testid=enviar` (its data-testid). It must match exactly one element."},"role":{"type":"string","minLength":1,"maxLength":64},"name":{"type":"string","minLength":1,"maxLength":1024}});
     let mut tools = Vec::new();
     let mut add = |name: &str, description: &str, properties: Value, required: Vec<&str>| {
         tools.push(McpTool { name:name.into(), description:Some(description.into()), input_schema:json!({"type":"object","properties":properties,"required":required,"additionalProperties":false}), extra:BTreeMap::new() });
@@ -2707,8 +2730,8 @@ pub(crate) fn browser_mcp_tools() -> Vec<McpTool> {
     );
     add(
         "browser_wait_for",
-        "Wait for the page instead of guessing: give exactly one of `text` (until that text is visible), `text_gone` (until it is no longer visible) or `seconds` (a fixed pause, at most 10). Text waits give up after 10 seconds and say so; call again to keep waiting. The page stays busy for the user meanwhile.",
-        json!({"text":{"type":"string","minLength":1,"maxLength":1024},"text_gone":{"type":"string","minLength":1,"maxLength":1024},"seconds":{"type":"number","minimum":0,"maximum":10}}),
+        "Wait for the page instead of guessing: give exactly one of `text` (until that text is visible), `text_gone` (until it is no longer visible), `url` (until the page's address contains that text, as after a redirect or a sign-in), `load_state` (`domcontentloaded` once the document is parsed, `load` once its images, styles and frames loaded too) or `seconds` (a fixed pause, at most 10). A wait gives up after 10 seconds and says so; call again to keep waiting. The page stays busy for the user meanwhile.",
+        json!({"text":{"type":"string","minLength":1,"maxLength":1024},"text_gone":{"type":"string","minLength":1,"maxLength":1024},"url":{"type":"string","minLength":1,"maxLength":1024},"load_state":{"type":"string","enum":["domcontentloaded","load"]},"seconds":{"type":"number","minimum":0,"maximum":10}}),
         vec![],
     );
     let mut evaluate = target.clone();

@@ -241,8 +241,9 @@ recibe los eventos del puntero en su lugar.»
 
 ### Comportamientos de Playwright que no se replican
 
-- Los motores de selectores propios de Playwright (`text=`, `role=`, `>>`,
-  `:has-text()`): sólo CSS.
+- De los motores de selectores de Playwright existen `text=`, `label=`,
+  `placeholder=` y `testid=`, con coincidencia de texto completo; no `role=`,
+  `>>` ni `:has-text()`.
 - `Target::Role` y `Target::Selector` buscan sólo en el marco principal, como
   `page.getByRole` y `page.locator`. Dentro de un marco se usa una referencia.
 - La comprobación de qué recibe el clic se hace dentro del documento del
