@@ -43,6 +43,12 @@ pub struct Paint<'a> {
 /// The pointer a page asks for, as CEF names it.
 pub use cef::sys::cef_cursor_type_t as Cursor;
 
+/// CEF's event flags for the keys held with a pointer event.
+pub const SHIFT_DOWN: u32 = 1 << 1;
+pub const CONTROL_DOWN: u32 = 1 << 2;
+pub const ALT_DOWN: u32 = 1 << 3;
+pub const COMMAND_DOWN: u32 = 1 << 7;
+
 /// CEF's objects are reference counted across threads and say which thread
 /// each call needs; cef-rs leaves stating that to the embedder.
 struct Threadsafe<T>(T);
@@ -651,7 +657,13 @@ impl Page {
 
     /// A turn of the wheel. CEF counts one towards the user as negative.
     pub fn wheel(&self, x: i32, y: i32, dx: i32, dy: i32) {
-        let event = MouseEvent { x, y, modifiers: 0 };
+        self.wheel_held(x, y, dx, dy, 0);
+    }
+
+    /// A turn of the wheel with keys held: `modifiers` are CEF's event
+    /// flags ([`SHIFT_DOWN`] and the others).
+    pub fn wheel_held(&self, x: i32, y: i32, dx: i32, dy: i32, modifiers: u32) {
+        let event = MouseEvent { x, y, modifiers };
         self.host(|host| host.send_mouse_wheel_event(Some(&event), dx, dy));
     }
 

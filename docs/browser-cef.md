@@ -240,18 +240,23 @@ agente comparten hilo con la copia y esperan a lo sumo una.
 - **Cambio de tamaño.** Primero cambia la vista y después la página; puede
   verse un cuadro intermedio.
 
-**Entrada.** Sigue pasando por los eventos del protocolo del driver, con una
-excepción: el puntero sobre una lista desplegable, que se describe abajo.
-Medido contra la llamada nativa de CEF para la rueda: con la página quieta,
-del evento al primer cuadro pasan 15,4–17,6 ms de mediana por el driver y
-15,3–17,1 ms por CEF. Desplazando, la llamada nativa da 8,0–9,0 ms hasta el
-cuadro siguiente contra 16,6–16,7 ms, pero mide otra cosa: Chromium anima el
-desplazamiento de la rueda nativa, así que siempre hay un cuadro en camino,
-muestre o no ese evento. No hay una ventaja medida que justifique mover toda
-la entrada a las llamadas nativas. Un clic enviado en el mismo instante en
-que termina una carga se pierde, y 20 ms después ya llega (medido). Se
-atribuye a que Chromium descarta la entrada sobre un documento que todavía no
-pintó nada; eso no se comprobó.
+**Entrada.** Pasa por los eventos del protocolo del driver, con dos
+excepciones: el puntero sobre una lista desplegable, que se describe abajo, y
+la rueda y el touchpad de la ventana, que van a Chromium con su propia
+llamada (`Embedded::wheel`). El evento del driver vuelve recién cuando la
+página lo atendió, un cuadro después, y el paso siguiente esperaba esa
+respuesta. Con la llamada propia, del paso de rueda al cuadro siguiente pasan
+8,6 ms de mediana (p90 15,0) contra 16,6–16,7 ms, y la respuesta a la ventana
+llega en 0,1 ms; con la página quieta, del evento al primer cuadro pasan
+16,4 ms, lo mismo que antes (un cuadro de Chromium a 60 por segundo). Chromium
+corre con `--disable-smooth-scrolling`: una vuelta de rueda mueve la página en
+el momento, porque la ventana ya suaviza cada muesca y los deltas del touchpad
+siguen a los dedos; su propia animación vendría después de las dos. Chromium
+recibe píxeles enteros: lo que sobra de un delta se suma al siguiente. El
+desplazamiento que pide el agente sigue por el driver, que espera a la página.
+Un clic enviado en el mismo instante en que termina una carga se pierde, y
+20 ms después ya llega (medido). Se atribuye a que Chromium descarta la
+entrada sobre un documento que todavía no pintó nada; eso no se comprobó.
 
 **Listas desplegables.** La lista de un `<select>` no es parte de la página:
 Chromium la pinta aparte y la entrega por otros avisos (se muestra o se
@@ -446,7 +451,7 @@ de quitar el motor anterior**: el camino medido no cambió.
 | --- | --- |
 | Cuadros por segundo, página animando | 59,8 a 60,1 |
 | Cuadros por segundo, desplazamiento continuo | 59,6 a 59,7 |
-| De la rueda al siguiente cuadro, desplazando | mediana 16,6–16,7 ms, p90 17,0–17,1 |
+| De la rueda al siguiente cuadro, desplazando | mediana 8,6 ms, p90 15,0 (una corrida, con la rueda por la llamada de CEF; 16,6–16,7 ms por el driver) |
 | De la rueda al primer cuadro, página quieta | mediana 15,4–17,6 ms, p90 16,1–19,0 |
 | Procesador mientras anima una esquina: la aplicación | 5 a 6 % de un núcleo (37 a 48 % antes de enviar sólo lo que cambia) |
 | Procesador mientras anima una esquina: procesos del navegador | 10 a 11 % |
