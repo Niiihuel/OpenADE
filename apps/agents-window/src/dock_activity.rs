@@ -7,7 +7,9 @@ use crate::transcript::ActivityStatus;
 use openide_ui::{Chip, DiffStat, PanelHeader, Spinner};
 use std::io::{self, Write};
 
-const ROW_HEIGHT: f32 = 40.0;
+const ROW_HEIGHT: f32 = 32.0;
+/// The rail's column. Its line runs under the chevron of a turn's heading.
+const RAIL: f32 = 28.0;
 const PREVIEW_BYTES: usize = 48 * 1024;
 
 /// What a header chip counts and, once clicked, shows alone.
@@ -205,10 +207,13 @@ enum Row {
         action: String,
         title: String,
         open: bool,
+        /// The turn ends here: the rail stops at its node.
+        last: bool,
     },
     Call {
         row: CallRow,
         nested: bool,
+        last: bool,
     },
 }
 
@@ -248,7 +253,26 @@ fn human_title(name: &str, title: &str, kind: ToolKind) -> String {
     title.replace(name, &words)
 }
 
-fn call_row(state: &ViewState, index: usize, selected: Option<&str>) -> Option<CallRow> {
+/// The command each started session runs, by the session's identifier: a
+/// later call on that session names the command, never the identifier.
+type Commands = std::collections::HashMap<String, String>;
+
+fn started_command(name: &str, arguments: &Value, output: Option<&str>) -> Option<(String, String)> {
+    if name != "start_command" {
+        return None;
+    }
+    let result: Value = serde_json::from_str(output?).ok()?;
+    let session = result.get("session_id")?.as_str()?.to_owned();
+    let command = tool_presentation::present(name, arguments, ActivityStatus::Completed, false, output).target;
+    (!command.is_empty()).then_some((session, command))
+}
+
+fn call_row(
+    state: &ViewState,
+    index: usize,
+    selected: Option<&str>,
+    commands: &Commands,
+) -> Option<CallRow> {
     let item = &state.transcript[index];
     let TranscriptItem::Tool {
         id,
@@ -279,6 +303,7 @@ fn call_row(state: &ViewState, index: usize, selected: Option<&str>) -> Option<C
             presentation.target.clone(),
         )
     };
+    let target = commands.get(&target).cloned().unwrap_or(target);
     let status = StatusFilter::of(output, *is_error, *activity);
     Some(CallRow {
         id: id.clone(),
@@ -307,8 +332,9 @@ fn call_row(state: &ViewState, index: usize, selected: Option<&str>) -> Option<C
     })
 }
 
-/// The call's state as a glyph in its color: it never needs reading.
-fn status_icon(row: &CallRow) -> Element {
+/// The call's state as a glyph in its color: it never needs reading. A step
+/// of an exploration that ended well is quiet, so the run reads as one.
+fn status_icon(row: &CallRow, nested: bool) -> Element {
     let (icon, ink) = match (row.status, row.activity) {
         (Some(StatusFilter::Running), _) => {
             let place = if row.pinned { "strip" } else { "log" };
@@ -319,6 +345,7 @@ fn status_icon(row: &CallRow) -> Element {
         }
         (Some(StatusFilter::Errors), _) => (Icon::ErrorCircle, theme::DESTRUCTIVE),
         (Some(StatusFilter::Permission), _) => (crate::icons::LOCK, theme::WARNING),
+        (Some(StatusFilter::Done), _) if nested => (Icon::Check, theme::FOREGROUND_SUBTLE),
         (Some(StatusFilter::Done), _) => (Icon::Check, theme::ACTIVITY_ADDED),
         (None, ActivityStatus::Interrupted) => (Icon::WarningTriangle, theme::WARNING),
         (None, _) => (Icon::CloseCircle, theme::FOREGROUND_SUBTLE),
@@ -326,64 +353,119 @@ fn status_icon(row: &CallRow) -> Element {
     Element::icon(icon).foreground(ink)
 }
 
-/// One call of the log: its state, what it did and to what. The selected
-/// one keeps its fill under the pointer.
-fn tool_row(row: &CallRow, width: f32) -> Element {
-    let palette = openide_ui::ComponentPalette {
-        surface: if row.selected {
-            theme::SELECTED
-        } else {
-            theme::BACKGROUND
-        },
-        hover: if row.selected {
-            theme::SELECTED
-        } else {
-            theme::INPUT
-        },
-        ..theme::component_palette()
+/// The rail's part of one line: the line down to its node, the node, and
+/// the line on to the next one. A line with nothing above or below it on the
+/// rail leaves that side out.
+fn rail(node: Element, above: bool, below: bool) -> Element {
+    // A third of the muted ink: a hairline's border is lost between two nodes.
+    let ink = theme::FOREGROUND_SUBTLE;
+    let ink = Color::rgba(ink.r, ink.g, ink.b, ink.a / 3);
+    let line = |shown: bool| {
+        Element::row(vec![
+            Element::spacer().flex(1.0),
+            Element::spacer().size(Some(1.0), None).background(if shown {
+                ink
+            } else {
+                Color::TRANSPARENT
+            }),
+            Element::spacer().flex(1.0),
+        ])
+        .flex(1.0)
     };
-    let mut trailing = Vec::new();
+    Element::column(vec![
+        line(above),
+        Element::row(vec![
+            Element::spacer().flex(1.0),
+            node.size(Some(14.0), Some(14.0)),
+            Element::spacer().flex(1.0),
+        ]),
+        line(below),
+    ])
+    .gap(2.0)
+    .size(Some(RAIL), Some(ROW_HEIGHT))
+}
+
+/// One line of the timeline: its node on the rail and, beside it, what it
+/// says on a fill every line has at the same width. The whole line is the
+/// target; the fill answers for it.
+fn timeline_row(
+    id: &str,
+    rail: Element,
+    line: Vec<Element>,
+    selected: bool,
+    hint: Option<(&str, Option<&str>)>,
+    width: f32,
+) -> Element {
+    let fill = Element::row(line)
+        .gap(8.0)
+        .padding(8.0)
+        .radius(openide_ui::tokens().radius.control)
+        .size(None, Some(ROW_HEIGHT - 2.0))
+        .hover_background(if selected { theme::SELECTED } else { theme::INPUT })
+        .hover_surface(format!("{id}:fill"), [id])
+        .flex(1.0);
+    let fill = if selected {
+        fill.background(theme::SELECTED)
+    } else {
+        fill
+    };
+    let target = Element::clickable(id, Element::row(vec![rail, fill.centered_y()]))
+        .background(Color::TRANSPARENT)
+        .transition_ms(0)
+        .size(Some((width - 8.0).max(140.0)), Some(ROW_HEIGHT));
+    match hint {
+        Some((title, description)) => {
+            let hint = Tooltip::new(target, id, title, theme::component_palette());
+            match description {
+                Some(description) => hint.description(description),
+                None => hint,
+            }
+            .render()
+        }
+        None => target,
+    }
+}
+
+fn line_text(text: &str, size: f32, family: openide_ui::FontFamily, ink: Color) -> Element {
+    Element::truncated_text(text)
+        .font_family(family)
+        .font_size(size)
+        .foreground(ink)
+        .centered_y()
+}
+
+/// One call of the log: its state on the rail, what it did and to what, and
+/// what it took. A call that failed says why where its target would be.
+fn tool_row(row: &CallRow, nested: bool, last: bool, width: f32) -> Element {
+    use openide_ui::FontFamily::{Monospace, Sans};
+    let id = format!("tool:{}", row.id);
+    let mut line = vec![line_text(&row.title, 12.5, Sans, theme::FOREGROUND).shrink_to_fit()];
+    line.push(match &row.note {
+        Some(note) => line_text(note, 11.5, Sans, theme::DESTRUCTIVE).flex(1.0),
+        None if row.target.is_empty() => Element::spacer().flex(1.0),
+        None => line_text(&row.target, 11.5, Monospace, theme::FOREGROUND_SUBTLE).flex(1.0),
+    });
     if let Some((added, removed)) = row.stat {
-        trailing.push(
-            DiffStat::new(added, removed, palette)
+        line.push(
+            DiffStat::new(added, removed, theme::component_palette())
                 .inks(theme::DIFF_ADDED, theme::DIFF_REMOVED)
-                .render(),
+                .render()
+                .centered_y(),
         );
     }
     if let Some(duration) = &row.duration {
-        trailing.push(small(duration, theme::FOREGROUND_SUBTLE));
+        line.push(small(duration, theme::FOREGROUND_SUBTLE).centered_y());
     }
-    if let Some(note) = &row.note {
-        trailing.push(
-            UiText::new(note, palette)
-                .size(10.5)
-                .ink(theme::DESTRUCTIVE)
-                .truncate()
-                .render()
-                .size(Some((width * 0.25).min(220.0)), None),
-        );
-    }
-    let mut list_row = ListRow::new(format!("tool:{}", row.id), &row.title, palette)
-        .leading(status_icon(row))
-        .subtitle(&row.target)
-        .subtitle_mono(true)
-        .filled()
-        .sizing(crate::ui_sizing::DOCK_TOOL);
-    if !trailing.is_empty() {
-        list_row = list_row.trailing(Element::row(trailing).gap(8.0).centered_y());
-    }
-
-    if !row.hint.is_empty() || row.note.is_some() {
-        let mut hint = TooltipSpec::new(if row.hint.is_empty() {
-            &row.title
-        } else {
-            &row.hint
-        });
-        if let Some(note) = &row.note {
-            hint = hint.description(note);
-        }
-        list_row = list_row.tooltip_with(hint);
-    }
+    let hint = (!row.hint.is_empty() || row.note.is_some()).then(|| {
+        (
+            if row.hint.is_empty() {
+                row.title.as_str()
+            } else {
+                row.hint.as_str()
+            },
+            row.note.as_deref(),
+        )
+    });
     // The pinned copy keeps the menu's ID unique in the window.
     openide_ui::ContextMenu::new(
         format!(
@@ -391,9 +473,15 @@ fn tool_row(row: &CallRow, width: f32) -> Element {
             if row.pinned { "strip" } else { "log" },
             row.id
         ),
-        list_row
-            .render()
-            .size(Some((width - 8.0).max(140.0)), Some(ROW_HEIGHT)),
+        timeline_row(
+            &id,
+            // The pinned copy stands alone: no rail joins it to another.
+            rail(status_icon(row, nested), !row.pinned, !last && !row.pinned),
+            line,
+            row.selected,
+            hint,
+            width,
+        ),
         vec![openide_ui::ContextMenuEntry::Item(
             openide_ui::ContextMenuItem::new(
                 format!("tool_reveal:{}", row.id),
@@ -408,7 +496,6 @@ fn tool_row(row: &CallRow, width: f32) -> Element {
 
 /// A turn's heading or an exploration group, at the pitch of a call.
 fn log_row(row: &Row, width: f32) -> Element {
-    let row_width = (width - 8.0).max(140.0);
     match row {
         Row::Turn {
             action,
@@ -416,32 +503,38 @@ fn log_row(row: &Row, width: f32) -> Element {
             calls,
             open,
         } => openide_ui::SectionHeader::new(title, theme::component_palette())
-            .count(*calls)
             .disclosure(Some(*open))
             .action(action)
             .truncate(true)
+            // At the end of the line, where every turn's count is read; a long
+            // title shortens before it.
+            .trailing(Chip::new(calls.to_string(), theme::component_palette()).render())
             .sizing(crate::ui_sizing::DOCK_TURN)
-            .width(row_width)
+            .width((width - 8.0).max(140.0))
             .render(),
         Row::Group {
             action,
             title,
             open,
-        } => ListRow::new(action, title, theme::component_palette())
-            .icon(if *open {
-                Icon::ChevronDown
-            } else {
-                Icon::ChevronRight
-            })
-            .sizing(crate::ui_sizing::DOCK_TOOL)
-            .tooltip_with(TooltipSpec::new(title))
-            .render()
-            .size(Some(row_width), Some(ROW_HEIGHT)),
-        Row::Call { row, nested: false } => tool_row(row, width),
-        Row::Call { row, nested: true } => Element::row(vec![
-            Element::spacer().size(Some(16.0), None),
-            tool_row(row, width - 16.0),
-        ]),
+            last,
+        } => timeline_row(
+            action,
+            rail(
+                Element::icon(if *open {
+                    Icon::ChevronDown
+                } else {
+                    Icon::ChevronRight
+                })
+                .foreground(theme::FOREGROUND_SUBTLE),
+                true,
+                !*last,
+            ),
+            vec![line_text(title, 12.5, openide_ui::FontFamily::Sans, theme::FOREGROUND).flex(1.0)],
+            false,
+            Some((title, None)),
+            width,
+        ),
+        Row::Call { row, nested, last } => tool_row(row, *nested, *last, width),
     }
 }
 
@@ -565,7 +658,12 @@ struct Turn<'a> {
 /// The log's lines, newest turn first: a heading per user message, its
 /// calls in order under it while open, and each run of exploration folded
 /// into one line as the transcript folds it.
-fn log_rows(state: &ViewState, turns: &[Turn], selected: Option<usize>) -> Vec<Row> {
+fn log_rows(
+    state: &ViewState,
+    turns: &[Turn],
+    selected: Option<usize>,
+    commands: &Commands,
+) -> Vec<Row> {
     let ui = &state.activity;
     let remembered = ui.owner == state.selected_session;
     let filtering = ui.status.is_some() || ui.kind.is_some();
@@ -612,7 +710,10 @@ fn log_rows(state: &ViewState, turns: &[Turn], selected: Option<usize>) -> Vec<R
                 .map(|call| (call, crate::session_surface::exploration_run(&state.transcript, index)))
                 .filter(|(_, (_, count))| *count >= 2);
             let Some((call, (end, count))) = run else {
-                rows.extend(call_row(state, index, selected_id).map(|row| Row::Call { row, nested: false }));
+                rows.extend(
+                    call_row(state, index, selected_id, commands)
+                        .map(|row| Row::Call { row, nested: false, last: false }),
+                );
                 at += 1;
                 continue;
             };
@@ -637,13 +738,20 @@ fn log_rows(state: &ViewState, turns: &[Turn], selected: Option<usize>) -> Vec<R
                     crate::session_surface::exploration_summary(items)
                 ),
                 open,
+                last: false,
             });
             for index in &turn.calls[at..at + count] {
                 if open {
-                    rows.extend(call_row(state, *index, selected_id).map(|row| Row::Call { row, nested: true }));
+                    rows.extend(
+                        call_row(state, *index, selected_id, commands)
+                            .map(|row| Row::Call { row, nested: true, last: false }),
+                    );
                 }
             }
             at += count;
+        }
+        if let Some(Row::Call { last, .. } | Row::Group { last, .. }) = rows.last_mut() {
+            *last = true;
         }
     }
     rows
@@ -652,7 +760,13 @@ fn log_rows(state: &ViewState, turns: &[Turn], selected: Option<usize>) -> Vec<R
 /// What is under way right now, pinned over the log: calls that run or wait
 /// for permission, a running command with the tail of its output, and the
 /// session's processes that run or hold unread output.
-fn running_strip(items: &mut Vec<Element>, state: &ViewState, live: &[usize], width: f32) {
+fn running_strip(
+    items: &mut Vec<Element>,
+    state: &ViewState,
+    live: &[usize],
+    commands: &Commands,
+    width: f32,
+) {
     const SHOWN: usize = 3;
     if let Some(error) = &state.native_commands_error {
         items.push(
@@ -678,11 +792,12 @@ fn running_strip(items: &mut Vec<Element>, state: &ViewState, live: &[usize], wi
     items.push(UiText::eyebrow("EN CURSO", theme::component_palette()).render());
     // The newest are the ones being waited on.
     for index in live.iter().rev().take(SHOWN) {
-        let Some(mut row) = call_row(state, *index, state.selected_tool_id.as_deref()) else {
+        let Some(mut row) = call_row(state, *index, state.selected_tool_id.as_deref(), commands)
+        else {
             continue;
         };
         row.pinned = true;
-        items.push(tool_row(&row, width));
+        items.push(tool_row(&row, false, true, width));
         if let Some((captured, _)) =
             crate::session_surface::tool_partial_output(state, *index, &row.id)
         {
@@ -723,6 +838,7 @@ pub(super) fn content(state: &ViewState, width: f32, height: f32) -> Element {
     }];
     let mut live = Vec::new();
     let mut selected = None;
+    let mut started = Commands::new();
     for (index, item) in state.transcript.iter().enumerate() {
         let (id, name, arguments, output, is_error, activity) = match item {
             TranscriptItem::User { content, .. } => {
@@ -744,6 +860,7 @@ pub(super) fn content(state: &ViewState, width: f32, height: f32) -> Element {
             _ => continue,
         };
         tools += 1;
+        started.extend(started_command(name, arguments, output.as_deref()));
         if state.selected_tool_id.as_deref() == Some(id) {
             selected.get_or_insert(index);
         }
@@ -801,8 +918,8 @@ pub(super) fn content(state: &ViewState, width: f32, height: f32) -> Element {
         touched.push(plural(commands, "comando", "comandos"));
     }
     let mut head = vec![header(state, counts, &touched.join(" · "), width)];
-    running_strip(&mut head, state, &live, width);
-    let rows = log_rows(state, &turns, selected);
+    running_strip(&mut head, state, &live, &started, width);
+    let rows = log_rows(state, &turns, selected, &started);
     let count = rows.len();
     if count > 0 {
         let list =
@@ -1051,7 +1168,7 @@ fn detail(state: &ViewState, index: usize, item: &TranscriptItem, width: f32) ->
             is_error,
             activity,
         },
-    ) = (call_row(state, index, None), item)
+    ) = (call_row(state, index, None, &Commands::new()), item)
     else {
         return Element::spacer();
     };
@@ -1064,7 +1181,7 @@ fn detail(state: &ViewState, index: usize, item: &TranscriptItem, width: f32) ->
         theme::FOREGROUND_SUBTLE
     };
     let mut detail = vec![Element::row(vec![
-        status_icon(&row).size(Some(16.0), Some(20.0)),
+        status_icon(&row, false).size(Some(16.0), Some(20.0)),
         UiText::new(&row.title, theme::component_palette())
             .role(TextRole::Label)
             .render()
@@ -1653,6 +1770,20 @@ mod tests {
         state
     }
 
+    /// A third turn as a dev server leaves it: started, polled, and a poll
+    /// that found the process gone.
+    fn served(state: &mut ViewState) {
+        use serde_json::json;
+        const SESSION: &str = "5d4b6f6e-d58c-4326-9e27-41f2a0c1b7aa";
+        let started = format!("{{\"session_id\":\"{SESSION}\"}}");
+        state.transcript.extend([
+            user("puedes iniciarme mi proyecto? y dejalo corriendo en segundo plano mientras sigo"),
+            tool("start-1", "start_command", json!({"command":"npm run dev"}), Some(&started), ActivityStatus::Completed),
+            tool("poll-1", "poll_command", json!({"session_id": SESSION}), Some("{\"events\":[]}"), ActivityStatus::Completed),
+            tool("poll-2", "poll_command", json!({"session_id": SESSION}), Some("Proceso finalizado con código 1"), ActivityStatus::Failed),
+        ]);
+    }
+
     fn shot(state: &ViewState, width: f32, name: &str) {
         let name = format!("{name}-{width:.0}");
         super::super::dock_visual_tests::export(side_pane(state, width), width, 600.0, &name);
@@ -1671,7 +1802,13 @@ mod tests {
     #[test]
     #[ignore = "export the Activity run log in each of its states for manual visual review"]
     fn export_activity_visual_review() {
-        for width in [420.0, 620.0] {
+        for width in [368.0, 420.0, 620.0] {
+            let mut state = review_state();
+            served(&mut state);
+            apply_action(&mut state, "turn:2:1");
+            apply_action(&mut state, "turn:1:1");
+            apply_action(&mut state, "group:read-1:1");
+            shot(&state, width, "timeline");
             let mut state = review_state();
             shot(&state, width, "two-turns");
             for filter in [StatusFilter::Errors, StatusFilter::Done] {
@@ -1818,6 +1955,82 @@ mod tests {
         assert_eq!(rows(&frame(&state)), ["tool:cmd-2"]);
         apply_action(&mut state, "filter:errors");
         assert_eq!(state.activity.status, None);
+    }
+
+    #[test]
+    fn every_line_has_one_fill_on_one_rail_and_a_turns_count_ends_its_line() {
+        let mut state = review_state();
+        served(&mut state);
+        for action in ["turn:2:1", "turn:1:1", "group:read-1:1"] {
+            apply_action(&mut state, action);
+        }
+        let mut titles = Vec::new();
+        for width in [368.0, 620.0] {
+            let mut tree = UiTree::new(content(&state, width, 900.0));
+            tree.set_reduced_motion(true);
+            let frame = tree.layout(Size::new(width, 900.0));
+            // A call, a step of an exploration and the exploration's own line
+            // are the same target: nothing is narrower for hanging from another.
+            let lines: Vec<_> = frame
+                .regions
+                .iter()
+                .filter(|region| {
+                    region.id.starts_with("tool:") || region.id.starts_with("dock_activity:group:")
+                })
+                .map(|region| (region.rect.x, region.rect.width, region.rect.height))
+                .collect();
+            // Three calls, four calls, and an exploration of three with a call after it.
+            assert_eq!(lines.len(), 12, "{lines:?}");
+            assert!(
+                lines.iter().all(|line| {
+                    (line.0, line.1) == (lines[0].0, lines[0].1) && (line.2 - ROW_HEIGHT).abs() < 0.01
+                }),
+                "{lines:?}"
+            );
+            // Every turn's count ends its line, in chips whose middles line up.
+            let counts: Vec<_> = frame
+                .text_layouts()
+                .iter()
+                .filter(|layout| layout.source == "3" || layout.source == "4")
+                .map(|layout| layout.runs[0].rect)
+                .collect();
+            assert_eq!(counts.len(), 3);
+            let end = lines[0].0 + lines[0].1;
+            let middle = |rect: &openide_ui::Rect| rect.x + rect.width / 2.0;
+            for count in &counts {
+                assert!(count.x + count.width <= end, "{count:?} past {end}");
+                assert!((middle(count) - middle(&counts[0])).abs() < 1.0, "{counts:?}");
+            }
+            // The title is what gives way to it in a narrow pane.
+            let title = frame
+                .commands
+                .iter()
+                .find_map(|command| match command {
+                    openide_ui::DrawCommand::Text { text, position, .. } if text.starts_with("Turno 3") => {
+                        assert!(position.x < counts[0].x);
+                        Some(text.chars().count())
+                    }
+                    _ => None,
+                })
+                .expect("the newest turn's title");
+            titles.push(title);
+        }
+        assert!(titles[0] < titles[1], "{titles:?}");
+    }
+
+    #[test]
+    fn a_failed_call_says_why_on_its_line_and_a_later_call_names_its_command() {
+        let mut state = review_state();
+        served(&mut state);
+        let text = visible(&frame(&state));
+        // The poll that failed gives its reason where its target would be.
+        assert!(text.contains("Falló · Consulta de comando | Proceso finalizado con código 1"), "{text}");
+        // Both polls are of the command that was started, not of an identifier.
+        assert_eq!(text.matches("npm run dev").count(), 2, "{text}");
+        assert!(!text.contains("5d4b6f6e"), "{text}");
+        // Under way, a call still names what it runs.
+        let live = visible(&frame(&live_state()));
+        assert!(!live.contains("Proceso finalizado"), "{live}");
     }
 
     #[test]

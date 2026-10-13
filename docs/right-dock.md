@@ -287,6 +287,19 @@ accesos a procesos, historial y permisos de sesión. Los argumentos y las salida
 tienen límites explícitos de previsualización y se dibujan por filas visibles.
 Los límites no modifican el registro persistente.
 
+El registro es una línea de tiempo: cada llamada es una línea de 32 px con su
+estado como nodo sobre un riel a la izquierda, y a su derecha el título, el
+destino en monoespaciada y, al final, el diff y la duración. Todas las líneas
+tienen el mismo ancho y el mismo relleno al pasar el puntero, también los
+pasos de una exploración, que se distinguen por su nodo apagado. Una llamada
+que falló dice el motivo donde iría su destino; el destino queda en el
+tooltip. Una llamada sobre un comando iniciado antes nombra ese comando, no
+el identificador de su sesión. El encabezado de cada turno lleva su cantidad
+de llamadas al final de la línea, y su título se acorta antes que ella. El
+detalle de la llamada elegida sigue bajo el registro: la lista es virtual y
+de paso fijo, y abrirlo debajo de su línea necesita una lista virtual de
+alturas variables que limn todavía no tiene.
+
 ## Navegador
 
 El navegador usa una única barra fija con historial, recarga, dirección y menú
