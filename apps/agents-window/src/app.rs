@@ -10444,13 +10444,13 @@ impl AgentsWindow {
             .with_tool("wait_agent", PermissionMode::Allow)
             .with_tool("cancel_agent", PermissionMode::Allow)
             .with_tool("send_input", PermissionMode::Allow);
-        if !self.agent_tool_settings.full_access() {
-            return Ok(policy);
-        }
-        // "Permitir todo" covers the browser this window serves, as it does
-        // the commands that can do more than a page. Without it each call asks.
+        // The browser this window serves reads its page without asking, and
+        // "Permitir todo" covers the rest of it, as it does the commands that
+        // can do more than a page. Any other call of its asks.
+        let full_access = self.agent_tool_settings.full_access();
         Ok(crate::browser_runtime::native_tool_names()
             .into_iter()
+            .filter(|name| crate::browser_runtime::native_tool_allowed(name, full_access))
             .fold(policy, |policy, name| policy.with_tool(name, PermissionMode::Allow)))
     }
 
@@ -13214,11 +13214,12 @@ impl AgentsWindow {
                 }
             };
             // An agent is told of the browser it is given, or it reaches for
-            // the system's.
-            let native_instructions = crate::browser_runtime::with_agent_note(
-                native_instructions,
-                self.browser_client_for_current_scope().is_some(),
-            );
+            // the system's. A Plan turn is given no browser.
+            let native_instructions = if request.mode == TurnMode::Build {
+                crate::browser_runtime::with_agent_note(native_instructions)
+            } else {
+                native_instructions
+            };
             let (instructions, full_instructions) = match native_task_instructions(
                 native_instructions,
                 active_goal.as_deref(),
@@ -13365,13 +13366,17 @@ impl AgentsWindow {
             if submitted_draft_key.1.is_none() {
                 self.dock.promote_draft(&self.view.workspace, session_id);
             }
-            let browser = self.browser_client_for_current_scope();
+            // Its tab opens with the agent's first call, in this conversation's dock.
+            let browser = self.conversation_browser(
+                DockScope::for_owner(Path::new(&self.view.workspace), session_id),
+                session_id,
+            );
             let mut environment = crate::environment_runtime::EnvironmentToolPreparation::new(
                 store.storage_root().to_path_buf(),
                 session_id.to_owned(),
                 Arc::new(stored.events.clone()),
                 native_mcp_servers,
-                browser,
+                Some(browser),
             )
             .with_browser_allowed(self.agent_tool_settings.full_access());
             if self.view.turn_mode == TurnMode::Build {
@@ -14208,8 +14213,8 @@ impl AgentsWindow {
     /// the composer's effort, and a journal older than routes falls back to
     /// its selection. `off_screen` reads nothing the composer or the
     /// conversation on screen holds: the route is the journal's own, its
-    /// effort is found from the journaled profile, the hooks are those of
-    /// the session's workspace and no browser tab is lent.
+    /// effort is found from the journaled profile and the hooks are those of
+    /// the session's workspace. The browser is the session's own either way.
     fn root_resume_request(
         &mut self,
         stored: &StoredSession,
@@ -14300,8 +14305,12 @@ impl AgentsWindow {
             .is_some_and(|turn| turn.mode == TurnMode::Build)
         {
             let settings = McpSettings::load(&self.data_root, workspace)?;
-            // The browser tab on screen belongs to the conversation on screen.
-            let browser = if off_screen { None } else { self.browser_client_for_current_scope() };
+            // The conversation's own tab, in its own dock: on screen or not,
+            // the turn is given the tools it was admitted with.
+            let browser = self.conversation_browser(
+                DockScope::for_owner(workspace, &session_id),
+                &session_id,
+            );
             Some(
                 Arc::new(
                     crate::environment_runtime::EnvironmentToolPreparation::new(
@@ -14309,7 +14318,7 @@ impl AgentsWindow {
                         session_id.clone(),
                         Arc::new(stored.events.clone()),
                         settings.servers,
-                        browser,
+                        Some(browser),
                     )
                     .with_browser_allowed(self.agent_tool_settings.full_access())
                     .with_plugins(self.data_root.clone())

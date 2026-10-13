@@ -1581,3 +1581,76 @@ async fn open_preview_opens_only_this_machines_addresses_and_defaults_to_the_con
         assert_eq!(navigated().as_deref(), Some(address));
     }
 }
+
+#[test]
+fn the_tools_that_never_ask_are_the_ones_that_only_read_the_page() {
+    let reads: Vec<_> = catalog()
+        .into_iter()
+        .filter(|(_, _, mutating)| !mutating)
+        .map(|(name, ..)| name)
+        .collect();
+    assert_eq!(reads, READ_TOOLS);
+    for (name, _, mutating) in catalog() {
+        let name = format!("{NATIVE_TOOL_PREFIX}{name}");
+        assert_eq!(native_tool_allowed(&name, false), !mutating, "{name}");
+        assert!(native_tool_allowed(&name, true), "{name}");
+    }
+    // `open_preview` navigates, and a tool of another server is not this one's.
+    assert!(!native_tool_allowed("mcp__openide_browser__open_preview", false));
+    assert!(!native_tool_allowed("mcp__other__browser_snapshot", true));
+}
+
+#[tokio::test]
+async fn a_conversations_browser_is_opened_by_its_first_call_and_again_once_it_closed() {
+    let (runtime, commands) = fixture(
+        BrowserScope {
+            workspace: std::env::temp_dir(),
+            session_id: "browser-test".into(),
+        },
+        BrowserSnapshot {
+            started: true,
+            ..Default::default()
+        },
+    );
+    let opens = Arc::new(AtomicUsize::new(0));
+    let lent = Arc::new(Mutex::new(Ok(runtime.mcp_client())));
+    let browser = ConversationBrowser::new({
+        let (opens, lent) = (opens.clone(), lent.clone());
+        move || {
+            opens.fetch_add(1, Ordering::SeqCst);
+            lent.lock().unwrap().clone()
+        }
+    });
+    let cancel = CancellationToken::new();
+    // The tools are there before any browser is.
+    let listed = browser.list_tools(&cancel).await.unwrap();
+    assert_eq!(listed.len(), catalog().len() + 1);
+    // A call that is refused opens none.
+    assert!(matches!(
+        browser.call_tool("browser_click", json!({"ref":"e9","selector":"#a"}), &cancel).await,
+        Err(McpError::Protocol(_))
+    ));
+    assert_eq!(opens.load(Ordering::SeqCst), 0);
+    // The first call opens it and the next one finds it open.
+    let worker = thread::spawn(move || {
+        [(); 2].map(|_| answer_with(&commands, BrowserToolOutput::default()))
+    });
+    for _ in 0..2 {
+        let result = browser.call_tool("browser_snapshot", json!({}), &cancel).await.unwrap();
+        assert!(!result.is_error);
+        assert_eq!(opens.load(Ordering::SeqCst), 1);
+    }
+    assert!(worker
+        .join()
+        .unwrap()
+        .iter()
+        .all(|command| matches!(command, BrowserCommand::Snapshot { .. })));
+    // The user closed the tab: the next call asks for the browser again, and
+    // a window that cannot give one answers the model.
+    runtime.handle.closed.store(true, Ordering::Release);
+    *lent.lock().unwrap() = Err("Se alcanzó el límite de navegadores".to_owned());
+    let result = browser.call_tool("browser_snapshot", json!({}), &cancel).await.unwrap();
+    assert!(result.is_error);
+    assert_eq!(result.content[0]["text"], "Se alcanzó el límite de navegadores");
+    assert_eq!(opens.load(Ordering::SeqCst), 2);
+}

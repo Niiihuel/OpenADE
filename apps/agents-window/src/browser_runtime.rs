@@ -1934,22 +1934,116 @@ pub(crate) fn native_tool_names() -> Vec<String> {
         .collect()
 }
 
+/// The tools that only read the page. They never ask: what they return is
+/// what the user already sees in the tab.
+const READ_TOOLS: [&str; 5] = [
+    "browser_snapshot",
+    "browser_wait_for",
+    "browser_console_messages",
+    "browser_network_requests",
+    "browser_take_screenshot",
+];
+
+/// Whether a call to the native agent's tool `name` goes ahead without
+/// asking: one that only reads the page always does, any other of this
+/// browser's once the user allowed everything.
+pub(crate) fn native_tool_allowed(name: &str, full_access: bool) -> bool {
+    name.strip_prefix(NATIVE_TOOL_PREFIX)
+        .is_some_and(|tool| full_access || READ_TOOLS.contains(&tool))
+}
+
 /// Told to an agent that is given this browser: without it a model reaches
 /// for the system's browser, which a conversation has no use for.
-const AGENT_NOTE: &str = "OpenIDE has a browser built in, in a tab beside this conversation, and the user watches it. Use its tools, the ones named mcp__openide_browser__*, whenever a page has to be opened, read, checked or acted on: open_preview shows a local server you started, browser_navigate opens any other address, browser_snapshot reads the page, and the other browser_* tools act on it. Do not launch a system browser (xdg-open, open, start) and do not ask the user to open a page for you.";
+const AGENT_NOTE: &str = "OpenIDE has a browser built in, in a tab beside this conversation, and the user watches it. The tab opens by itself with your first call. Use its tools, the ones named mcp__openide_browser__*, whenever a page has to be opened, read, checked or acted on: open_preview shows a local server you started, browser_navigate opens any other address, browser_snapshot reads the page, and the other browser_* tools act on it. Do not launch a system browser (xdg-open, open, start) and do not ask the user to open a page for you.";
 
-/// Told to an agent whose conversation has no browser tab open, so it says
-/// what to do instead of trying the system's browser.
-const AGENT_NOTE_CLOSED: &str = "OpenIDE has a browser built in, but its tab is not open in this conversation, so you have no browser tools in this turn. When a page has to be opened, read or checked, say so and ask the user to open the Browser tab of this conversation's panel and send the message again. Do not launch a system browser (xdg-open, open, start).";
-
-/// `instructions` followed by the note about this browser: how to use it
-/// when the turn is given it, how to get it otherwise.
-pub(crate) fn with_agent_note(instructions: String, offered: bool) -> String {
-    let note = if offered { AGENT_NOTE } else { AGENT_NOTE_CLOSED };
+/// `instructions` followed by the note about this browser, for a turn that
+/// is given its tools.
+pub(crate) fn with_agent_note(instructions: String) -> String {
     if instructions.is_empty() {
-        note.to_owned()
+        AGENT_NOTE.to_owned()
     } else {
-        format!("{instructions}\n\n{note}")
+        format!("{instructions}\n\n{AGENT_NOTE}")
+    }
+}
+
+/// A native conversation's browser as its agent holds it. The tools are
+/// there in every turn; the first call asks the window for the browser,
+/// which opens the tab and starts it, and so does the next call after the
+/// user closed it.
+#[derive(Clone)]
+pub(crate) struct ConversationBrowser {
+    /// Blocks until the window hands over the conversation's browser.
+    open: Arc<dyn Fn() -> Result<BrowserMcpClient, String> + Send + Sync>,
+    live: Arc<Mutex<Option<BrowserMcpClient>>>,
+}
+
+impl ConversationBrowser {
+    pub(crate) fn new(open: impl Fn() -> Result<BrowserMcpClient, String> + Send + Sync + 'static) -> Self {
+        Self { open: Arc::new(open), live: Arc::default() }
+    }
+
+    /// The same in every turn and across restarts: no live browser is bound
+    /// to a turn. A ref from a browser that is gone no longer resolves, so a
+    /// call resumed on a new one fails on its own.
+    pub(crate) fn identity_digest(&self) -> &'static str {
+        "openide-conversation-browser-v1"
+    }
+}
+
+#[async_trait]
+impl McpToolClient for ConversationBrowser {
+    async fn list_tools(&self, cancellation: &CancellationToken) -> Result<Vec<McpTool>, McpError> {
+        if cancellation.is_cancelled() {
+            return Err(McpError::Cancelled);
+        }
+        let mut tools = browser_mcp_tools();
+        tools.push(open_preview_tool());
+        Ok(tools)
+    }
+    async fn call_tool(
+        &self,
+        name: &str,
+        arguments: Value,
+        cancellation: &CancellationToken,
+    ) -> Result<McpCallResult, McpError> {
+        // Checked before anything else: a call that is refused opens no browser.
+        if name != OPEN_PREVIEW {
+            browser_tool_command(name, arguments.clone()).map_err(McpError::Protocol)?;
+        }
+        let live = self
+            .live
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .clone()
+            .filter(|client| !client.catalog_changed());
+        let client = match live {
+            Some(client) => client,
+            None => {
+                let open = self.open.clone();
+                let opened = tokio::select! {
+                    biased;
+                    _ = cancellation.cancelled() => return Err(McpError::Cancelled),
+                    opened = tokio::task::spawn_blocking(move || open()) => opened,
+                };
+                match opened.map_err(|error| error.to_string()).and_then(|opened| opened) {
+                    Ok(client) => {
+                        *self.live.lock().unwrap_or_else(|poison| poison.into_inner()) =
+                            Some(client.clone());
+                        client
+                    }
+                    // An answer the model reads, not a broken call.
+                    Err(why) => {
+                        return Ok(McpCallResult {
+                            content: vec![json!({"type":"text","text":why})],
+                            is_error: true,
+                            structured_content: None,
+                            extra: BTreeMap::new(),
+                        })
+                    }
+                }
+            }
+        };
+        client.call_tool(name, arguments, cancellation).await
     }
 }
 

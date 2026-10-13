@@ -6,7 +6,7 @@ use super::*;
 use crate::browser_runtime::tests::{fixture as page, BrowserCommands};
 use crate::browser_runtime::{
     browser_mcp_tools, browser_tool_command, BrowserCommand, BrowserScope, BrowserSnapshot,
-    BrowserToolOutput,
+    BrowserToolOutput, ConversationBrowser,
 };
 use openide_harness::McpToolClient;
 use serde_json::{json, Value};
@@ -451,6 +451,7 @@ fn the_browser_and_its_tab_end_with_the_terminals_grant() {
     let (reply, answer) = mpsc::channel();
     locked(&fixture.app.external_bridge.browser_calls).push(BrowserCall {
         session: old_session,
+        conversation: None,
         reply,
         expires: Instant::now() + BROWSER_WAIT,
         started: false,
@@ -582,4 +583,70 @@ fn the_limit_of_open_browsers_holds_for_a_cli_too() {
     assert!(error);
     assert_eq!(content[0]["text"], BROWSER_LIMIT);
     assert!(fixture.cli_tabs().is_empty() && fixture.app.browsers.len() == MAX_BROWSERS);
+}
+
+#[test]
+fn a_native_agents_first_call_opens_its_conversations_tab_and_again_once_closed() {
+    let mut fixture = fixture();
+    let scope = fixture.app.dock_scope();
+    // A CLI's browser is already open in this very dock.
+    let (terminal, token) = fixture.open_cli("claude_accept_all");
+    assert!(!fixture.run(&token, "browser_snapshot", json!({})).1);
+    let cli_tab = fixture.cli_tab(terminal);
+    let own_tabs = |fixture: &Fixture| -> Vec<DockTabId> {
+        fixture
+            .app
+            .dock
+            .tabs(&fixture.app.view.workspace)
+            .iter()
+            .filter(|tab| tab.kind == DockTabKind::Browser)
+            .map(|tab| tab.id)
+            .collect()
+    };
+    assert!(own_tabs(&fixture).is_empty(), "the conversation has no browser tab");
+
+    let browser: ConversationBrowser = fixture.app.conversation_browser(scope.clone(), "conversation");
+    let snapshot = || {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap()
+            .block_on(browser.call_tool("browser_snapshot", json!({}), &CancellationToken::new()))
+            .unwrap()
+    };
+    // The page the window would start for the tab the call opened.
+    let frame = |fixture: &mut Fixture| {
+        fixture.frame();
+        for tab in own_tabs(fixture).into_iter().map(DockTabId::get) {
+            if !fixture.app.browsers.contains_key(&tab) {
+                let (runtime, commands) = page(fixture.app.browser_launch_scope(tab).unwrap(), started());
+                fixture.app.browsers.insert(tab, runtime);
+                fixture.pages.insert(tab, commands);
+            }
+        }
+    };
+
+    let ran = fixture.ran.len();
+    assert!(!fixture.during(snapshot, frame).is_error);
+    let first = own_tabs(&fixture);
+    assert_eq!(first.len(), 1, "the call opened the conversation's tab");
+    assert_eq!(fixture.app.dock.active_tab(&scope).map(|tab| tab.id), Some(first[0]));
+    assert_eq!(fixture.app.browsers[&first[0].get()].scope().session_id, "conversation");
+    // It ran on that page, not on the CLI's.
+    let pages: Vec<u64> = fixture.ran[ran..].iter().map(|(tab, _)| *tab).collect();
+    assert_eq!(pages, [first[0].get()]);
+    assert!(first[0].get() != cli_tab);
+
+    // The next call finds it open.
+    assert!(!fixture.during(snapshot, frame).is_error);
+    assert_eq!(own_tabs(&fixture), first);
+
+    // The user closes the tab; the agent's next call opens it again.
+    fixture.app.dock.close(&scope, first[0]);
+    fixture.app.sync_dock_view();
+    assert!(own_tabs(&fixture).is_empty());
+    assert!(!fixture.during(snapshot, frame).is_error);
+    let second = own_tabs(&fixture);
+    assert!(second.len() == 1 && second != first);
+    assert_eq!(fixture.ran.last().map(|(tab, _)| *tab), Some(second[0].get()));
 }

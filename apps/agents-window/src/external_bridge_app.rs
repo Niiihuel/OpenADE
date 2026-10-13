@@ -4,26 +4,29 @@
 //!
 //! A CLI's browser tools drive a browser of its own, one per terminal: the
 //! first call opens its tab and starts it, and it ends with the terminal's
-//! grant. It is never a conversation's browser.
+//! grant. It is never a conversation's browser. A native conversation's agent
+//! gets its own conversation's tab the same way, opened by its first call.
 use super::*;
 use crate::agent_cli_definitions::{self, AgentCliDefinition};
-use crate::browser_runtime::BrowserMcpClient;
+use crate::browser_runtime::{BrowserMcpClient, ConversationBrowser};
 use openide_bridge::{Approver, Bridge, Grant, Host, HostTool};
 use std::ffi::OsString;
 use std::sync::Mutex;
 
 const APPROVAL_LIFETIME: Duration = Duration::from_secs(50);
 const MAX_REVIEW_CHARS: usize = 60_000;
-/// How long a browser call waits for its terminal's browser, which a first
-/// call has to start.
+/// How long a browser call waits for its browser, which a first call has to
+/// start.
 const BROWSER_WAIT: Duration = Duration::from_secs(30);
 const SESSION_ENDED: &str = "La sesión de esta CLI terminó y su navegador se cerró.";
 
-/// A CLI's browser call, waiting for the window to hand it the browser of
-/// that CLI's terminal.
+/// A browser call waiting for the window to hand it its browser: a CLI's is
+/// the one of its terminal, a native conversation's the tab of its own dock.
 struct BrowserCall {
-    /// The session of the grant the call came under.
+    /// The session of the grant the call came under, or the conversation's.
     session: String,
+    /// The dock of the native conversation whose agent made the call.
+    conversation: Option<DockScope>,
     reply: mpsc::Sender<Result<BrowserMcpClient, String>>,
     // The call stops waiting after this long; a later browser reaches nobody.
     expires: Instant,
@@ -104,9 +107,21 @@ fn browser_call(
     let arguments = if arguments.is_null() { serde_json::json!({}) } else { arguments.clone() };
     // Checked before anything else: a call that is refused starts no browser.
     crate::browser_runtime::browser_tool_command(name, arguments.clone())?;
+    wait_for_browser(calls, repaint, grant.session.clone(), None)?.call_blocking(name, arguments)
+}
+
+/// Asks the window for the browser of `session` and waits for it, on the
+/// caller's thread.
+fn wait_for_browser(
+    calls: &Mutex<Vec<BrowserCall>>,
+    repaint: &Mutex<Option<egui::Context>>,
+    session: String,
+    conversation: Option<DockScope>,
+) -> Result<BrowserMcpClient, String> {
     let (reply, browser) = mpsc::channel();
     locked(calls).push(BrowserCall {
-        session: grant.session.clone(),
+        session,
+        conversation,
         reply,
         expires: Instant::now() + BROWSER_WAIT,
         started: false,
@@ -116,8 +131,7 @@ fn browser_call(
     }
     browser
         .recv_timeout(BROWSER_WAIT)
-        .map_err(|_| "El navegador de esta CLI no llegó a iniciar.".to_owned())??
-        .call_blocking(name, arguments)
+        .map_err(|_| "El navegador no llegó a iniciar.".to_owned())?
 }
 
 impl ExternalBridgeHost {
@@ -482,8 +496,19 @@ impl AgentsWindow {
             .map(|(_, _, session)| session.as_str())
     }
 
-    /// Hands each waiting browser call the browser of its CLI's terminal.
-    /// Returns whether the view changed.
+    /// The browser the agent of native conversation `session` is given, whose
+    /// first call opens the tab in `scope`, that conversation's dock.
+    pub(super) fn conversation_browser(&self, scope: DockScope, session: &str) -> ConversationBrowser {
+        let calls = self.external_bridge.browser_calls.clone();
+        let repaint = self.external_bridge.repaint.clone();
+        let session = session.to_owned();
+        ConversationBrowser::new(move || {
+            wait_for_browser(&calls, &repaint, session.clone(), Some(scope.clone()))
+        })
+    }
+
+    /// Hands each waiting browser call its browser. Returns whether the view
+    /// changed.
     pub(super) fn serve_external_browser_calls(&mut self, ctx: &egui::Context) -> bool {
         let mut calls = std::mem::take(&mut *locked(&self.external_bridge.browser_calls));
         let now = Instant::now();
@@ -511,31 +536,52 @@ impl AgentsWindow {
         stale
     }
 
-    /// The browser of the terminal whose grant `call` came under. Its first
+    /// The browser `call` is for: the one of the terminal whose grant it came
+    /// under, or the tab of the native conversation that made it. Its first
     /// call opens the tab and starts the context; `None` while that starts.
     fn external_browser(&mut self, call: &mut BrowserCall) -> Result<Option<BrowserMcpClient>, String> {
-        // Only a live grant names a terminal: a revoked session reaches nothing.
-        let terminal = self
-            .external_bridge
-            .grants
-            .iter()
-            .find(|(_, (_, _, session))| *session == call.session)
-            .map(|(id, _)| *id)
-            .ok_or(SESSION_ENDED)?;
-        // The switch may have gone off after the bridge let this call through.
-        if self.external_agent_settings.mode_for(ExternalTool::Browser, true) == PermissionMode::Deny {
-            return Err("Herramienta desactivada en Ajustes → CLIs externas.".into());
-        }
-        let kind = DockTabKind::CliBrowser { terminal };
-        let tab = match self.dock.tab_of_kind(&kind) {
-            Some(tab) => tab.id,
+        let (kind, open) = match &call.conversation {
+            Some(scope) => (
+                DockTabKind::Browser,
+                self.dock
+                    .tabs(&scope.workspace_id)
+                    .iter()
+                    .find(|tab| tab.kind == DockTabKind::Browser && tab.owner == scope.owner)
+                    .map(|tab| tab.id),
+            ),
+            None => {
+                // Only a live grant names a terminal: a revoked session reaches nothing.
+                let terminal = self
+                    .external_bridge
+                    .grants
+                    .iter()
+                    .find(|(_, (_, _, session))| *session == call.session)
+                    .map(|(id, _)| *id)
+                    .ok_or(SESSION_ENDED)?;
+                // The switch may have gone off after the bridge let this call through.
+                if self.external_agent_settings.mode_for(ExternalTool::Browser, true) == PermissionMode::Deny {
+                    return Err("Herramienta desactivada en Ajustes → CLIs externas.".into());
+                }
+                let kind = DockTabKind::CliBrowser { terminal };
+                let open = self.dock.tab_of_kind(&kind).map(|tab| tab.id);
+                (kind, open)
+            }
+        };
+        let tab = match open {
+            Some(tab) => tab,
             None => {
                 if self.browsers.len() + self.browser_starts.len() >= MAX_BROWSERS {
                     return Err(BROWSER_LIMIT.into());
                 }
-                // Beside its terminal, in that conversation's dock.
-                let owner = self.dock.tab(terminal).ok_or(SESSION_ENDED)?;
-                let scope = DockScope::new(owner.workspace_id.clone(), owner.owner.clone());
+                let scope = match (&call.conversation, &kind) {
+                    (Some(scope), _) => scope.clone(),
+                    // Beside its terminal, in that conversation's dock.
+                    (None, DockTabKind::CliBrowser { terminal }) => {
+                        let owner = self.dock.tab(*terminal).ok_or(SESSION_ENDED)?;
+                        DockScope::new(owner.workspace_id.clone(), owner.owner.clone())
+                    }
+                    (None, _) => return Err(SESSION_ENDED.into()),
+                };
                 self.external_bridge.dock_stale = true;
                 self.open_tab_beside_typing(&scope, kind)
             }
@@ -547,7 +593,7 @@ impl AgentsWindow {
                 return Ok(None);
             }
             if std::mem::replace(&mut call.started, true) {
-                return Err("No se pudo iniciar el navegador de esta CLI.".into());
+                return Err("No se pudo iniciar el navegador.".into());
             }
             let scope = self.browser_launch_scope(tab).ok_or(SESSION_ENDED)?;
             self.start_browser(tab, scope)?;
@@ -555,7 +601,10 @@ impl AgentsWindow {
         };
         // What the native agent's client is checked for against its
         // conversation: this context is the calling session's and no other's.
-        if runtime.scope().session_id != call.session {
+        let own = runtime.scope().session_id == call.session
+            // A tab the user opened before the conversation's first message.
+            || (call.conversation.is_some() && runtime.scope().session_id == format!("draft:{tab}"));
+        if !own {
             return Err("Ese navegador pertenece a otra sesión.".into());
         }
         let snapshot = runtime.snapshot();
