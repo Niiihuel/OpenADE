@@ -1026,6 +1026,34 @@ impl SessionRowContext {
     }
 }
 
+/// The plugins or the MCP servers as a tab of the add-ons section: the page
+/// Settings shows, under its name. None for the section's own tabs.
+pub(crate) fn addons_settings_tab(state: &ViewState, width: f32) -> Option<Element> {
+    use marketplace_view::MarketplaceTab;
+    let compact = width < 460.0;
+    let (id, title, about, rows) = match state.marketplace.tab {
+        MarketplaceTab::Plugins => (
+            "marketplace_plugins",
+            "Plugins",
+            "Programas que le dan herramientas al agente, instalados en este equipo.",
+            crate::plugins_ui::page(state, compact),
+        ),
+        MarketplaceTab::Mcp => (
+            "marketplace_mcp",
+            "Servidores MCP",
+            "Conexiones a herramientas externas, locales o por HTTP.",
+            settings_ui::mcp_page(state, compact),
+        ),
+        _ => return None,
+    };
+    let mut page = vec![
+        Element::truncated_text(title).font_family(FontFamily::Sans).font_size(22.0).foreground(theme::FOREGROUND),
+        UiText::new(about, theme::component_palette()).muted().render(),
+    ];
+    page.extend(rows);
+    Some(openide_ui::PageColumn::new(id, width, theme::component_palette()).min_width(240.0).children(page).render())
+}
+
 impl ViewState {
     /// Whether one of the pages Settings holds is the one in view: there,
     /// or as a tab of the add-ons section.
@@ -1034,7 +1062,13 @@ impl ViewState {
         if self.show_settings {
             return self.settings_page == page;
         }
-        self.main_page == MainPage::Marketplace
+        let ide = self.ide.mode == crate::ide_workspace::WindowMode::Ide;
+        let section = if ide {
+            self.ide.activity == crate::ide_workspace::IdeActivity::Extensions && self.ide.extensions_open
+        } else {
+            self.main_page == MainPage::Marketplace
+        };
+        section
             && matches!(
                 (self.marketplace.tab, page),
                 (MarketplaceTab::Plugins, SettingsPage::Plugins) | (MarketplaceTab::Mcp, SettingsPage::Mcp)
@@ -3445,15 +3479,13 @@ pub(crate) fn build_view_sized(state: &ViewState, viewport_width: f32, viewport_
     } else if !state.show_settings && state.main_page == MainPage::Marketplace {
         use marketplace_view::MarketplaceTab;
         let tab = state.marketplace.tab;
-        // The pages Settings also shows, in a page of this section.
-        let settings = |id: &str, rows: Vec<Element>| {
-            openide_ui::PageColumn::new(id, center_width, theme::component_palette()).min_width(240.0).children(rows).render()
-        };
-        let content = match tab {
-            MarketplaceTab::Skills => marketplace_view::marketplace_page_with_navigation(&state.marketplace, center_width, None),
-            MarketplaceTab::Plugins => settings("marketplace_plugins", crate::plugins_ui::page(state, compact)),
-            MarketplaceTab::Mcp => settings("marketplace_mcp", settings_ui::mcp_page(state, compact)),
-            MarketplaceTab::Sources => marketplace_view::landing(&state.marketplace, center_width, "marketplace_details:", None),
+        let content = match addons_settings_tab(state, center_width) {
+            Some(page) => page,
+            None if tab == MarketplaceTab::Sources => {
+                // Its header carries the way to add a source.
+                marketplace_view::landing(&state.marketplace, center_width, "marketplace_details:", Some(("Orígenes", None)))
+            }
+            None => marketplace_view::marketplace_page_with_navigation(&state.marketplace, center_width, None),
         };
         Element::column(vec![
             marketplace_view::section_tabs(tab, (!left_visible).then(|| sidebar_reopen_control(theme::BACKGROUND))),

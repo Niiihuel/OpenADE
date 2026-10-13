@@ -674,10 +674,14 @@ fn the_standalone_page_is_the_same_list_beside_the_same_detail() {
     let install = format!("marketplace_install:{id}");
 
     let frame = layout(marketplace_page(&state, 1000.0), 1000.0, 800.0);
-    for control in ["marketplace_search", "marketplace_add_menu", row.as_str(), "marketplace_remove_source:source-1"] {
+    // Nothing selected: a skill to choose, and the way to the sources' tab,
+    // which is where they are listed.
+    for control in ["marketplace_search", "marketplace_add_menu", row.as_str(), "marketplace_tab:sources"] {
         assert!(has(&frame, control), "{control}");
     }
-    assert!(!has(&frame, &install), "nothing selected: the landing page");
+    assert!(!has(&frame, &install) && !has(&frame, "marketplace_remove_source:source-1"));
+    let sources = layout(landing(&state, 1000.0, "marketplace_details:", None), 1000.0, 800.0);
+    assert!(has(&sources, "marketplace_remove_source:source-1"));
 
     state.selected_item_id = Some(id.into());
     let frame = layout(marketplace_page(&state, 1000.0), 1000.0, 800.0);

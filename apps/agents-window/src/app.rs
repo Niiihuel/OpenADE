@@ -17381,6 +17381,20 @@ impl AgentsWindow {
         if matches!(&action, UiAction::Clicked { id } if id != "ide_agent_new_toggle") {
             self.view.ide.agent_new_open = false;
         }
+        if matches!(&action, UiAction::Clicked { id } if id == "plugins_open") {
+            // The plugins are a tab of the add-ons section, in either window.
+            self.view.composer_add_menu_open = false;
+            self.view.plugins.close_dialogs();
+            self.view.show_settings = false;
+            self.view.marketplace.tab = crate::marketplace_view::MarketplaceTab::Plugins;
+            if self.ide_workspace_active() {
+                self.select_ide_activity(crate::ide_workspace::IdeActivity::Extensions, false);
+                self.view.ide.extensions_open = true;
+            } else {
+                self.apply_action(UiAction::Clicked { id: "open_marketplace".into() }, ctx);
+            }
+            return;
+        }
         if self.apply_plugin_action(&action) {
             return;
         }

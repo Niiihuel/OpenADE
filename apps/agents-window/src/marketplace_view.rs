@@ -1764,7 +1764,25 @@ pub(crate) fn detail_or_landing(
 ) -> Element {
     match state.selected() {
         Some(item) => item_detail(state, &item, width, back),
-        None => landing(state, width, select_prefix, header),
+        // The sources and what is installed have a tab of their own: here
+        // there is only a skill to choose.
+        None => {
+            let _ = (select_prefix, header);
+            Element::column(vec![
+                openide_ui::Empty::new(
+                    "Elegí una skill de la lista",
+                    "De dónde vienen, cuáles están instaladas y sus actualizaciones están en Orígenes.",
+                    theme::component_palette(),
+                )
+                .icon(Icon::Puzzle)
+                .action("marketplace_tab:sources", "Ver orígenes", ButtonVariant::Outline)
+                .compact()
+                .width((width - 48.0).max(200.0))
+                .height(188.0)
+                .render(),
+            ])
+            .padding(24.0)
+        }
     }
 }
 
