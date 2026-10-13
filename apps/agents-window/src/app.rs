@@ -10407,14 +10407,22 @@ impl AgentsWindow {
             ));
         }
         let exec_policy = ExecPolicySettings::load(&self.data_root)?.policy()?;
-        Ok(self
+        let policy = self
             .agent_tool_settings
             .permission_policy()
             .with_exec_policy(exec_policy)
             .with_tool("spawn_agent", PermissionMode::Allow)
             .with_tool("wait_agent", PermissionMode::Allow)
             .with_tool("cancel_agent", PermissionMode::Allow)
-            .with_tool("send_input", PermissionMode::Allow))
+            .with_tool("send_input", PermissionMode::Allow);
+        if !self.agent_tool_settings.full_access() {
+            return Ok(policy);
+        }
+        // "Permitir todo" covers the browser this window serves, as it does
+        // the commands that can do more than a page. Without it each call asks.
+        Ok(crate::browser_runtime::native_tool_names()
+            .into_iter()
+            .fold(policy, |policy, name| policy.with_tool(name, PermissionMode::Allow)))
     }
 
     fn ensure_archivable_native_session(&self, session_id: &str) -> Result<(), String> {
@@ -13176,6 +13184,12 @@ impl AgentsWindow {
                     return;
                 }
             };
+            // An agent is told of the browser it is given, or it reaches for
+            // the system's.
+            let native_instructions = crate::browser_runtime::with_agent_note(
+                native_instructions,
+                self.browser_client_for_current_scope().is_some(),
+            );
             let (instructions, full_instructions) = match native_task_instructions(
                 native_instructions,
                 active_goal.as_deref(),
@@ -13329,7 +13343,8 @@ impl AgentsWindow {
                 Arc::new(stored.events.clone()),
                 native_mcp_servers,
                 browser,
-            );
+            )
+            .with_browser_allowed(self.agent_tool_settings.full_access());
             if self.view.turn_mode == TurnMode::Build {
                 environment = environment
                     .with_plugins(self.data_root.clone())
@@ -14267,6 +14282,7 @@ impl AgentsWindow {
                         settings.servers,
                         browser,
                     )
+                    .with_browser_allowed(self.agent_tool_settings.full_access())
                     .with_plugins(self.data_root.clone())
                     .with_image_generation(self.image_client_for(workspace)),
                 ) as Arc<dyn openide_harness::ToolPreparation>,
