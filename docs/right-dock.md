@@ -29,6 +29,10 @@ pestañas», que ocupaba el panel entero. Cerrar las demás, cerrar todas y move
 una pestaña a la izquierda o a la derecha están en el menú contextual de cada
 pestaña; arrastrarla también la reordena.
 
+En ese menú cada fila responde al puntero con un relleno detrás de la fila y
+de su cierre, y el cierre suma el suyo encima (limn v0.1.32). **Cerrar todas**
+va separada de las pestañas por un divisor.
+
 La barra mide 32 px y las pestañas 28 px, con ancho según el título. La activa
 comparte el fondo del contenido: tiene radio de 8 px sólo arriba y llega hasta
 el cuerpo, sin margen inferior. Las inactivas descansan sobre una franja
@@ -142,10 +146,11 @@ con el panel oculto o sin pestañas, donde el control aparece deshabilitado.
   debajo del panel; un comando del agente queda listado sin abrirla. Problemas
   no se oculta: acompaña al archivo del panel.
 - El ancho preferido no cambia y vuelve tal cual. Maximizado no hay divisor que
-  arrastrar. El panel crece desde su borde derecho sobre el lugar de la
+  arrastrar. El panel crece desde su borde derecho por encima de la
   conversación, y vuelve, con el mismo movimiento que abrir o cerrar un panel
-  (200 ms); la conversación no se dibuja mientras crece y vuelve a dibujarse
-  mientras el panel se achica. Reducir movimiento aplica el cambio de una vez.
+  (200 ms). Mientras se mueve, la conversación conserva el lugar y el ancho
+  que tiene en reposo: el panel la tapa o la descubre y nada en ella se vuelve
+  a acomodar. Reducir movimiento aplica el cambio de una vez.
 - Con la barra lateral plegada, la barra de pestañas del panel maximizado
   ofrece **Mostrar barra lateral**, que la cabecera tapada de la conversación
   ya no puede ofrecer.

@@ -995,6 +995,29 @@ fn the_dock_is_maximized_over_the_conversation_and_restored_by_its_control_and_b
         assert_eq!(restored.0.right.is_some(), !narrow);
         assert_eq!(restored.3.len(), 2);
         assert!(restored.4 > 0.0);
+        // Where everything left of the dock stands at rest. While the dock
+        // moves over the conversation none of it shifts sideways: it is
+        // covered, never laid out again in what is left.
+        let split = restored.0.right_split_x.unwrap_or(f32::INFINITY);
+        let rest: std::collections::HashMap<String, f32> = app
+            .tree
+            .frame()
+            .regions
+            .iter()
+            .filter(|region| region.rect.x < split - 8.0)
+            .map(|region| (region.id.clone(), region.rect.x))
+            .collect();
+        assert!(rest.contains_key("prompt") && rest.len() > 8);
+        let unmoved = |app: &AgentsWindow| {
+            let mut seen = 0;
+            for region in &app.tree.frame().regions {
+                if let Some(x) = rest.get(&region.id) {
+                    assert_eq!(region.rect.x, *x, "{} moved sideways", region.id);
+                    seen += 1;
+                }
+            }
+            seen
+        };
         for shortcut in [narrow, true] {
             // At rest, as the window leaves it once its panels have settled.
             app.update_dock_motion(app.viewport_width, clock);
@@ -1047,19 +1070,23 @@ fn the_dock_is_maximized_over_the_conversation_and_restored_by_its_control_and_b
             let growing = app.view.right_presentation_width.expect("the width is in transit");
             assert!(from < growing && growing < room, "{from} {growing} {room}");
             assert!(app.view.bottom_presentation_height.is_some_and(|height| height < restored.4));
+            assert!(app.view.dock_covering);
             present_workspace(&mut app);
             let edge = |app: &AgentsWindow| {
                 let rect = region_rect(app, "toggle_side_pane");
                 rect.x + rect.width
             };
             let midway = edge(&app);
-            assert!(!shown(&app, "prompt"), "the conversation is not laid out in what is left");
+            // The conversation is still there under the dock, where it was.
+            assert!(unmoved(&app) > 4, "the conversation shows until the dock reaches it");
             clock += super::DockMotion::DURATION;
             app.update_dock_motion(app.viewport_width, clock);
             assert_eq!(app.view.right_presentation_width, None);
             assert_eq!(app.view.bottom_presentation_height, None);
+            assert!(!app.view.dock_covering);
             present_workspace(&mut app);
             assert_eq!(edge(&app), midway, "it grows leftwards");
+            assert!(!shown(&app, "prompt"), "maximized, the conversation is not laid out");
 
             if shortcut {
                 maximize_shortcut(&mut app);
@@ -1068,13 +1095,21 @@ fn the_dock_is_maximized_over_the_conversation_and_restored_by_its_control_and_b
             }
             assert!(!app.view.dock_maximized && !app.dock.is_maximized(&scope));
             assert!(app.prompt_focus_pending, "the keyboard goes back to the composer");
-            // It comes back the same way, and the conversation with it.
+            // It comes back the same way, uncovering the conversation where
+            // it stands: from the first frame nothing in it is laid out again.
             assert!(app.update_dock_motion(app.viewport_width, clock));
-            clock += super::DockMotion::DURATION / 2;
-            assert!(app.update_dock_motion(app.viewport_width, clock));
-            let shrinking = app.view.right_presentation_width.expect("the width is in transit");
-            assert!(from < shrinking && shrinking < room, "{from} {shrinking} {room}");
+            assert_eq!(app.view.right_presentation_width, Some(room));
             present_workspace(&mut app);
+            unmoved(&app);
+            for _ in 0..3 {
+                clock += super::DockMotion::DURATION / 4;
+                assert!(app.update_dock_motion(app.viewport_width, clock));
+                let shrinking = app.view.right_presentation_width.expect("the width is in transit");
+                assert!(from < shrinking && shrinking < room, "{from} {shrinking} {room}");
+                assert!(app.view.dock_covering);
+                present_workspace(&mut app);
+                assert!(unmoved(&app) > 4);
+            }
             assert!(shown(&app, "prompt"));
             clock += super::DockMotion::DURATION;
             app.update_dock_motion(app.viewport_width, clock);
