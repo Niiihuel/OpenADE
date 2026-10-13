@@ -685,7 +685,7 @@ impl MarketplaceStore {
 // when the agent selects a relevant installed skill.
 #[path = "marketplace_skill_index.rs"]
 mod skill_index;
-pub use skill_index::{active_skill_directories, active_skill_instructions};
+pub use skill_index::{active_skill_directories, active_skill_instructions, active_skill_names};
 
 fn applies_to(workspace_key: &str, entry: &Installation) -> bool {
     entry.scope == InstallScope::User || entry.workspace.as_deref() == Some(workspace_key)
@@ -1012,6 +1012,26 @@ mod tests {
         )
         .unwrap();
         source
+    }
+
+    #[test]
+    fn a_skill_from_the_users_own_source_learns_of_its_update_and_takes_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = temp.path().join("project");
+        fs::create_dir(&workspace).unwrap();
+        let store = MarketplaceStore::new(temp.path().join("data"), workspace);
+        let source = sample_source(temp.path());
+        let source_id = store.add_local_source(&source).unwrap();
+        let item_id = format!("{source_id}:git-review");
+        store.install(&item_id, InstallScope::User).unwrap();
+        // As installed, it is what its source holds.
+        assert!(store.check_updates().unwrap().is_empty());
+        let document = source.join(".agents/skills/git-review/SKILL.md");
+        fs::write(&document, fs::read_to_string(&document).unwrap() + "Then the log.\n").unwrap();
+        let updates = store.check_updates().unwrap();
+        assert_eq!(updates.iter().map(|update| update.item_id.as_str()).collect::<Vec<_>>(), [item_id.as_str()]);
+        store.update(&item_id).unwrap();
+        assert!(store.check_updates().unwrap().is_empty());
     }
 
     #[test]

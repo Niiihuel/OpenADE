@@ -259,6 +259,8 @@ impl AgentsWindow {
                                 crate::compat_hook_settings::plugin_commands(id, root)
                             })
                             .collect();
+                    self.view.composer_suggestions.installed_skills =
+                        crate::marketplace::active_skill_names(&self.data_root, Path::new(&self.view.workspace));
                     self.view
                         .composer_suggestions
                         .populate_commands(&self.view.native_skills);
@@ -430,6 +432,7 @@ impl AgentsWindow {
                     }
                 }
             }
+            ComposerSuggestionAction::UseSkill(name) => format!("Usá la skill «{name}» para "),
             _ => String::new(),
         };
         let Some((prompt, cursor)) =
@@ -494,7 +497,8 @@ impl AgentsWindow {
             }
             ComposerSuggestionAction::Files
             | ComposerSuggestionAction::ReferenceFile(_)
-            | ComposerSuggestionAction::PluginCommand(_) => {}
+            | ComposerSuggestionAction::PluginCommand(_)
+            | ComposerSuggestionAction::UseSkill(_) => {}
         }
         if !self.view.show_settings && !self.view.composer_permissions_open {
             // Restore the caret before another Text event in this same frame.
