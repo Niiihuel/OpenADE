@@ -6083,7 +6083,11 @@ impl AgentsWindow {
         // the generation check replaces it only with the matching result.
         let path = PathBuf::from(&detail.path);
         let stage = detail.stage;
-        self.queue_detail(DetailKind::Diff { path, stage });
+        // A branch diff starts from the commit the comparison in view names.
+        let base = (stage == DiffStage::Branch)
+            .then(|| self.view.environment.workflow.comparison.as_ref().map(|comparison| comparison.base.clone()))
+            .flatten();
+        self.queue_detail(DetailKind::Diff { path, stage, base });
     }
 
     fn update_detail(&mut self, ctx: &egui::Context) -> bool {

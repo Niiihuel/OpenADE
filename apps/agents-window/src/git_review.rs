@@ -22,6 +22,9 @@ const MAX_FILE_DIFF_LINES: usize = 10_000;
 pub enum DiffStage {
     Staged,
     Unstaged,
+    /// What the branch carries over where it left another: commits, not the
+    /// working tree. Read only.
+    Branch,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -566,6 +569,34 @@ fn read_diff_with_scope(
     paths: &[&Path],
     max_bytes: u64,
 ) -> io::Result<(String, bool)> {
+    read_diff(workspace, if staged { &["--cached"] } else { &[] }, paths, max_bytes)
+}
+
+/// One file as the branch changed it since it left `base`: the diff of the
+/// commits `base...HEAD`, whatever the working tree holds now.
+pub fn load_branch_file_diff(workspace: &Path, base: &str, relative: &Path) -> io::Result<Option<FileDiffDetail>> {
+    let plain = !base.is_empty() && base.len() <= 64 && base.bytes().all(|byte| byte.is_ascii_hexdigit());
+    let inside = !relative.as_os_str().is_empty()
+        && relative.components().all(|component| matches!(component, Component::Normal(_)));
+    if !plain || !inside {
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "invalid branch diff request"));
+    }
+    let (text, truncated) = read_diff(workspace, &[&format!("{base}...HEAD")], &[relative], MAX_FILE_DIFF_BYTES)?;
+    let mut review = GitReview::default();
+    parse_section_with_limit(&mut review, "ARCHIVO", &text, MAX_FILE_DIFF_LINES);
+    let requested = relative.to_string_lossy().replace('\\', "/");
+    let truncated = truncated || review.truncated;
+    Ok(review
+        .sections
+        .into_iter()
+        .flat_map(|section| section.files)
+        .find(|file| file.path == requested || file.old_path.as_deref() == Some(requested.as_str()))
+        .map(|file| file_detail(DiffStage::Branch, file, truncated)))
+}
+
+/// `scope` is what the diff is between: nothing for the working tree,
+/// `--cached` for the index, or a range of commits.
+fn read_diff(workspace: &Path, scope: &[&str], paths: &[&Path], max_bytes: u64) -> io::Result<(String, bool)> {
     let mut command = command_no_window("git");
     command.arg("--literal-pathspecs").arg("diff").args([
         "--no-ext-diff",
@@ -574,9 +605,7 @@ fn read_diff_with_scope(
         "--find-renames",
         "--unified=3",
     ]);
-    if staged {
-        command.arg("--cached");
-    }
+    command.args(scope);
     command.arg("--");
     for path in paths {
         command.arg(path);

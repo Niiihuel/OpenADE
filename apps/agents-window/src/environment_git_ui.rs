@@ -645,6 +645,32 @@ pub(crate) fn build(state: &EnvironmentGitUiState, width: f32, locked: bool) -> 
                     .border(false)
                     .render(),
                 );
+                // The files the branch changed: each opens as it differs from
+                // where the branch left the other.
+                if !comparison.changed.is_empty() {
+                    let mut files: Vec<Element> = comparison
+                        .changed
+                        .iter()
+                        .enumerate()
+                        .map(|(index, file)| {
+                            let name = file.path.rsplit('/').next().unwrap_or(&file.path);
+                            openide_ui::ListRow::new(format!("environment_git_compare_file:{index}"), name, crate::environment_ui::card_button_palette())
+                                .icon(openide_ui::file_icon(&file.path))
+                                .subtitle(format!("{} · +{} −{}", file.path, file.additions, file.deletions))
+                                .width((width - 16.0).max(0.0))
+                                .render()
+                        })
+                        .collect();
+                    if comparison.files > comparison.changed.len() {
+                        files.push(
+                            Text::new(format!("y {} más", comparison.files - comparison.changed.len()), theme::component_palette())
+                                .role(TextRole::Small)
+                                .muted()
+                                .render(),
+                        );
+                    }
+                    rows.push(Element::column(files).gap(2.0));
+                }
                 rows.push(
                     Button::new(
                         "environment_git_compare_refresh",

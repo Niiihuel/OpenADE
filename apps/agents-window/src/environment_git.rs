@@ -131,12 +131,28 @@ impl GitSnapshot {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct BranchComparison {
     pub reference: String,
+    /// The commit of `reference` the comparison was made against.
+    pub base: String,
+    /// The files the branch changed, in Git's order; the first of them when
+    /// there are very many, which `files` still counts.
+    pub changed: Vec<ChangedFile>,
     pub ahead: usize,
     pub behind: usize,
     pub files: usize,
     pub additions: usize,
     pub deletions: usize,
 }
+
+/// One file a branch changed over another, with its lines added and removed.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct ChangedFile {
+    pub path: String,
+    pub additions: usize,
+    pub deletions: usize,
+}
+
+/// Files of a comparison that are listed one by one.
+const MAX_COMPARED_FILES: usize = 300;
 
 pub(crate) enum Operation {
     Refresh,
@@ -719,6 +735,7 @@ fn compare(
     }
     let mut comparison = BranchComparison {
         reference: reference.into(),
+        base: base.clone(),
         ahead,
         behind,
         ..Default::default()
@@ -731,18 +748,21 @@ fn compare(
         let mut fields = record.splitn(3, |byte| *byte == b'\t');
         let additions = fields.next().unwrap_or_default();
         let deletions = fields.next().unwrap_or_default();
-        if fields.next().is_none() {
+        let Some(path) = fields.next() else {
             return Err("Git devolvió un resumen de diff inválido".into());
-        }
+        };
+        // A binary file counts no lines: Git says `-` for both.
+        let lines = |field: &[u8]| std::str::from_utf8(field).ok().and_then(|n| n.parse::<usize>().ok()).unwrap_or(0);
         comparison.files += 1;
-        comparison.additions += std::str::from_utf8(additions)
-            .ok()
-            .and_then(|n| n.parse::<usize>().ok())
-            .unwrap_or(0);
-        comparison.deletions += std::str::from_utf8(deletions)
-            .ok()
-            .and_then(|n| n.parse::<usize>().ok())
-            .unwrap_or(0);
+        comparison.additions += lines(additions);
+        comparison.deletions += lines(deletions);
+        if comparison.changed.len() < MAX_COMPARED_FILES {
+            comparison.changed.push(ChangedFile {
+                path: String::from_utf8_lossy(path).into_owned(),
+                additions: lines(additions),
+                deletions: lines(deletions),
+            });
+        }
     }
     Ok(comparison)
 }
@@ -983,6 +1003,25 @@ mod tests {
             (comparison.files, comparison.additions, comparison.deletions),
             (1, 2, 0)
         );
+        // Its files are named, and each opens as the branch changed it: what
+        // is not committed is no part of that.
+        assert_eq!(
+            comparison.changed,
+            [ChangedFile { path: "feature.txt".into(), additions: 2, deletions: 0 }]
+        );
+        let detail = crate::git_review::load_branch_file_diff(&repo.root, &comparison.base, Path::new("feature.txt"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (detail.stage, detail.file.additions, detail.file.deletions),
+            (crate::git_review::DiffStage::Branch, 2, 0)
+        );
+        assert!(crate::git_review::load_branch_file_diff(&repo.root, &comparison.base, Path::new("tracked.txt"))
+            .unwrap()
+            .is_none());
+        // Only a commit names a base, and only a path inside the project a file.
+        assert!(crate::git_review::load_branch_file_diff(&repo.root, "--output=x", Path::new("feature.txt")).is_err());
+        assert!(crate::git_review::load_branch_file_diff(&repo.root, &comparison.base, Path::new("../feature.txt")).is_err());
         assert!(compare(&repo.root, &snapshot, "--output=/tmp/invalid").is_err());
     }
 
