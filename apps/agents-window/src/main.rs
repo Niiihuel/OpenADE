@@ -85,6 +85,7 @@ mod github_account_ui;
 mod github_contributions;
 mod browser_sites;
 mod commit_message;
+mod mcp_import;
 mod github_worker;
 mod home;
 mod ide_workspace;

@@ -19480,6 +19480,30 @@ impl AgentsWindow {
                     self.save_command_hook_draft();
                 }
             }
+            UiAction::Clicked { id } if id == "mcp_import" => {
+                let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
+                let found = crate::mcp_import::discover(&home, Path::new(&self.view.workspace), &self.view.mcp_servers);
+                let room = crate::mcp_settings::MAX_SERVERS.saturating_sub(self.view.mcp_servers.len());
+                let count = found.servers.len().min(room);
+                if count == 0 {
+                    self.set_settings_notice(
+                        if found.servers.is_empty() {
+                            "Codex y Claude Code no tienen servidores MCP que no estén ya en esta lista"
+                        } else {
+                            "La lista de servidores MCP está completa: eliminá alguno antes de importar"
+                        },
+                        found.servers.is_empty() == false,
+                    );
+                } else {
+                    let mut servers = self.view.mcp_servers.clone();
+                    servers.extend(found.servers.into_iter().take(count));
+                    let left_out = if found.skipped > 0 { format!(" {} no se pudieron usar.", found.skipped) } else { String::new() };
+                    self.commit_mcp_settings(
+                        servers,
+                        &format!("Se importaron {count} servidores MCP, deshabilitados para que los revises.{left_out}"),
+                    );
+                }
+            }
             UiAction::Clicked { id } if id == "mcp_new" => {
                 self.clear_mcp_draft();
                 self.clear_settings_notice();

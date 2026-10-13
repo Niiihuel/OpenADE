@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 const SETTINGS_FILE: &str = "mcp-servers.json";
 const VERSION: u32 = 1;
 const MAX_SETTINGS_BYTES: u64 = 64 * 1024;
-const MAX_SERVERS: usize = 16;
+pub(crate) const MAX_SERVERS: usize = 16;
 const MAX_ARGS: usize = 32;
 const MAX_ARG_BYTES: usize = 2048;
 const MAX_ARGS_TOTAL_BYTES: usize = 16 * 1024;
