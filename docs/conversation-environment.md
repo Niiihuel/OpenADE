@@ -35,6 +35,10 @@ fila de un bloque abierto lo cierra, igual que Escape con las acciones.
 Entre las acciones y las fuentes, la tarjeta lista lo que la conversación
 tiene en marcha, y sólo mientras hay algo que listar:
 
+- **Progreso**: los pasos del plan de esta conversación. La fila cerrada dice
+  cuántos están hechos («1 de 3»); abierta, lista cada paso con su marca:
+  hecho, en curso o pendiente. Es el mismo plan que la tarjeta de la
+  conversación, sin su explicación.
 - **Subagentes**: los que inició esta conversación, cada uno con su tarea y
   su estado (Pendiente, En ejecución, En pausa, Interrumpido, Completado,
   Fallido, Cancelado). La fila abre su conversación. Mientras quede alguno que

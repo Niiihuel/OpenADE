@@ -282,6 +282,10 @@ impl AgentsWindow {
                         self.view.environment.details_expanded =
                             !self.view.environment.details_expanded
                     }
+                    "environment_progress_toggle" => {
+                        self.view.environment.progress_expanded =
+                            !self.view.environment.progress_expanded
+                    }
                     "environment_subagents_toggle" => {
                         self.view.environment.subagents_expanded =
                             !self.view.environment.subagents_expanded

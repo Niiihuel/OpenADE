@@ -47,6 +47,7 @@ pub(crate) struct EnvironmentUiState {
     pub project_query: String,
     pub changes: SessionChangesSummaryView,
     pub details_expanded: bool,
+    pub progress_expanded: bool,
     pub subagents_expanded: bool,
     pub terminals_expanded: bool,
     pub workflow: crate::environment_git_ui::EnvironmentGitUiState,
@@ -143,13 +144,15 @@ pub(crate) fn layout(
     {
         620.0
     } else if state.environment.details_expanded
+        || state.environment.progress_expanded
         || state.environment.subagents_expanded
         || state.environment.terminals_expanded
     {
         580.0
     } else {
         // One more row fits under the closed card; each one after it adds its own.
-        let running = usize::from(subagents(state).next().is_some())
+        let running = usize::from(plan(state).is_some())
+            + usize::from(subagents(state).next().is_some())
             + usize::from(!state.terminal_controls.agents.is_empty())
             + usize::from(preview(state).is_some());
         344.0 + running.saturating_sub(1) as f32 * (FramedCard::ROW_HEIGHT + FramedCard::ROW_GAP)
@@ -1004,6 +1007,28 @@ fn tallied(title: &str, going: usize, total: usize) -> Element {
     .gap(8.0)
 }
 
+/// The plan the selected conversation is following, if it has one.
+fn plan(state: &ViewState) -> Option<&openide_core::PlanSnapshot> {
+    let plan = state.session_plans.get(state.selected_session.as_ref()?)?;
+    (!plan.snapshot.plan.is_empty()).then_some(&plan.snapshot)
+}
+
+/// What "Progreso" lists: the steps of the plan, each with how it stands.
+fn progress_rows(plan: &openide_core::PlanSnapshot) -> Vec<Element> {
+    plan.plan
+        .iter()
+        .map(|step| {
+            let going = step.status == openide_core::PlanStepStatus::InProgress;
+            Element::row(vec![
+                crate::session_surface::plan_step_marker(step.status).centered_y(),
+                label(&step.step, if going { theme::FOREGROUND } else { theme::FOREGROUND_SUBTLE }).flex(1.0),
+            ])
+            .gap(8.0)
+            .min_size(0.0, 24.0)
+        })
+        .collect()
+}
+
 /// What "Subagentes" lists: each one's task and state, which opens its
 /// conversation, and the way to stop those still going.
 fn subagent_rows(state: &ViewState, width: f32) -> Vec<Element> {
@@ -1270,6 +1295,32 @@ fn card(state: &ViewState, width: f32, height: f32) -> Element {
     );
     // What the conversation has going is listed only while there is any.
     let mut running = Vec::new();
+    if let Some(plan) = plan(state) {
+        let open = state.environment.progress_expanded;
+        let done = plan
+            .plan
+            .iter()
+            .filter(|step| step.status == openide_core::PlanStepStatus::Completed)
+            .count();
+        running.push(FramedCard::block(
+            "environment_progress",
+            card_row(
+                "environment_progress_toggle",
+                Icon::Plan,
+                Element::row(vec![
+                    label("Progreso", theme::FOREGROUND).flex(1.0),
+                    theme::text_px(format!("{done} de {}", plan.plan.len()), 10.5, theme::FOREGROUND_SUBTLE)
+                        .centered_y(),
+                ])
+                .gap(8.0),
+                chevron(open),
+                "Pasos del plan de esta conversación",
+                Some("environment_progress_toggle"),
+            ),
+            open.then(|| listed(progress_rows(plan))),
+            palette,
+        ));
+    }
     let (going, total) = subagents(state).fold((0, 0), |(going, total), (_, stoppable)| {
         (going + usize::from(stoppable), total + 1)
     });
@@ -2224,6 +2275,47 @@ pub(crate) mod tests {
         assert_eq!(height(&frame), list);
         assert!(has(&frame, "project_action_run:check") && !has(&frame, "project_action_label"));
         assert!(!tree.is_animating());
+    }
+
+    #[test]
+    fn the_plan_of_the_conversation_shows_its_steps_as_progress() {
+        use openide_core::{PlanSnapshot, PlanStep, PlanStepStatus};
+        let mut state = crate::view::tests::empty_state();
+        repository(&mut state);
+        assert!(button(&frame(&state, 380.0, 1100.0), "environment_progress_toggle").is_none());
+
+        let step = |step: &str, status| PlanStep { step: step.into(), status };
+        let plan = crate::view::SessionPlanView {
+            snapshot: PlanSnapshot {
+                explanation: None,
+                plan: vec![
+                    step("Leer el módulo", PlanStepStatus::Completed),
+                    step("Escribir la prueba", PlanStepStatus::InProgress),
+                    step("Publicar", PlanStepStatus::Pending),
+                ],
+            },
+            can_build: false,
+        };
+        state.selected_session = Some("session".into());
+        state.session_plans.insert("session".into(), plan.clone());
+        // Another conversation's plan is not this one's.
+        state.session_plans.insert("other".into(), crate::view::SessionPlanView {
+            snapshot: PlanSnapshot { explanation: None, plan: vec![step("De otra conversación", PlanStepStatus::Pending)] },
+            can_build: false,
+        });
+        let closed = frame(&state, 380.0, 1100.0);
+        assert!(button(&closed, "environment_progress_toggle").is_some());
+        let said = texts(&closed);
+        assert!(said.contains(&"Progreso") && said.contains(&"1 de 3"), "{said:?}");
+        assert!(!said.contains(&"Escribir la prueba"));
+
+        state.environment.progress_expanded = true;
+        let open = frame(&state, 380.0, 1100.0);
+        let said = texts(&open);
+        for text in ["Leer el módulo", "Escribir la prueba", "Publicar"] {
+            assert!(said.contains(&text), "{text}: {said:?}");
+        }
+        assert!(!said.contains(&"De otra conversación"));
     }
 
     #[test]
