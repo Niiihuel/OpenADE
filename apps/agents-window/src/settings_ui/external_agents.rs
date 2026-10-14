@@ -72,6 +72,7 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
                 })
                 .collect(),
         ),
+        own_profiles(state, compact),
         settings_parts::settings_group(
             "Herramientas ofrecidas",
             vec![
@@ -134,6 +135,147 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
             ],
         ),
     ]
+}
+
+/// The CLI profiles of the user's file. The built-in ones have no row here:
+/// they are not the user's to change.
+fn own_profiles(state: &ViewState, compact: bool) -> Element {
+    let mut rows = state
+        .cli_profiles
+        .iter()
+        .map(|profile| {
+            settings_parts::settings_row(
+                profile.label.clone(),
+                format!("{} · {}", profile.id, profile.executable.display()),
+                ButtonGroup::new(vec![
+                    outline(format!("cli_profile_edit:{}", profile.id), "Editar").render(),
+                    outline(format!("cli_profile_delete:{}", profile.id), "Quitar").render(),
+                ])
+                .sizing(crate::ui_sizing::ENTITY_ACTIONS)
+                .stacked(compact)
+                .render(),
+                compact,
+            )
+        })
+        .collect::<Vec<_>>();
+    rows.push(settings_parts::settings_row(
+        "Otra CLI",
+        "Un ejecutable que recibe el pedido por la entrada estándar o como argumento y responde por la salida. Se elige como motor de una automatización; no aparece en el menú de perfiles de la terminal.",
+        outline("cli_profile_new", "Agregar perfil").icon(Icon::Add).render(),
+        compact,
+    ));
+    settings_parts::settings_group("Perfiles propios", rows)
+}
+
+/// The form of one of the user's own CLI profiles, above the full window.
+pub(super) fn editor_modal(state: &ViewState, base: Element, viewport_width: f32) -> Element {
+    use openide_cli::PromptTransport;
+    let Some(draft) = state
+        .cli_profile_draft
+        .as_ref()
+        .filter(|_| state.shows(super::SettingsPage::ExternalAgents))
+    else {
+        return base;
+    };
+    let width = Modal::fit_width(viewport_width, 560.0);
+    let body_width = crate::ui_sizing::form_width(width).max(0.0);
+    let editing = draft.editing.is_some();
+    let mut fields = Vec::new();
+    if state.settings_notice_error {
+        if let Some(error) = &state.settings_notice {
+            fields.push(settings_parts::feedback_banner(error, FeedbackTone::Error, None, width < 420.0));
+        }
+    }
+    let input = |id: &str, value: &str, placeholder: &str| {
+        super::mono_field(id, value, placeholder).width(body_width).height(40.0)
+    };
+    let area = |id: &str, value: &str, placeholder: &str, height: f32| {
+        TextArea::new(id, value, placeholder, control_palette())
+            .width(body_width)
+            .height(height)
+            .render()
+    };
+    fields.extend(
+        [
+            super::form_field(
+                "ID del perfil",
+                input("cli_profile_draft_id", &draft.id, "ej. mi-cli").enabled(!editing).render(),
+            )
+            .hint("Minúsculas, números, guiones y guiones bajos. No se puede cambiar después.")
+            .rows(),
+            super::form_field(
+                "Nombre",
+                input("cli_profile_draft_label", &draft.label, "Mi CLI").render(),
+            )
+            .rows(),
+            super::form_field(
+                "Ejecutable",
+                input("cli_profile_draft_executable", &draft.executable, "ej. mi-cli").render(),
+            )
+            .hint("Nombre del ejecutable o ruta absoluta. Se inicia sin shell.")
+            .rows(),
+            super::form_field(
+                "Argumentos (JSON)",
+                area("cli_profile_draft_args", &draft.args, "[\"--print\"]", 96.0),
+            )
+            .hint("Lista JSON de textos; cada elemento es un argumento literal. Si el pedido va como argumento, exactamente uno debe contener {prompt}.")
+            .rows(),
+            super::form_field(
+                "Variables de entorno",
+                area("cli_profile_draft_env", &draft.env, "LOG_LEVEL=debug", 76.0),
+            )
+            .hint("Una por línea, como NOMBRE=valor. El valor se guarda sin cifrar en cli-profiles.json, en la carpeta de datos.")
+            .rows(),
+            super::form_field(
+                "Cómo recibe el pedido",
+                ButtonGroup::new(
+                    [
+                        (PromptTransport::Stdin, "stdin", "Entrada estándar"),
+                        (PromptTransport::Argument, "argument", "Argumento"),
+                    ]
+                    .into_iter()
+                    .map(|(transport, id, label)| {
+                        outline(format!("cli_profile_transport:{id}"), label)
+                            .active(draft.prompt_transport == transport)
+                            .render()
+                    })
+                    .collect(),
+                )
+                .stacked(width < 420.0)
+                .render(),
+            )
+            .rows(),
+        ]
+        .into_iter()
+        .flatten(),
+    );
+    let cancel = outline("cli_profile_cancel", "Cancelar").render();
+    let save = theme::primary(
+        "cli_profile_save",
+        if editing { "Guardar cambios" } else { "Agregar perfil" },
+    )
+    .size(ControlSize::Compact)
+    .render();
+    Modal::new(
+        base,
+        true,
+        if editing { "Editar perfil" } else { "Nuevo perfil" },
+        "Define una CLI que openADE inicia sin terminal en cada ejecución.",
+        "cli_profile_cancel",
+        theme::component_palette(),
+    )
+    .width(width)
+    .height(600.0)
+    .body(Element::column(fields).gap(7.0).size(Some(body_width), None))
+    .footer(super::form_footer(cancel, save, width))
+    .initial_focus(if editing { "cli_profile_draft_label" } else { "cli_profile_draft_id" })
+    .return_focus(
+        draft
+            .editing
+            .as_ref()
+            .map_or_else(|| "cli_profile_new".to_owned(), |id| format!("cli_profile_edit:{id}")),
+    )
+    .render()
 }
 
 /// Which model `/review` runs on.

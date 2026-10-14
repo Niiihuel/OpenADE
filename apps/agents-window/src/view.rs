@@ -536,6 +536,11 @@ pub struct ViewState {
     /// The open provider form; `None` while it is closed.
     pub(crate) provider_draft: Option<ProviderDraft>,
     pub(crate) pending_provider_delete_id: Option<String>,
+    /// The CLI profiles of the user's file as written.
+    pub(crate) cli_profiles: Vec<openide_cli::CliProfile>,
+    /// The open CLI profile form; `None` while it is closed.
+    pub(crate) cli_profile_draft: Option<crate::cli_profile_settings::CliProfileDraft>,
+    pub(crate) pending_cli_profile_delete_id: Option<String>,
     pub backend_options: Vec<(String, String)>,
     pub selected_backend: String,
     pub backend_menu_open: bool,
@@ -3770,6 +3775,7 @@ fn dialogs(state: &ViewState, base: Element, viewport_width: f32) -> Element {
     let base = settings_ui::provider_connect_modal(state, base, viewport_width);
     let base = settings_ui::mcp_editor_modal(state, base, viewport_width);
     let base = settings_ui::provider_editor_modal(state, base, viewport_width);
+    let base = settings_ui::cli_profile_editor_modal(state, base, viewport_width);
     let base = settings_ui::hook_editor_modal(state, base, viewport_width);
     let base = settings_ui::exec_rule_editor_modal(state, base, viewport_width);
     let base = settings_ui::exec_rule_reset_modal(state, base, viewport_width);
@@ -3949,6 +3955,24 @@ fn confirmation_dialog(state: &ViewState, base: Element, viewport_width: f32) ->
                 format!("provider_delete_confirm:{id}"),
                 "provider_delete_cancel".to_owned(),
                 "Quitar proveedor".to_owned(),
+                true,
+            )
+        })
+    } else if let Some(id) = state.pending_cli_profile_delete_id.as_deref() {
+        state.cli_profiles.iter().find(|profile| profile.id == id).map(|profile| {
+            let mut description = "Se quitará de tu archivo de perfiles. Las automatizaciones que lo usan dejarán de ejecutarse.".to_owned();
+            if state.settings_notice_error {
+                if let Some(error) = &state.settings_notice {
+                    description.push_str("\n\n");
+                    description.push_str(error);
+                }
+            }
+            (
+                format!("¿Quitar el perfil «{}»?", profile.label),
+                description,
+                format!("cli_profile_delete_confirm:{id}"),
+                "cli_profile_delete_cancel".to_owned(),
+                "Quitar perfil".to_owned(),
                 true,
             )
         })
@@ -4237,6 +4261,9 @@ pub(crate) mod tests {
             user_providers: Vec::new(),
             provider_draft: None,
             pending_provider_delete_id: None,
+            cli_profiles: Vec::new(),
+            cli_profile_draft: None,
+            pending_cli_profile_delete_id: None,
             backend_options: vec![("native".into(), "Nativo".into())],
             selected_backend: "native".into(),
             backend_menu_open: false,

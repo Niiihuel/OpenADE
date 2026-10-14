@@ -169,6 +169,12 @@ impl CliProfile {
         Ok(self)
     }
 
+    /// Whether a run could build this profile's command line: the prompt
+    /// slot its transport needs, and model options only where verified.
+    pub fn validate(&self) -> Result<(), String> {
+        render_args(self, "").map(|_| ())
+    }
+
     /// Resolve an installed executable from an absolute/relative path or PATH.
     pub fn detect_executable(&self) -> Option<PathBuf> {
         detect_executable(&self.executable)
@@ -1031,7 +1037,15 @@ mod tests {
         let custom =
             CliProfile::preset("custom", "Custom", "custom", &["-"], PromptTransport::Stdin);
         assert!(custom.clone().with_model("gpt-6-sol").is_err());
-        assert!(custom.with_reasoning_effort("high").is_err());
+        assert!(custom.clone().with_reasoning_effort("high").is_err());
+
+        assert!(custom.validate().is_ok());
+        let mut argument = custom.clone();
+        argument.prompt_transport = PromptTransport::Argument;
+        assert!(argument.validate().unwrap_err().contains("exactly one"));
+        let mut modelled = custom;
+        modelled.model = Some("gpt-6-sol".into());
+        assert!(modelled.validate().is_err());
     }
 
     #[test]

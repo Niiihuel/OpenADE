@@ -2739,20 +2739,26 @@ fn sort_session_views(
     });
 }
 
-fn load_profiles(root: &Path) -> Vec<CliProfile> {
+/// The built-in profiles with the user's `own` over them.
+fn merged_profiles(own: Vec<CliProfile>) -> Vec<CliProfile> {
     let mut profiles = CliProfile::builtins();
-    if let Ok(data) = std::fs::read_to_string(root.join("cli-profiles.json")) {
-        if let Ok(custom) = serde_json::from_str::<Vec<CliProfile>>(&data) {
-            for profile in custom {
-                if let Some(existing) = profiles.iter_mut().find(|entry| entry.id == profile.id) {
-                    *existing = profile;
-                } else {
-                    profiles.push(profile);
-                }
-            }
+    for profile in own {
+        if let Some(existing) = profiles.iter_mut().find(|entry| entry.id == profile.id) {
+            *existing = profile;
+        } else {
+            profiles.push(profile);
         }
     }
     profiles
+}
+
+/// Old CLI sessions remain readable. Every new conversation uses our
+/// harness, independently of installed executables or old preferences; a
+/// profile the user declared is an engine a scheduled task can choose.
+fn backend_options(own: &[CliProfile]) -> Vec<(String, String)> {
+    std::iter::once(("native".to_owned(), "Nativo".to_owned()))
+        .chain(own.iter().map(|profile| (profile.id.clone(), profile.label.clone())))
+        .collect()
 }
 
 fn flush_tool_batch(
@@ -6776,10 +6782,9 @@ impl AgentsWindow {
             Ok(goals) => (goals, None),
             Err(error) => (HashMap::new(), Some(error)),
         };
-        let profiles = load_profiles(&root);
-        // Old CLI sessions remain readable. Every new conversation uses our
-        // harness, independently of installed executables or old preferences.
-        let backend_options = vec![("native".to_owned(), "Nativo".to_owned())];
+        let cli_profiles = crate::cli_profile_settings::user_profiles(&root).unwrap_or_default();
+        let profiles = merged_profiles(cli_profiles.clone());
+        let backend_options = backend_options(&cli_profiles);
         let selected_backend = "native".to_owned();
         let native_model = if root.join("native-provider.json").exists() {
             native_settings.model_id.clone()
@@ -6903,6 +6908,9 @@ impl AgentsWindow {
             user_providers,
             provider_draft: None,
             pending_provider_delete_id: None,
+            cli_profiles,
+            cli_profile_draft: None,
+            pending_cli_profile_delete_id: None,
             backend_options: backend_options.clone(),
             selected_backend,
             backend_menu_open: false,
@@ -11337,6 +11345,78 @@ impl AgentsWindow {
         );
         if saved {
             self.view.provider_draft = None;
+        }
+    }
+
+    /// Write the user's CLI profiles after `change` and list them again
+    /// wherever a profile is chosen or started.
+    fn commit_cli_profiles(
+        &mut self,
+        change: impl FnOnce(&mut Vec<CliProfile>) -> Result<(), String>,
+        saved: &str,
+    ) -> bool {
+        use crate::cli_profile_settings::{save_user_profiles, user_profiles};
+        // A run holds the profile it started with; which one is not kept, so
+        // any CLI run in course blocks the change.
+        if matches!(self.active_run, Some(ActiveRun::Cli(_)))
+            || self
+                .background_automation_runs
+                .iter()
+                .any(|run| matches!(run.run, ActiveRun::Cli(_)))
+        {
+            self.set_settings_notice(
+                "Hay una ejecución de una CLI en curso. Esperá a que termine para cambiar los perfiles.",
+                true,
+            );
+            return false;
+        }
+        let result = user_profiles(&self.data_root).and_then(|mut profiles| {
+            change(&mut profiles)?;
+            save_user_profiles(&self.data_root, &profiles)?;
+            Ok(profiles)
+        });
+        match result {
+            Ok(profiles) => {
+                self.profiles = merged_profiles(profiles.clone());
+                self.view.backend_options = backend_options(&profiles);
+                self.view.cli_profiles = profiles;
+                self.refresh_automation_view();
+                self.set_settings_notice(saved, false);
+                true
+            }
+            Err(error) => {
+                self.set_settings_notice(error, true);
+                false
+            }
+        }
+    }
+
+    fn save_cli_profile_draft(&mut self) {
+        let Some(draft) = self.view.cli_profile_draft.clone() else {
+            return;
+        };
+        // A new ID that a built-in profile has would replace it unseen.
+        let taken = draft.editing.is_none()
+            && self.profiles.iter().any(|profile| profile.id == draft.id.trim());
+        let saved = self.commit_cli_profiles(
+            |profiles| {
+                if taken {
+                    return Err(format!("Ya existe un perfil con el ID {}", draft.id.trim()));
+                }
+                let slot = draft
+                    .editing
+                    .as_ref()
+                    .and_then(|id| profiles.iter_mut().find(|profile| &profile.id == id));
+                match slot {
+                    Some(slot) => *slot = draft.profile(Some(slot))?,
+                    None => profiles.push(draft.profile(None)?),
+                }
+                Ok(())
+            },
+            "Perfil guardado",
+        );
+        if saved {
+            self.view.cli_profile_draft = None;
         }
     }
 
@@ -19817,6 +19897,10 @@ impl AgentsWindow {
                         self.view.provider_draft = None;
                         self.view.pending_provider_delete_id = None;
                     }
+                    if page != SettingsPage::ExternalAgents {
+                        self.view.cli_profile_draft = None;
+                        self.view.pending_cli_profile_delete_id = None;
+                    }
                     if page != SettingsPage::Hooks {
                         self.view.native_hooks.clear_draft();
                     } else {
@@ -20526,6 +20610,62 @@ impl AgentsWindow {
                             provider.into(),
                         ));
                     self.set_settings_notice("Desconectando proveedor…", false);
+                }
+            }
+            UiAction::Clicked { id } if id == "cli_profile_new" => {
+                self.clear_settings_notice();
+                self.view.cli_profile_draft =
+                    Some(crate::cli_profile_settings::CliProfileDraft::new());
+            }
+            UiAction::Clicked { id } if id.starts_with("cli_profile_edit:") => {
+                let target = id.trim_start_matches("cli_profile_edit:");
+                if let Some(saved) = self.view.cli_profiles.iter().find(|p| p.id == target) {
+                    self.view.cli_profile_draft =
+                        Some(crate::cli_profile_settings::CliProfileDraft::edit(saved));
+                    self.clear_settings_notice();
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("cli_profile_transport:") => {
+                if let Some(draft) = &mut self.view.cli_profile_draft {
+                    draft.prompt_transport = if id.ends_with(":argument") {
+                        openide_cli::PromptTransport::Argument
+                    } else {
+                        openide_cli::PromptTransport::Stdin
+                    };
+                    self.clear_settings_notice();
+                }
+            }
+            UiAction::Clicked { id } if id == "cli_profile_cancel" => {
+                self.view.cli_profile_draft = None;
+                self.clear_settings_notice();
+            }
+            UiAction::Clicked { id } if id == "cli_profile_save" => {
+                self.save_cli_profile_draft();
+            }
+            UiAction::Clicked { id } if id.starts_with("cli_profile_delete:") => {
+                let target = id.trim_start_matches("cli_profile_delete:");
+                if self.view.cli_profile_draft.is_none()
+                    && self.view.cli_profiles.iter().any(|p| p.id == target)
+                {
+                    self.view.pending_cli_profile_delete_id = Some(target.to_owned());
+                    self.clear_settings_notice();
+                }
+            }
+            UiAction::Clicked { id } if id == "cli_profile_delete_cancel" => {
+                self.view.pending_cli_profile_delete_id = None;
+            }
+            UiAction::Clicked { id } if id.starts_with("cli_profile_delete_confirm:") => {
+                let target = id.trim_start_matches("cli_profile_delete_confirm:");
+                if self.view.pending_cli_profile_delete_id.as_deref() == Some(target)
+                    && self.commit_cli_profiles(
+                        |profiles| {
+                            profiles.retain(|profile| profile.id != target);
+                            Ok(())
+                        },
+                        "Perfil quitado",
+                    )
+                {
+                    self.view.pending_cli_profile_delete_id = None;
                 }
             }
             UiAction::Clicked { id } if id == "provider_new" => {
@@ -21279,6 +21419,19 @@ impl AgentsWindow {
                             "provider_draft_name" => draft.name = value,
                             "provider_draft_endpoint" => draft.endpoint = value,
                             "provider_draft_key_env" => draft.key_env = value,
+                            _ => {}
+                        }
+                    }
+                }
+                "cli_profile_draft_id" | "cli_profile_draft_label" | "cli_profile_draft_executable"
+                | "cli_profile_draft_args" | "cli_profile_draft_env" => {
+                    if let Some(draft) = &mut self.view.cli_profile_draft {
+                        match id.as_str() {
+                            "cli_profile_draft_id" if draft.editing.is_none() => draft.id = value,
+                            "cli_profile_draft_label" => draft.label = value,
+                            "cli_profile_draft_executable" => draft.executable = value,
+                            "cli_profile_draft_args" => draft.args = value,
+                            "cli_profile_draft_env" => draft.env = value,
                             _ => {}
                         }
                     }
@@ -25537,6 +25690,154 @@ mod tests {
         assert!(!app.view.native_provider_definitions.contains_key("my-gateway"));
         assert!(app.view.composer_routes.iter().all(|r| r.provider_id != "my-gateway"));
         assert!(ProviderRegistry::user_providers(root.path()).unwrap().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn own_cli_profiles_are_added_edited_and_removed_from_settings_and_run_an_automation() {
+        use openide_cli::PromptTransport;
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        app.view.workspace = workspace.to_string_lossy().into_owned();
+        app.refresh_automation_view();
+        app.view.show_settings = true;
+        app.view.settings_page = SettingsPage::ExternalAgents;
+        let ctx = egui::Context::default();
+        let type_in = |app: &mut AgentsWindow, id: &str, value: &str| {
+            app.apply_action(UiAction::InputChanged { id: id.into(), value: value.into() }, &ctx);
+        };
+        let shows = |app: &AgentsWindow, id: &str| {
+            UiTree::new(crate::view::build_window_view(&app.view, 1200.0, 2400.0))
+                .layout(Size::new(1200.0, 2400.0))
+                .regions
+                .iter()
+                .any(|region| region.id == id)
+        };
+        let file = app.data_root.join("cli-profiles.json");
+        let saved = |app: &AgentsWindow| crate::cli_profile_settings::user_profiles(&app.data_root).unwrap();
+        let refusal = |app: &AgentsWindow| {
+            assert!(app.view.settings_notice_error && app.view.cli_profile_draft.is_some());
+            app.view.settings_notice.clone().unwrap()
+        };
+
+        assert!(shows(&app, "cli_profile_new"));
+        app.apply_action(clicked("cli_profile_new"), &ctx);
+        assert!(shows(&app, "cli_profile_draft_env"));
+        for (id, value) in [
+            ("cli_profile_draft_id", "codex"),
+            ("cli_profile_draft_label", "My CLI"),
+            ("cli_profile_draft_executable", "sh"),
+            ("cli_profile_draft_args", r#"["-c", "cat; printf %s \"$GREETING\""]"#),
+            ("cli_profile_draft_env", "GREETING"),
+        ] {
+            type_in(&mut app, id, value);
+        }
+        // A built-in profile is not replaced from the form, and each refusal
+        // reaches the form with nothing written.
+        app.apply_action(clicked("cli_profile_save"), &ctx);
+        assert_eq!(refusal(&app), "Ya existe un perfil con el ID codex");
+        type_in(&mut app, "cli_profile_draft_id", "my-cli");
+        app.apply_action(clicked("cli_profile_save"), &ctx);
+        assert_eq!(refusal(&app), "Cada variable de entorno va como NOMBRE=valor");
+        type_in(&mut app, "cli_profile_draft_env", "GREETING= mundo");
+        app.apply_action(clicked("cli_profile_transport:argument"), &ctx);
+        app.apply_action(clicked("cli_profile_save"), &ctx);
+        assert_eq!(refusal(&app), "Argument profiles need exactly one {prompt} token");
+        assert!(!file.exists());
+        app.apply_action(clicked("cli_profile_transport:stdin"), &ctx);
+        app.apply_action(clicked("cli_profile_save"), &ctx);
+        assert!(app.view.cli_profile_draft.is_none(), "{:?}", app.view.settings_notice);
+        assert!(shows(&app, "cli_profile_edit:my-cli") && !shows(&app, "cli_profile_edit:codex"));
+        let mut expected = CliProfile::preset(
+            "my-cli",
+            "My CLI",
+            "sh",
+            &["-c", "cat; printf %s \"$GREETING\""],
+            PromptTransport::Stdin,
+        );
+        expected.env.insert("GREETING".into(), " mundo".into());
+        assert_eq!(saved(&app), [expected.clone()]);
+
+        // The new profile is an engine a scheduled task can choose at once.
+        app.view.show_settings = false;
+        app.apply_action(clicked("open_automations"), &ctx);
+        app.apply_action(clicked("automation_new"), &ctx);
+        type_in(&mut app, "automation_title", "Saludo");
+        type_in(&mut app, "automation_prompt", "hola");
+        app.apply_action(clicked("automation_next"), &ctx);
+        app.apply_action(clicked("automation_next"), &ctx);
+        assert!(shows(&app, "automation_backend:my-cli"));
+        app.apply_action(clicked("automation_backend:my-cli"), &ctx);
+        app.apply_action(clicked("automation_save"), &ctx);
+        assert_eq!(app.view.automations.items[0].backend, "my-cli");
+
+        // And a run of it starts the executable with its arguments and
+        // environment. While it is in course the profiles cannot change.
+        let session = app
+            .dispatch_cli_automation(&AutomationDispatch {
+                run_id: "run".into(),
+                automation_id: app.view.automations.items[0].id.clone(),
+                workspace_path: workspace.clone(),
+                backend: "my-cli".into(),
+                native_provider: None,
+                prompt: "hola".into(),
+                title: "Saludo".into(),
+                scheduled_at: 0,
+                manual: true,
+            })
+            .unwrap();
+        assert_eq!(app.store.as_ref().unwrap().load(&session).unwrap().unwrap().session.backend, "my-cli");
+        app.view.main_page = MainPage::Workspace;
+        app.view.show_settings = true;
+        app.view.settings_page = SettingsPage::ExternalAgents;
+        app.apply_action(clicked("cli_profile_delete:my-cli"), &ctx);
+        assert!(shows(&app, "cli_profile_delete_confirm:my-cli"));
+        app.apply_action(clicked("cli_profile_delete_confirm:my-cli"), &ctx);
+        assert!(app.view.settings_notice_error);
+        assert_eq!(saved(&app).len(), 1);
+        app.apply_action(clicked("cli_profile_delete_cancel"), &ctx);
+        let (mut output, mut completed) = (String::new(), false);
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            let (events, disconnected) = app.background_automation_runs[0].run.drain();
+            for event in events {
+                match event.kind {
+                    AgentEventKind::ProcessOutput { stream: openide_core::OutputStream::Stdout, text } => output.push_str(&text),
+                    AgentEventKind::TurnCompleted { .. } => completed = true,
+                    _ => {}
+                }
+            }
+            if disconnected {
+                break;
+            }
+            assert!(Instant::now() < deadline, "the profile's run did not end");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(completed && output == "hola mundo", "{output:?}");
+        app.background_automation_runs.clear();
+
+        // An edit keeps the ID; removing asks first.
+        app.apply_action(clicked("cli_profile_edit:codex"), &ctx);
+        assert!(app.view.cli_profile_draft.is_none());
+        app.apply_action(clicked("cli_profile_edit:my-cli"), &ctx);
+        type_in(&mut app, "cli_profile_draft_id", "renamed");
+        type_in(&mut app, "cli_profile_draft_label", "Renamed CLI");
+        app.apply_action(clicked("cli_profile_save"), &ctx);
+        expected.label = "Renamed CLI".into();
+        assert_eq!(saved(&app), [expected]);
+        assert!(app.view.automations.backends.contains(&("my-cli".into(), "Renamed CLI".into())));
+
+        app.apply_action(clicked("cli_profile_delete_confirm:my-cli"), &ctx);
+        assert_eq!(app.view.cli_profiles.len(), 1);
+        app.apply_action(clicked("cli_profile_delete:my-cli"), &ctx);
+        app.apply_action(clicked("cli_profile_delete_confirm:my-cli"), &ctx);
+        assert!(app.view.pending_cli_profile_delete_id.is_none());
+        assert!(!shows(&app, "cli_profile_edit:my-cli"));
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "[]");
+        assert_eq!(app.view.automations.backends, [("native".to_owned(), "Nativo".to_owned())]);
+        assert!(app.profiles.iter().all(|profile| profile.id != "my-cli"));
     }
 
     #[test]

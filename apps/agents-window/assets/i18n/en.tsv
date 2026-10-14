@@ -221,6 +221,7 @@ Agregar carpeta local	Add local folder
 Agregar el modelo seleccionado	Add the selected model
 Agregar hook	Add hook
 Agregar origen	Add source
+Agregar perfil	Add profile
 Agregar permiso para un sitio	Add permission for a site
 Agregar proveedor	Add provider
 Agregar regla	Add rule
@@ -324,6 +325,7 @@ Archivos para la página	Files for the page
 Archivos preparados	Files prepared
 Archivos y carpetas	Files and folders
 Archivos: {error}	Files: {error}
+Argumento	Argument
 Argumento MCP no válido para {id}	Invalid MCP argument for {id}
 Argumentos (JSON)	Arguments (JSON)
 Argumentos MCP no válidos: {error}	Invalid MCP arguments: {error}
@@ -502,6 +504,7 @@ Cada pestaña es una tarea. Con + empiezas otra, y el botón de lista las muestr
 Cada regla incluye el ejecutable y sus argumentos. Puedes declarar alternativas por argumento. Si varias coinciden, se aplica la más restrictiva.	Each rule includes the executable and its arguments. You can declare alternatives per argument. If several match, the most restrictive applies.
 Cada sesión recibe un acceso propio que deja de valer al cerrarla. Una CLI abierta por fuera de openADE no puede conectarse.	Each session gets its own access that stops being valid when it closes. A CLI opened outside openADE cannot connect.
 Cada tarea es una conversación con un agente sobre tu proyecto. Puedes tener varias a la vez.	Each task is a conversation with an agent about your project. You can have several at once.
+Cada variable de entorno va como NOMBRE=valor	Each environment variable goes as NAME=value
 Cada {day} a las {}	Every {day} at {}
 Cada {} a las {hour:02}:{minute:02}	Every {} at {hour:02}:{minute:02}
 Caducó la consulta a Codex app-server	The Codex app-server query timed out
@@ -1084,6 +1087,7 @@ CÓDIGO	CODE
 Código	Code
 Código y vista previa	Code and preview
 Cómo funciona	How it works
+Cómo recibe el pedido	How it takes the request
 Cómo se aplican	How they apply
 Cómo se cuentan las contribuciones	How contributions are counted
 Cómo se muestra y se escribe el código.	How code is shown and written.
@@ -1144,6 +1148,7 @@ DeepSeek devolvió una moneda de saldo no compatible.	DeepSeek returned an unsup
 DeepSeek no devolvió un saldo válido.	DeepSeek did not return a valid balance.
 Define la tarea	Define the task
 Define un servicio de modelos para el agente nativo.	Define a model service for the native agent.
+Define una CLI que openADE inicia sin terminal en cada ejecución.	Define a CLI that openADE starts without a terminal on every run.
 Define {} para ejecutar la automatización nativa	Set {} to run the native automation
 Definiciones	Definitions
 Definir	Set
@@ -1351,6 +1356,7 @@ Editar dirección	Edit address
 Editar entrada	Edit input
 Editar entrada pendiente	Edit pending input
 Editar hook	Edit hook
+Editar perfil	Edit profile
 Editar proveedor	Edit provider
 Editar regla	Edit rule
 Editar reglas	Edit rules
@@ -1386,6 +1392,7 @@ Ejecutar comandos	Run commands
 Ejecutar en una terminal nueva\n{}	Run in a new terminal\n{}
 Ejecutar proyecto	Run project
 Ejemplo: ["git",["push","reset"]]. El primer token es el ejecutable; los siguientes son argumentos exactos.	Example: ["git",["push","reset"]]. The first token is the executable; the following ones are exact arguments.
+El ID admite hasta 64 minúsculas, números, guiones y guiones bajos, y no puede ser native	The ID takes up to 64 lowercase letters, numbers, hyphens and underscores, and cannot be native
 El ID del plugin debe empezar con a-z y usar hasta 24 letras minúsculas, números, - o _.	The plugin ID must start with a-z and use up to 24 lowercase letters, numbers, - or _.
 El ID puede haberse retirado al entregar el resultado final al agente. No se recupera el proceso al consultar o reabrir la aplicación.	The ID may have been retired when the final result was delivered to the agent. The process is not recovered when querying or reopening the app.
 El Markdown supera el límite de vista previa de 2 MiB.	The Markdown exceeds the 2 MiB preview limit.
@@ -1682,6 +1689,7 @@ El perfil de lectura original no prepara servidores MCP.	The original read-only 
 El perfil de petición del modelo no tiene identidad verificable	The model's request profile has no verifiable identity
 El perfil exacto del backend no coincide	The backend's exact profile does not match
 El perfil guardado no está disponible aquí. Los comandos quedan bloqueados hasta que elijas un perfil compatible; no se cambia automáticamente a Sin aislamiento.	The saved profile is not available here. Commands stay blocked until you choose a compatible profile; it does not switch to No isolation automatically.
+El perfil necesita nombre y ejecutable	The profile needs a name and an executable
 El perfil original de esta automatización no permite crear, activar, pausar ni reanudar objetivos desde esta conversación.	This automation's original profile does not allow creating, enabling, pausing or resuming goals from this conversation.
 El perfil original no incluye herramientas de subagentes.	The original profile does not include subagent tools.
 El permiso de ejecutar comandos está desactivado. No se envían controles.	The permission to run commands is turned off. No controls are sent.
@@ -1985,6 +1993,7 @@ Entrada en cache	Cached input
 Entrada en página	Page input
 Entrada enviada	Input sent
 Entrada enviada · stdin cerrado	Input sent · stdin closed
+Entrada estándar	Standard input
 Entrada limitada en esta vista · completa en Actividad	Input limited in this view · full in Activity
 Entrada máx.	Max input
 Entrada máxima	Maximum input
@@ -2447,6 +2456,7 @@ Hay un permiso pendiente de respuesta.	A permission is awaiting a response.
 Hay un permiso pendiente. Reanudar pedirá la decisión antes de ejecutar.	There is a pending permission. Resume will ask for the decision before running.
 Hay una decisión interrumpida y el archivo tiene cambios externos; conserva esos cambios antes de reabrir la revisión	There is an interrupted decision and the file has external changes; keep those changes before reopening the review
 Hay una edición posterior de este archivo. Revisa la más reciente.	There is a later edit of this file. Review the most recent one.
+Hay una ejecución de una CLI en curso. Esperá a que termine para cambiar los perfiles.	A CLI run is in progress. Wait for it to finish before changing the profiles.
 Hay una operación de Git en curso.	A Git operation is in progress.
 Hay una operación de comando pendiente.	A command operation is pending.
 Hay una operación pendiente que puede modificar este archivo.	There is a pending operation that may modify this file.
@@ -2510,6 +2520,7 @@ ID de proveedor nativo inválido	Invalid native provider ID
 ID de skill inválido en el registro	Invalid skill ID in the registry
 ID del chat inválido	Invalid chat ID
 ID del hook	Hook ID
+ID del perfil	Profile ID
 ID del proveedor	Provider ID
 ID del servidor	Server ID
 ID devuelto por list_conversations.	ID returned by list_conversations.
@@ -3123,6 +3134,7 @@ Limpiar terminal	Clear terminal
 Linux: Proyecto, sin red limita la escritura al proyecto y bloquea sockets de red. Requiere Bubblewrap y espacios de nombres de usuario habilitados; si no se pueden preparar, el comando se bloquea. Sin aislamiento usa los permisos de tu cuenta.	Linux: Project, no network limits writing to the project and blocks network sockets. Requires Bubblewrap and user namespaces enabled; if they cannot be set up, the command is blocked. No isolation uses your account's permissions.
 Linux: para usar Proyecto, sin red instalá Bubblewrap en una ruta ejecutable del sistema. No se detectó un ejecutable compatible. Sin aislamiento usa los permisos de tu cuenta.	Linux: to use Project, no network, install Bubblewrap in an executable system path. No compatible executable was detected. No isolation uses your account's permissions.
 Lista JSON de textos; cada elemento es un argumento literal. No escribas tokens, claves ni contraseñas aquí.	JSON list of strings; each element is a literal argument. Do not write tokens, keys or passwords here.
+Lista JSON de textos; cada elemento es un argumento literal. Si el pedido va como argumento, exactamente uno debe contener {prompt}.	JSON list of strings; each item is a literal argument. If the request goes as an argument, exactly one must contain {prompt}.
 Lista las conversaciones de openADE de este proyecto, de la más reciente a la más antigua.	Lists the openADE conversations in this project, from newest to oldest.
 Lista parcial	Partial list
 Lista parcial; abre una carpeta más específica	Partial list; open a more specific folder
@@ -3144,6 +3156,7 @@ Los archivos binarios no se pueden editar como texto.	Binary files cannot be edi
 Los argumentos de la vista previa exceden el límite de tamaño	The preview arguments exceed the size limit
 Los argumentos de navegador deben ser un objeto	Browser arguments must be an object
 Los argumentos deben ser un arreglo JSON de cadenas: {error}	The arguments must be a JSON array of strings: {error}
+Los argumentos deben ser una lista JSON de textos: {error}	The arguments must be a JSON list of strings: {error}
 Los argumentos preparados cambiaron	The prepared arguments changed
 Los argumentos sólo admiten ${plugin} o ${workspace} completos, opcionalmente seguidos de una ruta relativa.	Arguments only allow a complete ${plugin} or ${workspace}, optionally followed by a relative path.
 Los bloques no cubren exactamente las versiones registradas	The hunks do not exactly cover the recorded versions
@@ -3167,6 +3180,7 @@ Los límites y el saldo pertenecen a cada proveedor. El contexto de una conversa
 Los mensajes quitados ya no están disponibles.	The removed messages are no longer available.
 Los niveles que admite el modelo elegido. Más calidad tarda más y cuesta más.	The levels the chosen model supports. More quality takes longer and costs more.
 Los nuevos turnos nativos leen AGENTS.md o AGENTS.override.md y las skills activas del proyecto. Antes de consultar al modelo, se guarda una copia exacta de esas instrucciones adicionales; el motor compone también sus propias instrucciones de modo y herramientas.	New native turns read AGENTS.md or AGENTS.override.md and the project's active skills. Before querying the model, an exact copy of those additional instructions is saved; the engine also composes its own mode and tool instructions.
+Los perfiles de CLI no son válidos: {error}	The CLI profiles are not valid: {error}
 Los permisos cambiaron. Revisa de nuevo antes de permitir acceso completo.	Permissions changed. Review again before allowing full access.
 Los permisos cambiaron. Revisa los ajustes o deshaz este cambio antes del próximo mensaje.	Permissions changed. Review the settings or undo this change before the next message.
 Los permisos del agente no son válidos: {error}	The agent permissions are not valid: {error}
@@ -3247,6 +3261,7 @@ Metadatos MCP inspeccionados	MCP metadata inspected
 Metadatos de captura inválidos	Invalid capture metadata
 Metadatos del baseline demasiado grandes	Baseline metadata too large
 Metadatos del catálogo inicial inválidos	Invalid initial catalog metadata
+Mi CLI	My CLI
 Mi proveedor	My provider
 Mientras openADE esté abierto	While openADE is open
 Minúsculas, números, guiones y guiones bajos. El ID empieza con una letra.	Lowercase letters, numbers, hyphens and underscores. The ID starts with a letter.
@@ -3502,6 +3517,7 @@ No se pudieron guardar los ajustes de CLIs externas: {error}	Couldn't save the e
 No se pudieron guardar los ajustes de notificaciones: {error}	Could not save the notification settings: {error}
 No se pudieron guardar los grupos: {error}	Couldn't save the groups: {error}
 No se pudieron guardar los hooks de compatibilidad: {error}	Could not save the compatibility hooks: {error}
+No se pudieron guardar los perfiles de CLI: {error}	Couldn't save the CLI profiles: {error}
 No se pudieron guardar los permisos del agente: {error}	Couldn't save the agent permissions: {error}
 No se pudieron guardar los permisos por sitio: {error}	Could not save the per-site permissions: {error}
 No se pudieron guardar los permisos: {error}	Could not save the permissions: {error}
@@ -3516,6 +3532,7 @@ No se pudieron leer las skills: {error}	Couldn't read the skills: {error}
 No se pudieron leer los ajustes de CLIs externas: {error}	Couldn't read the external CLI settings: {error}
 No se pudieron leer los cambios: {error}	Couldn't read the changes: {error}
 No se pudieron leer los hooks de compatibilidad: {error}	Could not read the compatibility hooks: {error}
+No se pudieron leer los perfiles de CLI: {error}	Couldn't read the CLI profiles: {error}
 No se pudieron leer los permisos de sesión: {error}	Couldn't read the session permissions: {error}
 No se pudieron leer los permisos del agente: {error}	Couldn't read the agent permissions: {error}
 No se pudieron leer los permisos por sitio: {error}	Could not read the per-site permissions: {error}
@@ -3916,6 +3933,7 @@ Nuevo archivo en el IDE	New file in the IDE
 Nuevo archivo…	New file…
 Nuevo grupo	New group
 Nuevo hook	New hook
+Nuevo perfil	New profile
 Nuevo proveedor	New provider
 Nuevo servidor	New server
 Nuevo servidor MCP	New MCP server
@@ -3988,6 +4006,7 @@ Origen local agregado	Local source added
 Origen: acción explícita de una persona. Estas operaciones no fabrican eventos del modelo ni reanudan procesos al abrir el historial.	Origin: explicit action by a person. These operations do not fabricate model events or resume processes when the history is opened.
 Orígenes	Sources
 Oscuro	Dark
+Otra CLI	Another CLI
 Otra captura o guardado usa esta carpeta; reintentá guardar	Another capture or save is using this folder; retry saving
 Otra instancia está actualizando esta conexión	Another instance is updating this connection
 Otra respuesta	Another answer
@@ -4042,9 +4061,12 @@ Perfil de agente desconocido	Unknown agent profile
 Perfil de atajos guardado	Shortcut profile saved
 Perfil de la automatización	Automation profile
 Perfil de teclado	Keyboard profile
+Perfil guardado	Profile saved
 Perfil original: lectura local y actualización de plan; sin comandos, escritura, hooks, MCP ni subagentes.	Original profile: local read and plan updates; no commands, writes, hooks, MCP or subagents.
+Perfil quitado	Profile removed
 Perfil verificado · GitHub	Profile verified · GitHub
 Perfiles de terminal	Terminal profiles
+Perfiles propios	Own profiles
 Permiso cancelado	Permission canceled
 Permiso concedido	Permission granted
 Permiso concedido al subagente para esta llamada	Permission granted to the subagent for this call
@@ -4272,6 +4294,7 @@ Quitar división · conservar ambas sesiones	Remove split · keep both sessions
 Quitar el permiso propio de {}	Remove the own permission for {}
 Quitar filtro	Remove filter
 Quitar origen	Remove source
+Quitar perfil	Remove profile
 Quitar proveedor	Remove provider
 Quitar punto de interrupción	Remove breakpoint
 Quitar todo de preparados	Unstage all
@@ -4653,6 +4676,7 @@ Se propone eliminar {}	Proposing to delete {}
 Se quitan los mensajes posteriores a este.	Removes the messages after this one.
 Se quitará 1 punto de interrupción de este proyecto.	1 breakpoint will be removed from this project.
 Se quitará de la configuración de este proyecto. Podrás volver a agregarlo más adelante.	It will be removed from this project's settings. You can add it again later.
+Se quitará de tu archivo de perfiles. Las automatizaciones que lo usan dejarán de ejecutarse.	It will be removed from your profiles file. Automations that use it will stop running.
 Se quitará de tu registro de proveedores. La variable de entorno con su clave no se toca.	It will be removed from your provider registry. The environment variable with its key is left alone.
 Se quitará «{}» de este equipo y se desactivará en todos los proyectos. La carpeta original se conserva.	«{}» will be removed from this computer and disabled in all projects. The original folder is kept.
 Se quitarán las selecciones mostradas de este proyecto. Los SKILL.md y la selección de otros proyectos se conservan. Los turnos que ya tienen instrucciones guardadas conservan esa copia; puedes volver a revisar y seleccionar documentos para turnos nuevos.	The selections shown for this project will be removed. SKILL.md files and other projects' selections are kept. Turns that already have saved instructions keep that copy; you can review and select documents again for new turns.
@@ -5055,6 +5079,7 @@ Un archivo tiene cambios que el servidor todavía no conoce; sincronizalo y soli
 Un baseline desapareció durante el guardado	A baseline disappeared during the save
 Un bloque se descarta de un solo archivo	A hunk is discarded from a single file
 Un clic abre el archivo. Con clic derecho puedes crear, renombrar, copiar la ruta o mencionarlo al agente.	One click opens the file. Right-click to create, rename, copy the path, or mention it to the agent.
+Un ejecutable que recibe el pedido por la entrada estándar o como argumento y responde por la salida. Se elige como motor de una automatización; no aparece en el menú de perfiles de la terminal.	An executable that takes the request on standard input or as an argument and answers on its output. It is chosen as the engine of an automation; it does not appear in the terminal profiles menu.
 Un hook de fin de turno pidió seguir:\n{reason}	An end-of-turn hook asked to continue:\n{reason}
 Un hook rechazó este mensaje: {reason}	A hook rejected this message: {reason}
 Un máximo de entrada independiente no declara una ventana total. El presupuesto lo aplica sin sumarle la reserva de salida.	An independent input maximum does not declare a total window. The budget applies it without adding the output reserve.
@@ -5074,6 +5099,7 @@ Una carpeta de trabajo independiente para una nueva rama.	A separate working fol
 Una carpeta de worktree no puede representarse como texto	A worktree folder can't be represented as text
 Una carpeta no se puede pegar dentro de sí misma	A folder can't be pasted into itself
 Una cuenta para modelos de distintos proveedores	One account for models from different providers
+Una por línea, como NOMBRE=valor. El valor se guarda sin cifrar en cli-profiles.json, en la carpeta de datos.	One per line, as NAME=value. The value is saved unencrypted in cli-profiles.json, in the data folder.
 Una por línea. Un nombre solo (MCP_API_KEY) toma su valor del entorno al iniciar y no se guarda: usalo para credenciales. NOMBRE=valor se guarda tal cual en los ajustes.	One per line. A bare name (MCP_API_KEY) takes its value from the environment at startup and is not saved: use it for credentials. NAME=value is saved as is in the settings.
 Una página para tu proyecto	A page for your project
 Una skill recomendada de cada editor	One recommended skill from each publisher
@@ -5266,6 +5292,7 @@ Workspace inválido para el guardado del editor	Invalid workspace for the editor
 Workspace no Unicode	Workspace is not Unicode
 Workspace no válido para el marcador MCP externo	Invalid workspace for the external MCP marker
 Worktree creado en {}	Worktree created at {}
+Ya existe un perfil con el ID {}	A profile with the ID {} already exists
 Ya existe un pull request para esta rama	A pull request already exists for this branch
 Ya hay demasiadas copias con ese nombre	There are too many copies with that name
 Ya hay un mensaje en edición.	A message is already being edited.
@@ -5348,6 +5375,7 @@ edición	edit
 editó 1 archivo	edited 1 file
 editó {} archivos	edited {} files
 ej. filesystem	e.g. filesystem
+ej. mi-cli	e.g. my-cli
 ej. mi-proveedor	e.g. my-provider
 ej. npx	e.g. npx
 ej. revisar-escritura	e.g. revisar-escritura
@@ -5663,6 +5691,7 @@ ya no existe	it no longer exists
 ¿Enviar {count} archivos a la papelera?	Move {count} files to the trash?
 ¿Permitir todo?	Allow everything?
 ¿Quitar el origen «{}»?	Remove the source «{}»?
+¿Quitar el perfil «{}»?	Remove the profile «{}»?
 ¿Quitar el proveedor «{}»?	Remove the provider «{}»?
 ¿Quitar todos los puntos de interrupción?	Remove all breakpoints?
 ¿Qué hará esta tarea?	What will this task do?

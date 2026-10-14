@@ -229,7 +229,7 @@ impl SettingsPage {
             Self::Agent => "permisos permissions aprobación approval aislamiento isolation sandbox red network búsqueda web search imágenes images respaldo fallback límite limit chequeo check review revisión herramientas tools escritura write comandos",
             Self::Memory => "contexto context compactar compact instrucciones instructions agents.md objetivo goal meta",
             Self::Subagents => "subagente delegar delegate hijos children",
-            Self::ExternalAgents => "claude code codex cli puente bridge externo external",
+            Self::ExternalAgents => "claude code codex cli puente bridge externo external perfil propio own profile ejecutable executable argumentos arguments variables de entorno environment agregar add",
             Self::Plugins => "plugin extensión extension instalar install carpeta",
             Self::Mcp => "servidor server oauth stdio http herramientas tools importar import variables entorno env",
             Self::Skills => "skill habilidad marketplace skill.md",
@@ -1343,6 +1343,10 @@ pub(crate) fn catalog_model_usable(
 
 fn providers_page(state: &ViewState, compact: bool, content_width: f32) -> Vec<Element> {
     providers::page(state, compact, content_width)
+}
+
+pub fn cli_profile_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -> Element {
+    external_agents::editor_modal(state, base, viewport_width)
 }
 
 pub fn provider_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -> Element {
