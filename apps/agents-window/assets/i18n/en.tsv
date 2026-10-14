@@ -74,6 +74,7 @@ Abrir autorización	Open authorization
 Abrir búsqueda	Open search
 Abrir cambios	Open changes
 Abrir cambios del repositorio	Open repository changes
+Abrir carpeta	Open folder
 Abrir carpeta…	Open folder…
 Abrir configuración	Open Settings
 Abrir configuración de openADE	Open openADE Settings
@@ -238,6 +239,7 @@ Ajustando terminal	Adjusting terminal
 Ajustar al panel	Fit to panel
 Ajustar líneas al ancho	Wrap lines
 Ajustes de notificaciones guardados	Notification settings saved
+Al abrir un paréntesis, una llave o una comilla, se escribe también el cierre.	Typing an opening parenthesis, brace or quote also writes the closing one.
 Al activar un plugin, el agente nativo recibe el nombre y la descripción de cada skill y puede leer sus archivos cuando la tarea lo pida. No se ejecuta nada del plugin. Si el plugin se actualiza, hay que volver a activarlo.	When you enable a plugin, the native agent receives the name and description of each skill and can read its files when the task calls for it. Nothing from the plugin is executed. If the plugin is updated, you need to enable it again.
 Al activarla, openADE configura el comando de línea de estado de Claude Code para recibir sus límites de uso.	When enabled, openADE configures the Claude Code status line command to receive its usage limits.
 Al día con {upstream}.	Up to date with {upstream}.
@@ -246,6 +248,7 @@ Alcance de estos ajustes	Scope of these settings
 Alcance de la revisión	Review scope
 Alcance y seguridad	Scope and security
 Alejar	Zoom out
+Almacenamiento	Storage
 Alta	High
 Alternar breakpoint	Toggle breakpoint
 Alternar panel derecho	Toggle right panel
@@ -256,6 +259,7 @@ Amplía la ventana para ver el explorador de archivos	Enlarge the window to see 
 Analiza las imágenes adjuntas.	Analyze the attached images.
 Ancho de indentación: 2, 4 u 8	Indent width: 2, 4 or 8
 Ancho de tabulación	Tab width
+Ancho: {}	Width: {}
 Anterior	Previous
 Antes de herramienta	Before tool
 Antes de instalar	Before installing
@@ -606,6 +610,7 @@ Cargar más archivos	Load more files
 Cargar más archivos…	Load more files…
 Carpeta	Folder
 Carpeta de credenciales inválida	Invalid credentials folder
+Carpeta de datos	Data folder
 Carpeta de destino	Destination folder
 Carpeta de navegador: {error}	Browser folder: {error}
 Carpeta de trabajo	Working folder
@@ -653,6 +658,7 @@ Cerrar entorno del chat	Close chat environment
 Cerrar entrada (EOF). No se envían bytes ni se añade un salto de línea. El cierre impide enviar más entrada a este comando.	Close input (EOF). No bytes are sent and no line break is added. Closing prevents more input from being sent to this command.
 Cerrar la paleta	Close the palette
 Cerrar las demás pestañas	Close other tabs
+Cerrar pares automáticamente	Close pairs automatically
 Cerrar pestaña	Close tab
 Cerrar secciones	Close sections
 Cerrar terminal	Close terminal
@@ -679,6 +685,7 @@ Chequeo del proyecto guardado; corre tras cada turno que cambie algo	Project che
 Cierra una captura antes de abrir otra (máximo 16)	Close a snapshot before opening another (maximum 16)
 Cierre de pestaña	Tab close
 Cinco vistas del proyecto	Five views of the project
+Claro	Light
 Clasificación elegida: {} (pendiente de confirmar)	Chosen classification: {} (pending confirmation)
 Claude Code ya tiene una línea de estado configurada	Claude Code already has a status line configured
 Clave de API	API key
@@ -792,6 +799,7 @@ Con actualización	With update
 Con error	With error
 Con errores	With errors
 Con herramientas	With tools
+Con qué se sangra un archivo nuevo y cuánto ocupa cada nivel.	What a new file is indented with and how wide each level is.
 Con ventana total se compara el total; con máximo de entrada independiente, sólo la entrada. No predice la próxima petición ni atribuye tokens a archivos locales.	With a total window, the total is compared; with an independent input maximum, only the input. It does not predict the next request or attribute tokens to local files.
 Conecta este proveedor para consultar los modelos de tu cuenta.	Connect this provider to view your account's models.
 Conecta la clave de API de tu cuenta.	Connect your account's API key.
@@ -1074,8 +1082,10 @@ Cwd MCP no válido para {id}	Invalid MCP cwd for {id}
 CÓDIGO	CODE
 Código	Code
 Código y vista previa	Code and preview
+Cómo funciona	How it works
 Cómo se aplican	How they apply
 Cómo se cuentan las contribuciones	How contributions are counted
+Cómo se muestra y se escribe el código.	How code is shown and written.
 DIAGNÓSTICOS DEL PROCESO	PROCESS DIAGNOSTICS
 Dato no disponible	Data not available
 Dato no disponible: archivo no legible, enlazado, modificado o demasiado grande	Data not available: file unreadable, linked, modified or too large
@@ -1399,6 +1409,7 @@ El agente espera tu respuesta. Reanudar muestra la pregunta para que la conteste
 El agente está trabajando	The agent is working
 El agente inició este proceso. Se detendrá junto con los procesos que haya lanzado y su pestaña se cerrará. El agente lo verá como detenido.	The agent started this process. It will be stopped along with the processes it launched, and its tab will close. The agent will see it as stopped.
 El agente nativo controla la pestaña Navegador que tengas abierta en el panel de la tarea.	The native agent controls the Browser tab you have open in the task panel.
+El agente nativo maneja la pestaña Navegador de la tarea, que se abre sola con su primera acción y que vos también ves y usás.	The native agent drives the task's Browser tab, which opens by itself on its first action and which you see and use too.
 El agente nativo puede crear hijos y enviarles entradas. Cada hijo conserva su conversación, sus permisos y su recuperación. Plan no ofrece herramientas de delegación.	The native agent can create children and send them inputs. Each child keeps its own conversation, permissions and recovery. Plan offers no delegation tools.
 El agente podrá editar archivos y ejecutar comandos con los permisos de tu usuario sin pedir aprobación por cada operación. Root no está disponible: falta habilitar pkexec en el sistema. Las reglas de comandos guardadas siguen aplicándose.	The agent can edit files and run commands with your user's permissions without asking for approval on each operation. Root is not available: pkexec needs to be enabled on the system. Saved command rules still apply.
 El agente podrá editar archivos y ejecutar comandos en tu equipo sin pedir aprobación por cada operación. Las reglas de comandos guardadas siguen aplicándose.	The agent can edit files and run commands on your computer without asking for approval on each operation. Saved command rules still apply.
@@ -1517,6 +1528,7 @@ El control del goal cambió; reabrí el editor	The goal control changed; reopen 
 El corte ya no corresponde a la selección actual.	The slice no longer matches the current selection.
 El cursor cambió durante la entrega de recuperación	The cursor changed during recovery delivery
 El código es temporal y sólo se puede usar una vez.	The code is temporary and can only be used once.
+El de toda la interfaz, en las dos ventanas. Lo que todavía no tiene traducción se ve en español.	For the whole interface, in both windows. Anything not yet translated appears in Spanish.
 El despacho intenta reemplazar la sesión ya vinculada	The dispatch tries to replace the already linked session
 El destino cambió o contiene un enlace	The destination changed or contains a link
 El destino coincide con {count} elementos y debe identificar exactamente uno. Tomá una captura nueva con browser_snapshot y usá la referencia del elemento.	The target matches {count} elements and must identify exactly one. Take a new snapshot with browser_snapshot and use the element reference.
@@ -1526,6 +1538,7 @@ El diff no conserva todos los bytes necesarios para decidir por bloque	The diff 
 El diff pendiente está incompleto; no se puede decidir esta revisión parcial	The pending diff is incomplete; this partial review cannot be decided
 El directorio de trabajo no existe	The working directory does not exist
 El directorio de trabajo no existe.	The working directory does not exist.
+El diseño original de openADE.	openADE's original design.
 El dispatcher terminó sin resultado; revisá el journal	The dispatcher ended without a result; check the journal
 El documento Markdown no es texto UTF-8.	The Markdown document isn't UTF-8 text.
 El documento cambió, desapareció o el catálogo no está disponible.	The document changed, disappeared or the catalog is unavailable.
@@ -1634,6 +1647,7 @@ El navegador no llegó a iniciar.	The browser failed to start.
 El navegador no pudo iniciarse	The browser could not start
 El navegador no tiene un contexto para el script.	The browser has no context for the script.
 El navegador no tiene una página abierta.	The browser has no open page.
+El navegador que comparten el agente y vos.	The browser you and the agent share.
 El navegador se cerró.	The browser closed.
 El navegador todavía no está disponible	The browser isn't available yet
 El navegador ya tiene {MAX_TABS} pestañas abiertas. Cerrá una antes de abrir otra.	The browser already has {MAX_TABS} tabs open. Close one before opening another.
@@ -1865,6 +1879,7 @@ Elegir proyecto	Choose project
 Elegir proyecto…	Choose project…
 Elegir rama base	Choose base branch
 Elegir una rama base y comparar los commits confirmados	Choose a base branch and compare the committed commits
+Elegir «Proyecto, sin red» quita «Permitir todo»: los comandos vuelven a pedir aprobación.	Choosing “Project, no network” removes “Allow all”: commands ask for approval again.
 Elegí con qué rama comparar	Choose which branch to compare with
 Elegí con qué rama comparar la actual.	Choose which branch to compare the current one with.
 Elegí el lenguaje desde la barra de estado para conectar un servidor.	Choose the language from the status bar to connect a server.
@@ -2036,6 +2051,7 @@ Escribí un texto de hasta 512 caracteres.	Enter text of up to 512 characters.
 Escribí una URL o una dirección local y presioná Enter.	Type a URL or a local address and press Enter.
 Escribí una dirección web o local en la barra para comenzar.	Type a web or local address in the bar to begin.
 Escrito	Typed
+Escritura	Typing
 Escritura de archivo	File write
 Escritura y comandos	Write and commands
 Escritura y comandos activos. Las operaciones requieren aprobación o una autorización vigente de la sesión.	Write and commands enabled. Operations require approval or a current session authorization.
@@ -2323,6 +2339,7 @@ Fuente Markdown · lectura por páginas	Markdown source · paged reading
 Fuente no disponible	Source not available
 Fuentes	Sources
 Fuentes y herramientas	Sources and tools
+Funciona con Claude Code y Codex iniciados desde el menú de perfiles de la terminal. Los subagentes de openADE todavía no se ofrecen a una CLI externa.	Works with Claude Code and Codex started from the terminal's profile menu. openADE subagents are not offered to an external CLI yet.
 Funciona con Claude Code y Codex iniciados desde el menú de perfiles de la terminal. Los subagentes todavía no se ofrecen: su interruptor se guarda para cuando estén disponibles.	Works with Claude Code and Codex started from the terminal profiles menu. Subagents are not offered yet: their switch is saved for when they are available.
 Generación de imagen	Image generation
 Generación de imágenes	Image generation
@@ -2505,6 +2522,7 @@ Identidad y ejecución del paquete instalado.	Identity and execution of the inst
 Identificador de edición inválido	Invalid edit identifier
 Identificador de herramienta inválido	Invalid tool identifier
 Identificador de sesión inválido para el borrador	Invalid session identifier for the draft
+Idioma	Language
 Imagen	Image
 Imagen adjunta a la respuesta	Image attached to the answer
 Imagen adjunta en vista completa	Attached image in full view
@@ -3032,6 +3050,7 @@ Las consultas privadas usan la cuenta seleccionada en openADE.	Private queries u
 Las credenciales no tienen permisos privados	The credentials don't have private permissions
 Las decisiones no corresponden a los bloques registrados	The decisions do not match the recorded hunks
 Las decisiones superan su límite de metadatos	The decisions exceed their metadata limit
+Las herramientas de navegador se ofrecen en cada turno de ejecución. Lo que puede hacer en cada sitio se decide abajo, en Permisos por sitio.	The browser tools are offered on every execution turn. What it may do on each site is decided below, under per-site permissions.
 Las herramientas de openADE siguen el modo de permisos de la CLI	openADE tools follow the CLI's permission mode
 Las herramientas que ya terminaron no se repiten.	Tools that already finished are not repeated.
 Las herramientas y sus resultados aparecerán aquí cuando el agente trabaje.	Tools and their results will appear here when the agent works.
@@ -3044,6 +3063,7 @@ Las instrucciones se copian a la ubicación de instalación elegida. No se ejecu
 Las instrucciones se descargan al instalar	The instructions are downloaded on install
 Las instrucciones superan el límite	The instructions exceed the limit
 Las llamadas pendientes siguen sin resolver en el journal	The pending calls remain unresolved in the journal
+Las líneas largas siguen en el renglón de abajo en vez de salirse del editor.	Long lines continue on the next row instead of running off the editor.
 Las preferencias del editor superan el tamaño permitido.	Editor preferences exceed the allowed size.
 Las que están corriendo se cancelan, y ninguna tarea programada se ejecuta mientras openADE está cerrado.	Running ones are canceled, and no scheduled task runs while openADE is closed.
 Las reglas de Settings sólo admiten solicitar aprobación o bloquear	Settings rules only support asking for approval or blocking
@@ -3645,6 +3665,7 @@ No se pudo guardar el borrador de intervención: {error}	Couldn't save the inter
 No se pudo guardar el chequeo del proyecto: {error}	Could not save the project check: {error}
 No se pudo guardar el esfuerzo elegido. Elige de nuevo o deshaz el cambio.	Could not save the chosen effort. Choose again or undo the change.
 No se pudo guardar el esfuerzo elegido: {error}	Couldn't save the chosen effort: {error}
+No se pudo guardar el idioma: {error}	Could not save the language: {error}
 No se pudo guardar el límite de contexto: {error}	Could not save the context limit: {error}
 No se pudo guardar el límite de salida: {error}	Could not save the output limit: {error}
 No se pudo guardar el modelo de revisión: {error}	Could not save the review model: {error}
@@ -3653,6 +3674,7 @@ No se pudo guardar el proveedor: {error}	Couldn't save the provider: {error}
 No se pudo guardar el registro del marketplace	Couldn't save the marketplace registry
 No se pudo guardar el selector de modelo: {error}	Couldn't save the model picker: {error}
 No se pudo guardar el selector de modelo: {error}. No se pudo restaurar el perfil nativo anterior: {rollback_error}	Couldn't save the model picker: {error}. Couldn't restore the previous native profile: {rollback_error}
+No se pudo guardar el tema: {error}	Could not save the theme: {error}
 No se pudo guardar la conexión	Couldn't save the connection
 No se pudo guardar la configuración MCP: {error}	Could not save the MCP configuration: {error}
 No se pudo guardar la configuración de hooks: {error}	Could not save the hooks configuration: {error}
@@ -3954,6 +3976,7 @@ Origen eliminado	Source removed
 Origen local agregado	Local source added
 Origen: acción explícita de una persona. Estas operaciones no fabrican eventos del modelo ni reanudan procesos al abrir el historial.	Origin: explicit action by a person. These operations do not fabricate model events or resume processes when the history is opened.
 Orígenes	Sources
+Oscuro	Dark
 Otra captura o guardado usa esta carpeta; reintentá guardar	Another capture or save is using this folder; retry saving
 Otra instancia está actualizando esta conexión	Another instance is updating this connection
 Otra respuesta	Another answer
@@ -4081,6 +4104,7 @@ Posición de cursor inválida	Invalid cursor position
 Posición de sugerencia inválida	Invalid suggestion position
 Posición demasiado grande	Position too large
 PreToolUse puede permitir o bloquear. PostToolUse observa el resultado y no revierte una acción. Los comandos configurados usan límites de tiempo y salida.	PreToolUse can allow or block. PostToolUse observes the result and does not undo an action. Configured commands use time and output limits.
+PreToolUse puede permitir o bloquear. PostToolUse observa el resultado y no revierte una acción. Los hooks de Claude Code listados arriba también corren al iniciar la sesión, al enviar un mensaje, al iniciar un subagente y al terminar. Todos usan límites de tiempo y salida.	PreToolUse can allow or block. PostToolUse observes the result and does not undo an action. The Claude Code hooks listed above also run when the session starts, when a message is sent, when a subagent starts and at the end. All of them have time and output limits.
 Precio por millón de tokens · USD	Price per million tokens · USD
 Precisa la búsqueda para ver otros resultados.	Refine the search to see other results.
 Predeterminada del sistema	System default
@@ -4547,6 +4571,7 @@ Salidas	Outputs
 Salir	Exit
 Salir de la función	Step out
 Salir de la llamada	Step out
+Sangría	Indentation
 Sangría al editar	Indentation while editing
 Sangría y ancho de tabulación	Indentation and tab width
 Scope OAuth no válido o duplicado para {id}	Invalid or duplicate OAuth scope for {id}
@@ -4713,6 +4738,7 @@ Shell guardado. Se aplicará a las nuevas terminales.	Shell saved. It will apply
 Shell predeterminado	Default shell
 Shell y comportamiento de la terminal integrada.	Shell and behavior of the built-in terminal.
 Si la conversación no entra en el modelo elegido se resume antes de continuar y queda un aviso en la conversación. Con esto activado se pregunta primero. El historial completo nunca se borra.	If the conversation does not fit in the chosen model, it is summarized before continuing and a notice is left in the conversation. With this on, you are asked first. The full history is never deleted.
+Sigue el tema del escritorio.	Follows the desktop's theme.
 Siguiente	Next
 Siguiente coincidencia	Next match
 Sin actividad todavía	No activity yet
@@ -4853,6 +4879,7 @@ Sugerencia sin texto	Suggestion without text
 Sugerencias	Suggestions
 Sugeridas por el proyecto	Suggested by the project
 Suma de los conteos reportados para esta ruta. Es consumo acumulado, no ocupación de la ventana de contexto.	Sum of the counts reported for this route. This is accumulated usage, not context window occupancy.
+Superficies claras y texto oscuro.	Light surfaces and dark text.
 Supr	Del
 Sus herramientas solicitan aprobación. Los servidores OAuth necesitan autorización explícita antes de usarse.	Its tools ask for approval. OAuth servers need explicit authorization before use.
 Suscripciones y consumo	Subscriptions and usage
@@ -4871,6 +4898,7 @@ Sólo se aceptan URLs HTTPS de github.com	Only HTTPS URLs from github.com are ac
 Sólo se aceptan repositorios públicos con formato owner/repository de GitHub	Only public GitHub repositories in owner/repository format are accepted
 Sólo se permiten URLs HTTP/HTTPS sin credenciales incrustadas.	Only HTTP/HTTPS URLs without embedded credentials are allowed.
 TAREAS	TASKS
+Tabulaciones	Tabs
 Tamaño del terminal	Terminal size
 Tamaño del terminal actualizado	Terminal size updated
 Tarea	Task
@@ -4887,7 +4915,9 @@ Tareas: {error}	Tasks: {error}
 Tecla no válida	Invalid key
 Tecla pulsada	Key pressed
 Teclado del navegador	Browser keyboard
+Tema	Theme
 Tema y movimiento de la interfaz nativa.	Theme and motion of the native interface.
+Tema, idioma y movimiento de la interfaz.	Theme, language and motion of the interface.
 Terminado	Terminated
 Terminados	Finished
 Terminal ajustado	Terminal resized
@@ -5031,6 +5061,7 @@ Una sola línea; puedes usar &&. Se abre una terminal nueva en el proyecto.	A si
 Una tarjeta breve en la esquina inferior derecha.	A short card in the bottom-right corner.
 Una vez	Once
 Una vez · {}	Once · {}
+Una vista reducida del archivo al costado, para ubicarse y saltar.	A small view of the file at the side, to find your place and jump.
 Unidad de precio inválida para {}	Invalid price unit for {}
 Uno por línea, como Nombre=VARIABLE. El valor se lee de la variable al conectar y no se guarda. Authorization y los encabezados del protocolo no se pueden definir acá.	One per line, as Name=VARIABLE. The value is read from the variable on connect and is not saved. Authorization and protocol headers cannot be defined here.
 Uno por línea. Se unen con los scopes requeridos por el servidor; no son valores secretos.	One per line. They are joined with the scopes the server requires; they are not secret values.
@@ -5156,6 +5187,7 @@ Vie	Fri
 Viewport permitido: 320–1600 × 240–1200 CSS píxeles	Allowed viewport: 320–1600 × 240–1200 CSS pixels
 Visibilidad de catálogo inválida para {}	Invalid catalog visibility for {}
 Visión	Vision
+Vista	View
 Vista acotada por tamaño de archivo	View limited by file size
 Vista acotada · 1 línea larga abreviada	Limited view · 1 long line shortened
 Vista acotada · {count} líneas largas abreviadas	Limited view · {count} long lines shortened
@@ -5589,6 +5621,7 @@ ya no existe	it no longer exists
 {}\nEl journal conserva el turno. Reanudar verificará el estado antes de pedir al modelo o ejecutar una herramienta.	{}\nThe journal keeps the turn. Resuming will check the state before asking the model or running a tool.
 {}{} líneas encontradas	{}{} lines found
 «.» y «..» no son nombres válidos	«.» and «..» are not valid names
+«Permitir todo» está elegido en el compositor: escribe y ejecuta sin pedir aprobación. Se cambia desde el selector de permisos del compositor.	“Allow all” is chosen in the composer: it writes and runs without asking for approval. Change it from the composer's permission selector.
 «{path}» irá a la papelera del sistema.	«{path}» will go to the system trash.
 «{}» ya no es un archivo sin seguimiento	«{}» is no longer an untracked file
 «{}»\n\nSe eliminará esta conversación, sus subagentes y su historial. Los archivos del proyecto se conservarán. Esta acción no se puede deshacer.	«{}»\n\nThis conversation, its subagents, and its history will be deleted. Project files will be kept. This action cannot be undone.

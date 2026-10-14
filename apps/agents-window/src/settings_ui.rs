@@ -48,12 +48,11 @@ pub enum SettingsPage {
     #[default]
     General,
     Appearance,
+    Editor,
     Agent,
     Providers,
     Browser,
-    ComputerUse,
     Terminal,
-    WorkspaceSearch,
     Memory,
     Subagents,
     ExternalAgents,
@@ -72,6 +71,7 @@ pub enum SettingsPage {
 const BASIC_PAGES: &[SettingsPage] = &[
     SettingsPage::General,
     SettingsPage::Appearance,
+    SettingsPage::Editor,
     SettingsPage::Providers,
     SettingsPage::Browser,
     SettingsPage::Terminal,
@@ -108,12 +108,11 @@ impl SettingsPage {
         match self {
             Self::General => "settings_page:general",
             Self::Appearance => "settings_page:appearance",
+            Self::Editor => "settings_page:editor",
             Self::Agent => "settings_page:agent",
             Self::Providers => "settings_page:providers",
             Self::Browser => "settings_page:browser",
-            Self::ComputerUse => "settings_page:computer_use",
             Self::Terminal => "settings_page:terminal",
-            Self::WorkspaceSearch => "settings_page:workspace_search",
             Self::Memory => "settings_page:memory",
             Self::Subagents => "settings_page:subagents",
             Self::ExternalAgents => "settings_page:external_agents",
@@ -134,12 +133,11 @@ impl SettingsPage {
         match id {
             "settings_page:general" => Some(Self::General),
             "settings_page:appearance" => Some(Self::Appearance),
+            "settings_page:editor" => Some(Self::Editor),
             "settings_page:agent" => Some(Self::Agent),
             "settings_page:providers" => Some(Self::Providers),
             "settings_page:browser" => Some(Self::Browser),
-            "settings_page:computer_use" => Some(Self::ComputerUse),
             "settings_page:terminal" => Some(Self::Terminal),
-            "settings_page:workspace_search" => Some(Self::WorkspaceSearch),
             "settings_page:memory" => Some(Self::Memory),
             "settings_page:subagents" => Some(Self::Subagents),
             "settings_page:external_agents" => Some(Self::ExternalAgents),
@@ -161,12 +159,11 @@ impl SettingsPage {
         match self {
             Self::General => "General",
             Self::Appearance => "Apariencia",
+            Self::Editor => "Editor",
             Self::Agent => "Agente",
             Self::Providers => "Proveedores y modelos",
             Self::Browser => "Navegador",
-            Self::ComputerUse => "Control del equipo",
             Self::Terminal => "Terminal",
-            Self::WorkspaceSearch => "Búsqueda de archivos",
             Self::Memory => "Memoria",
             Self::Subagents => "Subagentes",
             Self::ExternalAgents => "CLIs externas",
@@ -187,12 +184,11 @@ impl SettingsPage {
         match self {
             Self::General => Icon::Settings,
             Self::Appearance => Icon::Palette,
+            Self::Editor => Icon::Edit,
             Self::Agent => Icon::Chat,
             Self::Providers => Icon::Brain,
             Self::Browser => Icon::Globe,
-            Self::ComputerUse => Icon::Laptop,
             Self::Terminal => Icon::Terminal,
-            Self::WorkspaceSearch => Icon::Search,
             Self::Memory => Icon::History,
             Self::Subagents => Icon::Users,
             Self::ExternalAgents => Icon::Send,
@@ -212,8 +208,6 @@ impl SettingsPage {
     const fn nav_title(self) -> &'static str {
         match self {
             Self::Providers => "Proveedores y modelos",
-            Self::ComputerUse => "Equipo",
-            Self::WorkspaceSearch => "Búsqueda",
             Self::Automations => "Automatizaciones",
             Self::Data => "Datos",
             Self::Shortcuts => "Atajos",
@@ -221,16 +215,44 @@ impl SettingsPage {
         }
     }
 
+    /// What the page's rows are about, in both languages, for the search:
+    /// a row is found by what it does, not only by its page's name.
+    const fn keywords(self) -> &'static str {
+        match self {
+            Self::General => "notificaciones notifications avisos recorrido tour proyecto project carpeta folder inicio startup no molestar do not disturb",
+            Self::Appearance => "tema theme claro light oscuro dark sistema system idioma language english español inglés movimiento motion animaciones",
+            Self::Editor => "ajuste de línea wrap minimapa minimap sangría indent tabulaciones tabs espacios spaces pares pairs código code",
+            Self::Providers => "modelo model api key clave cuenta account catálogo catalog salida output límite openai anthropic",
+            Self::Browser => "sitios sites permisos permissions enlaces links vista previa preview localhost chromium bloquear block",
+            Self::Terminal => "shell bash zsh fish powershell consola",
+            Self::Shortcuts => "teclado keyboard keymap vim atajos shortcuts perfil profile",
+            Self::Agent => "permisos permissions aprobación approval aislamiento isolation sandbox red network búsqueda web search imágenes images respaldo fallback límite limit chequeo check review revisión herramientas tools escritura write comandos",
+            Self::Memory => "contexto context compactar compact instrucciones instructions agents.md objetivo goal meta",
+            Self::Subagents => "subagente delegar delegate hijos children",
+            Self::ExternalAgents => "claude code codex cli puente bridge externo external",
+            Self::Plugins => "plugin extensión extension instalar install carpeta",
+            Self::Mcp => "servidor server oauth stdio http herramientas tools importar import variables entorno env",
+            Self::Skills => "skill habilidad marketplace skill.md",
+            Self::Commands => "reglas rules ejecución exec permitir allow denegar deny preguntar ask paleta palette",
+            Self::Automations => "tareas programadas scheduled tasks horario schedule recurrente cron",
+            Self::Hooks => "pretooluse posttooluse evento event ejecutable",
+            Self::Data => "tareas sesiones sessions agrupar group ordenar sort carpeta de datos data folder archivar archive",
+            Self::Usage => "consumo tokens límites limits actividad activity costo cost",
+            Self::Github => "cuenta account pull request repositorio repository perfil profile",
+            #[allow(unreachable_patterns)]
+            _ => "",
+        }
+    }
+
     const fn description(self) -> &'static str {
         match self {
             Self::General => "Proyecto, inicio y preferencias generales.",
-            Self::Appearance => "Tema y movimiento de la interfaz nativa.",
+            Self::Appearance => "Tema, idioma y movimiento de la interfaz.",
+            Self::Editor => "Cómo se muestra y se escribe el código.",
             Self::Providers => "Conecta tus cuentas y elige modelos para trabajar en openADE.",
-            Self::Browser => "Acceso del agente a sesiones de navegador.",
-            Self::ComputerUse => "Control del escritorio y sus permisos.",
+            Self::Browser => "El navegador que comparten el agente y vos.",
             Self::Terminal => "Shell y comportamiento de la terminal integrada.",
             Self::Shortcuts => "Atajos de navegación y paneles.",
-            Self::WorkspaceSearch => "Búsqueda de archivos del proyecto.",
             Self::Agent => "Proveedor, herramientas y permisos del agente nativo de openADE.",
             Self::Memory => "Contexto, instrucciones y continuidad de la conversación.",
             Self::Subagents => "Trabajo delegado, permisos y recuperación por conversación.",
@@ -252,7 +274,6 @@ impl SettingsPage {
             Self::Skills | Self::Automations | Self::Plugins | Self::Browser => {
                 CapabilityStatus::Ready
             }
-            Self::ComputerUse => CapabilityStatus::Planned,
             Self::Mcp | Self::Hooks => CapabilityStatus::Partial,
             _ => CapabilityStatus::Partial,
         }
@@ -389,9 +410,13 @@ fn navigation_groups(state: &ViewState) -> Vec<Element> {
         let matches: Vec<_> = pages
             .iter()
             .filter(|page| {
-                query.is_empty()
-                    || page.title().to_lowercase().contains(&query)
-                    || page.description().to_lowercase().contains(&query)
+                // What the page is called and holds, in the language written
+                // and in the one shown.
+                let said = |text: &str| {
+                    text.to_lowercase().contains(&query)
+                        || crate::i18n::text(text).is_some_and(|english| english.to_lowercase().contains(&query))
+                };
+                query.is_empty() || said(page.title()) || said(page.description()) || page.keywords().contains(&query)
             })
             .collect();
         if matches.is_empty() {
@@ -519,7 +544,7 @@ fn general_page(state: &ViewState, compact: bool) -> Vec<Element> {
             vec![
                 settings_parts::settings_row(
                     "Apariencia",
-                    "Paleta y movimiento de la interfaz.",
+                    "Tema, idioma y movimiento de la interfaz.",
                     outline("settings_page:appearance", "Personalizar")
                         .icon(Icon::ArrowRight)
                         .render(),
@@ -566,6 +591,8 @@ fn agent_page(state: &ViewState, compact: bool) -> Vec<Element> {
         state.native_tool_permissions.write_file,
         state.native_tool_permissions.run_command,
     ) {
+        // Chosen in the composer: nothing is asked while it holds.
+        _ if state.native_full_access => "«Permitir todo» está elegido en el compositor: escribe y ejecuta sin pedir aprobación. Se cambia desde el selector de permisos del compositor.",
         (true, true) => "Escritura y comandos activos. Las operaciones requieren aprobación o una autorización vigente de la sesión.",
         (false, false) => "Escritura y comandos desactivados. Los permisos de lectura se configuran por separado.",
         (true, false) => "Personalizado: modificar archivos con aprobación está activo; ejecutar comandos está desactivado.",
@@ -624,6 +651,12 @@ fn agent_page(state: &ViewState, compact: bool) -> Vec<Element> {
         isolation_selector,
         compact,
     )];
+    if state.native_full_access {
+        isolation_rows.push(settings_parts::feedback_banner(
+            "Elegir «Proyecto, sin red» quita «Permitir todo»: los comandos vuelven a pedir aprobación.",
+            FeedbackTone::Info, None, compact,
+        ));
+    }
     if !state.native_command_isolation.is_available_on_host() {
         isolation_rows.push(settings_parts::feedback_banner(
             "El perfil guardado no está disponible aquí. Los comandos quedan bloqueados hasta que elijas un perfil compatible; no se cambia automáticamente a Sin aislamiento.",
@@ -1164,6 +1197,14 @@ fn data_page(state: &ViewState, compact: bool) -> Vec<Element> {
             settings_parts::value_row("Tareas visibles", "Conversaciones, eventos y borradores guardados en este equipo.", format!("{} tareas", state.sessions.len()), compact),
             page_note("Archivar y eliminar", "Usa el menú de cada tarea en la barra lateral. Eliminar una tarea requiere confirmación.", Icon::Archive),
         ]),
+        settings_parts::settings_group("Almacenamiento", vec![
+            settings_parts::settings_row(
+                "Carpeta de datos",
+                state.data_folder.clone(),
+                outline("settings_open_data_folder", "Abrir carpeta").icon(Icon::Folder).render(),
+                compact,
+            ),
+        ]),
         settings_parts::settings_group("Barra lateral", vec![
             settings_parts::settings_row("Agrupar tareas", "Organiza la navegación por proyecto, grupo o actividad reciente.", organization, compact),
             settings_parts::settings_row("Ordenar tareas", "La agrupación y el orden se conservan al reiniciar openADE.", sorting, compact),
@@ -1405,8 +1446,8 @@ fn capability_page(
     vec![
         settings_parts::empty_state(title, current, related),
         settings_parts::settings_group(
-            "Disponibilidad",
-            vec![page_note("Estado actual", needed, Icon::Clock)],
+            "Cómo funciona",
+            vec![page_note("Disponibilidad", needed, Icon::InfoCircle)],
         ),
     ]
 }
@@ -1708,7 +1749,7 @@ fn hooks_page(state: &ViewState, compact: bool) -> Vec<Element> {
     ));
     content.extend(external_agents::compat_hooks_group(state, compact));
     content.push(settings_parts::settings_group("Alcance y seguridad", vec![
-        page_note("Antes y después de herramientas", "PreToolUse puede permitir o bloquear. PostToolUse observa el resultado y no revierte una acción. Los comandos configurados usan límites de tiempo y salida.", SettingsPage::Hooks.icon()),
+        page_note("Antes y después de herramientas", "PreToolUse puede permitir o bloquear. PostToolUse observa el resultado y no revierte una acción. Los hooks de Claude Code listados arriba también corren al iniciar la sesión, al enviar un mensaje, al iniciar un subagente y al terminar. Todos usan límites de tiempo y salida.", SettingsPage::Hooks.icon()),
         page_note("Configuración del turno", "Se aplican a turnos interactivos del agente nativo. Reanudar un turno previo requiere restaurar la misma configuración de hooks.", Icon::History),
     ]));
     content
@@ -1757,7 +1798,7 @@ pub fn hook_editor_modal(state: &ViewState, base: Element, viewport_width: f32) 
         form_field("Nombre exacto de herramienta", input("hook_draft_tool_name", &draft.draft_tool_name, "ej. write_file"))
             .hint("Por ejemplo: read_file, write_file o mcp__servidor__herramienta. Los hooks sobre lecturas quedan excluidos del modo Plan.")
             .rows(),
-        form_field("Ejecutable", input("hook_draft_executable", &draft.draft_executable, "C:\\tools\\hook.exe"))
+        form_field("Ejecutable", input("hook_draft_executable", &draft.draft_executable, if cfg!(windows) { "C:\\tools\\hook.exe" } else { "/usr/local/bin/hook" }))
             .hint("Ruta absoluta a un archivo existente. Se ejecuta sin shell; el agente no puede configurar esta ruta.")
             .rows(),
         form_field(
@@ -1766,7 +1807,7 @@ pub fn hook_editor_modal(state: &ViewState, base: Element, viewport_width: f32) 
                 .width(body_width).height(80.0).render(),
         )
         .rows(),
-        form_field("Directorio de trabajo", input("hook_draft_cwd", &draft.draft_cwd, "C:\\repo"))
+        form_field("Directorio de trabajo", input("hook_draft_cwd", &draft.draft_cwd, if cfg!(windows) { "C:\\repo" } else { "/home/usuario/proyecto" }))
             .hint("Ruta absoluta a una carpeta existente.")
             .rows(),
         form_field("Límite de tiempo (ms)", input("hook_draft_timeout_ms", &draft.draft_timeout_ms, "5000")).rows(),
@@ -2291,17 +2332,152 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
     .render()
 }
 
-fn appearance_page(state: &ViewState, compact: bool) -> Vec<Element> {
+/// One theme as a card: a small picture of the window in it, its name and
+/// whether it is the one in use. The picture is the same whichever theme
+/// the window itself is in.
+fn theme_card(choice: crate::theme_mode::ThemeChoice, width: f32) -> Element {
+    use crate::theme_mode::{self, ThemeChoice};
+    let light_now = theme_mode::light();
+    // A gray as it must be asked for to be painted as `wanted`.
+    let gray = |wanted: u8| {
+        let value = if light_now { theme_mode::gray_painted_as(wanted) } else { wanted };
+        openide_ui::Color::rgb(value, value, value)
+    };
+    // Canvas, raised surface, border, text and muted text of each theme.
+    let dark = [22, 43, 60, 212, 120];
+    let light = [250, 236, 214, 40, 140];
+    let bar = |ink: openide_ui::Color, width: f32| Element::spacer().size(Some(width), Some(4.0)).background(ink).radius(2.0);
+    let window = |tones: [u8; 5], width: f32| {
+        let [canvas, raised, border, text, muted] = tones.map(gray);
+        Element::row(vec![
+            Element::column(vec![bar(muted, 26.0), bar(muted, 20.0), bar(muted, 23.0)])
+                .gap(5.0)
+                .padding(7.0)
+                .background(raised)
+                .size(Some(42.0), Some(70.0)),
+            Element::column(vec![bar(text, (width - 70.0).max(20.0)), bar(muted, (width - 96.0).max(14.0)), bar(muted, (width - 84.0).max(16.0))])
+                .gap(6.0)
+                .padding(9.0)
+                .flex(1.0),
+        ])
+        .background(canvas)
+        .border(border, 1.0)
+        .radius(6.0)
+        .size(Some(width), Some(70.0))
+    };
+    let inner = width - 24.0;
+    let picture = match choice {
+        ThemeChoice::Dark => window(dark, inner),
+        ThemeChoice::Light => window(light, inner),
+        // Half of each: it follows the desktop.
+        ThemeChoice::System => {
+            Element::row(vec![window(light, (inner - 6.0) / 2.0), window(dark, (inner - 6.0) / 2.0)]).gap(6.0)
+        }
+    };
+    let (title, about) = match choice {
+        ThemeChoice::System => ("Sistema", "Sigue el tema del escritorio."),
+        ThemeChoice::Light => ("Claro", "Superficies claras y texto oscuro."),
+        ThemeChoice::Dark => ("Oscuro", "El diseño original de openADE."),
+    };
+    let active = theme_mode::choice() == choice;
+    let mut heading = vec![Text::new(title, theme::card_palette()).render().flex(1.0)];
+    if active {
+        heading.push(openide_ui::Chip::new("Activo", theme::card_palette()).height(18.0).render());
+    }
+    let content = Element::column(vec![
+        picture,
+        Element::row(heading).gap(6.0),
+        Text::new(about, theme::card_palette()).role(TextRole::Small).muted().render(),
+    ])
+    .gap(8.0);
+    let id = format!("settings_theme:{}", choice.key());
+    let card = openide_ui::Card::new(content, theme::card_palette()).width(width).render();
+    Element::clickable(id, if active { card.border(theme::FOREGROUND_SUBTLE, 1.0) } else { card })
+        .radius(openide_ui::tokens().radius.surface)
+}
+
+/// What the code editor does for every file. They are the same preferences
+/// the IDE's status bar changes, kept in the same place.
+fn editor_page(state: &ViewState, compact: bool) -> Vec<Element> {
+    use openide_editor::IndentStyle;
+    let editor = &state.editor_workbench;
+    let tabs = matches!(editor.indent, IndentStyle::Tabs(_));
     vec![
+        settings_parts::settings_group(
+            "Vista",
+            vec![
+                settings_parts::switch_row(
+                    "editor_wrap",
+                    "Ajustar líneas al ancho",
+                    "Las líneas largas siguen en el renglón de abajo en vez de salirse del editor.",
+                    editor.soft_wrap,
+                    true,
+                    compact,
+                ),
+                settings_parts::switch_row(
+                    "editor_minimap",
+                    "Mostrar minimapa",
+                    "Una vista reducida del archivo al costado, para ubicarse y saltar.",
+                    editor.minimap,
+                    true,
+                    compact,
+                ),
+            ],
+        ),
+        settings_parts::settings_group(
+            "Escritura",
+            vec![
+                settings_parts::settings_row(
+                    "Sangría",
+                    "Con qué se sangra un archivo nuevo y cuánto ocupa cada nivel.",
+                    Element::row(vec![
+                        outline("editor_indent_kind", if tabs { "Tabulaciones" } else { "Espacios" }).render(),
+                        outline("editor_indent_width", format!("Ancho: {}", editor.indent.width())).render(),
+                    ])
+                    .gap(6.0),
+                    compact,
+                ),
+                settings_parts::switch_row(
+                    "editor_pairs",
+                    "Cerrar pares automáticamente",
+                    "Al abrir un paréntesis, una llave o una comilla, se escribe también el cierre.",
+                    editor.auto_pairs,
+                    true,
+                    compact,
+                ),
+            ],
+        ),
+    ]
+}
+
+fn appearance_page(state: &ViewState, compact: bool) -> Vec<Element> {
+    let cards: Vec<Element> =
+        crate::theme_mode::ThemeChoice::ALL.into_iter().map(|choice| theme_card(choice, if compact { 260.0 } else { 196.0 })).collect();
+    vec![
+        settings_parts::settings_group(
+            "Tema",
+            vec![if compact { Element::column(cards).gap(8.0).padding(10.0) } else { Element::row(cards).gap(10.0).padding(10.0) }],
+        ),
         settings_parts::settings_group(
             "Interfaz",
             vec![
-                settings_parts::switch_row(
-                    "settings_language_english",
-                    "English",
-                    "Muestra la interfaz en inglés. Lo que todavía no tiene traducción se ve en español.",
-                    crate::i18n::english(),
-                    true,
+                settings_parts::settings_row(
+                    "Idioma",
+                    "El de toda la interfaz, en las dos ventanas. Lo que todavía no tiene traducción se ve en español.",
+                    Element::row(
+                        [("es", "Español", false), ("en", "English", true)]
+                            .into_iter()
+                            .map(|(key, name, english)| {
+                                let chosen = crate::i18n::english() == english;
+                                Button::new(format!("settings_language:{key}"), name, theme::card_palette())
+                                    .variant(if chosen { ButtonVariant::Subtle } else { ButtonVariant::Ghost })
+                                    .size(ControlSize::Compact)
+                                    .active(chosen)
+                                    .render()
+                            })
+                            .collect(),
+                    )
+                    .gap(4.0),
                     compact,
                 ),
                 settings_parts::switch_row(
@@ -2461,26 +2637,8 @@ fn terminal_page(state: &ViewState, compact: bool) -> Vec<Element> {
 fn additional_page(state: &ViewState, page: SettingsPage, compact: bool) -> Vec<Element> {
     match page {
         SettingsPage::Appearance => appearance_page(state, compact),
+        SettingsPage::Editor => editor_page(state, compact),
         SettingsPage::Terminal => terminal_page(state, compact),
-        SettingsPage::WorkspaceSearch => vec![
-            settings_parts::settings_group("Archivos del proyecto", vec![
-                settings_parts::settings_row(
-                    "Búsqueda de archivos y contenido",
-                    "Encuentra rutas y texto de la carpeta activa desde el centro de comandos.",
-                    outline("open_command_center", "Abrir búsqueda").icon(Icon::Search).render(),
-                    compact,
-                ),
-                settings_parts::settings_row(
-                    "Acceso rápido",
-                    "Busca acciones, tareas y archivos desde cualquier sección.",
-                    Kbd::new(state.keymap_profile.shortcut(ShortcutAction::CommandPalette), theme::component_palette()).render(),
-                    compact,
-                ),
-            ]),
-            settings_parts::settings_group("Alcance", vec![
-                page_note("Exclusiones del proyecto", "La búsqueda utiliza exclusiones integradas. La edición de reglas de exclusión por proyecto todavía no está disponible.", Icon::Folder),
-            ]),
-        ],
         SettingsPage::Memory => memory::page(state, compact),
         SettingsPage::Commands => {
             let mut content = vec![settings_parts::settings_group("Centro de comandos", vec![
@@ -2498,8 +2656,8 @@ fn additional_page(state: &ViewState, page: SettingsPage, compact: bool) -> Vec<
         SettingsPage::Browser => {
             let mut content = capability_page(
                 "Navegador integrado",
-                "El agente nativo controla la pestaña Navegador que tengas abierta en el panel de la tarea.",
-                "Sin una pestaña de navegador abierta e iniciada en el proyecto de la tarea, las herramientas de navegador no se ofrecen al agente.",
+                "El agente nativo maneja la pestaña Navegador de la tarea, que se abre sola con su primera acción y que vos también ves y usás.",
+                "Las herramientas de navegador se ofrecen en cada turno de ejecución. Lo que puede hacer en cada sitio se decide abajo, en Permisos por sitio.",
                 Some(("settings_page:agent", "Ver permisos del agente", Icon::ArrowRight)),
             );
             content.push(settings_parts::settings_group("Enlaces", vec![
@@ -2576,12 +2734,6 @@ fn additional_page(state: &ViewState, page: SettingsPage, compact: bool) -> Vec<
             ]));
             content
         }
-        SettingsPage::ComputerUse => capability_page(
-            "Control del equipo no disponible",
-            "La captura de pantalla y las entradas al escritorio todavía no están disponibles para el agente nativo.",
-            "El acceso a archivos y comandos se configura en Agente. Ese permiso no habilita el control del escritorio.",
-            Some(("settings_page:agent", "Ver permisos del agente", Icon::ArrowRight)),
-        ),
         SettingsPage::Subagents => subagents::page(state, compact),
         SettingsPage::ExternalAgents => external_agents::page(state, compact),
         SettingsPage::Plugins => crate::plugins_ui::page(state, compact),
@@ -2722,7 +2874,7 @@ pub fn build_settings_page(
     }
     let status = matches!(
         page,
-        SettingsPage::Browser | SettingsPage::ComputerUse | SettingsPage::ExternalAgents
+        SettingsPage::Browser | SettingsPage::ExternalAgents
     )
         .then(|| settings_parts::status_badge(page.status()));
     let mut header = PageHeader::new(page.title(), theme::card_palette())
@@ -3130,7 +3282,7 @@ mod tests {
                 assert!(ids.insert(page.action_id()), "duplicate settings route");
             }
         }
-        assert_eq!(ids.len(), 19);
+        assert_eq!(ids.len(), 20);
         assert_eq!(SettingsPage::from_action_id("settings_page:unknown"), None);
     }
 

@@ -6631,6 +6631,8 @@ impl AgentsWindow {
     fn with_data_root(root: PathBuf) -> Self {
         // limn speaks English unless told otherwise; this window is Spanish.
         crate::i18n::load(&root);
+        crate::theme_mode::load(&root);
+        let data_folder = root.display().to_string();
         let settings_preferences = SettingsPreferences::load(&root);
         let ide = crate::ide_workspace::IdeWorkspaceState::load(&root);
         let (agent_tool_settings, agent_tool_settings_error) = match AgentToolSettings::load(&root)
@@ -7080,6 +7082,7 @@ impl AgentsWindow {
             chat_diffs: Default::default(),
             code_editor_reload_confirm: None,
             git_review: None,
+            data_folder,
             git_action_pending: false,
             git_action_error: None,
             git_panel: Default::default(),
@@ -20126,10 +20129,21 @@ impl AgentsWindow {
                     self.view.pending_mcp_delete_id = None;
                 }
             }
-            UiAction::Clicked { id } if id == "settings_language_english" => {
+            UiAction::Clicked { id } if id.starts_with("settings_theme:") => {
+                if let Some(choice) = crate::theme_mode::ThemeChoice::from_key(id.trim_start_matches("settings_theme:")) {
+                    match crate::theme_mode::save(&self.data_root, choice) {
+                        Ok(()) => crate::theme_mode::set_choice(choice),
+                        Err(error) => self.view.status = format!("No se pudo guardar el tema: {error}"),
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id == "settings_open_data_folder" => {
+                ctx.open_url(egui::OpenUrl::new_tab(format!("file://{}", self.data_root.display())));
+            }
+            UiAction::Clicked { id } if id.starts_with("settings_language:") => {
                 // The whole window is drawn again in the other language from
                 // the next frame; both windows are this one process.
-                let english = !crate::i18n::english();
+                let english = id.ends_with(":en");
                 match crate::i18n::save(&self.data_root, english) {
                     Ok(()) => crate::i18n::set_english(english),
                     Err(error) => self.view.status = format!("No se pudo guardar el idioma: {error}"),
@@ -21544,6 +21558,8 @@ impl eframe::App for AgentsWindow {
         render::normalize_keyboard_input(&ctx);
         self.expire_text_paste_request();
         let quit_confirm_before = self.view.code_editor_quit_confirm;
+        // The desktop's own theme, for the choice that follows it.
+        crate::theme_mode::set_system_light(ctx.system_theme() == Some(egui::Theme::Light));
         self.guard_editor_close(&ctx);
         // Closing with tasks running stops them: it is asked first.
         if ctx.input(|input| input.viewport().close_requested())

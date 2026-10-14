@@ -26,7 +26,7 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
     };
     vec![
         settings_parts::feedback_banner(
-            "Funciona con Claude Code y Codex iniciados desde el menú de perfiles de la terminal. Los subagentes todavía no se ofrecen: su interruptor se guarda para cuando estén disponibles.",
+            "Funciona con Claude Code y Codex iniciados desde el menú de perfiles de la terminal. Los subagentes de openADE todavía no se ofrecen a una CLI externa.",
             FeedbackTone::Info,
             None,
             compact,
@@ -289,6 +289,7 @@ pub(super) fn compat_hooks_group(state: &ViewState, compact: bool) -> Vec<Elemen
         let description = if hook.runs_today {
             command
         } else {
+            // Every event is run today; kept for one that some day is not.
             format!("openADE todavía no ejecuta este evento. {command}")
         };
         let source = if hook.origin.is_empty() {

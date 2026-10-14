@@ -12,6 +12,7 @@ mod debug_ui;
 mod app;
 mod approval_ui;
 mod i18n;
+mod theme_mode;
 mod notifications;
 mod model_switch;
 mod pause;
