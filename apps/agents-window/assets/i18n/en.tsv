@@ -222,6 +222,7 @@ Agregar el modelo seleccionado	Add the selected model
 Agregar hook	Add hook
 Agregar origen	Add source
 Agregar permiso para un sitio	Add permission for a site
+Agregar proveedor	Add provider
 Agregar regla	Add rule
 Agregar repositorio GitHub	Add GitHub repository
 Agregar servidor	Add server
@@ -1142,6 +1143,7 @@ Decisión guardada; reanudando subagente	Decision saved; resuming subagent
 DeepSeek devolvió una moneda de saldo no compatible.	DeepSeek returned an unsupported balance currency.
 DeepSeek no devolvió un saldo válido.	DeepSeek did not return a valid balance.
 Define la tarea	Define the task
+Define un servicio de modelos para el agente nativo.	Define a model service for the native agent.
 Define {} para ejecutar la automatización nativa	Set {} to run the native automation
 Definiciones	Definitions
 Definir	Set
@@ -1349,6 +1351,7 @@ Editar dirección	Edit address
 Editar entrada	Edit input
 Editar entrada pendiente	Edit pending input
 Editar hook	Edit hook
+Editar proveedor	Edit provider
 Editar regla	Edit rule
 Editar reglas	Edit rules
 Editar servidor MCP	Edit MCP server
@@ -1651,6 +1654,7 @@ El navegador que comparten el agente y vos.	The browser you and the agent share.
 El navegador se cerró.	The browser closed.
 El navegador todavía no está disponible	The browser isn't available yet
 El navegador ya tiene {MAX_TABS} pestañas abiertas. Cerrá una antes de abrir otra.	The browser already has {MAX_TABS} tabs open. Close one before opening another.
+El nombre de la variable, en mayúsculas; nunca la clave. openADE lee su valor del entorno al conectarse.	The name of the variable, in capitals; never the key. openADE reads its value from the environment when it connects.
 El nombre descargado no coincide con la skill seleccionada	The downloaded name doesn't match the selected skill
 El nombre no puede contener separadores de ruta	The name can't contain path separators
 El objetivo nativo conserva criterios, estado y evidencia por conversación. Su editor permite activarlo, pausarlo o reanudarlo explícitamente.	The native goal keeps criteria, status and evidence per conversation. Its editor lets you enable, pause or resume it explicitly.
@@ -2415,6 +2419,7 @@ HEAD separado	Detached HEAD
 HEAD separado: elegí una rama antes de crear el pull request	Detached HEAD: choose a branch before creating the pull request
 HEAD separado: no hay una rama para buscar PR	Detached HEAD: there is no branch to look up a PR
 HTTP sólo se permite en localhost	HTTP is only allowed on localhost
+HTTPS; HTTP sólo para localhost o loopback. Sin credenciales, búsqueda ni fragmento.	HTTPS; HTTP only for localhost or loopback. No credentials, query or fragment.
 Habilitado · sin probar	Enabled · untested
 Hacer push	Push
 Hay acciones con identificadores duplicados.	Some actions have duplicate identifiers.
@@ -2504,6 +2509,7 @@ ID de proveedor nativo inválido	Invalid native provider ID
 ID de skill inválido en el registro	Invalid skill ID in the registry
 ID del chat inválido	Invalid chat ID
 ID del hook	Hook ID
+ID del proveedor	Provider ID
 ID del servidor	Server ID
 ID devuelto por list_conversations.	ID returned by list_conversations.
 ID en el listado del proveedor; capacidad de herramientas desconocida.	ID in the provider's listing; tool capability unknown.
@@ -2742,6 +2748,7 @@ La carpeta destino apareció durante la instalación	The destination folder appe
 La carpeta destino ya existe	The destination folder already exists
 La carpeta no está disponible dentro del proyecto	The folder is not available inside the project
 La carpeta «{path}» y todo su contenido irán a la papelera del sistema.	The folder «{path}» and all its contents will go to the system trash.
+La clave es opcional	The key is optional
 La clave se guarda de forma privada en este equipo. El acceso a generación se comprueba al usar un modelo.	The key is stored privately on this machine. Generation access is checked when a model is used.
 La cola de entrada está llena. Esperá y volvé a intentar; esta entrada no se envió.	The input queue is full. Wait and try again; this input was not sent.
 La cola del navegador está llena; esperá la operación actual	The browser queue is full; wait for the current operation
@@ -3240,8 +3247,10 @@ Metadatos MCP inspeccionados	MCP metadata inspected
 Metadatos de captura inválidos	Invalid capture metadata
 Metadatos del baseline demasiado grandes	Baseline metadata too large
 Metadatos del catálogo inicial inválidos	Invalid initial catalog metadata
+Mi proveedor	My provider
 Mientras openADE esté abierto	While openADE is open
 Minúsculas, números, guiones y guiones bajos. El ID empieza con una letra.	Lowercase letters, numbers, hyphens and underscores. The ID starts with a letter.
+Minúsculas, números, guiones y guiones bajos. No se puede cambiar después.	Lowercase letters, numbers, hyphens and underscores. It cannot be changed later.
 Mira cuánto usaste de cada proveedor y cuándo se renueva el límite, sin salir de la tarea.	See how much you've used of each provider and when the limit renews, without leaving the task.
 Mié	Wed
 Modelo	Model
@@ -3671,6 +3680,7 @@ No se pudo guardar el límite de salida: {error}	Could not save the output limit
 No se pudo guardar el modelo de revisión: {error}	Could not save the review model: {error}
 No se pudo guardar el modelo elegido. Elige de nuevo o deshaz el cambio.	Could not save the chosen model. Choose again or undo the change.
 No se pudo guardar el proveedor: {error}	Couldn't save the provider: {error}
+No se pudo guardar el registro de proveedores: {error}	Could not save the provider registry: {error}
 No se pudo guardar el registro del marketplace	Couldn't save the marketplace registry
 No se pudo guardar el selector de modelo: {error}	Couldn't save the model picker: {error}
 No se pudo guardar el selector de modelo: {error}. No se pudo restaurar el perfil nativo anterior: {rollback_error}	Couldn't save the model picker: {error}. Couldn't restore the previous native profile: {rollback_error}
@@ -3906,6 +3916,7 @@ Nuevo archivo en el IDE	New file in the IDE
 Nuevo archivo…	New file…
 Nuevo grupo	New group
 Nuevo hook	New hook
+Nuevo proveedor	New provider
 Nuevo servidor	New server
 Nuevo servidor MCP	New MCP server
 Nuevos	New
@@ -3982,6 +3993,7 @@ Otra instancia está actualizando esta conexión	Another instance is updating th
 Otra respuesta	Another answer
 Otra ventana está usando la recuperación del editor: {e}	Another window is using editor recovery: {e}
 Otras conversaciones	Other conversations
+Otro servicio	Another service
 PTY observada	PTY observed
 Paga por el uso de cada modelo	Pay for each model's usage
 Paginación inválida para {}	Invalid pagination for {}
@@ -3994,6 +4006,7 @@ Pantalla completa	Full screen
 Para el próximo mensaje	For the next message
 Para empezar	To get started
 Para enviar otra instrucción, crea una tarea nativa nueva.	To send another instruction, create a new native task.
+Para un servicio que responde sin credencial.	For a service that answers without a credential.
 Parcial	Partial
 Pares	Pairs
 Parte de la ventana del modelo que ocupa la conversación nativa seleccionada. Con ~ es una estimación.	Share of the model's window used by the selected native conversation. With ~ it is an estimate.
@@ -4176,17 +4189,20 @@ Propuesta de modo rechazada	Mode proposal rejected
 Propuesta de modo respondida	Mode proposal answered
 Propuesta de salir de Modo Plan rechazada	Proposal to leave Plan mode rejected
 Propuesta descartada · sin ejecutar	Proposal discarded · not run
+Protocolo	Protocol
 Protocolos por modelo inválidos para {}	Invalid per-model protocols for {}
 Proveedor de revisión elegido; falta elegir el modelo	Review provider chosen; the model is still to be chosen
 Proveedor del modelo manual	Manual model provider
 Proveedor desconectado	Provider disconnected
 Proveedor duplicado o reservado: {}	Duplicate or reserved provider: {}
 Proveedor e ID de modelo	Provider and model ID
+Proveedor guardado	Provider saved
 Proveedor nativo no registrado	Native provider not registered
 Proveedor nativo no registrado: {}	Native provider not registered: {}
 Proveedor no compatible: {provider_id}	Unsupported provider: {provider_id}
 Proveedor no disponible	Provider unavailable
 Proveedor no registrado	Provider not registered
+Proveedor quitado	Provider removed
 Proveedor sin registrar	Unregistered provider
 Proveedor sin uso reportado	Provider without reported usage
 Proveedor y modelo	Provider and model
@@ -4195,6 +4211,7 @@ Proveedor: {}\nModelo: {}\n{}	Provider: {}\nModel: {}\n{}
 Proveedores	Providers
 Proveedores conectados ahora.	Providers connected now.
 Proveedores de modelos	Model providers
+Proveedores propios	Your own providers
 Proveedores y modelos	Providers and models
 Proyecto	Project
 Proyecto MCP no disponible: {error}	MCP project not available: {error}
@@ -4256,6 +4273,7 @@ Quitar división · conservar ambas sesiones	Remove split · keep both sessions
 Quitar el permiso propio de {}	Remove the own permission for {}
 Quitar filtro	Remove filter
 Quitar origen	Remove source
+Quitar proveedor	Remove provider
 Quitar punto de interrupción	Remove breakpoint
 Quitar todo de preparados	Unstage all
 Quitar todos	Remove all
@@ -4636,6 +4654,7 @@ Se propone eliminar {}	Proposing to delete {}
 Se quitan los mensajes posteriores a este.	Removes the messages after this one.
 Se quitará 1 punto de interrupción de este proyecto.	1 breakpoint will be removed from this project.
 Se quitará de la configuración de este proyecto. Podrás volver a agregarlo más adelante.	It will be removed from this project's settings. You can add it again later.
+Se quitará de tu registro de proveedores. La variable de entorno con su clave no se toca.	It will be removed from your provider registry. The environment variable with its key is left alone.
 Se quitará «{}» de este equipo y se desactivará en todos los proyectos. La carpeta original se conserva.	«{}» will be removed from this computer and disabled in all projects. The original folder is kept.
 Se quitarán las selecciones mostradas de este proyecto. Los SKILL.md y la selección de otros proyectos se conservan. Los turnos que ya tienen instrucciones guardadas conservan esa copia; puedes volver a revisar y seleccionar documentos para turnos nuevos.	The selections shown for this project will be removed. SKILL.md files and other projects' selections are kept. Turns that already have saved instructions keep that copy; you can review and select documents again for new turns.
 Se quitarán {count} puntos de interrupción de este proyecto.	{count} breakpoints will be removed from this project.
@@ -5019,6 +5038,7 @@ URL MCP	MCP URL
 URL MCP HTTP no válida	Invalid MCP HTTP URL
 URL MCP HTTP no válida para {}	Invalid MCP HTTP URL for {}
 URL MCP HTTP no válida para {}: {error}	Invalid MCP HTTP URL for {}: {error}
+URL base	Base URL
 URL de GitHub inválida en el registro	Invalid GitHub URL in the registry
 URL de catálogo inválida	Invalid catalog URL
 URL de repositorio GitHub inválida	Invalid GitHub repository URL
@@ -5044,6 +5064,7 @@ Un origen no se pudo leer	A source could not be read
 Un padre del marcador MCP externo no es directorio	A parent of the external MCP marker is not a directory
 Un padre del marcador guardado del editor no es directorio	A parent of the editor's saved marker is not a directory
 Un plugin con intérprete debe incluir un entrypoint dentro del paquete.	A plugin with an interpreter must include an entrypoint inside the package.
+Un servicio que hable Chat Completions, Responses o Messages. Su clave se lee de una variable de entorno; openADE guarda solo el nombre.	A service that speaks Chat Completions, Responses or Messages. Its key is read from an environment variable; openADE stores only the name.
 Un subagente no pudo cambiar de modelo ({error}) ni cancelarse ({cancel_error}).	A subagent could not switch models ({error}) or be canceled ({cancel_error}).
 Un subagente no pudo cambiar de modelo y se canceló: {error}.	A subagent could not switch models and was canceled: {error}.
 Un turno en pausa por un límite de uso retoma solo a la hora que informa el proveedor, sin reenviar tu mensaje. Vale también para las tareas que no tenés en pantalla y para las automatizaciones, que continúan con el modelo y los permisos con los que quedaron en pausa. Nunca continúa solo si falta crédito, hay que reconectar la cuenta o faltan más de 24 horas.	A turn paused by a usage limit resumes on its own at the time the provider reports, without resending your message. This also applies to tasks you do not have on screen and to automations, which continue with the model and permissions they had when paused. It never continues on its own if credit is missing, the account must be reconnected, or more than 24 hours remain.
@@ -5107,6 +5128,7 @@ Vaciar selección local	Clear local selection
 Valor de herramienta inválido para {}	Invalid tool value for {}
 Valor de variable MCP no válido en {}	Invalid MCP variable value in {}
 Variable de credencial inválida para {}	Invalid credential variable for {}
+Variable de entorno de la clave	Environment variable of the key
 Variable del bearer token (opcional)	Bearer token variable (optional)
 Variables de entorno	Environment variables
 Ventana de agentes	Agents window
@@ -5326,6 +5348,7 @@ edición	edit
 editó 1 archivo	edited 1 file
 editó {} archivos	edited {} files
 ej. filesystem	e.g. filesystem
+ej. mi-proveedor	e.g. my-provider
 ej. npx	e.g. npx
 ej. revisar-escritura	e.g. revisar-escritura
 ej. tools/mcp	e.g. tools/mcp
@@ -5640,6 +5663,7 @@ ya no existe	it no longer exists
 ¿Enviar {count} archivos a la papelera?	Move {count} files to the trash?
 ¿Permitir todo?	Allow everything?
 ¿Quitar el origen «{}»?	Remove the source «{}»?
+¿Quitar el proveedor «{}»?	Remove the provider «{}»?
 ¿Quitar todos los puntos de interrupción?	Remove all breakpoints?
 ¿Qué hará esta tarea?	What will this task do?
 ¿Qué tenemos en la agenda hoy?	What's on the agenda today?

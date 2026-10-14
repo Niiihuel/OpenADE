@@ -156,7 +156,7 @@ pub(crate) struct CatalogPagination {
     pub limit: Option<u16>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ProviderRegistryFile {
     version: u32,
@@ -186,10 +186,17 @@ impl ProviderRegistry {
                 adapter.use_opencode_go();
             }
         }
+        registry.extend(Self::user_providers(root)?)?;
+        Ok(registry)
+    }
+
+    /// The user's own definitions as written in the registry file, before
+    /// they are checked against the bundled ones.
+    pub fn user_providers(root: &Path) -> Result<Vec<Adapter>, String> {
         let path = root.join(REGISTRY_FILE);
         let metadata = match fs::metadata(&path) {
             Ok(metadata) => metadata,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(registry),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
             Err(error) => {
                 return Err(format!(
                     "No se pudo leer el registro de proveedores: {error}"
@@ -212,7 +219,46 @@ impl ProviderRegistry {
                 file.version
             ));
         }
-        if registry.adapters.len() + file.providers.len() > MAX_PROVIDERS {
+        Ok(file.providers)
+    }
+
+    /// Replace the user's registry file. The list is accepted only if it
+    /// would load, so the window can never write a file it cannot read back.
+    pub fn save_user_providers(root: &Path, providers: Vec<Adapter>) -> Result<(), String> {
+        Self::builtin().extend(providers.clone())?;
+        let payload = serde_json::to_vec_pretty(&ProviderRegistryFile {
+            version: 1,
+            providers,
+        })
+        .map_err(|error| format!("No se pudo guardar el registro de proveedores: {error}"))?;
+        if payload.len() as u64 > MAX_REGISTRY_BYTES {
+            return Err("El registro de proveedores excede el tamaño permitido".to_owned());
+        }
+        let temp = root.join(format!(
+            ".provider-registry-{}-{}.tmp",
+            std::process::id(),
+            SAVE_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        let result = (|| -> std::io::Result<()> {
+            fs::create_dir_all(root)?;
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&temp)?;
+            file.write_all(&payload)?;
+            file.sync_all()?;
+            drop(file);
+            replace_settings_atomically(&temp, &root.join(REGISTRY_FILE))
+        })();
+        if result.is_err() {
+            let _ = fs::remove_file(&temp);
+        }
+        result.map_err(|error| format!("No se pudo guardar el registro de proveedores: {error}"))
+    }
+
+    fn extend(&mut self, providers: Vec<Adapter>) -> Result<(), String> {
+        let registry = self;
+        if registry.adapters.len() + providers.len() > MAX_PROVIDERS {
             return Err("Demasiados proveedores configurados".to_owned());
         }
         let mut ids: HashSet<String> = registry
@@ -225,7 +271,7 @@ impl ProviderRegistry {
             .iter()
             .map(|entry| entry.key_env.clone())
             .collect();
-        for mut entry in file.providers {
+        for mut entry in providers {
             validate_provider_definition(&entry)?;
             if entry.user_endpoint || entry.key_optional {
                 return Err(format!(
@@ -245,7 +291,7 @@ impl ProviderRegistry {
             entry.endpoint = validate_custom_endpoint(&entry.endpoint)?;
             registry.adapters.push(entry);
         }
-        Ok(registry)
+        Ok(())
     }
 
     pub fn adapters(&self) -> &[Adapter] {

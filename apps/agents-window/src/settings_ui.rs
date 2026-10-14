@@ -222,7 +222,7 @@ impl SettingsPage {
             Self::General => "notificaciones notifications avisos recorrido tour proyecto project carpeta folder inicio startup no molestar do not disturb",
             Self::Appearance => "tema theme claro light oscuro dark sistema system idioma language english español inglés movimiento motion animaciones",
             Self::Editor => "ajuste de línea wrap minimapa minimap sangría indent tabulaciones tabs espacios spaces pares pairs código code",
-            Self::Providers => "modelo model api key clave cuenta account catálogo catalog salida output límite openai anthropic",
+            Self::Providers => "modelo model api key clave cuenta account catálogo catalog salida output límite openai anthropic proveedor propio custom provider endpoint url base protocolo protocol variable de entorno environment agregar add",
             Self::Browser => "sitios sites permisos permissions enlaces links vista previa preview localhost chromium bloquear block",
             Self::Terminal => "shell bash zsh fish powershell consola",
             Self::Shortcuts => "teclado keyboard keymap vim atajos shortcuts perfil profile",
@@ -1343,6 +1343,10 @@ pub(crate) fn catalog_model_usable(
 
 fn providers_page(state: &ViewState, compact: bool, content_width: f32) -> Vec<Element> {
     providers::page(state, compact, content_width)
+}
+
+pub fn provider_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -> Element {
+    providers::editor_modal(state, base, viewport_width)
 }
 
 pub fn provider_model_details_modal(

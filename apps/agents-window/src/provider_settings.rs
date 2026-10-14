@@ -8,8 +8,94 @@ use std::{collections::BTreeMap, path::Path};
 use crate::{
     composer_selection::{ExecutionSupport, ModelRouteOption},
     model_catalog::ModelInfo,
-    native_provider::{self, NativeProviderSettings, NativeWireApi, ProviderRegistry},
+    native_provider::{
+        self, Adapter, NativeProviderSettings, NativeWireApi, ProviderAuth, ProviderRegistry,
+    },
 };
+
+/// The form of one of the user's own providers. `key_env` is the name of the
+/// variable; the key itself is never typed here.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ProviderDraft {
+    /// The saved ID being edited; `None` means the form creates a provider.
+    pub editing: Option<String>,
+    pub id: String,
+    pub name: String,
+    pub endpoint: String,
+    pub key_env: String,
+    pub wire_api: NativeWireApi,
+    pub key_optional: bool,
+}
+
+impl ProviderDraft {
+    pub fn new() -> Self {
+        Self {
+            editing: None,
+            id: String::new(),
+            name: String::new(),
+            endpoint: String::new(),
+            key_env: String::new(),
+            wire_api: NativeWireApi::ChatCompletions,
+            key_optional: false,
+        }
+    }
+
+    pub fn edit(saved: &Adapter) -> Self {
+        Self {
+            editing: Some(saved.id.clone()),
+            id: saved.id.clone(),
+            name: saved.name.clone(),
+            endpoint: saved.endpoint.clone(),
+            key_env: saved.key_env.clone(),
+            wire_api: saved.wire_api,
+            key_optional: saved.key_optional,
+        }
+    }
+
+    /// The definition to store. An edit starts from the saved one, so what
+    /// the form does not show survives it.
+    pub fn adapter(&self, saved: Option<&Adapter>) -> Adapter {
+        let mut adapter = saved.cloned().unwrap_or_else(|| Adapter {
+            id: self.id.trim().to_owned(),
+            name: String::new(),
+            endpoint: String::new(),
+            key_env: String::new(),
+            wire_api: self.wire_api,
+            auth: ProviderAuth::Bearer,
+            headers: BTreeMap::new(),
+            model_list_path: Some("models".into()),
+            catalog_list_path: None,
+            catalog_anonymous: false,
+            chat_request_fields: BTreeMap::new(),
+            reasoning_effort_field: None,
+            user_endpoint: false,
+            key_optional: false,
+            catalog: Default::default(),
+            model_transports: BTreeMap::new(),
+            opencode_go_transports: BTreeMap::new(),
+        });
+        // Each protocol has one accepted way to send the key, so the form
+        // does not ask for it.
+        if saved.is_none_or(|saved| saved.wire_api != self.wire_api) {
+            (adapter.auth, adapter.headers) = if self.wire_api == NativeWireApi::AnthropicMessages {
+                (
+                    ProviderAuth::Header {
+                        name: "x-api-key".into(),
+                    },
+                    BTreeMap::from([("anthropic-version".into(), "2023-06-01".into())]),
+                )
+            } else {
+                (ProviderAuth::Bearer, BTreeMap::new())
+            };
+        }
+        adapter.name = self.name.trim().to_owned();
+        adapter.endpoint = self.endpoint.trim().to_owned();
+        adapter.key_env = self.key_env.trim().to_owned();
+        adapter.wire_api = self.wire_api;
+        adapter.key_optional = self.key_optional;
+        adapter
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) enum CatalogModelsFilter {

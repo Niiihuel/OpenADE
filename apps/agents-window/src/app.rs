@@ -6895,6 +6895,10 @@ impl AgentsWindow {
             catalog_provider_menu_open: false,
             native_provider_definitions,
             native_provider_registry_error,
+            user_providers: native_provider::ProviderRegistry::user_providers(&root)
+                .unwrap_or_default(),
+            provider_draft: None,
+            pending_provider_delete_id: None,
             backend_options: backend_options.clone(),
             selected_backend,
             backend_menu_open: false,
@@ -11219,25 +11223,10 @@ impl AgentsWindow {
                     break;
                 }
                 ConnectionEvent::Disconnected { warning } => {
-                    self.catalog_response = None;
-                    self.model_discovery_response = None;
-                    self.model_discovery_pending = 0;
-                    self.view.composer_provider_status.retain(|_, status| {
-                        *status != ProviderModelStatus::Checking
-                    });
-                    if let Some(id) = self.provider_connection_id.take() {
-                        if let Some(catalog) = &mut self.view.catalog {
-                            Arc::make_mut(catalog).clear_account_models(&id);
-                            self.view.catalog_status = catalog_status(catalog);
-                        }
-                        self.model_discoveries.retain(|d| d.provider_id != id);
-                        self.view.composer_provider_status.remove(&id);
-                    }
+                    let id = self.provider_connection_id.take();
                     self.provider_connection_worker = None;
                     self.view.provider_connect = None;
-                    self.refresh_composer_routes();
-                    self.begin_catalog_refresh();
-                    self.begin_model_discovery();
+                    self.forget_provider_models(id.as_deref());
                     self.set_settings_notice(
                         warning
                             .clone()
@@ -11266,6 +11255,77 @@ impl AgentsWindow {
             }
         }
         changed
+    }
+
+    /// A provider was disconnected, redefined or removed: drop what was
+    /// listed for it, and the replies still on their way, then list again.
+    fn forget_provider_models(&mut self, id: Option<&str>) {
+        self.catalog_response = None;
+        self.model_discovery_response = None;
+        self.model_discovery_pending = 0;
+        self.view.composer_provider_status.retain(|_, status| {
+            *status != ProviderModelStatus::Checking
+        });
+        if let Some(id) = id {
+            if let Some(catalog) = &mut self.view.catalog {
+                Arc::make_mut(catalog).clear_account_models(id);
+                self.view.catalog_status = catalog_status(catalog);
+            }
+            self.model_discoveries.retain(|d| d.provider_id != id);
+            self.view.composer_provider_status.remove(id);
+        }
+        self.refresh_composer_routes();
+        self.begin_catalog_refresh();
+        self.begin_model_discovery();
+    }
+
+    /// Write the user's providers after `change`, which is refused whole if
+    /// the registry would not load the result.
+    fn commit_user_providers(
+        &mut self,
+        id: &str,
+        change: impl FnOnce(&mut Vec<native_provider::Adapter>),
+        saved: &str,
+    ) -> bool {
+        use native_provider::ProviderRegistry;
+        let result = ProviderRegistry::user_providers(&self.data_root).and_then(|mut providers| {
+            change(&mut providers);
+            ProviderRegistry::save_user_providers(&self.data_root, providers)
+        });
+        match result {
+            Ok(()) => {
+                self.forget_provider_models(Some(id));
+                self.set_settings_notice(saved, false);
+                true
+            }
+            Err(error) => {
+                self.set_settings_notice(error, true);
+                false
+            }
+        }
+    }
+
+    fn save_provider_draft(&mut self) {
+        let Some(draft) = self.view.provider_draft.clone() else {
+            return;
+        };
+        let saved = self.commit_user_providers(
+            draft.id.trim(),
+            |providers| {
+                let slot = draft
+                    .editing
+                    .as_ref()
+                    .and_then(|id| providers.iter_mut().find(|provider| &provider.id == id));
+                match slot {
+                    Some(slot) => *slot = draft.adapter(Some(slot)),
+                    None => providers.push(draft.adapter(None)),
+                }
+            },
+            "Proveedor guardado",
+        );
+        if saved {
+            self.view.provider_draft = None;
+        }
     }
 
     fn begin_catalog_refresh(&mut self) {
@@ -11488,6 +11548,8 @@ impl AgentsWindow {
 
     fn refresh_composer_routes(&mut self) {
         self.view.provider_connections = crate::provider_connections::summaries(&self.data_root);
+        self.view.user_providers =
+            native_provider::ProviderRegistry::user_providers(&self.data_root).unwrap_or_default();
         match provider_settings::connection_views(&self.data_root, &self.native_settings()) {
             Ok(definitions) => {
                 self.view.native_provider_definitions = definitions;
@@ -19737,6 +19799,10 @@ impl AgentsWindow {
                         self.view.mcp_editor_open = false;
                         self.view.pending_mcp_delete_id = None;
                     }
+                    if page != SettingsPage::Providers {
+                        self.view.provider_draft = None;
+                        self.view.pending_provider_delete_id = None;
+                    }
                     if page != SettingsPage::Hooks {
                         self.view.native_hooks.clear_draft();
                     } else {
@@ -20448,6 +20514,65 @@ impl AgentsWindow {
                     self.set_settings_notice("Desconectando proveedor…", false);
                 }
             }
+            UiAction::Clicked { id } if id == "provider_new" => {
+                self.clear_settings_notice();
+                self.view.provider_draft = Some(provider_settings::ProviderDraft::new());
+            }
+            UiAction::Clicked { id } if id.starts_with("provider_edit:") => {
+                let target = id.trim_start_matches("provider_edit:");
+                if let Some(saved) = self.view.user_providers.iter().find(|p| p.id == target) {
+                    self.view.provider_draft = Some(provider_settings::ProviderDraft::edit(saved));
+                    self.clear_settings_notice();
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("provider_wire:") => {
+                let wire_api = match id.trim_start_matches("provider_wire:") {
+                    "responses" => native_provider::NativeWireApi::Responses,
+                    "anthropic_messages" => native_provider::NativeWireApi::AnthropicMessages,
+                    _ => native_provider::NativeWireApi::ChatCompletions,
+                };
+                if let Some(draft) = &mut self.view.provider_draft {
+                    draft.wire_api = wire_api;
+                    self.clear_settings_notice();
+                }
+            }
+            UiAction::Clicked { id } if id == "provider_draft_key_optional" => {
+                if let Some(draft) = &mut self.view.provider_draft {
+                    draft.key_optional = !draft.key_optional;
+                    self.clear_settings_notice();
+                }
+            }
+            UiAction::Clicked { id } if id == "provider_cancel" => {
+                self.view.provider_draft = None;
+                self.clear_settings_notice();
+            }
+            UiAction::Clicked { id } if id == "provider_save" => {
+                self.save_provider_draft();
+            }
+            UiAction::Clicked { id } if id.starts_with("provider_delete:") => {
+                let target = id.trim_start_matches("provider_delete:");
+                if self.view.provider_draft.is_none()
+                    && self.view.user_providers.iter().any(|p| p.id == target)
+                {
+                    self.view.pending_provider_delete_id = Some(target.to_owned());
+                    self.clear_settings_notice();
+                }
+            }
+            UiAction::Clicked { id } if id == "provider_delete_cancel" => {
+                self.view.pending_provider_delete_id = None;
+            }
+            UiAction::Clicked { id } if id.starts_with("provider_delete_confirm:") => {
+                let target = id.trim_start_matches("provider_delete_confirm:");
+                if self.view.pending_provider_delete_id.as_deref() == Some(target)
+                    && self.commit_user_providers(
+                        target,
+                        |providers| providers.retain(|provider| provider.id != target),
+                        "Proveedor quitado",
+                    )
+                {
+                    self.view.pending_provider_delete_id = None;
+                }
+            }
             UiAction::Clicked { id } if id == "catalog_refresh" => {
                 self.clear_settings_notice();
                 self.refresh_composer_routes();
@@ -21138,6 +21263,18 @@ impl AgentsWindow {
                     self.clear_settings_notice();
                 }
                 "browser_site_draft" => self.view.browser_site_draft = value,
+                "provider_draft_id" | "provider_draft_name" | "provider_draft_endpoint"
+                | "provider_draft_key_env" => {
+                    if let Some(draft) = &mut self.view.provider_draft {
+                        match id.as_str() {
+                            "provider_draft_id" if draft.editing.is_none() => draft.id = value,
+                            "provider_draft_name" => draft.name = value,
+                            "provider_draft_endpoint" => draft.endpoint = value,
+                            "provider_draft_key_env" => draft.key_env = value,
+                            _ => {}
+                        }
+                    }
+                }
                 "mcp_draft_id" => self.view.mcp_draft_id = value,
                 "mcp_draft_url" => self.view.mcp_draft_url = value,
                 "mcp_draft_http_bearer_token_env_name" => {
@@ -25252,6 +25389,92 @@ mod tests {
             .unwrap()
             .servers
             .is_empty());
+    }
+
+    #[test]
+    fn own_providers_are_added_edited_and_removed_from_settings() {
+        use crate::native_provider::{NativeWireApi, ProviderRegistry};
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        app.view.show_settings = true;
+        app.view.settings_page = SettingsPage::Providers;
+        app.view.catalog_browse_provider.clear();
+        let ctx = egui::Context::default();
+        let type_in = |app: &mut AgentsWindow, id: &str, value: &str| {
+            app.apply_action(
+                UiAction::InputChanged {
+                    id: id.into(),
+                    value: value.into(),
+                },
+                &ctx,
+            );
+        };
+        let shows = |app: &AgentsWindow, id: &str| {
+            UiTree::new(crate::view::build_window_view(&app.view, 1200.0, 2400.0))
+                .layout(Size::new(1200.0, 2400.0))
+                .regions
+                .iter()
+                .any(|region| region.id == id)
+        };
+        let file = root.path().join("provider-registry.json");
+
+        assert!(shows(&app, "provider_new"));
+        app.apply_action(clicked("provider_new"), &ctx);
+        assert!(shows(&app, "provider_draft_key_env"));
+        for (id, value) in [
+            ("provider_draft_id", "openai"),
+            ("provider_draft_name", "My Gateway"),
+            ("provider_draft_endpoint", "https://gateway.example.test/v1"),
+            ("provider_draft_key_env", "MY_GATEWAY_FIXTURE_KEY"),
+        ] {
+            type_in(&mut app, id, value);
+        }
+        // A bundled provider is not the user's to redefine, and the registry
+        // takes no user provider without a key: its own words reach the form.
+        app.apply_action(clicked("provider_save"), &ctx);
+        assert_eq!(
+            app.view.settings_notice.as_deref(),
+            Some("Proveedor duplicado o reservado: openai")
+        );
+        type_in(&mut app, "provider_draft_id", "my-gateway");
+        app.apply_action(clicked("provider_draft_key_optional"), &ctx);
+        app.apply_action(clicked("provider_save"), &ctx);
+        assert!(app.view.settings_notice_error && app.view.provider_draft.is_some());
+        assert!(!file.exists());
+        app.apply_action(clicked("provider_draft_key_optional"), &ctx);
+        app.apply_action(clicked("provider_wire:anthropic_messages"), &ctx);
+        app.apply_action(clicked("provider_save"), &ctx);
+        assert!(app.view.provider_draft.is_none(), "{:?}", app.view.settings_notice);
+        assert!(shows(&app, "provider_edit:my-gateway"));
+        assert_eq!(
+            app.view.native_provider_definitions["my-gateway"].wire_api,
+            NativeWireApi::AnthropicMessages
+        );
+        let saved = ProviderRegistry::load(root.path()).unwrap();
+        assert_eq!(saved.adapter("my-gateway").unwrap().key_env, "MY_GATEWAY_FIXTURE_KEY");
+
+        app.apply_action(clicked("provider_edit:openai"), &ctx);
+        assert!(app.view.provider_draft.is_none());
+        app.apply_action(clicked("provider_edit:my-gateway"), &ctx);
+        type_in(&mut app, "provider_draft_id", "renamed");
+        type_in(&mut app, "provider_draft_name", "Renamed Gateway");
+        app.apply_action(clicked("provider_wire:chat_completions"), &ctx);
+        app.apply_action(clicked("provider_save"), &ctx);
+        let saved = ProviderRegistry::user_providers(root.path()).unwrap();
+        assert_eq!(saved.len(), 1);
+        assert_eq!((saved[0].id.as_str(), saved[0].name.as_str()), ("my-gateway", "Renamed Gateway"));
+        assert_eq!(saved[0].model_list_path.as_deref(), Some("models"));
+        assert!(saved[0].headers.is_empty());
+
+        app.apply_action(clicked("provider_delete_confirm:my-gateway"), &ctx);
+        assert_eq!(app.view.user_providers.len(), 1);
+        app.apply_action(clicked("provider_delete:my-gateway"), &ctx);
+        assert!(shows(&app, "provider_delete_confirm:my-gateway"));
+        app.apply_action(clicked("provider_delete_confirm:my-gateway"), &ctx);
+        assert!(app.view.pending_provider_delete_id.is_none());
+        assert!(!shows(&app, "provider_edit:my-gateway"));
+        assert!(!app.view.native_provider_definitions.contains_key("my-gateway"));
+        assert!(ProviderRegistry::user_providers(root.path()).unwrap().is_empty());
     }
 
     #[test]

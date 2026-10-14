@@ -5,6 +5,7 @@ use crate::{
     model_catalog::ModelInfo,
     provider_connections::{self, ConnectPhase},
     provider_icons::icon_for_provider,
+    native_provider::NativeWireApi,
     provider_settings::{self, CatalogModelsFilter},
     settings_parts::{self, FeedbackTone},
     theme,
@@ -147,6 +148,7 @@ fn overview(state: &ViewState, compact: bool) -> Vec<Element> {
             .render(),
         );
     }
+    sections.push(own_providers(state, &query, compact));
     if let Some(error) = &state.native_provider_registry_error {
         sections.push(settings_parts::feedback_banner(
             error,
@@ -157,6 +159,176 @@ fn overview(state: &ViewState, compact: bool) -> Vec<Element> {
     }
     sections.push(refresh(state));
     sections
+}
+
+/// The providers of the user's registry file. The bundled ones have no row
+/// here: they are not the user's to change.
+fn own_providers(state: &ViewState, query: &str, compact: bool) -> Element {
+    let mut rows = state
+        .user_providers
+        .iter()
+        .filter(|provider| query.is_empty() || provider.name.to_lowercase().contains(query))
+        .map(|provider| {
+            settings_parts::settings_row(
+                provider.name.clone(),
+                status(state, &provider.id),
+                ButtonGroup::new(vec![
+                    outline(format!("provider_edit:{}", provider.id), "Editar").render(),
+                    outline(format!("provider_delete:{}", provider.id), "Quitar").render(),
+                ])
+                .sizing(crate::ui_sizing::ENTITY_ACTIONS)
+                .stacked(compact)
+                .render(),
+                compact,
+            )
+        })
+        .collect::<Vec<_>>();
+    rows.push(settings_parts::settings_row(
+        "Otro servicio",
+        "Un servicio que hable Chat Completions, Responses o Messages. Su clave se lee de una variable de entorno; openADE guarda solo el nombre.",
+        outline("provider_new", "Agregar proveedor")
+            .icon(Icon::Add)
+            .render(),
+        compact,
+    ));
+    settings_parts::settings_group("Proveedores propios", rows)
+}
+
+/// The form of one of the user's own providers, above the full window.
+pub(super) fn editor_modal(state: &ViewState, base: Element, viewport_width: f32) -> Element {
+    let Some(draft) = state
+        .provider_draft
+        .as_ref()
+        .filter(|_| state.shows(super::SettingsPage::Providers))
+    else {
+        return base;
+    };
+    let width = Modal::fit_width(viewport_width, 560.0);
+    let body_width = crate::ui_sizing::form_width(width).max(0.0);
+    let editing = draft.editing.is_some();
+    let mut fields = Vec::new();
+    if state.settings_notice_error {
+        if let Some(error) = &state.settings_notice {
+            fields.push(settings_parts::feedback_banner(
+                error,
+                FeedbackTone::Error,
+                None,
+                width < 420.0,
+            ));
+        }
+    }
+    let input = |id: &str, value: &str, placeholder: &str| {
+        super::mono_field(id, value, placeholder)
+            .width(body_width)
+            .height(40.0)
+    };
+    fields.extend(
+        [
+            super::form_field(
+                "ID del proveedor",
+                input("provider_draft_id", &draft.id, "ej. mi-proveedor")
+                    .enabled(!editing)
+                    .render(),
+            )
+            .hint("Minúsculas, números, guiones y guiones bajos. No se puede cambiar después.")
+            .rows(),
+            super::form_field(
+                "Nombre",
+                input("provider_draft_name", &draft.name, "Mi proveedor").render(),
+            )
+            .rows(),
+            super::form_field(
+                "URL base",
+                input(
+                    "provider_draft_endpoint",
+                    &draft.endpoint,
+                    "https://api.example.com/v1",
+                )
+                .render(),
+            )
+            .hint("HTTPS; HTTP sólo para localhost o loopback. Sin credenciales, búsqueda ni fragmento.")
+            .rows(),
+            super::form_field(
+                "Variable de entorno de la clave",
+                input("provider_draft_key_env", &draft.key_env, "MI_PROVEEDOR_API_KEY").render(),
+            )
+            .hint("El nombre de la variable, en mayúsculas; nunca la clave. openADE lee su valor del entorno al conectarse.")
+            .rows(),
+            super::form_field(
+                "Protocolo",
+                ButtonGroup::new(
+                    [
+                        (NativeWireApi::ChatCompletions, "chat_completions", "Chat Completions"),
+                        (NativeWireApi::Responses, "responses", "Responses"),
+                        (NativeWireApi::AnthropicMessages, "anthropic_messages", "Messages"),
+                    ]
+                    .into_iter()
+                    .map(|(wire_api, id, label)| {
+                        outline(format!("provider_wire:{id}"), label)
+                            .active(draft.wire_api == wire_api)
+                            .render()
+                    })
+                    .collect(),
+                )
+                .stacked(width < 420.0)
+                .render(),
+            )
+            .rows(),
+        ]
+        .into_iter()
+        .flatten(),
+    );
+    fields.push(settings_parts::switch_row(
+        "provider_draft_key_optional",
+        "La clave es opcional",
+        "Para un servicio que responde sin credencial.",
+        draft.key_optional,
+        true,
+        width < 420.0,
+    ));
+    let cancel = outline("provider_cancel", "Cancelar").render();
+    let save = theme::primary(
+        "provider_save",
+        if editing {
+            "Guardar cambios"
+        } else {
+            "Agregar proveedor"
+        },
+    )
+    .size(ControlSize::Compact)
+    .render();
+    Modal::new(
+        base,
+        true,
+        if editing {
+            "Editar proveedor"
+        } else {
+            "Nuevo proveedor"
+        },
+        "Define un servicio de modelos para el agente nativo.",
+        "provider_cancel",
+        theme::component_palette(),
+    )
+    .width(width)
+    .height(600.0)
+    .body(
+        Element::column(fields)
+            .gap(7.0)
+            .size(Some(body_width), None),
+    )
+    .footer(super::form_footer(cancel, save, width))
+    .initial_focus(if editing {
+        "provider_draft_name"
+    } else {
+        "provider_draft_id"
+    })
+    .return_focus(
+        draft
+            .editing
+            .as_ref()
+            .map_or_else(|| "provider_new".to_owned(), |id| format!("provider_edit:{id}")),
+    )
+    .render()
 }
 fn catalog_builtin_adapter(provider: &str) -> Option<crate::native_provider::Adapter> {
     #[cfg(test)]

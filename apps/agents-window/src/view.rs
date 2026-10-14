@@ -34,7 +34,7 @@ use crate::{
     home,
     marketplace_view::{self, MarketplaceViewState},
     model_catalog::CatalogSnapshot,
-    provider_settings::{CatalogModelsFilter, CatalogSettingsTab, ProviderConnectionView},
+    provider_settings::{CatalogModelsFilter, CatalogSettingsTab, ProviderConnectionView, ProviderDraft},
     session_groups::{SessionGroup, SessionGroups},
     settings_preferences::TerminalShell,
     settings_ui::{self, SettingsPage},
@@ -530,6 +530,12 @@ pub struct ViewState {
     pub(crate) catalog_provider_menu_open: bool,
     pub(crate) native_provider_definitions: BTreeMap<String, ProviderConnectionView>,
     pub(crate) native_provider_registry_error: Option<String>,
+    /// The providers of the user's registry file as written, so one the
+    /// registry rejects can still be corrected or removed from the window.
+    pub(crate) user_providers: Vec<crate::native_provider::Adapter>,
+    /// The open provider form; `None` while it is closed.
+    pub(crate) provider_draft: Option<ProviderDraft>,
+    pub(crate) pending_provider_delete_id: Option<String>,
     pub backend_options: Vec<(String, String)>,
     pub selected_backend: String,
     pub backend_menu_open: bool,
@@ -3757,6 +3763,7 @@ fn dialogs(state: &ViewState, base: Element, viewport_width: f32) -> Element {
     let base = crate::github_account_ui::sign_in_alert(state, base, viewport_width);
     let base = settings_ui::provider_connect_modal(state, base, viewport_width);
     let base = settings_ui::mcp_editor_modal(state, base, viewport_width);
+    let base = settings_ui::provider_editor_modal(state, base, viewport_width);
     let base = settings_ui::hook_editor_modal(state, base, viewport_width);
     let base = settings_ui::exec_rule_editor_modal(state, base, viewport_width);
     let base = settings_ui::exec_rule_reset_modal(state, base, viewport_width);
@@ -3918,6 +3925,24 @@ fn confirmation_dialog(state: &ViewState, base: Element, viewport_width: f32) ->
                 format!("mcp_delete_confirm:{id}"),
                 "mcp_delete_cancel".to_owned(),
                 "Eliminar servidor".to_owned(),
+                true,
+            )
+        })
+    } else if let Some(id) = state.pending_provider_delete_id.as_deref() {
+        state.user_providers.iter().find(|provider| provider.id == id).map(|provider| {
+            let mut description = "Se quitará de tu registro de proveedores. La variable de entorno con su clave no se toca.".to_owned();
+            if state.settings_notice_error {
+                if let Some(error) = &state.settings_notice {
+                    description.push_str("\n\n");
+                    description.push_str(error);
+                }
+            }
+            (
+                format!("¿Quitar el proveedor «{}»?", provider.name),
+                description,
+                format!("provider_delete_confirm:{id}"),
+                "provider_delete_cancel".to_owned(),
+                "Quitar proveedor".to_owned(),
                 true,
             )
         })
@@ -4203,6 +4228,9 @@ pub(crate) mod tests {
                 |_| false,
             ),
             native_provider_registry_error: None,
+            user_providers: Vec::new(),
+            provider_draft: None,
+            pending_provider_delete_id: None,
             backend_options: vec![("native".into(), "Nativo".into())],
             selected_backend: "native".into(),
             backend_menu_open: false,
