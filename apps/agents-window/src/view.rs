@@ -1065,6 +1065,12 @@ pub(crate) fn addons_settings_tab(state: &ViewState, width: f32) -> Option<Eleme
 impl ViewState {
     /// Whether one of the pages Settings holds is the one in view: there,
     /// or as a tab of the add-ons section.
+    /// Whether `id` comes from the user's registry file. Such a provider is
+    /// offered like a connected one, with its key read from a variable.
+    pub(crate) fn own_provider(&self, id: &str) -> bool {
+        self.user_providers.iter().any(|provider| provider.id == id)
+    }
+
     pub(crate) fn shows(&self, page: SettingsPage) -> bool {
         use marketplace_view::MarketplaceTab;
         if self.show_settings {

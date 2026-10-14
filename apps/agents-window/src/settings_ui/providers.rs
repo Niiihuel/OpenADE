@@ -38,7 +38,15 @@ fn status(state: &ViewState, id: &str) -> String {
         return state.native_provider_definitions.get(id).map_or_else(
             || "Proveedor sin registrar".into(),
             |definition| {
-                if definition.key_available {
+                // An own provider has no connection to make here: its key
+                // is the variable it names, set outside the window.
+                if state.own_provider(id) {
+                    if definition.key_available {
+                        "Variable definida".into()
+                    } else {
+                        format!("Falta la variable {}", definition.key_env)
+                    }
+                } else if definition.key_available {
                     "Credencial disponible · acceso sin verificar".into()
                 } else if definition.key_optional {
                     "Conexión sin clave · acceso sin verificar".into()
@@ -278,14 +286,6 @@ pub(super) fn editor_modal(state: &ViewState, base: Element, viewport_width: f32
         .into_iter()
         .flatten(),
     );
-    fields.push(settings_parts::switch_row(
-        "provider_draft_key_optional",
-        "La clave es opcional",
-        "Para un servicio que responde sin credencial.",
-        draft.key_optional,
-        true,
-        width < 420.0,
-    ));
     let cancel = outline("provider_cancel", "Cancelar").render();
     let save = theme::primary(
         "provider_save",

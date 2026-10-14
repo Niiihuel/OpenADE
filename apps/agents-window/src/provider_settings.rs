@@ -24,7 +24,6 @@ pub(crate) struct ProviderDraft {
     pub endpoint: String,
     pub key_env: String,
     pub wire_api: NativeWireApi,
-    pub key_optional: bool,
 }
 
 impl ProviderDraft {
@@ -36,7 +35,6 @@ impl ProviderDraft {
             endpoint: String::new(),
             key_env: String::new(),
             wire_api: NativeWireApi::ChatCompletions,
-            key_optional: false,
         }
     }
 
@@ -48,7 +46,6 @@ impl ProviderDraft {
             endpoint: saved.endpoint.clone(),
             key_env: saved.key_env.clone(),
             wire_api: saved.wire_api,
-            key_optional: saved.key_optional,
         }
     }
 
@@ -92,7 +89,6 @@ impl ProviderDraft {
         adapter.endpoint = self.endpoint.trim().to_owned();
         adapter.key_env = self.key_env.trim().to_owned();
         adapter.wire_api = self.wire_api;
-        adapter.key_optional = self.key_optional;
         adapter
     }
 }

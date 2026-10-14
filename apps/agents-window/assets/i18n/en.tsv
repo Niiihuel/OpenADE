@@ -2308,6 +2308,7 @@ Falta la credencial del proveedor.	The provider credential is missing.
 Falta la preparación exacta de la política	The exact policy preparation is missing
 Falta la variable de credenciales MCP {name}	Missing MCP credential variable {name}
 Falta la variable de entorno MCP {name}	Missing MCP environment variable {name}
+Falta la variable {}	The variable {} is missing
 Falta un cursor válido para continuar el catálogo	A valid cursor to continue the catalog is missing
 Falta una decisión anterior en el registro de esta revisión	A previous decision is missing from this review's record
 Fase	Phase
@@ -2748,7 +2749,6 @@ La carpeta destino apareció durante la instalación	The destination folder appe
 La carpeta destino ya existe	The destination folder already exists
 La carpeta no está disponible dentro del proyecto	The folder is not available inside the project
 La carpeta «{path}» y todo su contenido irán a la papelera del sistema.	The folder «{path}» and all its contents will go to the system trash.
-La clave es opcional	The key is optional
 La clave se guarda de forma privada en este equipo. El acceso a generación se comprueba al usar un modelo.	The key is stored privately on this machine. Generation access is checked when a model is used.
 La cola de entrada está llena. Esperá y volvé a intentar; esta entrada no se envió.	The input queue is full. Wait and try again; this input was not sent.
 La cola del navegador está llena; esperá la operación actual	The browser queue is full; wait for the current operation
@@ -4006,7 +4006,6 @@ Pantalla completa	Full screen
 Para el próximo mensaje	For the next message
 Para empezar	To get started
 Para enviar otra instrucción, crea una tarea nativa nueva.	To send another instruction, create a new native task.
-Para un servicio que responde sin credencial.	For a service that answers without a credential.
 Parcial	Partial
 Pares	Pairs
 Parte de la ventana del modelo que ocupa la conversación nativa seleccionada. Con ~ es una estimación.	Share of the model's window used by the selected native conversation. With ~ it is an estimate.
@@ -5129,6 +5128,7 @@ Valor de herramienta inválido para {}	Invalid tool value for {}
 Valor de variable MCP no válido en {}	Invalid MCP variable value in {}
 Variable de credencial inválida para {}	Invalid credential variable for {}
 Variable de entorno de la clave	Environment variable of the key
+Variable definida	Variable set
 Variable del bearer token (opcional)	Bearer token variable (optional)
 Variables de entorno	Environment variables
 Ventana de agentes	Agents window

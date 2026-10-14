@@ -6661,8 +6661,9 @@ impl AgentsWindow {
             composer_preferences.set("native", choice);
         }
         // Keep the durable engine route intact for recovery and registered
-        // adapters. The picker filters the four public connection flows below;
-        // hiding a route must not replace its execution identity with blanks.
+        // adapters. The picker keeps the public connection flows and the
+        // user's own providers below; hiding a route must not replace its
+        // execution identity with blanks.
         let (catalog, catalog_load_error) = match model_catalog::load_cache(&root) {
             Ok(Some(snapshot)) => (Some(snapshot), None),
             Ok(None) => (Some(model_catalog::reviewed_seed_snapshot()), None),
@@ -6827,8 +6828,12 @@ impl AgentsWindow {
                 .map(|(effort, _)| effort.clone())
                 .unwrap_or_else(|| "default".to_owned())
         };
+        let user_providers =
+            native_provider::ProviderRegistry::user_providers(&root).unwrap_or_default();
         selected_routes.retain(|route| {
-            route.backend == "native" && crate::provider_connections::supported(&route.provider_id)
+            route.backend == "native"
+                && (crate::provider_connections::supported(&route.provider_id)
+                    || user_providers.iter().any(|own| own.id == route.provider_id))
         });
         let composer_model_metadata =
             crate::model_metadata::for_routes(&selected_routes, catalog.as_ref(), &[], &[]);
@@ -6895,8 +6900,7 @@ impl AgentsWindow {
             catalog_provider_menu_open: false,
             native_provider_definitions,
             native_provider_registry_error,
-            user_providers: native_provider::ProviderRegistry::user_providers(&root)
-                .unwrap_or_default(),
+            user_providers,
             provider_draft: None,
             pending_provider_delete_id: None,
             backend_options: backend_options.clone(),
@@ -11288,6 +11292,14 @@ impl AgentsWindow {
         saved: &str,
     ) -> bool {
         use native_provider::ProviderRegistry;
+        // The running turn may be on this provider, as with a disconnection.
+        if self.view.running {
+            self.set_settings_notice(
+                "La ruta y sus límites están bloqueados mientras hay un turno en curso.",
+                true,
+            );
+            return false;
+        }
         let result = ProviderRegistry::user_providers(&self.data_root).and_then(|mut providers| {
             change(&mut providers);
             ProviderRegistry::save_user_providers(&self.data_root, providers)
@@ -11578,7 +11590,9 @@ impl AgentsWindow {
             }
         };
         routes.retain(|route| {
-            route.backend == "native" && crate::provider_connections::supported(&route.provider_id)
+            route.backend == "native"
+                && (crate::provider_connections::supported(&route.provider_id)
+                    || self.view.own_provider(&route.provider_id))
         });
         self.view.composer_model_metadata = crate::model_metadata::for_routes(
             &routes,
@@ -20536,12 +20550,6 @@ impl AgentsWindow {
                     self.clear_settings_notice();
                 }
             }
-            UiAction::Clicked { id } if id == "provider_draft_key_optional" => {
-                if let Some(draft) = &mut self.view.provider_draft {
-                    draft.key_optional = !draft.key_optional;
-                    self.clear_settings_notice();
-                }
-            }
             UiAction::Clicked { id } if id == "provider_cancel" => {
                 self.view.provider_draft = None;
                 self.clear_settings_notice();
@@ -25409,14 +25417,20 @@ mod tests {
                 &ctx,
             );
         };
-        let shows = |app: &AgentsWindow, id: &str| {
+        let frame = |app: &AgentsWindow| {
             UiTree::new(crate::view::build_window_view(&app.view, 1200.0, 2400.0))
                 .layout(Size::new(1200.0, 2400.0))
-                .regions
-                .iter()
-                .any(|region| region.id == id)
+        };
+        let shows =
+            |app: &AgentsWindow, id: &str| frame(app).regions.iter().any(|region| region.id == id);
+        let says = |app: &AgentsWindow, text: &str| {
+            frame(app).text_layouts().iter().any(|block| block.source.contains(text))
         };
         let file = root.path().join("provider-registry.json");
+        // The app reads a key through the process environment and offers no
+        // lookup to replace, so the variable is one only this test names.
+        let variable = format!("OPENIDE_OWN_PROVIDER_FIXTURE_{}", std::process::id());
+        let _credential = NativeComposerTestCredential(variable.clone());
 
         assert!(shows(&app, "provider_new"));
         app.apply_action(clicked("provider_new"), &ctx);
@@ -25425,23 +25439,21 @@ mod tests {
             ("provider_draft_id", "openai"),
             ("provider_draft_name", "My Gateway"),
             ("provider_draft_endpoint", "https://gateway.example.test/v1"),
-            ("provider_draft_key_env", "MY_GATEWAY_FIXTURE_KEY"),
+            ("provider_draft_key_env", variable.as_str()),
         ] {
             type_in(&mut app, id, value);
         }
-        // A bundled provider is not the user's to redefine, and the registry
-        // takes no user provider without a key: its own words reach the form.
+        // A bundled provider is not the user's to redefine: the registry's
+        // own words reach the form and nothing is written.
         app.apply_action(clicked("provider_save"), &ctx);
         assert_eq!(
             app.view.settings_notice.as_deref(),
             Some("Proveedor duplicado o reservado: openai")
         );
-        type_in(&mut app, "provider_draft_id", "my-gateway");
-        app.apply_action(clicked("provider_draft_key_optional"), &ctx);
-        app.apply_action(clicked("provider_save"), &ctx);
         assert!(app.view.settings_notice_error && app.view.provider_draft.is_some());
         assert!(!file.exists());
-        app.apply_action(clicked("provider_draft_key_optional"), &ctx);
+        assert!(!shows(&app, "provider_draft_key_optional"));
+        type_in(&mut app, "provider_draft_id", "my-gateway");
         app.apply_action(clicked("provider_wire:anthropic_messages"), &ctx);
         app.apply_action(clicked("provider_save"), &ctx);
         assert!(app.view.provider_draft.is_none(), "{:?}", app.view.settings_notice);
@@ -25451,7 +25463,7 @@ mod tests {
             NativeWireApi::AnthropicMessages
         );
         let saved = ProviderRegistry::load(root.path()).unwrap();
-        assert_eq!(saved.adapter("my-gateway").unwrap().key_env, "MY_GATEWAY_FIXTURE_KEY");
+        assert_eq!(saved.adapter("my-gateway").unwrap().key_env, variable);
 
         app.apply_action(clicked("provider_edit:openai"), &ctx);
         assert!(app.view.provider_draft.is_none());
@@ -25466,6 +25478,55 @@ mod tests {
         assert_eq!(saved[0].model_list_path.as_deref(), Some("models"));
         assert!(saved[0].headers.is_empty());
 
+        // Listed by its service but with its variable unset, the provider
+        // says what is missing and its model cannot be chosen.
+        let listing = |app: &mut AgentsWindow| {
+            let registry = ProviderRegistry::load(root.path()).unwrap();
+            app.model_discoveries = vec![native_provider::parse_connected_models_for_adapter(
+                registry.adapter("my-gateway").unwrap(),
+                br#"{"data":[{"id":"model-a"}]}"#,
+            )
+            .unwrap()];
+            app.refresh_composer_routes();
+        };
+        let route = "native:my-gateway:model-a";
+        listing(&mut app);
+        assert!(says(&app, &format!("Falta la variable {variable}")));
+        assert!(!shows(&app, "provider_connect:my-gateway"));
+        assert!(app.view.composer_routes.iter().all(|r| r.route_id != route || !r.selectable()));
+        app.view.show_settings = false;
+        app.view.selected_backend = "native".into();
+        app.apply_action(clicked(format!("composer_route:{route}")), &ctx);
+        assert_ne!(app.view.native_provider_id, "my-gateway");
+
+        // With the variable set the same route is offered, accepted, and
+        // resolves to the endpoint and key a turn would use.
+        std::env::set_var(&variable, "fixture-credential-not-a-real-provider-key");
+        listing(&mut app);
+        app.view.show_settings = true;
+        app.view.settings_page = SettingsPage::Providers;
+        app.view.catalog_browse_provider.clear();
+        assert!(says(&app, "Variable definida"));
+        assert!(app.view.composer_routes.iter().any(|r| r.route_id == route && r.selectable()));
+        app.view.show_settings = false;
+        app.apply_action(clicked(format!("composer_route:{route}")), &ctx);
+        assert_eq!(
+            (app.view.native_provider_id.as_str(), app.view.model.as_str()),
+            ("my-gateway", "model-a"),
+            "{}",
+            app.view.status
+        );
+        let connection = app
+            .native_settings()
+            .resolve_with_registry(&ProviderRegistry::load(root.path()).unwrap(), |name| {
+                crate::provider_connections::read_key(root.path(), name)
+            })
+            .unwrap();
+        assert_eq!(connection.endpoint, "https://gateway.example.test/v1");
+        assert_eq!(connection.wire_api, NativeWireApi::ChatCompletions);
+        assert!(connection.api_key.is_some());
+
+        app.view.show_settings = true;
         app.apply_action(clicked("provider_delete_confirm:my-gateway"), &ctx);
         assert_eq!(app.view.user_providers.len(), 1);
         app.apply_action(clicked("provider_delete:my-gateway"), &ctx);
@@ -25474,6 +25535,7 @@ mod tests {
         assert!(app.view.pending_provider_delete_id.is_none());
         assert!(!shows(&app, "provider_edit:my-gateway"));
         assert!(!app.view.native_provider_definitions.contains_key("my-gateway"));
+        assert!(app.view.composer_routes.iter().all(|r| r.provider_id != "my-gateway"));
         assert!(ProviderRegistry::user_providers(root.path()).unwrap().is_empty());
     }
 
