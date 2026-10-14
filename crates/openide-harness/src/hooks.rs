@@ -696,8 +696,16 @@ pub(crate) async fn capture_hook_process(
     };
     let run = async {
         let write = async {
-            stdin.write_all(&input).await?;
-            stdin.shutdown().await?;
+            let written = async {
+                stdin.write_all(&input).await?;
+                stdin.shutdown().await
+            };
+            match written.await {
+                // A hook may exit without reading its input; its status and
+                // output still decide the outcome.
+                Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => {}
+                result => result?,
+            }
             drop(stdin);
             Ok::<(), std::io::Error>(())
         };
@@ -1357,6 +1365,20 @@ mod tests {
             assert_eq!(stdout, "invalid-json");
             assert_eq!(stderr, "failure-details");
         }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_hook_that_does_not_read_its_input_still_completes() {
+        let dir = tempfile::tempdir().unwrap();
+        // Closing stdin first and an input larger than a pipe's buffer make
+        // the write fail with a broken pipe every time, not only on a race.
+        let script = "exec 0<&-; printf '%s' '{\"decision\":\"allow\"}'";
+        let config = command_config(dir.path(), script);
+        let mut invocation = invocation();
+        invocation.tool_input = json!({"content": "x".repeat(MAX_HOOK_INPUT_BYTES / 2)});
+        let result = run_command_hook(&config, &invocation, &CancellationToken::new()).await;
+        assert!(matches!(result, HookRunResult::Completed { .. }), "{result:?}");
     }
 
     #[tokio::test]
