@@ -1075,3 +1075,29 @@ fn appearance_offers_the_three_themes_as_cards_and_marks_the_one_in_use() {
     }
 }
 
+
+#[test]
+fn settings_are_found_by_what_a_row_does_and_the_editor_has_its_page() {
+    use crate::settings_ui::SettingsPage;
+    let mut state = crate::view::tests::empty_state();
+    state.show_settings = true;
+    let size = Size::new(1200.0, 800.0);
+    let shown = |state: &crate::view::ViewState, id: &str| {
+        has(&UiTree::new(crate::view::build_view_sized(state, size.width, size.height)).layout(size), id)
+    };
+    // A word of a row, in either language, finds the page that holds it.
+    for (query, page) in [("idioma", "appearance"), ("language", "appearance"), ("minimapa", "editor"), ("sandbox", "agent")] {
+        state.settings_nav_query = query.into();
+        assert!(shown(&state, &format!("settings_page:{page}")), "{query}");
+        assert!(!shown(&state, "settings_page:terminal"), "{query}");
+    }
+    state.settings_nav_query.clear();
+    state.settings_page = SettingsPage::Editor;
+    for control in ["editor_wrap", "editor_minimap", "editor_pairs", "editor_indent_kind", "editor_indent_width"] {
+        assert!(shown(&state, control), "{control}");
+    }
+    state.settings_page = SettingsPage::Appearance;
+    assert!(shown(&state, "settings_language:es") && shown(&state, "settings_language:en"));
+    state.settings_page = SettingsPage::Data;
+    assert!(shown(&state, "settings_open_data_folder"));
+}

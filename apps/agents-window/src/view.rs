@@ -727,6 +727,8 @@ pub struct ViewState {
     pub(crate) debug_open: bool,
     pub(crate) code_snapshot: Option<crate::code_snapshot_ui::CodeSnapshotView>,
     pub(crate) code_editor_quit_confirm: bool,
+    /// Where this machine's conversations and settings are kept, to show.
+    pub(crate) data_folder: String,
     pub(crate) code_editor_pending_saves: bool,
     pub(crate) chat_diffs: crate::chat_diff_ui::ChatDiffUiState,
     pub(crate) code_editor_reload_confirm: Option<crate::code_editor_files::EditorFileScope>,
@@ -4392,6 +4394,7 @@ pub(crate) mod tests {
             chat_diffs: Default::default(),
             code_editor_reload_confirm: None,
             git_review: None,
+            data_folder: String::new(),
             git_action_pending: false,
             git_action_error: None,
             git_panel: Default::default(),
@@ -4940,7 +4943,7 @@ pub(crate) mod tests {
                 settings_ui::build_settings_page(&state, page, 1000.0, true),
             ));
         }
-        for page in [SettingsPage::Shortcuts, SettingsPage::WorkspaceSearch] {
+        for page in [SettingsPage::Shortcuts] {
             for width in [360.0, 1300.0] {
                 cases.push((
                     format!("settings-{page:?}-{width:.0}"),
@@ -6320,7 +6323,6 @@ pub(crate) mod tests {
             (SettingsPage::Agent, "command_isolation:host_unrestricted"),
             (SettingsPage::Providers, "catalog_refresh"),
             (SettingsPage::Terminal, "settings_terminal_shell_toggle"),
-            (SettingsPage::WorkspaceSearch, "open_command_center"),
             (SettingsPage::Mcp, "mcp_new"),
             (SettingsPage::Skills, "open_marketplace"),
             (SettingsPage::Automations, "open_automations"),
@@ -6778,9 +6780,7 @@ pub(crate) mod tests {
             SettingsPage::Agent,
             SettingsPage::Providers,
             SettingsPage::Browser,
-            SettingsPage::ComputerUse,
             SettingsPage::Terminal,
-            SettingsPage::WorkspaceSearch,
             SettingsPage::Memory,
             SettingsPage::Subagents,
             SettingsPage::ExternalAgents,
@@ -6985,9 +6985,7 @@ pub(crate) mod tests {
             SettingsPage::Agent,
             SettingsPage::Providers,
             SettingsPage::Browser,
-            SettingsPage::ComputerUse,
             SettingsPage::Terminal,
-            SettingsPage::WorkspaceSearch,
             SettingsPage::Memory,
             SettingsPage::Subagents,
             SettingsPage::ExternalAgents,
@@ -7394,10 +7392,8 @@ pub(crate) mod tests {
             (SettingsPage::Appearance, "Apariencia"),
             (SettingsPage::Providers, "Proveedores y modelos"),
             (SettingsPage::Browser, "Navegador"),
-            (SettingsPage::ComputerUse, "Control del equipo"),
             (SettingsPage::Terminal, "Terminal"),
             (SettingsPage::Shortcuts, "Atajos de teclado"),
-            (SettingsPage::WorkspaceSearch, "Búsqueda de archivos"),
             (SettingsPage::Agent, "Agente"),
             (SettingsPage::Memory, "Memoria"),
             (SettingsPage::Subagents, "Subagentes"),

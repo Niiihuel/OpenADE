@@ -4554,6 +4554,7 @@ mod tests {
             chat_diffs: Default::default(),
             code_editor_reload_confirm: None,
             git_review: None,
+            data_folder: String::new(),
             git_action_pending: false,
             git_action_error: None,
             git_panel: Default::default(),
