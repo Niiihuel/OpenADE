@@ -1,228 +1,141 @@
-# OpenIDE Agents Window
+# openADE
 
-Una ventana de agentes nativa en Rust, con un framework de UI propio, un harness
-propio y adaptadores configurables para agentes de línea de comandos.
+A native agent development environment written in Rust: an agents window and an
+IDE over the same workspace, built on its own UI framework
+([limn](https://github.com/Niiihuel/limn)), its own agent harness and
+configurable adapters for command-line agents such as Codex, Claude Code and
+opencode.
 
-El botón **IDE / Agentes** cambia la distribución del mismo espacio de trabajo.
-La vista IDE reúne explorador, editor con pestañas, terminal inferior y agente
-lateral, conservando los documentos y la sesión. Usa los componentes nativos de
-`openide-ui`; los detalles están en [Espacio de trabajo IDE](docs/ide-workspace.md).
+![The agents window](docs/images/agents-window.png)
 
-Markdown ofrece Código, Vista previa y vista dividida sobre el mismo buffer.
-Las imágenes se ajustan al panel y se abren a pantalla completa en el visor de
-la ventana; los PDF tienen páginas, zoom y ajuste al panel. El motor
-Rust compartido se documenta en [Vistas previas de documentos](docs/native-document-preview.md).
+The **IDE / Agents** switch changes the layout of the same workspace. The IDE
+view brings together the file explorer, a tabbed editor, a bottom terminal and
+the agent at the side, and keeps the documents and the session. See
+[IDE workspace](docs/ide-workspace.md).
 
-Los [plugins locales](docs/plugins.md) pueden aportar herramientas MCP al agente.
-Se revisan antes de instalarse y se activan por proyecto desde Configuración → Plugins.
-El repositorio incluye un [ejemplo mínimo](examples/plugins/project-info/README.md).
+![The IDE](docs/images/ide.png)
 
-## Estado
+## Features
 
-El proyecto está en desarrollo. Las implementaciones originales viven en
-`crates/` y la aplicación de escritorio en `apps/agents-window/`. Los clones de
-Zed, ZCode y Codex están en `references/` para estudiar su arquitectura; esa carpeta
-queda fuera del proyecto y no se incorpora a sus binarios.
+- **Agents.** A native Rust harness with its own provider catalog (OpenAI,
+  OpenRouter, DeepSeek, Groq, Mistral, xAI and providers of your own), plus CLI
+  profiles that run Codex, Claude Code or any agent found in `PATH`.
+- **Conversation.** Grouped tool calls with their real states, a next-turn
+  queue, editing a message while its turn runs, rewind, subagents, plans,
+  images, Mermaid diagrams and a summary of each turn.
+- **Approvals and permissions.** Plan and Build modes, per-tool permissions and
+  command rules; every decision is saved durably before it reaches the runner.
+- **Browser.** An embedded Chromium (CEF) the agent drives with
+  Playwright-style tools, a visible pointer and per-site permissions.
+- **Editor and preview.** A native code editor with language services, Vim mode
+  and debugging; Markdown with code, preview and split views; images and PDFs.
+- **Git.** Source control with grouped changes, branches and worktrees, commit,
+  push, branch comparison, reviews and GitHub pull requests.
+- **Automations and marketplace.** Scheduled tasks, skills, local plugins that
+  add MCP tools ([example](examples/plugins/project-info/README.md)) and MCP
+  servers with OAuth.
+- **Dictation.** whisper.cpp transcribes the microphone on the machine itself on
+  Linux and macOS; SAPI on Windows.
+- **Interface.** English or Spanish, dark and light themes, keymap profiles,
+  `Ctrl+K` for actions, sessions and files.
 
-## Desarrollo
+## Status
 
-Requiere Rust estable y las herramientas de compilación nativas de la plataforma.
+openADE is in active development. The original implementations live in
+`crates/` and the desktop application in `apps/agents-window/`. The changes of
+each version are in the [CHANGELOG](CHANGELOG.md).
+
+## Building
+
+It needs stable Rust (1.95 or newer) and the platform's native build tools.
 
 ```sh
 cargo test --workspace
 cargo run --profile desktop -p agents-window
 ```
 
-En Linux, para compilar reutilizando la caché incremental y limpiar automáticamente
-los artefactos de builds anteriores:
-
-```sh
-python3 scripts/build.py
-python3 scripts/build.py --run
-```
-
-En NixOS, `shell.nix` trae el compilador C, `pkg-config` y las bibliotecas
-que la aplicación enlaza y carga:
+On NixOS, `shell.nix` brings the C compiler, `pkg-config`, CEF and the libraries
+the application links and loads:
 
 ```sh
 nix-shell --run 'python3 scripts/build.py'
 nix-shell --run ./target/desktop/agents-window
 ```
 
-En Linux el navegador del proyecto es un Chromium embebido (CEF), que la
-aplicación enlaza: `shell.nix` lo trae, y la primera vez descarga su archivo
-de 300 MB. Fuera de ese shell hacen falta `CEF_PATH` para compilar y el
-directorio de CEF en `LD_LIBRARY_PATH` para abrir la aplicación; ver
-[Chromium embebido](docs/browser-cef.md#compilar-y-abrir).
+`scripts/build.py` builds with the optimized `desktop` profile, keeps the
+incremental cache and removes artifacts with stale hashes from
+`target/<profile>/deps/` after a successful build. `--run` opens the window and
+`--profile dev` makes a quick debug build. Avoid running the interface
+unoptimized: measuring text and drawing cost much more in the `dev` profile.
 
-El dictado del compositor usa SAPI en Windows. En Linux y macOS transcribe en la
-propia máquina con whisper.cpp: compilarlo requiere `cmake`, `libclang` y, en
-Linux, las cabeceras de ALSA (`libasound2-dev` o `alsa-lib`). La primera vez que
-se pulsa el micrófono descarga el modelo `ggml-small-q5_1.bin` (181 MB) a
-`models/` dentro del directorio de datos; el audio no sale del equipo. En NixOS
-el ejecutable necesita además `alsa-lib` y `stdenv.cc.cc.lib` en
-`LD_LIBRARY_PATH`.
+On Linux the project browser is an embedded Chromium (CEF) that the application
+links. `shell.nix` provides it and downloads its 300 MB archive the first time.
+Outside that shell, set `CEF_PATH` to build and put the CEF directory in
+`LD_LIBRARY_PATH` to run; see [Embedded Chromium](docs/browser-cef.md#compilar-y-abrir).
 
-El script utiliza por defecto el perfil optimizado `desktop`, con ejecutable en
-`target/desktop/agents-window`. Evita ejecutar la interfaz sin optimización: el
-coste de medir texto y dibujar cambia mucho en el perfil `dev`. Para depurar con
-compilaciones rápidas se puede usar `python3 scripts/build.py --profile dev --run`.
+Dictation needs `cmake`, `libclang` and, on Linux, the ALSA headers
+(`libasound2-dev` or `alsa-lib`) to build whisper.cpp. The first time the
+microphone is used it downloads the `ggml-small-q5_1.bin` model (181 MB) into
+`models/` in the data directory; audio never leaves the machine.
 
-El comando usa siempre `target/`, conserva el ejecutable actual y las dependencias
-de la última compilación correcta, y elimina los artefactos con hashes antiguos de
-`target/<perfil>/deps/`, sin tocar los otros perfiles. Si la compilación falla,
-no ejecuta la limpieza. La caché
-incremental y los archivos auxiliares de Cargo se conservan para evitar recompilar
-todo en cada cambio. Los comandos directos de Cargo siguen funcionando, pero la
-limpieza automática se ejecuta mediante este script.
-
-El perfil de desarrollo conserva información de líneas para los backtraces y
-omite los símbolos de depuración de las dependencias. Para una sesión de depuración
-con inspección de variables se puede usar `CARGO_PROFILE_DEV_DEBUG=2`, a costa de
-más espacio y una recompilación. La caché no es un historial de versiones ni tiene
-un límite fijo de tamaño: puede crecer con las dependencias y los tests.
-
-En el entorno Windows actual, el toolchain GNU puede compilar sin instalar
-Visual Studio Build Tools:
+On Windows the GNU toolchain builds without Visual Studio Build Tools:
 
 ```powershell
-$env:PATH = "$env:USERPROFILE\.local\toolchains\msys2-mingw64-binutils\mingw64\bin;$env:PATH"
-& "$env:USERPROFILE\.cargo\bin\cargo.exe" +stable-x86_64-pc-windows-gnu test --workspace
-& "$env:USERPROFILE\.cargo\bin\cargo.exe" +stable-x86_64-pc-windows-gnu run -p agents-window
+cargo +stable-x86_64-pc-windows-gnu test --workspace
+cargo +stable-x86_64-pc-windows-gnu run -p agents-window
 ```
 
-Para revisar la UI sin leer las tareas ni automatizaciones del perfil habitual,
-define `OPENIDE_DATA_ROOT` con una ruta absoluta a una carpeta de datos aislada
-antes de ejecutar la ventana.
+To try the interface without your usual tasks and automations, set
+`OPENIDE_DATA_ROOT` to the absolute path of an isolated data folder before
+starting the window.
 
-En Configuración → Proveedores y modelos, OpenIDE mantiene un catálogo propio
-alimentado directamente por las APIs oficiales de los proveedores registrados,
-con caché local de la última respuesta válida. El registro incorporado incluye
-OpenAI (Responses), OpenRouter, DeepSeek, Groq, Mistral y xAI (Chat Completions),
-y permite agregar proveedores con esos protocolos mediante
-`provider-registry.json` en el directorio de datos. Cada adaptador declara su
-endpoint, variable de clave y rutas de metadatos; la respuesta del catálogo no
-puede cambiarlos. La conexión personalizada
-usa `OPENIDE_API_KEY`, `OPENIDE_API_BASE` y `OPENIDE_MODEL` como valores iniciales
-para instalaciones anteriores; puede funcionar sin clave con un servidor local.
-La selección se guarda en la carpeta de datos local, sin guardar la clave. Los
-perfiles CLI usan la autenticación de cada programa instalado. `.env.example`
-muestra los nombres de las claves incorporadas, pero la aplicación no carga
-archivos `.env` automáticamente. Los esfuerzos se ofrecen sólo cuando el
-modelo exacto los declara o una revisión específica los confirma y el
-adaptador puede enviarlos por su protocolo. Los modelos sin esos datos quedan
-en «Automático». Una selección explícita sin verificación conserva límites
-desconocidos, sin compactación automática basada en una ventana inventada.
-El selector del composer agrupa las rutas por proveedor. Consulta en segundo
-plano el listado autenticado declarado por cada adaptador y conserva las
-respuestas sólo en memoria. El
-listado autenticado, cuando responde, acota los modelos visibles de esa cuenta.
-Por separado, el catálogo
-normalizado conserva localmente su última lista válida para consulta sin
-conexión, sin convertirla en prueba de disponibilidad actual. El menú muestra
-una acción de conexión si falta la clave. Codex CLI es una ruta separada: OpenIDE consulta
-`codex app-server` para mostrar los modelos y esfuerzos anunciados por la
-sesión ChatGPT activa, sin leer ni transferir sus credenciales. Si esa consulta
-falla, el menú identifica un catálogo de respaldo y Codex valida la selección
-al ejecutar. Los niveles de esfuerzo provienen del par exacto
-proveedor/modelo; el slider ajusta al nivel más cercano y ofrece
-«Automático» aparte. La interfaz no guarda API keys y hoy las recibe mediante
-variables de entorno, tal como se indica arriba.
-La [arquitectura de proveedores y catálogo propio](docs/providers-models-architecture.md)
-documenta la arquitectura Rust, el alcance actual y los pasos pendientes.
+## Providers and models
 
-La aplicación permite elegir un backend instalado y un directorio de trabajo.
-La barra lateral muestra el harness nativo y sólo los perfiles CLI cuyo
-ejecutable se encuentra en `PATH` al iniciar la ventana. En este equipo se
-detectó Codex; los demás aparecerán al instalarlos y reiniciar OpenIDE. Los
-perfiles personalizados se definen en `cli-profiles.json`.
-La elección explícita de backend se conserva al reiniciar. Sin elección previa,
-el harness nativo es la ruta inicial; los perfiles CLI se usan al elegirlos
-expresamente. Las sesiones Codex CLI usan su propio proceso y las sesiones
-nativas usan el harness Rust de OpenIDE.
-El encabezado de la conversación identifica la ruta usada. Los avisos que
-Codex CLI escriba en stderr aparecen como diagnósticos en Actividad; el turno
-no se marca como fallido por la sola presencia de stderr.
-La conexión nativa a OpenAI usa una clave de API del proyecto, como exige la
-[guía oficial de la API](https://developers.openai.com/api/docs/quickstart).
-El inicio de sesión de Codex CLI pertenece a ese perfil externo y no configura
-automáticamente la conexión nativa.
-Las claves de los proveedores se leen de variables de entorno y no se guardan
-en el historial de sesiones.
+Settings → Providers and models keeps a catalog fed directly by the official
+APIs of the registered providers, with a local cache of the last valid answer.
+Providers that speak the OpenAI Responses or Chat Completions protocols can be
+added with `provider-registry.json` in the data directory; each adapter declares
+its endpoint, key variable and metadata routes, which the catalog cannot
+change. A custom connection takes `OPENIDE_API_KEY`, `OPENIDE_API_BASE` and
+`OPENIDE_MODEL`, and can run without a key against a local server.
+`.env.example` lists the built-in key names; the application does not load
+`.env` files by itself, and keys are never written to the session history.
 
-La ventana separa tres superficies redimensionables: sesiones y archivos a la
-izquierda, conversación y composer en el centro, y pestañas de contexto,
-actividad, cambios de Git y vista previa de texto a la derecha. La vista de
-sesión agrupa llamadas de herramientas, muestra sus estados reales y conserva
-el composer visible durante el scroll. El texto estático y los párrafos con
-formato admiten selección por arrastre y copia con `Ctrl+C`; la vista previa de
-archivos muestra números de línea y resaltado discreto. El panel de cambios muestra una lista virtual de archivos y carga el diff al
-seleccionar uno. Las acciones explícitas por archivo permiten preparar o quitar
-de preparados mediante un worker, conservando el contenido en disco.
-Si el proyecto tiene un remoto de `github.com`, el mismo dock consulta los PR
-abiertos de la rama actual fuera del hilo visual. Para repositorios privados
-puede leer `GH_TOKEN` o `GITHUB_TOKEN` del entorno; consulta
-[el alcance de GitHub](docs/github.md).
-Las pestañas del dock conservan
-su identidad por proyecto y tarea, admiten cierre individual, arrastre y
-navegación con `Ctrl+Tab`. El menú `+` crea terminales independientes.
-La tarjeta [Entorno](docs/conversation-environment.md) reúne cambios, ramas,
-worktrees locales, commit, push y comparación de ramas. Su botón `+` permite
-guardar acciones del proyecto y ejecutarlas en terminales independientes.
-Al abrirla, el chat y el composer se acomodan en el espacio restante con una
-transición; la tarjeta y sus selectores no cubren la conversación.
-Consulta [la estructura e interacción del panel derecho](docs/right-dock.md). Las sesiones admiten título, fijado, archivo,
-eliminación confirmada y borradores persistentes por tarea, con guardado al
-cerrar. Un registro dañado se informa sin ocultar las otras sesiones.
-«Eliminar…» está disponible en conversaciones normales y archivadas. La
-confirmación elimina su historial y subagentes, conservando los archivos del
-proyecto. Las ejecuciones activas y los cambios de rama bloquean la operación.
-El selector Grupo/Proyecto permite organizar tareas en grupos manuales o por
-carpeta; el filtro conserva la vista cronológica y el orden por fecha. Los
-grupos y el estado plegado de la barra se guardan localmente. Los controles de
-icono principales muestran una ayuda flotante con puntero.
+Reasoning efforts are offered only when the exact model declares them and the
+adapter can send them; other models stay on "Automatic". Codex CLI is a separate
+route: openADE asks `codex app-server` for the models and efforts of the active
+ChatGPT session, without reading or moving its credentials. CLI profiles use
+each installed program's own authentication and are defined in
+`cli-profiles.json`. See the [providers architecture](docs/providers-models-architecture.md)
+and [CLI profiles](docs/cli-profiles.md).
 
-La pantalla inicial centra el composer. `Ctrl+K` abre el buscador de acciones,
-sesiones y archivos del proyecto; `Ctrl+N` crea una tarea. La navegación de
-atrás/adelante conserva el contexto de sesión, archivos y configuración.
-`Ctrl+B` pliega y reabre la barra lateral.
+## Architecture
 
-El harness nativo empieza con herramientas de lectura. En Configuración → Agente
-se guardan permisos por herramienta; al activar escritura o comandos, cada
-llamada a `write_file` o `run_command` pide permiso
-en el composer. La decisión se registra de forma durable antes de enviarse al
-runner; un fallo de guardado deniega la llamada. Los agentes CLI instalados
-siguen el flujo de permisos de sus propias herramientas.
-Para sesiones nativas, el composer separa Plan/Build de los permisos. Plan
-anuncia solamente las herramientas locales de lectura y el runner rechaza
-las llamadas fuera de ese catálogo; Build aplica los permisos configurados.
+See [docs/architecture.md](docs/architecture.md) for the map of components, and
+the [native harness roadmap](docs/native-harness-roadmap.md) for the pending
+capabilities and how they are verified. Most documents in `docs/` are written
+in Spanish.
 
-La interfaz usa la estructura y densidad de ZCode con una paleta nativa oscura.
-El composer tiene un acento azul en Enviar y un gradiente azul-violeta en el
-selector de esfuerzo. Los iconos Solar Linear son monocromos, reciben una
-sola tinta del control y se alinean a píxeles físicos para verse nítidos. Consulta
-[la iconografía](docs/iconography.md) y [los perfiles CLI](docs/cli-profiles.md). El framework Rust implementa
-capas flotantes, sombras, estado por ID y transiciones de controles; el host
-actual usa egui/wgpu para ventanas, fuentes e input.
+## References
 
-La paridad con ZCode y la calidad de Warp siguen en curso: el Browser embebido,
-la revisión interactiva de diffs y las vistas de medios necesitan backends
-propios. La terminal integrada ya usa PTY.
+- [Warp](https://github.com/warpdotdev/warp): `warpui` and `warpui_core` are MIT;
+  the rest of that repository is AGPL v3. openADE's UI uses general concepts
+  (views, elements, state, draw commands) with code written from scratch, and
+  contains no AGPL code from Warp.
+- [ZCode](https://github.com/zai-org/ZCode): a functional reference for the
+  agent loop, tools, sessions and providers. openADE's code is written in Rust
+  from scratch.
+- [Codex](https://github.com/openai/codex) (Apache-2.0): its Rust harness's
+  turn, tool and recovery contracts are studied; openADE keeps its own
+  implementation.
 
-## Fuentes de referencia y licencias
+Third-party code bundled in `third_party/` is listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-- [Warp](https://github.com/warpdotdev/warp): `warpui` y `warpui_core` se publican
-  bajo MIT; el resto del repositorio se publica bajo AGPL v3. Nuestra UI usa
-  conceptos generales (vistas, elementos, estado, comandos de dibujo) con código
-  escrito desde cero. No incorpora código AGPL de Warp.
-- [ZCode](https://github.com/zai-org/ZCode): se usa como referencia funcional para
-  el ciclo de agente, herramientas, sesiones y proveedores. El código de este
-  proyecto se escribe en Rust desde cero.
-- [Codex](https://github.com/openai/codex): se estudian los contratos de turno,
-  herramientas y recuperación de su harness Rust. OpenIDE mantiene su propia
-  implementación; el código de Codex se publica bajo Apache-2.0.
+## License
 
-Consulta [docs/architecture.md](docs/architecture.md) para el mapa de componentes
-y el alcance funcional.
-La [decisión y el mapa del harness nativo](docs/native-harness-roadmap.md)
-registran las capacidades pendientes y los criterios de verificación.
+openADE is licensed under either of [MIT](LICENSE-MIT) or
+[Apache-2.0](LICENSE-APACHE), at your option.
+
+If openADE is useful to you, you can support it through
+[GitHub Sponsors](https://github.com/sponsors/Niiihuel).

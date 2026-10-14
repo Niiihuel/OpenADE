@@ -1,0 +1,83 @@
+# Changelog
+
+Every release of openADE, newest first. The versions before 0.2.0 were tagged
+afterwards, on the last commit of each day of work; their `Cargo.toml` still
+says 0.1.0.
+
+## 0.2.0 — 2026-10-13
+
+- Own providers and CLI profiles: added, edited and removed from Settings; an
+  own provider can be chosen in the composer and run a turn
+- A light theme chosen from cards, and the interface in English or Spanish
+- Automations: a list with its detail, more schedules, a model per task, a run
+  history that goes with its task, and a warning on quit
+- Marketplace and add-ons: skills, plugins, MCP and sources in one section;
+  installed skills in the slash list and updates from the user's own sources
+- MCP: servers imported from Codex and Claude Code, OAuth on Linux, headers from
+  environment variables, each server's last connection, and a failing server no
+  longer stops the turn
+- Browser: runs on embedded Chromium (CEF) alone, with tabs, a visible agent
+  pointer, per-site permissions, downloads, file uploads, the clipboard,
+  locators by text, label, placeholder and test id, and waits for an address
+  and a load
+- Git: a pull request form, reviews of a branch or another origin, viewed
+  changes, discarding one block, pull request checks and a commit message
+  written by a model
+- Conversation: a durable next-turn queue with attachments, waiting messages
+  that can be edited, a summary of each turn, a rail of turns and a subagents
+  panel
+- Dock: a new-tab page with suggestions, and a maximize that covers the
+  conversation
+- An IDE status bar that reads from the branch, and the name openADE
+- MIT OR Apache-2.0 license, a Sponsor button and continuous integration on
+  GitHub Actions
+
+## 0.1.4 — 2026-10-12
+
+- Paused conversations and automations continue by themselves off screen
+- Questions to the user take images in the answer, and a conversation that
+  waits for one is marked
+- The Activity log is a timeline, with each call's detail under its line
+- Agent commands are terminal tabs, with a live preview of a server they start
+- Image generation with the user's OpenAI connection, asking every time
+- Vision: a model is given the images its tools return
+- The environment panel and the context window use limn's cards
+- An image viewer in the window, a right dock that maximizes, and Mermaid
+  flowcharts and sequence diagrams in the chat and in the preview
+- CEF: drop-down lists, modifier keys, the page's cursor, Spanish text entry
+  and smooth wheel scrolling
+- An external CLI drives a browser of its own through the bridge
+
+## 0.1.3 — 2026-10-11
+
+- An opt-in embedded Chromium (CEF) for the project browser
+- A Rust browser driver over the DevTools pipe, with no Node, npm or
+  Playwright, and Playwright-style tools with element refs, console, network,
+  evaluate and screenshots
+- Dictation off Windows: whisper.cpp transcribes the microphone locally
+- Mermaid flowcharts drawn natively in the chat
+- Edit a message while its turn runs, rewind, and resume an interrupted turn on
+  its own model
+- A redesigned source control sidebar: branch and sync, a commit composer and
+  grouped changes
+- Debug and extensions panels, model metadata and the context ring
+- Started commands run in a Unix terminal that can be shown and typed into
+
+## 0.1.2 — 2026-10-10
+
+- The interface moves to the limn UI framework, section by section
+- An Activity log by turn, with filters, a detail by kind and how long each
+  call took
+- Codex and Claude Code subscription limits, in the IDE footer and the sidebar
+- Approvals answered from their transcript card
+- Task groups with a heading row, and a view of archived tasks
+
+## 0.1.1 — 2026-09-29
+
+- A native provider catalog
+- A broader native agent runtime and a polished Rust desktop UI
+
+## 0.1.0 — 2026-09-28
+
+- First version: the native Rust agents window, with a shared drop-down menu,
+  composer and buttons
