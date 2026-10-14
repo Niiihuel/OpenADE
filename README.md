@@ -6,14 +6,17 @@ IDE over the same workspace, built on its own UI framework
 configurable adapters for command-line agents such as Codex, Claude Code and
 opencode.
 
-![The agents window](docs/images/agents-window.png)
+![The agents window running Claude Code in its own native terminal](docs/images/agents-window.png)
+
+Command-line agents run in native terminals inside the window: above, Claude
+Code started from the agents window.
 
 The **IDE / Agents** switch changes the layout of the same workspace. The IDE
 view brings together the file explorer, a tabbed editor, a bottom terminal and
 the agent at the side, and keeps the documents and the session. See
 [IDE workspace](docs/ide-workspace.md).
 
-![The IDE](docs/images/ide.png)
+![The IDE with a Rust file open in the native code editor](docs/images/ide.png)
 
 ## Features
 
