@@ -2291,8 +2291,78 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
     .render()
 }
 
+/// One theme as a card: a small picture of the window in it, its name and
+/// whether it is the one in use. The picture is the same whichever theme
+/// the window itself is in.
+fn theme_card(choice: crate::theme_mode::ThemeChoice, width: f32) -> Element {
+    use crate::theme_mode::{self, ThemeChoice};
+    let light_now = theme_mode::light();
+    // A gray as it must be asked for to be painted as `wanted`.
+    let gray = |wanted: u8| {
+        let value = if light_now { theme_mode::gray_painted_as(wanted) } else { wanted };
+        openide_ui::Color::rgb(value, value, value)
+    };
+    // Canvas, raised surface, border, text and muted text of each theme.
+    let dark = [22, 43, 60, 212, 120];
+    let light = [250, 236, 214, 40, 140];
+    let bar = |ink: openide_ui::Color, width: f32| Element::spacer().size(Some(width), Some(4.0)).background(ink).radius(2.0);
+    let window = |tones: [u8; 5], width: f32| {
+        let [canvas, raised, border, text, muted] = tones.map(gray);
+        Element::row(vec![
+            Element::column(vec![bar(muted, 26.0), bar(muted, 20.0), bar(muted, 23.0)])
+                .gap(5.0)
+                .padding(7.0)
+                .background(raised)
+                .size(Some(42.0), Some(70.0)),
+            Element::column(vec![bar(text, (width - 70.0).max(20.0)), bar(muted, (width - 96.0).max(14.0)), bar(muted, (width - 84.0).max(16.0))])
+                .gap(6.0)
+                .padding(9.0)
+                .flex(1.0),
+        ])
+        .background(canvas)
+        .border(border, 1.0)
+        .radius(6.0)
+        .size(Some(width), Some(70.0))
+    };
+    let inner = width - 24.0;
+    let picture = match choice {
+        ThemeChoice::Dark => window(dark, inner),
+        ThemeChoice::Light => window(light, inner),
+        // Half of each: it follows the desktop.
+        ThemeChoice::System => {
+            Element::row(vec![window(light, (inner - 6.0) / 2.0), window(dark, (inner - 6.0) / 2.0)]).gap(6.0)
+        }
+    };
+    let (title, about) = match choice {
+        ThemeChoice::System => ("Sistema", "Sigue el tema del escritorio."),
+        ThemeChoice::Light => ("Claro", "Superficies claras y texto oscuro."),
+        ThemeChoice::Dark => ("Oscuro", "El diseño original de openADE."),
+    };
+    let active = theme_mode::choice() == choice;
+    let mut heading = vec![Text::new(title, theme::card_palette()).render().flex(1.0)];
+    if active {
+        heading.push(openide_ui::Chip::new("Activo", theme::card_palette()).height(18.0).render());
+    }
+    let content = Element::column(vec![
+        picture,
+        Element::row(heading).gap(6.0),
+        Text::new(about, theme::card_palette()).role(TextRole::Small).muted().render(),
+    ])
+    .gap(8.0);
+    let id = format!("settings_theme:{}", choice.key());
+    let card = openide_ui::Card::new(content, theme::card_palette()).width(width).render();
+    Element::clickable(id, if active { card.border(theme::FOREGROUND_SUBTLE, 1.0) } else { card })
+        .radius(openide_ui::tokens().radius.surface)
+}
+
 fn appearance_page(state: &ViewState, compact: bool) -> Vec<Element> {
+    let cards: Vec<Element> =
+        crate::theme_mode::ThemeChoice::ALL.into_iter().map(|choice| theme_card(choice, if compact { 260.0 } else { 196.0 })).collect();
     vec![
+        settings_parts::settings_group(
+            "Tema",
+            vec![if compact { Element::column(cards).gap(8.0).padding(10.0) } else { Element::row(cards).gap(10.0).padding(10.0) }],
+        ),
         settings_parts::settings_group(
             "Interfaz",
             vec![

@@ -1048,3 +1048,30 @@ fn the_section_holds_skills_plugins_mcp_and_sources_a_tab_each() {
     state.settings_page = SettingsPage::Mcp;
     assert!(state.shows(SettingsPage::Mcp) && !state.shows(SettingsPage::Plugins));
 }
+
+#[test]
+fn appearance_offers_the_three_themes_as_cards_and_marks_the_one_in_use() {
+    use crate::settings_ui::SettingsPage;
+    let mut state = crate::view::tests::empty_state();
+    state.show_settings = true;
+    state.settings_page = SettingsPage::Appearance;
+    let size = Size::new(1200.0, 800.0);
+    let frame = UiTree::new(crate::view::build_view_sized(&state, size.width, size.height)).layout(size);
+    for theme in ["system", "light", "dark"] {
+        assert!(has(&frame, &format!("settings_theme:{theme}")), "{theme}");
+    }
+    let said: Vec<&str> = frame
+        .commands
+        .iter()
+        .filter_map(|command| match command {
+            openide_ui::DrawCommand::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    // Dark is what the window is until a choice is saved.
+    assert_eq!(said.iter().filter(|text| **text == "Activo").count(), 1, "{said:?}");
+    for name in ["Sistema", "Claro", "Oscuro"] {
+        assert!(said.contains(&name), "{name}");
+    }
+}
+

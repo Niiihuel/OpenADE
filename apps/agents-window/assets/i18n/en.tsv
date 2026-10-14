@@ -679,6 +679,7 @@ Chequeo del proyecto guardado; corre tras cada turno que cambie algo	Project che
 Cierra una captura antes de abrir otra (máximo 16)	Close a snapshot before opening another (maximum 16)
 Cierre de pestaña	Tab close
 Cinco vistas del proyecto	Five views of the project
+Claro	Light
 Clasificación elegida: {} (pendiente de confirmar)	Chosen classification: {} (pending confirmation)
 Claude Code ya tiene una línea de estado configurada	Claude Code already has a status line configured
 Clave de API	API key
@@ -1526,6 +1527,7 @@ El diff no conserva todos los bytes necesarios para decidir por bloque	The diff 
 El diff pendiente está incompleto; no se puede decidir esta revisión parcial	The pending diff is incomplete; this partial review cannot be decided
 El directorio de trabajo no existe	The working directory does not exist
 El directorio de trabajo no existe.	The working directory does not exist.
+El diseño original de openADE.	openADE's original design.
 El dispatcher terminó sin resultado; revisá el journal	The dispatcher ended without a result; check the journal
 El documento Markdown no es texto UTF-8.	The Markdown document isn't UTF-8 text.
 El documento cambió, desapareció o el catálogo no está disponible.	The document changed, disappeared or the catalog is unavailable.
@@ -3645,6 +3647,7 @@ No se pudo guardar el borrador de intervención: {error}	Couldn't save the inter
 No se pudo guardar el chequeo del proyecto: {error}	Could not save the project check: {error}
 No se pudo guardar el esfuerzo elegido. Elige de nuevo o deshaz el cambio.	Could not save the chosen effort. Choose again or undo the change.
 No se pudo guardar el esfuerzo elegido: {error}	Couldn't save the chosen effort: {error}
+No se pudo guardar el idioma: {error}	Could not save the language: {error}
 No se pudo guardar el límite de contexto: {error}	Could not save the context limit: {error}
 No se pudo guardar el límite de salida: {error}	Could not save the output limit: {error}
 No se pudo guardar el modelo de revisión: {error}	Could not save the review model: {error}
@@ -3653,6 +3656,7 @@ No se pudo guardar el proveedor: {error}	Couldn't save the provider: {error}
 No se pudo guardar el registro del marketplace	Couldn't save the marketplace registry
 No se pudo guardar el selector de modelo: {error}	Couldn't save the model picker: {error}
 No se pudo guardar el selector de modelo: {error}. No se pudo restaurar el perfil nativo anterior: {rollback_error}	Couldn't save the model picker: {error}. Couldn't restore the previous native profile: {rollback_error}
+No se pudo guardar el tema: {error}	Could not save the theme: {error}
 No se pudo guardar la conexión	Couldn't save the connection
 No se pudo guardar la configuración MCP: {error}	Could not save the MCP configuration: {error}
 No se pudo guardar la configuración de hooks: {error}	Could not save the hooks configuration: {error}
@@ -3954,6 +3958,7 @@ Origen eliminado	Source removed
 Origen local agregado	Local source added
 Origen: acción explícita de una persona. Estas operaciones no fabrican eventos del modelo ni reanudan procesos al abrir el historial.	Origin: explicit action by a person. These operations do not fabricate model events or resume processes when the history is opened.
 Orígenes	Sources
+Oscuro	Dark
 Otra captura o guardado usa esta carpeta; reintentá guardar	Another capture or save is using this folder; retry saving
 Otra instancia está actualizando esta conexión	Another instance is updating this connection
 Otra respuesta	Another answer
@@ -4713,6 +4718,7 @@ Shell guardado. Se aplicará a las nuevas terminales.	Shell saved. It will apply
 Shell predeterminado	Default shell
 Shell y comportamiento de la terminal integrada.	Shell and behavior of the built-in terminal.
 Si la conversación no entra en el modelo elegido se resume antes de continuar y queda un aviso en la conversación. Con esto activado se pregunta primero. El historial completo nunca se borra.	If the conversation does not fit in the chosen model, it is summarized before continuing and a notice is left in the conversation. With this on, you are asked first. The full history is never deleted.
+Sigue el tema del escritorio.	Follows the desktop's theme.
 Siguiente	Next
 Siguiente coincidencia	Next match
 Sin actividad todavía	No activity yet
@@ -4853,6 +4859,7 @@ Sugerencia sin texto	Suggestion without text
 Sugerencias	Suggestions
 Sugeridas por el proyecto	Suggested by the project
 Suma de los conteos reportados para esta ruta. Es consumo acumulado, no ocupación de la ventana de contexto.	Sum of the counts reported for this route. This is accumulated usage, not context window occupancy.
+Superficies claras y texto oscuro.	Light surfaces and dark text.
 Supr	Del
 Sus herramientas solicitan aprobación. Los servidores OAuth necesitan autorización explícita antes de usarse.	Its tools ask for approval. OAuth servers need explicit authorization before use.
 Suscripciones y consumo	Subscriptions and usage
@@ -4887,6 +4894,7 @@ Tareas: {error}	Tasks: {error}
 Tecla no válida	Invalid key
 Tecla pulsada	Key pressed
 Teclado del navegador	Browser keyboard
+Tema	Theme
 Tema y movimiento de la interfaz nativa.	Theme and motion of the native interface.
 Terminado	Terminated
 Terminados	Finished
