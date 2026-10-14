@@ -6,6 +6,12 @@ IDE over the same workspace, built on its own UI framework
 configurable adapters for command-line agents such as Codex, Claude Code and
 opencode.
 
+![The native harness exploring this repository and answering](docs/images/native-harness.png)
+
+openADE's own agent harness, written in Rust, explores the project with its
+tools and answers in the conversation: above, a question about this repository,
+answered through the user's ChatGPT plan.
+
 ![The agents window running Claude Code in its own native terminal](docs/images/agents-window.png)
 
 Command-line agents run in native terminals inside the window: above, Claude
@@ -17,6 +23,15 @@ the agent at the side, and keeps the documents and the session. See
 [IDE workspace](docs/ide-workspace.md).
 
 ![The IDE with a Rust file open in the native code editor](docs/images/ide.png)
+
+### A closer look
+
+| | |
+|---|---|
+| ![The agent reading a landing page in the embedded browser](docs/images/browser.png) | ![An approval card before the agent opens a web page](docs/images/approvals.png) |
+| **Browser.** The agent opens and reads pages in an embedded Chromium, shown in the dock beside the conversation. | **Approvals.** A tool call waits for the user: once, for the session, always for that site, or denied. |
+| ![The project's files in the dock](docs/images/files.png) | ![The environment card with the project, branch and actions](docs/images/environment.png) |
+| **Files.** The project tree in the dock, next to the browser and the other tabs. | **Environment.** The project, where it runs, the branch, changes to compare, project actions and commit and push. |
 
 ## Features
 
