@@ -182,7 +182,7 @@ fn lookup(text: &str) -> Option<String> {
         let start = text.len() - text.trim_start().len();
         return Some(format!("{}{english}{}", &text[..start], &text[start + inner.len()..]));
     }
-    catalog.templates.iter().find_map(|template| {
+    let english = catalog.templates.iter().find_map(|template| {
         let values = captures(template, text)?;
         Some(
             template
@@ -190,11 +190,33 @@ fn lookup(text: &str) -> Option<String> {
                 .iter()
                 .map(|piece| match piece {
                     Piece::Text(text) => (*text).to_owned(),
-                    // A value may be a word of the interface itself: a day, a state.
-                    Piece::Value(index) => catalog.exact.get(values[*index]).map_or(values[*index], |english| english).to_owned(),
+                    // A value may be a text of the interface itself: a day, a state, a count.
+                    Piece::Value(index) => lookup(values[*index]).unwrap_or_else(|| values[*index].to_owned()),
                 })
                 .collect(),
         )
+    });
+    english.or_else(|| said_piece_by_piece(text))
+}
+
+/// A text the application joined from labels, such as "Permiso pendiente ·
+/// Navegación web" or "leyó 2 archivos, buscó 1 vez", has no entry of its
+/// own: each piece is said, and the text is changed when one of them was.
+fn said_piece_by_piece(text: &str) -> Option<String> {
+    [" · ", ", "].into_iter().filter(|separator| text.contains(separator)).find_map(|separator| {
+        let mut changed = false;
+        let english = text
+            .split(separator)
+            .map(|piece| match lookup(piece) {
+                Some(english) => {
+                    changed = true;
+                    english
+                }
+                None => piece.to_owned(),
+            })
+            .collect::<Vec<_>>()
+            .join(separator);
+        changed.then_some(english)
     })
 }
 
@@ -202,6 +224,13 @@ fn lookup(text: &str) -> Option<String> {
 /// knows it: for what is shown outside the window's tree.
 pub(crate) fn text(text: &str) -> Option<String> {
     english().then(|| said(text)).flatten()
+}
+
+/// A piece of a text the application joins itself, such as one phrase of a
+/// list, in English when the interface is: the joined text would read as no
+/// entry of the catalog.
+pub(crate) fn piece(text: String) -> String {
+    self::text(&text).unwrap_or(text)
 }
 
 /// `text` in English, when the catalog knows it.
@@ -317,6 +346,19 @@ mod tests {
             entries += 1;
         }
         assert!(entries > 1000, "{entries}");
+    }
+
+    #[test]
+    fn a_text_joined_from_labels_is_said_label_by_label() {
+        assert_eq!(lookup("Permiso pendiente · Navegación web").as_deref(), Some("Pending permission · Web navigation"));
+        // A caption whose list was said phrase by phrase where it was joined.
+        assert_eq!(
+            lookup("hace 3 min · 21 s · gpt-6.1-sol · read 8 files, searched 2 times").as_deref(),
+            Some("3 min ago · 21 s · gpt-6.1-sol · read 8 files, searched 2 times")
+        );
+        assert_eq!(lookup("9 archivos, 6 búsquedas, 5 listados").as_deref(), Some("9 files, 6 searches, 5 listings"));
+        // Nothing to say in any piece: the text is left to be drawn as it was.
+        assert_eq!(lookup("main.rs, lib.rs · 3 KB"), None);
     }
 
     #[test]
