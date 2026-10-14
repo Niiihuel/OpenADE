@@ -29,6 +29,8 @@ says 0.1.0.
 - Dock: a new-tab page with suggestions, and a maximize that covers the
   conversation
 - An IDE status bar that reads from the branch, and the name openADE
+- Hooks: a hook that exits without reading its input completes, instead of
+  leaving its call uncertain
 - MIT OR Apache-2.0 license, a Sponsor button and continuous integration on
   GitHub Actions
 
