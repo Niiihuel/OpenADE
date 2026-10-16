@@ -1319,7 +1319,7 @@ fn content_fields(state: &AutomationViewState) -> Vec<Element> {
     )
     .height(112.0)
     .render();
-    let approval_note = "Nadie aprueba nada durante una ejecución: el agente nativo sólo lee el proyecto, y a un agente externo se le niega lo que pediría permiso.";
+    let approval_note = "Nadie aprueba nada durante una ejecución: el agente nativo solo lee el proyecto y un agente externo no recibe los permisos que pida.";
     rows.extend(
         form_field("Instrucciones", instructions)
             .hint(approval_note)

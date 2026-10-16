@@ -3386,7 +3386,7 @@ Método no soportado	Unsupported method
 Mínimo	Minimum
 Nada responde en ese puerto de este equipo. Iniciá el servidor del proyecto, o revisá el puerto, y reintentá.	Nothing is responding on that port on this machine. Start the project server, or check the port, and retry.
 Nada se ejecuta sin que lo actives	Nothing runs unless you enable it
-Nadie aprueba nada durante una ejecución: el agente nativo sólo lee el proyecto, y a un agente externo se le niega lo que pediría permiso.	Nobody approves anything during a run: the native agent only reads the project, and an external agent is denied whatever it would ask permission for.
+Nadie aprueba nada durante una ejecución: el agente nativo solo lee el proyecto y un agente externo no recibe los permisos que pida.	Nobody approves anything during a run: the native agent only reads the project, and an external agent is denied whatever it would ask permission for.
 Nativo	Native
 Navegación	Navigation
 Navegación anterior	Previous navigation

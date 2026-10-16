@@ -668,7 +668,7 @@ fn command_execution_group(state: &ViewState, compact: bool) -> Element {
             outline("settings_page:commands", "Editar reglas").icon(Icon::ArrowRight).render(),
             compact,
         ),
-        page_note("Aplicación de los cambios", "Se guardan para los próximos turnos nativos. Cambiar el aislamiento o desactivar comandos revoca los procesos persistentes existentes.", Icon::Check),
+        page_note("Aplicación de los cambios", "Se guardan para los próximos turnos nativos. Cambiar el aislamiento o desactivar comandos revoca los procesos persistentes existentes.", Icon::InfoCircle),
     ]);
     settings_parts::settings_group("Ejecución de comandos", isolation_rows)
 }
@@ -733,7 +733,7 @@ fn agent_page(state: &ViewState, compact: bool) -> Vec<Element> {
                     ]).gap(8.0),
                     compact,
                 ),
-                page_note("Alcance de estos ajustes", "Los permisos se guardan para los próximos turnos nativos. Los subagentes reciben su política al iniciar su trabajo; las automatizaciones usan su propia política guardada.", Icon::Check),
+                page_note("Alcance de estos ajustes", "Los permisos se guardan para los próximos turnos nativos. Los subagentes reciben su política al iniciar su trabajo; las automatizaciones usan su propia política guardada.", Icon::InfoCircle),
             ],
         ),
     ];
@@ -1120,7 +1120,7 @@ fn skills_page(state: &ViewState, compact: bool) -> Vec<Element> {
     content.push(settings_parts::settings_group("Carpetas de instrucciones", vec![
         page_note("Proyecto", &local.project_root, Icon::Folder),
         page_note("Usuario", &local.user_root, Icon::Folder),
-        page_note("Verificación del documento", "Revisar muestra el SKILL.md completo y su hash observado, sin activarlo. La selección conserva nombre, origen, rutas canónicas y hash; el contenido se verifica de nuevo antes de usarlo. Los archivos referenciados no se cargan automáticamente.", Icon::Check),
+        page_note("Verificación del documento", "Revisar muestra el SKILL.md completo y su hash observado, sin activarlo. La selección conserva nombre, origen, rutas canónicas y hash; el contenido se verifica de nuevo antes de usarlo. Los archivos referenciados no se cargan automáticamente.", Icon::InfoCircle),
     ]));
     content
 }
@@ -1168,7 +1168,7 @@ fn automations_page(state: &ViewState, compact: bool) -> Vec<Element> {
     }
     content.push(settings_parts::settings_group("Planificador", vec![
         page_note("Mientras openADE esté abierto", "El planificador revisa horarios locales con la aplicación en ejecución. Las tareas no se ejecutan cuando está cerrada.", Icon::Clock),
-        page_note("Política de ejecución", "Las automatizaciones del agente nativo trabajan en sólo lectura y conservan su configuración de motor y modelo.", Icon::Check),
+        page_note("Política de ejecución", "Las automatizaciones del agente nativo trabajan en sólo lectura y conservan su configuración de motor y modelo.", Icon::InfoCircle),
     ]));
     content
 }
@@ -1739,7 +1739,7 @@ fn exec_rules_page(state: &ViewState, compact: bool) -> Vec<Element> {
         "Cómo se aplican",
         vec![
             page_note("Prefijos exactos", "Cada regla incluye el ejecutable y sus argumentos. Puedes declarar alternativas por argumento. Si varias coinciden, se aplica la más restrictiva.", Icon::Terminal),
-            page_note("Aprobación y bloqueo", "Las reglas respetan los permisos de herramientas del agente. Los intérpretes de shell requieren comprobaciones adicionales.", Icon::Check),
+            page_note("Aprobación y bloqueo", "Las reglas respetan los permisos de herramientas del agente. Los intérpretes de shell requieren comprobaciones adicionales.", Icon::InfoCircle),
             page_note("Próximos turnos", "Los cambios afectan las próximas ejecuciones. Reanudar un turno previo requiere la misma política que tenía al iniciarse.", Icon::History),
         ],
     ));
@@ -2511,7 +2511,21 @@ fn additional_page(state: &ViewState, page: SettingsPage, compact: bool) -> Vec<
         SettingsPage::Hooks => hooks_page(state, compact),
         SettingsPage::Usage => vec![
             settings_parts::settings_group("Conversación activa", vec![
-                settings_parts::value_row("Contexto de la conversación", "Parte de la ventana del modelo que ocupa la conversación nativa seleccionada. Con ~ es una estimación.", crate::composer_context_ui::occupancy_text(&state.native_context).unwrap_or_else(|| "Sin medición".to_owned()), compact),
+                settings_parts::value_row(
+                    "Contexto de la conversación",
+                    if crate::view::cli_task(state) {
+                        "Una CLI externa mide su propio contexto en su terminal."
+                    } else {
+                        "Cuánto de la ventana del modelo ocupa la conversación nativa seleccionada. Una cifra con ~ es estimada."
+                    },
+                    if crate::view::cli_task(state) {
+                        "No aplica".to_owned()
+                    } else {
+                        crate::composer_context_ui::occupancy_text(&state.native_context)
+                            .unwrap_or_else(|| "Sin medición".to_owned())
+                    },
+                    compact,
+                ),
             ]),
         ],
         _ => unreachable!("existing Settings page has its own renderer"),
