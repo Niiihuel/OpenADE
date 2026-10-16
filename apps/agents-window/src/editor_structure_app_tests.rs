@@ -619,7 +619,8 @@ fn a_large_document_gets_the_same_structure_built_away_from_the_interface() {
     let (tab, _, _, snapshot) = app.active_editor().unwrap();
     let analysis = app.view.editor_workbench.analysis.clone().unwrap();
     assert!(analysis.folds.len() + analysis.symbols.len() > super::INLINE_STRUCTURE_ITEMS);
-    let deadline = Instant::now() + Duration::from_secs(10);
+    // Guards against a hang only; a shared CI runner can be slow to schedule the worker.
+    let deadline = Instant::now() + Duration::from_secs(60);
     while app.view.editor_workbench.structure_revision.is_none() {
         assert!(app.sync_editor_structure(), "a pending build keeps the poll alive");
         assert!(Instant::now() < deadline, "structure was never delivered");

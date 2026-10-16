@@ -87,7 +87,8 @@ fn action(app: &mut AgentsWindow, operation: &str) {
 
 fn wait_preview(app: &mut AgentsWindow) {
     let ctx = egui::Context::default();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    // Guards against a hang only; a shared CI runner can be slow to schedule the worker.
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         app.poll_document_preview(&ctx);
         let view = app.view.document_preview.as_ref().unwrap();

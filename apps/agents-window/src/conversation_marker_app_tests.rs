@@ -18,7 +18,9 @@ fn finish_review(app: &mut AgentsWindow, workspace: &Path) {
     app.view.side_tab = SideTab::CodeReview;
     app.request_git_review(workspace.to_owned());
     let context = egui::Context::default();
-    let deadline = Instant::now() + Duration::from_secs(8);
+    // Guards against a hang only: the loop ends as soon as the review lands,
+    // and a shared CI runner can take many seconds to schedule the worker.
+    let deadline = Instant::now() + Duration::from_secs(60);
     while app.review_in_flight {
         assert!(Instant::now() < deadline, "{}", app.view.status);
         app.update_git_review(&context);
