@@ -6357,8 +6357,12 @@ pub(crate) mod tests {
     }
 
     fn settings_action_reachable(tree: &mut UiTree, action: &str, width: f32, height: f32) -> bool {
-        // Smooth-scroll reachability must depend on elapsed UI time, not on
-        // how expensive the machine's layout implementation happens to be.
+        // Reachability is about where scrolling can take the page, not about
+        // its animation. A smooth scroll left in flight by an earlier call
+        // kept moving with the real clock between calls and, on a loaded
+        // machine, carried the page past the next target, which this downward
+        // search never comes back to. Without motion every scroll lands at once.
+        tree.set_reduced_motion(true);
         let start = std::time::Instant::now();
         for step in 0..120 {
             let now = start + std::time::Duration::from_secs_f64(step as f64 / 120.0);

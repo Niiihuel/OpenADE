@@ -15,7 +15,7 @@ says 0.1.0.
 - Usage: connected accounts first and the rest in one compact list, every
   limit read as used, tasks by agent as ranked bars with the agents' names,
   and a conversation's context shown as unmeasured instead of "~0%"
-- limn pinned to `19743e3`
+- limn pinned to `90d4408` (limn#70: editor view options, trailing whitespace trimming, whole chart ticks)
 
 ## 0.2.0 — 2026-10-13
 
