@@ -2597,19 +2597,30 @@ mod tests {
                 .await
                 .unwrap();
             let started: serde_json::Value = serde_json::from_str(&started.content).unwrap();
-            let polled = selected
-                .execute(
-                    &call(
-                        "poll_command",
-                        serde_json::json!({"session_id":started["session_id"],"wait_ms":5000}),
-                    ),
-                    &context,
-                )
-                .await
-                .unwrap();
-            let polled: serde_json::Value = serde_json::from_str(&polled.content).unwrap();
-            assert_eq!(polled["events"][0]["stream"], "terminal", "{polled}");
-            assert_eq!(polled["events"][0]["text"], "TTY\n", "{polled}");
+            // A terminal may hand over "TTY" and its line break in separate
+            // reads, so the output is gathered over polls as a client would.
+            let mut text = String::new();
+            for _ in 0..10 {
+                let polled = selected
+                    .execute(
+                        &call(
+                            "poll_command",
+                            serde_json::json!({"session_id":started["session_id"],"wait_ms":5000}),
+                        ),
+                        &context,
+                    )
+                    .await
+                    .unwrap();
+                let polled: serde_json::Value = serde_json::from_str(&polled.content).unwrap();
+                for event in polled["events"].as_array().unwrap() {
+                    assert_eq!(event["stream"], "terminal", "{polled}");
+                    text.push_str(event["text"].as_str().unwrap());
+                }
+                if text.ends_with('\n') || polled["finished"] == true {
+                    break;
+                }
+            }
+            assert_eq!(text, "TTY\n");
         }
     }
 
