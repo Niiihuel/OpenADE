@@ -123,7 +123,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "agents-window"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "arboard",
  "ashpd",
@@ -4067,7 +4067,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "openide-bridge"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "axum",
  "http-body-util",
@@ -4084,7 +4084,7 @@ dependencies = [
 
 [[package]]
 name = "openide-browser"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "base64 0.22.1",
  "libc",
@@ -4104,7 +4104,7 @@ dependencies = [
 
 [[package]]
 name = "openide-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "openide-core",
  "serde",
@@ -4114,7 +4114,7 @@ dependencies = [
 
 [[package]]
 name = "openide-connections"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "fs2",
  "jsonwebtoken",
@@ -4129,7 +4129,7 @@ dependencies = [
 
 [[package]]
 name = "openide-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "base64 0.22.1",
  "libc",
@@ -4144,7 +4144,7 @@ dependencies = [
 
 [[package]]
 name = "openide-debug"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "libc",
  "serde",
@@ -4154,7 +4154,7 @@ dependencies = [
 
 [[package]]
 name = "openide-harness"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -4180,7 +4180,7 @@ dependencies = [
 
 [[package]]
 name = "openide-preview"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "hayro",
  "image",
@@ -4193,7 +4193,7 @@ dependencies = [
 
 [[package]]
 name = "openide-remote"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -4221,7 +4221,7 @@ dependencies = [
 
 [[package]]
 name = "openide-ui"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "limn",
 ]

@@ -4,7 +4,7 @@ Every release of openADE, newest first. The versions before 0.2.0 were tagged
 afterwards, on the last commit of each day of work; their `Cargo.toml` still
 says 0.1.0.
 
-## Unreleased
+## 0.3.0 — 2026-10-16
 
 - Settings reach every module: browser automation with per-site permissions,
   subagents, MCP servers with their scopes and tool selection, appearance with
@@ -15,7 +15,11 @@ says 0.1.0.
 - Usage: connected accounts first and the rest in one compact list, every
   limit read as used, tasks by agent as ranked bars with the agents' names,
   and a conversation's context shown as unmeasured instead of "~0%"
-- limn pinned to `90d4408` (limn#70: editor view options, trailing whitespace trimming, whole chart ticks)
+- The English interface no longer shows Spanish in joined texts, counts and
+  times
+- Settings reachability tests no longer fail on a loaded machine
+- limn pinned to `90d4408` (limn#70: editor view options, trailing whitespace
+  trimming, whole chart ticks)
 
 ## 0.2.0 — 2026-10-13
 
