@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=openADE
+GenericName=Agent Development Environment
+Comment=Agents, code, a browser and a terminal in one native window
+Exec=openade
+Icon=openade
+Terminal=false
+Categories=Development;IDE;
+StartupWMClass=openADE

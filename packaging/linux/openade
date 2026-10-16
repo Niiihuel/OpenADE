@@ -1,0 +1,8 @@
+#!/bin/sh
+# Starts the bundled openADE. CEF reads its resources and locales from the
+# directory libcef.so is loaded from; it goes last so the system's libraries
+# keep coming first.
+here=$(dirname "$(readlink -f "$0")")
+LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$here/cef"
+export LD_LIBRARY_PATH
+exec "$here/agents-window" "$@"

@@ -63,6 +63,22 @@ openADE is in active development. The original implementations live in
 `crates/` and the desktop application in `apps/agents-window/`. The changes of
 each version are in the [CHANGELOG](CHANGELOG.md).
 
+## Installing on Linux
+
+Each [release](https://github.com/Niiihuel/openADE/releases) from 0.3.0 has an
+archive for x86_64 Linux with glibc 2.35 or newer (Ubuntu 22.04, Debian 12,
+Fedora 36 and later), with its embedded Chromium inside:
+
+```sh
+tar -xzf openADE-0.3.0-linux-x86_64.tar.gz
+openADE-0.3.0-linux-x86_64/install.sh
+```
+
+`install.sh` puts it in `~/.local/opt/openade`, adds the `openade` command to
+`~/.local/bin` and an entry to the application menu. Running it from a newer
+archive updates it; `~/.local/opt/openade/install.sh --uninstall` removes it
+and keeps your data. The archive also runs in place, with `./openade`.
+
 ## Building
 
 It needs stable Rust (1.95 or newer) and the platform's native build tools.

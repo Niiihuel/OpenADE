@@ -15,6 +15,8 @@ says 0.1.0.
 - Usage: connected accounts first and the rest in one compact list, every
   limit read as used, tasks by agent as ranked bars with the agents' names,
   and a conversation's context shown as unmeasured instead of "~0%"
+- A Linux archive with its embedded Chromium and an installer, attached to
+  each release from now on
 - The English interface no longer shows Spanish in joined texts, counts and
   times
 - Settings reachability tests no longer fail on a loaded machine
