@@ -4,6 +4,19 @@ Every release of openADE, newest first. The versions before 0.2.0 were tagged
 afterwards, on the last commit of each day of work; their `Cargo.toml` still
 says 0.1.0.
 
+## Unreleased
+
+- Settings reach every module: browser automation with per-site permissions,
+  subagents, MCP servers with their scopes and tool selection, appearance with
+  fonts and custom themes, and brand icons for providers
+- Editor: line numbers, indent guides, current line highlight, visible
+  whitespace, a column ruler, caret shape and blink, trimming trailing
+  whitespace on save, and Vim mode, all in Settings > Editor
+- Usage: connected accounts first and the rest in one compact list, every
+  limit read as used, tasks by agent as ranked bars with the agents' names,
+  and a conversation's context shown as unmeasured instead of "~0%"
+- limn pinned to `19743e3`
+
 ## 0.2.0 — 2026-10-13
 
 - Own providers and CLI profiles: added, edited and removed from Settings; an
