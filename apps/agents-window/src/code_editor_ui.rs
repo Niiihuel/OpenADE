@@ -496,11 +496,20 @@ pub(crate) fn build_with(
             .language_override
             .unwrap_or_else(|| CodeLanguage::from_path(&view.path));
         let mut editor = CodeEditor::new(view_id(view.tab_id), controller.clone())
+            .font_size(crate::appearance_preferences::code_font_size())
+            .diff_backgrounds(crate::appearance_preferences::themed_diff_backgrounds())
             .vim_mode(vim_mode)
             .indent_style(workbench.indent)
             .auto_pairs(workbench.auto_pairs)
             .soft_wrap(workbench.soft_wrap)
             .minimap(!dock_header && workbench.minimap)
+            .line_numbers(workbench.view.line_numbers)
+            .indent_guides(workbench.view.indent_guides)
+            .highlight_current_line(workbench.view.highlight_current_line)
+            .show_whitespace(workbench.view.show_whitespace)
+            .rulers(Some(workbench.view.ruler).filter(|column| *column > 0))
+            .caret_style(workbench.view.caret.style())
+            .caret_blink(workbench.view.caret_blink)
             .reveal_top_inset(crate::editor_workbench_ui::search_reveal_inset(
                 workbench,
                 (width - 8.0).max(0.0),

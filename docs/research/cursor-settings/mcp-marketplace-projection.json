@@ -1,0 +1,37 @@
+{
+  "source": "/nix/store/ij7hsdlff78ksdqx68gl2i4rnff57x8x-cursor-3.17.21/lib/cursor/resources/app/out/vs/workbench/workbench.glass.main.js",
+  "sha256": "b6f06229dc965619ab318e3bbc9f102865101a3bc0f346630532e2558f6fc398",
+  "kind": "exact contiguous analyst-selected ranges, not full shipped application",
+  "ranges": [
+    {
+      "path": "mcp-settings.js",
+      "start_byte": 29751395,
+      "end_byte": 29782218,
+      "sha256": "c6dd1194882f6350f88d5e5f8cb53063a9f337492d62b804c93a174e377428b4"
+    },
+    {
+      "path": "mcp-list.js",
+      "start_byte": 21649000,
+      "end_byte": 21650803,
+      "sha256": "ea35f19c4068ac77339f656bbc75de6f4a1fe9ec7e9d66dde2b3aebe7808f36e"
+    },
+    {
+      "path": "plugin-library.js",
+      "start_byte": 21861345,
+      "end_byte": 21869996,
+      "sha256": "fa7a469785efaae3812320aff43cb26bae83a3dd89b9789a954431754cd898d3"
+    },
+    {
+      "path": "plugin-card.js",
+      "start_byte": 21676431,
+      "end_byte": 21680307,
+      "sha256": "d596ad93c020e5005180fa43fd52a61e92eb3912cc007a4b1c620f98f60f8ebf"
+    },
+    {
+      "path": "plugin-search.js",
+      "start_byte": 17286447,
+      "end_byte": 17290033,
+      "sha256": "d93c8fbc82f5bdae0c26ef8d983ddead63c373904a8b1d98c90c76ce6f305759"
+    }
+  ]
+}

@@ -8,9 +8,10 @@
 use openide_harness::{McpHttpConfig, McpStdioConfig, OAuthConfig, OAuthRegistration};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -32,6 +33,66 @@ const MAX_OAUTH_SCOPES: usize = 64;
 const MAX_OAUTH_SCOPE_BYTES: usize = 256;
 const MAX_OAUTH_SCOPES_TOTAL_BYTES: usize = 4096;
 static SAVE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+/// Both scopes belong to this local profile. Project registrations are keyed
+/// by the canonical workspace, never loaded from an executable repository file.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum McpSettingsScope {
+    #[default]
+    User,
+    Project,
+}
+
+impl McpSettingsScope {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::User => "Usuario",
+            Self::Project => "Este proyecto",
+        }
+    }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Project => "project",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Self> {
+        match key {
+            "user" => Some(Self::User),
+            "project" => Some(Self::Project),
+            _ => None,
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::User => "Guardado en este perfil para todos los proyectos. Un servidor del proyecto con el mismo ID reemplaza esta configuración, incluso si está deshabilitado.",
+            Self::Project => "Guardado localmente sólo para este proyecto. No se comparte ni se transfiere al clonar. Reemplaza la configuración de usuario con el mismo ID, incluso si está deshabilitado.",
+        }
+    }
+
+    pub(crate) fn storage_root(self, root: &Path, workspace: &Path) -> Result<PathBuf, String> {
+        match self {
+            Self::User => Ok(root.to_path_buf()),
+            Self::Project => {
+                let workspace = workspace
+                    .canonicalize()
+                    .map_err(|error| format!("Proyecto MCP no disponible: {error}"))?;
+                if !workspace.is_dir() {
+                    return Err("El proyecto MCP debe ser una carpeta".to_owned());
+                }
+                let mut digest = Sha256::new();
+                digest.update(b"openade-mcp-project-v1\0");
+                digest.update(workspace.as_os_str().as_encoded_bytes());
+                Ok(root
+                    .join("mcp-projects")
+                    .join(format!("{:x}", digest.finalize())))
+            }
+        }
+    }
+}
 
 #[cfg(test)]
 #[path = "plugin_runtime_tests.rs"]
@@ -199,7 +260,9 @@ impl McpServerSettings {
             config.env.insert(OsString::from(name), value);
         }
         for (name, value) in &self.env {
-            config.env.insert(OsString::from(name), OsString::from(value));
+            config
+                .env
+                .insert(OsString::from(name), OsString::from(value));
         }
         Ok(config)
     }
@@ -236,11 +299,86 @@ struct Document {
 }
 
 impl McpSettings {
+    /// Used only for local credential cleanup. All saved projects matter even
+    /// when a user registration is currently shadowed or a project is closed.
+    pub(crate) fn other_scope_servers(
+        root: &Path,
+        workspace: &Path,
+        scope: McpSettingsScope,
+    ) -> Result<Vec<McpServerSettings>, String> {
+        const MAX_PROJECT_ENTRIES: usize = 1024;
+        let excluded = scope.storage_root(root, workspace)?;
+        let mut servers = if scope == McpSettingsScope::User {
+            Vec::new()
+        } else {
+            Self::load_document(root)?.servers
+        };
+        let entries = match fs::read_dir(root.join("mcp-projects")) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(servers),
+            Err(_) => {
+                return Err(
+                    "No se pudieron revisar los otros ámbitos MCP; se conserva la credencial"
+                        .into(),
+                )
+            }
+        };
+        for (index, entry) in entries.enumerate() {
+            if index >= MAX_PROJECT_ENTRIES {
+                return Err("Hay demasiados ámbitos MCP para revisar de forma acotada; se conserva la credencial".into());
+            }
+            let entry = entry.map_err(|_| {
+                "No se pudieron revisar los otros ámbitos MCP; se conserva la credencial".to_owned()
+            })?;
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else { continue };
+            if name.len() != 64 || !name.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                continue;
+            }
+            if entry.path() == excluded {
+                continue;
+            }
+            if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                return Err("Un ámbito MCP guardado no es una carpeta verificable; se conserva la credencial".into());
+            }
+            servers.extend(Self::load_document(&entry.path())?.servers);
+        }
+        Ok(servers)
+    }
+
     /// Missing settings are an empty list. Existing malformed, oversized, or
     /// unsupported documents are returned as errors rather than reset.
-    pub fn load(root: &Path, _workspace: &Path) -> Result<Self, String> {
+    pub fn load(root: &Path, workspace: &Path) -> Result<Self, String> {
+        let user = Self::load_scope(root, workspace, McpSettingsScope::User)?;
+        // Preserve user-only loading for an unavailable workspace. Explicitly
+        // editing Project still requires a real canonical directory.
+        let project = if workspace.is_dir() {
+            Self::load_scope(root, workspace, McpSettingsScope::Project)?
+        } else {
+            Self::default()
+        };
+        Self::merge_scopes(user, project)
+    }
+
+    /// Read only the scope being edited; runtime callers use `load` instead.
+    pub fn load_scope(
+        root: &Path,
+        workspace: &Path,
+        scope: McpSettingsScope,
+    ) -> Result<Self, String> {
+        Self::load_document(&scope.storage_root(root, workspace)?)
+    }
+
+    fn load_document(root: &Path) -> Result<Self, String> {
         let path = root.join(SETTINGS_FILE);
-        let file = match File::open(&path) {
+        let mut options = OpenOptions::new();
+        options.read(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(libc::O_NONBLOCK);
+        }
+        let file = match options.open(&path) {
             Ok(file) => file,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Self::default()),
             Err(error) => return Err(format!("No se pudo abrir la configuración MCP: {error}")),
@@ -292,6 +430,48 @@ impl McpSettings {
     /// Validate first, then write a unique temporary file in the same folder
     /// and replace the previous document atomically.
     pub fn save(&self, root: &Path, _workspace: &Path) -> Result<(), String> {
+        self.save_scope(root, _workspace, McpSettingsScope::User)
+    }
+
+    /// Commit just one scope after validating the effective namespace. An
+    /// invalid other scope is never silently overwritten or reset.
+    pub fn save_scope(
+        &self,
+        root: &Path,
+        workspace: &Path,
+        scope: McpSettingsScope,
+    ) -> Result<(), String> {
+        let other_scope = match scope {
+            McpSettingsScope::User => McpSettingsScope::Project,
+            McpSettingsScope::Project => McpSettingsScope::User,
+        };
+        let other = if other_scope == McpSettingsScope::Project && !workspace.is_dir() {
+            Self::default()
+        } else {
+            Self::load_scope(root, workspace, other_scope)?
+        };
+        match scope {
+            McpSettingsScope::User => Self::merge_scopes(self.clone(), other),
+            McpSettingsScope::Project => Self::merge_scopes(other, self.clone()),
+        }?;
+        self.save_document(&scope.storage_root(root, workspace)?)
+    }
+
+    fn merge_scopes(mut user: Self, project: Self) -> Result<Self, String> {
+        user.validate_structure()?;
+        project.validate_structure()?;
+        for server in project.servers {
+            if let Some(existing) = user.servers.iter_mut().find(|entry| entry.id == server.id) {
+                *existing = server;
+            } else {
+                user.servers.push(server);
+            }
+        }
+        user.validate_structure()?;
+        Ok(user)
+    }
+
+    fn save_document(&self, root: &Path) -> Result<(), String> {
         self.validate_structure()?;
         let bytes = serde_json::to_vec_pretty(&Document {
             version: VERSION,
@@ -359,16 +539,25 @@ impl McpSettings {
                 if let Some(name) = &server.http_bearer_token_env_name {
                     validate_env_names(std::slice::from_ref(name), &server.id)?;
                 }
-                let names: Vec<String> =
-                    server.http_env_headers.iter().map(|entry| entry.env_name.clone()).collect();
+                let names: Vec<String> = server
+                    .http_env_headers
+                    .iter()
+                    .map(|entry| entry.env_name.clone())
+                    .collect();
                 validate_env_names(&names, &server.id)?;
                 // The transport refuses a header it owns; a placeholder value checks the names.
                 let mut probe = McpHttpConfig::new(url);
-                probe.env_headers =
-                    server.http_env_headers.iter().map(|entry| (entry.header.clone(), "x".to_owned())).collect();
+                probe.env_headers = server
+                    .http_env_headers
+                    .iter()
+                    .map(|entry| (entry.header.clone(), "x".to_owned()))
+                    .collect();
                 let mut unique = BTreeSet::new();
                 if probe.validate().is_err()
-                    || !server.http_env_headers.iter().all(|entry| unique.insert(entry.header.to_ascii_lowercase()))
+                    || !server
+                        .http_env_headers
+                        .iter()
+                        .all(|entry| unique.insert(entry.header.to_ascii_lowercase()))
                 {
                     return Err(format!(
                         "Encabezado MCP HTTP no válido, reservado o duplicado en {}",
@@ -397,10 +586,18 @@ impl McpSettings {
                 validate_program(&server.program, &server.id)?;
                 validate_args(&server.args, &server.id)?;
                 // One list: a name is passed through or written here, not both.
-                let names: Vec<String> =
-                    server.credential_env_names.iter().chain(server.env.keys()).cloned().collect();
+                let names: Vec<String> = server
+                    .credential_env_names
+                    .iter()
+                    .chain(server.env.keys())
+                    .cloned()
+                    .collect();
                 validate_env_names(&names, &server.id)?;
-                if server.env.values().any(|value| value.len() > MAX_ARG_BYTES || value.contains('\0')) {
+                if server
+                    .env
+                    .values()
+                    .any(|value| value.len() > MAX_ARG_BYTES || value.contains('\0'))
+                {
                     return Err(format!("Valor de variable MCP no válido en {}", server.id));
                 }
                 if let Some(cwd) = &server.cwd {
@@ -644,6 +841,165 @@ fn replace_atomically(temporary: &Path, destination: &Path) -> io::Result<()> {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
+    #[test]
+    fn stored_mcp_fifo_is_rejected_without_waiting_for_a_writer() {
+        use std::os::unix::ffi::OsStrExt;
+        let root = tempfile::tempdir().unwrap();
+        let workspace = tempfile::tempdir().unwrap();
+        let name =
+            std::ffi::CString::new(root.path().join(SETTINGS_FILE).as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+        assert!(
+            McpSettings::load_scope(root.path(), workspace.path(), McpSettingsScope::User).is_err()
+        );
+    }
+
+    #[test]
+    fn user_and_project_scopes_preserve_legacy_and_project_disabled_overrides_user() {
+        let root = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let other_project = tempfile::tempdir().unwrap();
+        let user = McpSettings {
+            servers: vec![server()],
+        };
+        user.save(root.path(), project.path()).unwrap();
+        let legacy = fs::read(root.path().join(SETTINGS_FILE)).unwrap();
+        let mut override_server = server();
+        override_server.enabled = false;
+        override_server.program = "project-mcp".into();
+        let local = McpSettings {
+            servers: vec![override_server.clone()],
+        };
+        local
+            .save_scope(root.path(), project.path(), McpSettingsScope::Project)
+            .unwrap();
+        assert_eq!(fs::read(root.path().join(SETTINGS_FILE)).unwrap(), legacy);
+        assert_eq!(
+            McpSettings::load_scope(root.path(), project.path(), McpSettingsScope::User).unwrap(),
+            user
+        );
+        assert_eq!(
+            McpSettings::load_scope(root.path(), project.path(), McpSettingsScope::Project)
+                .unwrap(),
+            local
+        );
+        assert_eq!(
+            McpSettings::load(root.path(), project.path())
+                .unwrap()
+                .servers,
+            vec![override_server]
+        );
+        assert_eq!(
+            McpSettings::load(root.path(), other_project.path()).unwrap(),
+            user
+        );
+        assert!(!project.path().join(SETTINGS_FILE).exists());
+        assert!(!project.path().join(".openade").exists());
+        McpSettings::default()
+            .save_scope(root.path(), project.path(), McpSettingsScope::Project)
+            .unwrap();
+        assert_eq!(
+            McpSettings::load(root.path(), project.path()).unwrap(),
+            user
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn project_scope_uses_canonical_workspace_and_never_repository_registration() {
+        let root = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let alias_root = tempfile::tempdir().unwrap();
+        let alias = alias_root.path().join("project-alias");
+        std::os::unix::fs::symlink(project.path(), &alias).unwrap();
+        let settings = McpSettings {
+            servers: vec![server()],
+        };
+        settings
+            .save_scope(root.path(), project.path(), McpSettingsScope::Project)
+            .unwrap();
+        assert_eq!(
+            McpSettings::load_scope(root.path(), &alias, McpSettingsScope::Project).unwrap(),
+            settings
+        );
+        assert_eq!(McpSettings::load(root.path(), &alias).unwrap(), settings);
+        let repository = tempfile::tempdir().unwrap();
+        fs::create_dir(repository.path().join(".openade")).unwrap();
+        fs::write(
+            repository.path().join(".openade/mcp-servers.json"),
+            fs::read(
+                McpSettingsScope::Project
+                    .storage_root(root.path(), project.path())
+                    .unwrap()
+                    .join(SETTINGS_FILE),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            McpSettings::load(root.path(), repository.path()).unwrap(),
+            McpSettings::default()
+        );
+    }
+
+    #[test]
+    fn scoped_save_validates_effective_limit_and_keeps_both_files_after_failure() {
+        let root = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let user = McpSettings {
+            servers: (0..MAX_SERVERS)
+                .map(|index| {
+                    let mut s = server();
+                    s.id = format!("user-{index}");
+                    s
+                })
+                .collect(),
+        };
+        user.save(root.path(), project.path()).unwrap();
+        let before = fs::read(root.path().join(SETTINGS_FILE)).unwrap();
+        let local = McpSettings {
+            servers: vec![server()],
+        };
+        assert!(local
+            .save_scope(root.path(), project.path(), McpSettingsScope::Project)
+            .is_err());
+        assert_eq!(fs::read(root.path().join(SETTINGS_FILE)).unwrap(), before);
+        assert_eq!(
+            McpSettings::load_scope(root.path(), project.path(), McpSettingsScope::Project)
+                .unwrap(),
+            McpSettings::default()
+        );
+        // Reusing an ID consumes one effective slot, not two.
+        let mut shadow = server();
+        shadow.id = "user-0".into();
+        shadow.enabled = false;
+        McpSettings {
+            servers: vec![shadow],
+        }
+        .save_scope(root.path(), project.path(), McpSettingsScope::Project)
+        .unwrap();
+        assert_eq!(
+            McpSettings::load(root.path(), project.path())
+                .unwrap()
+                .servers
+                .len(),
+            MAX_SERVERS
+        );
+        let scoped_root = McpSettingsScope::Project
+            .storage_root(root.path(), project.path())
+            .unwrap();
+        fs::write(scoped_root.join(SETTINGS_FILE), "corrupt").unwrap();
+        assert!(McpSettings::default()
+            .save_scope(root.path(), project.path(), McpSettingsScope::User)
+            .is_err());
+        assert_eq!(fs::read(root.path().join(SETTINGS_FILE)).unwrap(), before);
+        assert_eq!(
+            fs::read_to_string(scoped_root.join(SETTINGS_FILE)).unwrap(),
+            "corrupt"
+        );
+    }
+
     fn server() -> McpServerSettings {
         McpServerSettings {
             id: "filesystem".to_owned(),
@@ -710,12 +1066,23 @@ mod tests {
     fn http_headers_persist_names_only_resolve_at_launch_and_refuse_what_the_transport_owns() {
         let root = tempfile::tempdir().unwrap();
         let workspace = root.path().join("does-not-exist");
-        let header = |header: &str, env_name: &str| McpEnvHeader { header: header.into(), env_name: env_name.into() };
+        let header = |header: &str, env_name: &str| McpEnvHeader {
+            header: header.into(),
+            env_name: env_name.into(),
+        };
         let mut server = http_server("https://example.com/mcp");
-        server.http_env_headers = vec![header("X-Api-Key", "MCP_API_KEY"), header("X-Team", "MCP_TEAM")];
-        let settings = McpSettings { servers: vec![server.clone()] };
+        server.http_env_headers = vec![
+            header("X-Api-Key", "MCP_API_KEY"),
+            header("X-Team", "MCP_TEAM"),
+        ];
+        let settings = McpSettings {
+            servers: vec![server.clone()],
+        };
         settings.save(root.path(), &workspace).unwrap();
-        assert_eq!(McpSettings::load(root.path(), &workspace).unwrap(), settings);
+        assert_eq!(
+            McpSettings::load(root.path(), &workspace).unwrap(),
+            settings
+        );
         let saved = fs::read_to_string(root.path().join(SETTINGS_FILE)).unwrap();
         assert!(saved.contains("MCP_API_KEY") && !saved.contains("secret-key"));
 
@@ -728,25 +1095,49 @@ mod tests {
         let config = server.runtime_http_config_with(env).unwrap();
         assert_eq!(
             config.env_headers,
-            [("X-Api-Key".to_owned(), "secret-key".to_owned()), ("X-Team".to_owned(), "plataforma".to_owned())]
+            [
+                ("X-Api-Key".to_owned(), "secret-key".to_owned()),
+                ("X-Team".to_owned(), "plataforma".to_owned())
+            ]
         );
         // A variable that is not set stops the launch instead of sending the request without it.
-        assert!(server.runtime_http_config_with(|name| env(name).filter(|_| name != "MCP_TEAM")).is_err());
+        assert!(server
+            .runtime_http_config_with(|name| env(name).filter(|_| name != "MCP_TEAM"))
+            .is_err());
 
         let refused = |entries: Vec<McpEnvHeader>| {
             let mut server = server.clone();
             server.http_env_headers = entries;
-            McpSettings { servers: vec![server] }.validate_structure().is_err()
+            McpSettings {
+                servers: vec![server],
+            }
+            .validate_structure()
+            .is_err()
         };
-        for owned in ["Authorization", "authorization", "Mcp-Session-Id", "Content-Type", "Host", "con espacio", ""] {
+        for owned in [
+            "Authorization",
+            "authorization",
+            "Mcp-Session-Id",
+            "Content-Type",
+            "Host",
+            "con espacio",
+            "",
+        ] {
             assert!(refused(vec![header(owned, "MCP_API_KEY")]), "{owned}");
         }
         assert!(refused(vec![header("X-Api-Key", "minuscula")]));
-        assert!(refused(vec![header("X-Api-Key", "MCP_API_KEY"), header("x-api-key", "MCP_TEAM")]));
+        assert!(refused(vec![
+            header("X-Api-Key", "MCP_API_KEY"),
+            header("x-api-key", "MCP_TEAM")
+        ]));
         // Headers are for an HTTP server only.
         let mut stdio = super::tests::server();
         stdio.http_env_headers = vec![header("X-Api-Key", "MCP_API_KEY")];
-        assert!(McpSettings { servers: vec![stdio] }.validate_structure().is_err());
+        assert!(McpSettings {
+            servers: vec![stdio]
+        }
+        .validate_structure()
+        .is_err());
     }
 
     #[test]
@@ -961,16 +1352,28 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let workspace = tempfile::tempdir().unwrap();
         fs::create_dir(workspace.path().join("repo")).unwrap();
-        let mut settings = McpSettings { servers: vec![server()] };
-        settings.servers[0].env.insert("LOG_LEVEL".to_owned(), "debug".to_owned());
+        let mut settings = McpSettings {
+            servers: vec![server()],
+        };
+        settings.servers[0]
+            .env
+            .insert("LOG_LEVEL".to_owned(), "debug".to_owned());
         settings.save(root.path(), workspace.path()).unwrap();
-        assert_eq!(McpSettings::load(root.path(), workspace.path()).unwrap(), settings);
+        assert_eq!(
+            McpSettings::load(root.path(), workspace.path()).unwrap(),
+            settings
+        );
         let runtime = settings.servers[0]
             .runtime_config_with(workspace.path(), |_| Some(OsString::from("present")))
             .unwrap();
-        assert_eq!(runtime.env[&OsString::from("LOG_LEVEL")], OsString::from("debug"));
+        assert_eq!(
+            runtime.env[&OsString::from("LOG_LEVEL")],
+            OsString::from("debug")
+        );
 
-        settings.servers[0].env.insert("MCP_API_KEY".to_owned(), "x".to_owned());
+        settings.servers[0]
+            .env
+            .insert("MCP_API_KEY".to_owned(), "x".to_owned());
         assert!(settings.validate(workspace.path()).is_err());
         settings.servers[0].env = [("lower".to_owned(), "x".to_owned())].into();
         assert!(settings.validate(workspace.path()).is_err());

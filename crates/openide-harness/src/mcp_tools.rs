@@ -16,6 +16,7 @@ use crate::{
 use async_trait::async_trait;
 use openide_core::ToolCall;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::sync::{Arc, Mutex};
@@ -79,6 +80,8 @@ pub enum McpToolAdapterError {
     NameTooLong { server: String, tool: String },
     #[error("duplicate exposed tool name: {0}")]
     Collision(String),
+    #[error("selected MCP tool is absent or repeated on server {server}: {tool}")]
+    InvalidSelection { server: String, tool: String },
     #[error("MCP discovery failed for {server}: {source}")]
     Discovery {
         server: String,
@@ -91,10 +94,13 @@ pub enum McpToolAdapterError {
 
 /// One server and the exact tool list discovered from it. Construct through
 /// `discover` so the client has also recorded its advertised names.
+#[derive(Clone)]
 pub struct McpServerBinding {
     name: String,
     client: Arc<dyn McpToolClient>,
     tools: Vec<McpTool>,
+    discovery_digest: String,
+    selected_names: Option<Vec<String>>,
 }
 
 impl McpServerBinding {
@@ -122,15 +128,54 @@ impl McpServerBinding {
                 source,
             }
         })?;
+        let mut digest = Sha256::new();
+        digest.update(b"openide-mcp-discovered-catalog-v1\0");
+        digest.update(serde_json::to_vec(&tools).expect("MCP metadata serializes"));
         Ok(Self {
             name,
             client,
             tools,
+            discovery_digest: format!("{:x}", digest.finalize()),
+            selected_names: None,
         })
     }
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Filter only after complete discovery. A missing selected name rejects
+    /// the registration; it never becomes an implicit partial catalog.
+    pub fn select_tools(mut self, names: Option<&[String]>) -> Result<Self, McpToolAdapterError> {
+        if let Some(names) = names {
+            let mut selected = BTreeSet::new();
+            for name in names {
+                if !selected.insert(name.as_str())
+                    || !self.tools.iter().any(|tool| &tool.name == name)
+                {
+                    return Err(McpToolAdapterError::InvalidSelection {
+                        server: self.name,
+                        tool: name.clone(),
+                    });
+                }
+            }
+            self.tools
+                .retain(|tool| selected.contains(tool.name.as_str()));
+            let mut names = names.to_vec();
+            names.sort();
+            self.selected_names = Some(names);
+        }
+        Ok(self)
+    }
+
+    /// Includes metadata that is inspected but never sent as a model schema,
+    /// and distinguishes All from an explicitly reviewed set of all names.
+    pub fn discovery_selection_digest(&self) -> String {
+        let mut hash = Sha256::new();
+        hash.update(b"openide-mcp-discovery-selection-v1\0");
+        hash.update(self.discovery_digest.as_bytes());
+        hash.update(serde_json::to_vec(&self.selected_names).expect("selection serializes"));
+        format!("{:x}", hash.finalize())
     }
 }
 
@@ -629,6 +674,120 @@ mod tests {
         assert!(
             matches!(error, Err(McpToolAdapterError::Collision(name)) if name == "mcp__server__a_x2Eb")
         );
+    }
+
+    #[tokio::test]
+    async fn explicit_selection_keeps_full_discovery_but_advertises_and_calls_only_chosen_tools() {
+        let mock = Arc::new(MockClient::new(
+            (0..170)
+                .map(|index| tool(&format!("tool_{index}")))
+                .collect(),
+        ));
+        let binding = McpServerBinding::discover("rea", mock.clone(), &CancellationToken::new())
+            .await
+            .unwrap();
+        assert!(matches!(
+            McpCompositeTools::new(Arc::new(LocalTools::new()), vec![binding.clone()]),
+            Err(McpToolAdapterError::Catalog(
+                ToolCatalogError::TooManyTools { limit: 128 }
+            ))
+        ));
+        let chosen = vec!["tool_169".into(), "tool_2".into()];
+        let filtered = binding.clone().select_tools(Some(&chosen)).unwrap();
+        let selected_digest = filtered.discovery_selection_digest();
+        assert_ne!(selected_digest, binding.discovery_selection_digest());
+        let composite =
+            McpCompositeTools::new(Arc::new(LocalTools::new()), vec![filtered]).unwrap();
+        assert_eq!(
+            composite.mcp_tool_names().collect::<Vec<_>>(),
+            ["mcp__rea__tool_169", "mcp__rea__tool_2"]
+        );
+        assert!(
+            composite
+                .execute(&call("mcp__rea__tool_0"), &context())
+                .await
+                .unwrap()
+                .is_error
+        );
+        assert!(mock.calls.lock().unwrap().is_empty());
+        assert!(
+            !composite
+                .execute(&call("mcp__rea__tool_169"), &context())
+                .await
+                .unwrap()
+                .is_error
+        );
+        assert_eq!(mock.calls.lock().unwrap().len(), 1);
+        assert!(matches!(
+            binding.clone().select_tools(Some(&["missing".into()])),
+            Err(McpToolAdapterError::InvalidSelection { .. })
+        ));
+        assert!(matches!(
+            binding
+                .clone()
+                .select_tools(Some(&["tool_2".into(), "tool_2".into()])),
+            Err(McpToolAdapterError::InvalidSelection { .. })
+        ));
+        let none = binding.select_tools(Some(&[])).unwrap();
+        assert!(
+            McpCompositeTools::new(Arc::new(LocalTools::new()), vec![none])
+                .unwrap()
+                .mcp_tool_names()
+                .next()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn discovery_fingerprint_covers_unadvertised_metadata_and_model_schema_budget_is_unchanged(
+    ) {
+        let first = tool("echo");
+        let mut changed = first.clone();
+        changed.extra.insert(
+            "outputSchema".into(),
+            serde_json::json!({"description":"metadata".repeat(10_000)}),
+        );
+        let original = McpServerBinding::discover(
+            "rea",
+            Arc::new(MockClient::new(vec![first])),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        let newer = McpServerBinding::discover(
+            "rea",
+            Arc::new(MockClient::new(vec![changed])),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_ne!(
+            original.discovery_selection_digest(),
+            newer.discovery_selection_digest()
+        );
+        let a = McpCompositeTools::new(Arc::new(LocalTools::new()), vec![original]).unwrap();
+        let b = McpCompositeTools::new(Arc::new(LocalTools::new()), vec![newer]).unwrap();
+        assert_eq!(
+            a.catalog().digest_hex(),
+            b.catalog().digest_hex(),
+            "output metadata is not injected into model input schemas"
+        );
+        let mut oversized = tool("large_input");
+        oversized.input_schema["description"] =
+            serde_json::json!("x".repeat(crate::MAX_TOOL_SCHEMA_BYTES));
+        let binding = McpServerBinding::discover(
+            "rea",
+            Arc::new(MockClient::new(vec![oversized])),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            McpCompositeTools::new(Arc::new(LocalTools::new()), vec![binding]),
+            Err(McpToolAdapterError::Catalog(
+                ToolCatalogError::SchemaTooLarge { limit: 65536, .. }
+            ))
+        ));
     }
 
     #[tokio::test]

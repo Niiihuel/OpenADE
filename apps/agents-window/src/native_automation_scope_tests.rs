@@ -199,6 +199,7 @@ fn automation_rejects_replaced_workspace_before_admission_and_worker_effects_but
                     pre_context_instructions: None,
                     limits: frozen.limits(),
                     native_automation: Some(frozen.clone()),
+                    subagent_settings: Default::default(),
                     sessions: store.clone(),
                     checkpoints,
                 },

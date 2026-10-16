@@ -16,6 +16,7 @@ use openide_ui::{
 };
 
 use crate::{
+    appearance_preferences::ToolCallDensity,
     composer_ui::{build_composer_with_height, build_native_context_control, ComposerProps},
     message_actions::{Turn, UserEdit},
     rich_text, theme, tool_card_skeleton,
@@ -414,17 +415,16 @@ fn message(
         }
         TranscriptItem::Assistant { content, streaming } => {
             let visible = state.stream_presentation.visible_bytes(item_index, content);
-            let preview = if *streaming {
-                rich_text::render_streaming_markdown_preview_at_width(
-                    &content[..visible],
-                    reading_width.max(96.0),
-                )
-            } else {
-                rich_text::render_markdown_preview_at_width(content, reading_width.max(96.0))
-            };
-            let mut rows = vec![rich_text::scope_web_links(preview.element, &format!(
+            let scope = format!(
                 "assistant:{}:{item_index}", state.selected_session.as_deref().unwrap_or("draft")
-            ))];
+            );
+            let preview = rich_text::render_scoped_markdown_preview(
+                if *streaming { &content[..visible] } else { content },
+                reading_width.max(96.0),
+                &scope,
+                *streaming,
+            );
+            let mut rows = vec![rich_text::scope_web_links(preview.element, &scope)];
             if preview.limited && !*streaming && crate::conversation_source_ui::available(state) {
                 // Keep actions outside the cached passive Markdown tree.
                 rows.push(crate::conversation_source_ui::open_button(
@@ -600,14 +600,16 @@ pub(crate) fn model_stream_item(
             let line = stream_line(vec![label], Some(detail_action(state, id)), Some(expanded));
             let body = expanded.then(|| {
                 let visible = &content[..state.stream_presentation.visible_bytes(item_index, content)];
-                let rendered = if receiving {
-                    rich_text::render_streaming_markdown_at_width(visible, reading_width.max(48.0))
-                } else {
-                    rich_text::render_markdown_at_width(content, reading_width.max(48.0))
-                };
-                let mut rows = vec![rich_text::scope_web_links(rendered, &format!(
+                let scope = format!(
                     "reasoning:{}:{item_index}", state.selected_session.as_deref().unwrap_or("draft")
-                ))];
+                );
+                let preview = rich_text::render_scoped_markdown_preview(
+                    if receiving { visible } else { content },
+                    reading_width.max(48.0),
+                    &scope,
+                    receiving,
+                );
+                let mut rows = vec![rich_text::scope_web_links(preview.element, &scope)];
                 if *truncated {
                     rows.push(
                         Text::new("Vista de razonamiento limitada", theme::component_palette())
@@ -661,7 +663,10 @@ pub(crate) fn model_stream_item(
             let name = name.as_deref().unwrap_or("Herramienta");
             let disclosure = call_id.as_ref().map(|id| format!("tool:{id}"));
             let disclosure = disclosure.as_deref().unwrap_or(id);
-            let expanded = state.conversation_details.is_expanded(disclosure, false);
+            let expanded = state.conversation_details.is_expanded(
+                disclosure,
+                conversation_detail_default_open(state, disclosure),
+            );
             let preview = tool_presentation::present(
                 name,
                 &tool_presentation::preview_arguments(arguments),
@@ -1141,7 +1146,14 @@ pub(crate) fn conversation_detail_default_open(state: &ViewState, id: &str) -> b
             });
     }
     if let Some(call) = id.strip_prefix("tool:") {
-        return crate::file_activity_ui::default_expanded(state, call);
+        return state.appearance.tool_call_density == ToolCallDensity::Detailed
+            || crate::file_activity_ui::default_expanded(state, call);
+    }
+    if state.appearance.tool_call_density == ToolCallDensity::Detailed {
+        return state.transcript.iter().any(|item| {
+            matches!(item, TranscriptItem::ToolPreview { id: preview, .. }
+                | TranscriptItem::WebSearch { id: preview, .. } if preview == id)
+        });
     }
     if crate::file_activity_ui::default_expanded(state, id) {
         return true;
@@ -1291,7 +1303,10 @@ pub(crate) fn tool_line_with_output(
         }
     }
     let disclosure = format!("tool:{id}");
-    let expanded = state.conversation_details.is_expanded(&disclosure, false);
+    let expanded = state.conversation_details.is_expanded(
+        &disclosure,
+        conversation_detail_default_open(state, &disclosure),
+    );
     let presentation =
         tool_presentation::present(name, arguments, *activity, *is_error, output.as_deref());
     if presentation.kind == ToolKind::Command {
@@ -2139,7 +2154,9 @@ pub(crate) fn reveal_target(state: &mut ViewState, call: &str) -> Option<String>
     else {
         return None;
     };
-    if exploration_call(&state.transcript[position]).is_none() {
+    if state.appearance.tool_call_density != ToolCallDensity::Grouped
+        || exploration_call(&state.transcript[position]).is_none()
+    {
         return Some(detail_action(state, &format!("tool:{call}")));
     }
     let target = exploration_action(state.selected_session.as_deref(), call, name, arguments);
@@ -2541,7 +2558,9 @@ fn timeline(state: &ViewState, width: f32) -> Element {
             index += 1;
             continue;
         }
-        if exploration_call(item).is_some() {
+        if state.appearance.tool_call_density == ToolCallDensity::Grouped
+            && exploration_call(item).is_some()
+        {
             let (end, count) = exploration_run(&state.transcript, index);
             if count >= 2 {
                 live_group_tail =
@@ -4311,6 +4330,9 @@ mod tests {
 
     pub(super) fn state() -> ViewState {
         ViewState {
+            appearance: Default::default(),
+            appearance_font_query: Default::default(),
+            custom_theme_ui: Default::default(),
             tour: Default::default(),
             pause: Default::default(),
             model_switch: Default::default(),
@@ -4488,6 +4510,9 @@ mod tests {
             chat_link_menu: None,
             settings_terminal_shell_editing: false,
             mcp_servers: Vec::new(),
+            mcp_settings_scope: Default::default(),
+            mcp_effective_summary: String::new(),
+            mcp_shadowed_user_ids: Vec::new(),
             mcp_selected_id: None,
             mcp_editor_open: false,
             pending_mcp_delete_id: None,
@@ -4507,6 +4532,7 @@ mod tests {
             mcp_draft_env_names: String::new(),
             mcp_load_error: None,
             mcp_inspection: Default::default(),
+            mcp_presentation: Default::default(),
             conversation_activity: Default::default(),
             conversation_details: Default::default(),
             stream_presentation: Default::default(),
@@ -4571,6 +4597,14 @@ mod tests {
             queued_messages: Vec::new(),
             queue_paused: false,
             browser_sites: Vec::new(),
+            browser_automation_enabled: true,
+            browser_sites_error: None,
+            browser_site_draft_access: Default::default(),
+            browser_sites_reset_confirm: false,
+            subagent_settings: Default::default(),
+            subagent_settings_error: None,
+            subagent_settings_reset_pending: false,
+            subagent_personas: Vec::new(),
             browser_site_draft: String::new(),
             review_detail: None,
             terminal_tabs: Vec::new(),
@@ -7128,5 +7162,117 @@ mod tests {
             exploration_summary(&items),
             "2 archivos, 2 búsquedas, 1 listado, 1 página"
         );
+    }
+
+    #[test]
+    fn tool_density_groups_only_in_grouped_mode_and_keeps_individual_disclosures() {
+        use crate::appearance_preferences::ToolCallDensity;
+        let mut state = state();
+        state.transcript = ["one", "two"]
+            .into_iter()
+            .map(|id| TranscriptItem::Tool {
+                id: id.into(),
+                name: "read_file".into(),
+                arguments: json!({"path": format!("{id}.rs")}),
+                output: Some(format!("DENSITY_RESULT_{id}")),
+                is_error: false,
+                activity: ActivityStatus::Completed,
+            })
+            .collect();
+        for density in ToolCallDensity::ALL {
+            state.appearance.tool_call_density = density;
+            let frame = UiTree::new(timeline(&state, 900.0)).layout(Size::new(900.0, 1200.0));
+            let text = visible_text(&frame);
+            assert_eq!(
+                text.contains("Exploró"),
+                density == ToolCallDensity::Grouped
+            );
+            for call in ["one", "two"] {
+                assert_eq!(
+                    frame
+                        .regions
+                        .iter()
+                        .any(|region| region.id == detail_action(&state, &format!("tool:{call}"))),
+                    density != ToolCallDensity::Grouped
+                );
+                assert_eq!(
+                    text.contains(&format!("DENSITY_RESULT_{call}")),
+                    density == ToolCallDensity::Detailed
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn detailed_tools_default_open_but_explicit_collapse_wins() {
+        use crate::appearance_preferences::ToolCallDensity;
+        let mut state = state();
+        state.appearance.tool_call_density = ToolCallDensity::Detailed;
+        let item = TranscriptItem::Tool {
+            id: "opaque".into(),
+            name: "mcp__example__inspect".into(),
+            arguments: json!({"key":"value"}),
+            output: Some("DENSITY_OPAQUE_RESULT".into()),
+            is_error: false,
+            activity: ActivityStatus::Completed,
+        };
+        assert!(conversation_detail_default_open(&state, "tool:opaque"));
+        let frame = UiTree::new(tool_line(&item, &state, false)).layout(Size::new(900.0, 900.0));
+        assert!(visible_text(&frame).contains("DENSITY_OPAQUE_RESULT"));
+        state
+            .conversation_details
+            .set_expanded("tool:opaque", false);
+        let frame = UiTree::new(tool_line(&item, &state, false)).layout(Size::new(900.0, 900.0));
+        assert!(!visible_text(&frame).contains("DENSITY_OPAQUE_RESULT"));
+    }
+
+    #[test]
+    fn tool_density_keeps_errors_and_permission_status_visible() {
+        use crate::appearance_preferences::ToolCallDensity;
+        let mut state = state();
+        for density in ToolCallDensity::ALL {
+            state.appearance.tool_call_density = density;
+            for (activity, output, expected) in [
+                (
+                    ActivityStatus::Failed,
+                    Some("DENSITY_FAILURE".into()),
+                    "DENSITY_FAILURE",
+                ),
+                (ActivityStatus::WaitingPermission, None, "autorización"),
+            ] {
+                state.transcript = vec![TranscriptItem::Tool {
+                    id: "attention".into(),
+                    name: "read_file".into(),
+                    arguments: json!({"path":"missing.rs"}),
+                    output,
+                    is_error: activity == ActivityStatus::Failed,
+                    activity,
+                }];
+                let frame = UiTree::new(timeline(&state, 900.0)).layout(Size::new(900.0, 900.0));
+                assert!(
+                    visible_text(&frame).contains(expected),
+                    "{density:?} {activity:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn identical_assistant_messages_keep_independent_code_viewports() {
+        let mut state = state();
+        state.transcript = vec![
+            TranscriptItem::Assistant {
+                content: format!("```rust\nlet value = \"{}\";\n```", "same_value".repeat(30)),
+                streaming: false,
+            };
+            2
+        ];
+        let root = Element::column(state.transcript.iter().enumerate()
+            .map(|(index, item)| message(item, index, 360.0, &state)).collect());
+        let frame = UiTree::new(root).layout(Size::new(360.0, 1200.0));
+        let ids: Vec<_> = frame.regions.iter().filter(|region| region.kind == HitKind::Scroll)
+            .map(|region| region.id.as_str()).collect();
+        assert_eq!(ids.len(), 2);
+        assert_ne!(ids[0], ids[1]);
     }
 }

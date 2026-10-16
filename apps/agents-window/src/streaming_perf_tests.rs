@@ -8,11 +8,17 @@ fn native_measurement_installation_survives_frames_and_invalidates_context_or_sc
     let directory = tempfile::tempdir().unwrap();
     let mut app = AgentsWindow::with_data_root(directory.path().join("data"));
     let context = egui::Context::default();
+    crate::fonts::install(&context);
+    context.begin_pass(egui::RawInput::default());
     assert!(app.ensure_native_text_measurers(&context));
     assert!(!app.ensure_native_text_measurers(&context));
+    context.end_pass().textures_delta.clear();
     let replacement = egui::Context::default();
+    crate::fonts::install(&replacement);
+    replacement.begin_pass(egui::RawInput::default());
     assert!(app.ensure_native_text_measurers(&replacement));
     assert!(!app.ensure_native_text_measurers(&replacement));
+    replacement.end_pass().textures_delta.clear();
     replacement.set_pixels_per_point(2.0);
     replacement.begin_pass(egui::RawInput::default());
     assert_eq!(replacement.pixels_per_point(), 2.0);

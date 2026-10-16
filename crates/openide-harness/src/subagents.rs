@@ -650,7 +650,6 @@ impl SubagentCoordinator {
             || input_id.len() > MAX_INPUT_ID_BYTES
             || prompt.trim().is_empty()
             || prompt.len() > MAX_INPUT_PROMPT_BYTES
-            || mode != TurnMode::Build
         {
             return Err(SubagentError::InvalidInput);
         }
@@ -658,7 +657,7 @@ impl SubagentCoordinator {
         hasher.update(b"openide-subagent-input-v1\0");
         hasher.update((prompt.len() as u64).to_le_bytes());
         hasher.update(prompt.as_bytes());
-        hasher.update(b"build");
+        hasher.update(match mode { TurnMode::Build => b"build".as_slice(), TurnMode::Plan => b"plan".as_slice() });
         let digest = format!("{:x}", hasher.finalize());
         let _registry_lock = self.lock_registry()?;
         let mut registry = self.read_registry()?;
@@ -3203,8 +3202,8 @@ mod tests {
             Err(SubagentError::ConflictingInput)
         ));
         assert!(matches!(
-            coordinator.enqueue_input(&parent_lease, id, "input-b", "Plan", TurnMode::Plan),
-            Err(SubagentError::InvalidInput)
+            coordinator.enqueue_input(&parent_lease, id, "input-a", "Continue", TurnMode::Plan),
+            Err(SubagentError::ConflictingInput)
         ));
         let initial = coordinator.start_child(&parent_lease, id).unwrap();
         coordinator
@@ -3248,6 +3247,23 @@ mod tests {
             QueuedInputState::Done
         );
         assert_eq!(coordinator.open_input_count_for_ui(id).unwrap(), 0);
+    }
+
+    #[test]
+    fn plan_mailbox_retains_mode_and_digest_after_reopening() {
+        let (root, sessions, coordinator, parent) = setup(Default::default());
+        let lease = sessions.try_acquire_native_lease(&parent.id).unwrap();
+        let child = coordinator.create_child(&lease, "plan-mailbox", &spec()).unwrap();
+        let first = coordinator.enqueue_input(&lease, &child.session.id, "input-plan", "Inspect", TurnMode::Plan).unwrap();
+        assert_eq!(first.mode, TurnMode::Plan);
+        assert!(matches!(coordinator.enqueue_input(&lease, &child.session.id, "input-plan", "Inspect", TurnMode::Build), Err(SubagentError::ConflictingInput)));
+        drop(lease);
+        drop(coordinator);
+        drop(sessions);
+        let sessions = Arc::new(SessionStore::open(root.path()).unwrap());
+        let coordinator = SubagentCoordinator::new(sessions.clone(), Default::default()).unwrap();
+        let lease = sessions.try_acquire_native_lease(&parent.id).unwrap();
+        assert_eq!(coordinator.enqueue_input(&lease, &child.session.id, "input-plan", "Inspect", TurnMode::Plan).unwrap(), first);
     }
 
     #[test]

@@ -320,6 +320,22 @@ mod tests {
     }
 
     #[test]
+    fn settings_scope_status_and_subagent_labels_translate_composed_values() {
+        for (spanish, english) in [
+            ("2 configurados · Este proyecto", "2 configured · This project"),
+            ("Última conexión correcta · 3 herramientas · Reemplazado por este proyecto", "Last connection successful · 3 tools · Overridden by this project"),
+            ("Habilitado · sin probar · Reemplazado por este proyecto", "Enabled · untested · Overridden by this project"),
+            ("Reducir Subagentes en ejecución", "Decrease Running subagents"),
+            ("Explorador · explorer", "Explorer · explorer"),
+            ("Permiso de https://example.test", "Permission for https://example.test"),
+            ("4 servidores habilitados para el próximo turno. Los plugins se administran por separado.", "4 servers enabled for the next turn. Plugins are managed separately."),
+        ] {
+            // Lookup is independent of the process-wide language selection.
+            assert_eq!(lookup(spanish).as_deref(), Some(english), "{spanish}");
+        }
+    }
+
+    #[test]
     fn the_tree_is_said_in_english_only_when_that_is_the_language() {
         let tree = || {
             Element::column(vec![

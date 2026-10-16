@@ -11,10 +11,12 @@ use openide_harness::{
     update_plan_tool_definition, AgentError, CommandHooks, CommandIsolation, ModelBackend,
     NativeCommandProfile, PermissionChoice, PermissionPolicy, PersistentCommandManager,
     PreparedToolSession, ResumeDisposition, ResumeEngine, ResumeEventObserver, RunLimits,
-    SubagentCoordinator, SubagentEventBridge, SubagentLimits, SubagentToolExecutor,
-    SubagentToolLimits, SubagentWorker, TokenBudgetPolicy, ToolCatalog, ToolContext,
+    SubagentCoordinator, SubagentEventBridge, SubagentToolExecutor,
+    SubagentWorker, TokenBudgetPolicy, ToolCatalog, ToolContext,
     ToolDefinition, ToolExecutor, ToolOutput, ToolPreparation,
 };
+#[cfg(test)]
+use openide_harness::{SubagentLimits, SubagentToolLimits};
 use std::sync::{
     mpsc::{self, Receiver, SyncSender as Sender},
     Arc, Mutex,
@@ -23,6 +25,7 @@ use tokio_util::sync::CancellationToken;
 
 pub(crate) struct ResumeWorkerRequest {
     pub session_id: String,
+    pub subagent_settings: crate::subagent_settings::SubagentSettings,
     /// Reconstructed from this session's immutable origin, never Settings.
     pub native_automation: Option<FrozenNativeAutomationAuthorityV1>,
     pub provider: String,
@@ -377,8 +380,9 @@ async fn run_recovery_with_command_actor(
         return Err("El workspace ya no es un directorio".into());
     }
 
+    request.subagent_settings.validate()?;
     let coordinator = Arc::new(
-        SubagentCoordinator::new(request.sessions.clone(), SubagentLimits::default()).map_err(
+        SubagentCoordinator::new(request.sessions.clone(), request.subagent_settings.coordinator_limits()).map_err(
             |error| format!("No se pudo iniciar la coordinación de subagentes: {error}"),
         )?,
     );
@@ -393,7 +397,7 @@ async fn run_recovery_with_command_actor(
     .with_permission_policy(request.permission_policy.clone())
     .with_session_approvals(request.command_isolation)
     .with_command_hooks(request.command_hooks.clone())
-    .with_nested_subagents(SubagentToolLimits::default())
+    .with_nested_subagents(request.subagent_settings.tool_limits())
     .with_native_goals()
     .with_system_instructions(
         openide_harness::native_goal_base_instructions(&system_instructions)
@@ -420,9 +424,10 @@ async fn run_recovery_with_command_actor(
             coordinator,
             request.sessions.clone(),
             lease.clone(),
-            SubagentToolLimits::default(),
+            request.subagent_settings.tool_limits(),
         )
-        .map_err(|error| format!("No se pudieron preparar subagentes para resume: {error}"))?,
+        .map_err(|error| format!("No se pudieron preparar subagentes para resume: {error}"))?
+        .with_delegation_enabled(request.subagent_settings.enabled),
     );
 
     // Legacy journals without a native admission have no turn identity to
@@ -1317,6 +1322,7 @@ mod tests {
         let shutdown = Arc::new(AtomicBool::new(false));
         let handle = ResumeWorkerHandle::start(ResumeWorkerRequest {
             native_automation: None,
+            subagent_settings: Default::default(),
             session_id: session.id.clone(),
             provider: "test".into(),
             endpoint: "https://test.example/v1".into(),
@@ -1464,6 +1470,7 @@ mod tests {
         drop(lease);
         let handle = ResumeWorkerHandle::start(ResumeWorkerRequest {
             native_automation: None,
+            subagent_settings: Default::default(),
             session_id: session.id.clone(),
             provider: "test".into(),
             endpoint: "https://test.example/v1".into(),
@@ -1574,6 +1581,7 @@ mod tests {
         let (_release_tx, release_rx) = tokio::sync::oneshot::channel();
         let handle = ResumeWorkerHandle::start(ResumeWorkerRequest {
             native_automation: None,
+            subagent_settings: Default::default(),
             session_id: session.id.clone(),
             provider: "test".into(),
             endpoint: "https://test.example/v1".into(),
@@ -1698,6 +1706,7 @@ mod tests {
             }
             let handle = ResumeWorkerHandle::start(ResumeWorkerRequest {
                 native_automation: None,
+                subagent_settings: Default::default(),
                 session_id: session.id.clone(),
                 provider: "test".into(),
                 endpoint: "https://test.example/v1".into(),
@@ -1869,6 +1878,7 @@ mod tests {
             }
             let handle = ResumeWorkerHandle::start(ResumeWorkerRequest {
                 native_automation: None,
+                subagent_settings: Default::default(),
                 session_id: session.id.clone(),
                 provider: "test".into(),
                 endpoint: "https://test.example/v1".into(),
@@ -2118,6 +2128,7 @@ mod tests {
             let sessions = Arc::new(SessionStore::open(root.path()).unwrap());
             let handle = ResumeWorkerHandle::start(ResumeWorkerRequest {
                 native_automation: None,
+                subagent_settings: Default::default(),
                 session_id: session.id.clone(),
                 provider: "test".into(),
                 endpoint: "https://test.example/v1".into(),
@@ -2274,6 +2285,7 @@ mod tests {
         );
         let handle = ResumeWorkerHandle::start(ResumeWorkerRequest {
             native_automation: None,
+            subagent_settings: Default::default(),
             session_id: session.id.clone(),
             provider: "test".into(),
             endpoint: "https://test.example/v1".into(),
@@ -2395,6 +2407,7 @@ mod tests {
             let shutdown = Arc::new(AtomicBool::new(false));
             let handle = ResumeWorkerHandle::start(ResumeWorkerRequest {
                 native_automation: None,
+                subagent_settings: Default::default(),
                 session_id: session.id.clone(),
                 provider: "test".into(),
                 endpoint: "https://test.example/v1".into(),
@@ -2936,6 +2949,7 @@ mod tests {
         let model = Arc::new(RecoveryGoalReader(std::sync::atomic::AtomicUsize::new(0)));
         let handle = ResumeWorkerHandle::start(ResumeWorkerRequest {
             native_automation: None,
+            subagent_settings: Default::default(),
             session_id: session.id.clone(),
             provider: "test".into(),
             endpoint: "https://test.example/v1".into(),
@@ -3142,6 +3156,7 @@ mod tests {
             });
             let handle = ResumeWorkerHandle::start(ResumeWorkerRequest {
                 native_automation: None,
+                subagent_settings: Default::default(),
                 session_id: session.id.clone(),
                 provider: "test".into(),
                 endpoint: "https://test.example/v1".into(),

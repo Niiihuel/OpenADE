@@ -11,7 +11,13 @@ pub(super) struct ChatDiffHost {
     pending: Option<SessionToolDiffRequest>,
     waiting: VecDeque<String>,
     generation: u64,
-    expansion_revision: Option<(u64, usize, u64, Option<String>)>,
+    expansion_revision: Option<(
+        u64,
+        usize,
+        u64,
+        Option<String>,
+        crate::appearance_preferences::ToolCallDensity,
+    )>,
 }
 
 #[cfg(test)]
@@ -67,6 +73,7 @@ impl AgentsWindow {
             self.view.transcript.len(),
             self.view.conversation_details.revision(),
             self.view.selected_tool_id.clone(),
+            self.view.appearance.tool_call_density,
         );
         if self.chat_diffs.expansion_revision.as_ref() == Some(&revision) {
             return false;

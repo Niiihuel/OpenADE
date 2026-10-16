@@ -1,9 +1,8 @@
 //! Native Marketplace surface for portable `SKILL.md` bundles.
 //!
-//! One list and one detail. The list (`catalog_list`) is the only place the
-//! catalog is enumerated; the detail (`item_detail`) or the landing page
-//! (`landing`) stands beside it. The IDE puts the list in its sidebar and the
-//! standalone page puts it in a column of its own, from the same functions.
+//! The full page browses responsive cards and opens their detail in place.
+//! The IDE keeps a compact catalog in its sidebar, sharing the same rows,
+//! filters and item details. Source management lives in a secondary modal.
 //! Installation is explicit; JavaScript plugins and MCP servers are different
 //! runtimes and are not offered as installable SKILL.md bundles here.
 
@@ -11,8 +10,8 @@ use openide_ui::{
     Alert, AlertTone, Button, ButtonGroup, ButtonVariant, Card, CardDensity, CardGrid, Chip, Color,
     Component, ControlSize, DropdownMenu, DropdownMenuEntry, DropdownMenuItem, Element, FormField,
     Icon, IconButton, Modal, Notice, PageColumn, PageHeader, ScrollArea, SearchField,
-    SectionHeader, SectionHeaderSizing, Separator, SkeletonGroup, Text, TextField, TextRole, Tooltip,
-    TooltipPlacement, TooltipSpec,
+    SectionHeader, SectionHeaderSizing, Separator, SkeletonGroup, Text, TextField, TextRole,
+    Tooltip, TooltipPlacement, TooltipSpec,
 };
 
 use std::{borrow::Cow, collections::BTreeMap};
@@ -31,8 +30,6 @@ use crate::{
 /// Rows a group shows before "Mostrar más" adds as many again. The whole
 /// catalog is in memory; this bounds the elements built each frame.
 pub const GROUP_STEP: usize = 30;
-/// The standalone page shows its list beside the detail from this width.
-const SPLIT_WIDTH: f32 = 760.0;
 /// The detail sets its facts beside the instructions from this width.
 const DETAIL_SPLIT_WIDTH: f32 = 680.0;
 const FACTS_WIDTH: f32 = 232.0;
@@ -91,8 +88,8 @@ pub struct MarketplaceReadme {
 
 #[derive(Clone, Debug)]
 pub struct MarketplaceViewState {
-    /// Which of the section's tabs is in view.
-    pub tab: MarketplaceTab,
+    /// Source management is secondary to the skill catalog.
+    pub sources_open: bool,
     pub snapshot: MarketplaceSnapshot,
     pub filter: MarketplaceFilter,
     pub category: Option<String>,
@@ -135,7 +132,7 @@ impl Default for MarketplaceViewState {
             filter: MarketplaceFilter::All,
             category: None,
             filter_menu_open: false,
-            tab: MarketplaceTab::Skills,
+            sources_open: false,
             visible: GROUP_STEP,
             visible_by: Default::default(),
             explore: MarketplaceExploreState::default(),
@@ -497,12 +494,14 @@ fn item_row(
         _ => format!("{} · {}", publisher(item), source_label(item.source_kind)),
     };
     // The state sits on the origin's line, so the name keeps the whole width.
-    let mut origin = vec![Text::new(origin, palette)
-        .role(TextRole::Micro)
-        .muted()
-        .truncate()
-        .render()
-        .flex(1.0)];
+    let mut origin = vec![
+        Text::new(origin, palette)
+            .role(TextRole::Micro)
+            .muted()
+            .truncate()
+            .render()
+            .flex(1.0),
+    ];
     if !badge.is_empty() {
         origin.push(
             Text::new(badge, palette)
@@ -564,24 +563,28 @@ fn item_row(
     )
     .render();
     let action = action_menu(state, item, &format!("row:{}", item.id), action).centered_y();
-    Element::row(vec![target, action, Element::spacer().size(Some(4.0), None)])
-        .gap(0.0)
-        .background(if selected {
-            theme::SELECTED
-        } else {
-            Color::TRANSPARENT
-        })
-        .hover_background(if selected {
-            theme::SELECTED
-        } else {
-            palette.hover
-        })
-        .pressed_background(palette.selected)
-        .hover_surface(format!("{select}:surface"), [select.clone(), toggle])
-        .transition_ms(80)
-        .radius(6.0)
-        .clip_children()
-        .size(Some(width), Some(EXTENSION_ROW_HEIGHT))
+    Element::row(vec![
+        target,
+        action,
+        Element::spacer().size(Some(4.0), None),
+    ])
+    .gap(0.0)
+    .background(if selected {
+        theme::SELECTED
+    } else {
+        Color::TRANSPARENT
+    })
+    .hover_background(if selected {
+        theme::SELECTED
+    } else {
+        palette.hover
+    })
+    .pressed_background(palette.selected)
+    .hover_surface(format!("{select}:surface"), [select.clone(), toggle])
+    .transition_ms(80)
+    .radius(6.0)
+    .clip_children()
+    .size(Some(width), Some(EXTENSION_ROW_HEIGHT))
 }
 
 fn filter_control(state: &MarketplaceViewState) -> Element {
@@ -685,9 +688,12 @@ fn remote_status(state: &MarketplaceViewState, width: f32) -> Vec<Element> {
     } else if let Some(page) = &explore.page {
         if page.skills.is_empty() {
             rows.push(
-                small(format!("skills.sh no tiene resultados para «{}».", page.query))
-                    .render()
-                    .padding(6.0),
+                small(format!(
+                    "skills.sh no tiene resultados para «{}».",
+                    page.query
+                ))
+                .render()
+                .padding(6.0),
             );
         }
         if let Some(warning) = &page.warning {
@@ -776,7 +782,10 @@ fn empty_list(state: &MarketplaceViewState, width: f32) -> Element {
         )
         .icon(Icon::Refresh)
         .description("Se comparan las revisiones instaladas con las de su origen.")
-        .action(outline("marketplace_check_updates", "Buscar actualizaciones"))
+        .action(outline(
+            "marketplace_check_updates",
+            "Buscar actualizaciones",
+        ))
     } else if state.filter == MarketplaceFilter::Installed {
         Notice::new("Todavía no instalaste skills", palette)
             .icon(Icon::Puzzle)
@@ -794,33 +803,39 @@ fn empty_list(state: &MarketplaceViewState, width: f32) -> Element {
     notice.stacked().width(width).render()
 }
 
-/// The list: a search field with its filter, then the groups. It returns the
-/// blocks of a column whose last one scrolls and takes the height left.
-/// `footer` follows the groups, for a page with no room for the landing.
-pub(crate) fn catalog_list(
-    state: &MarketplaceViewState,
-    width: f32,
-    search_id: &str,
-    select_prefix: &str,
-    surface: Color,
-    footer: Option<Element>,
-) -> Vec<Element> {
+/// The same query and filters drive both the full catalog and the sidebar.
+fn catalog_controls(state: &MarketplaceViewState, width: f32, search_id: &str) -> Vec<Element> {
     let palette = theme::component_palette();
-    let list_width = (width - 14.0).max(0.0);
-    let search = Element::row(vec![
-        SearchField::new(
-            search_id,
-            &state.query,
-            "Buscar skills o autores",
-            palette,
-        )
-        .size(ControlSize::Compact)
-        .width((width - 32.0).max(0.0))
-        .render(),
+    let installed = state
+        .snapshot
+        .items
+        .iter()
+        .any(|item| item.installed_scope.is_some());
+    let mut controls = vec![
+        SearchField::new(search_id, &state.query, "Buscar skills o autores", palette)
+            .size(ControlSize::Compact)
+            .width((width - if installed { 64.0 } else { 32.0 }).max(0.0))
+            .render(),
         filter_control(state).centered_y(),
-    ])
-    .gap(4.0)
-    .size(Some(width), Some(28.0));
+    ];
+    if installed {
+        controls.push(
+            IconButton::new("marketplace_updates_check", Icon::Refresh, palette)
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Compact)
+                .enabled(!state.busy && !state.update_checking)
+                .loading(state.update_checking)
+                .tooltip_with(
+                    TooltipSpec::new("Buscar actualizaciones").placement(TooltipPlacement::Below),
+                )
+                .dispatch_as("marketplace_check_updates")
+                .render()
+                .centered_y(),
+        );
+    }
+    let search = Element::row(controls)
+        .gap(4.0)
+        .size(Some(width), Some(28.0));
     let mut blocks = vec![search];
     if state.filtered() {
         let label = [
@@ -843,6 +858,20 @@ pub(crate) fn catalog_list(
             .size(Some(width), Some(24.0)),
         );
     }
+    blocks
+}
+
+pub(crate) fn catalog_list(
+    state: &MarketplaceViewState,
+    width: f32,
+    search_id: &str,
+    select_prefix: &str,
+    surface: Color,
+    footer: Option<Element>,
+) -> Vec<Element> {
+    let palette = theme::component_palette();
+    let list_width = (width - 14.0).max(0.0);
+    let mut blocks = catalog_controls(state, width, search_id);
     let heading = |title: &str, count: Option<usize>| {
         let mut header = SectionHeader::new(title, palette)
             .sizing(SectionHeaderSizing::LIST)
@@ -877,7 +906,11 @@ pub(crate) fn catalog_list(
         if group.key == "remote" {
             rows.extend(remote_status(state, list_width));
         }
-        let visible = state.visible_by.get(group.key).copied().unwrap_or(state.visible);
+        let visible = state
+            .visible_by
+            .get(group.key)
+            .copied()
+            .unwrap_or(state.visible);
         rows.extend(group.items.iter().take(visible).map(|item| {
             item_row(
                 state,
@@ -974,9 +1007,25 @@ fn add_source_menu(state: &MarketplaceViewState, compact: bool) -> Element {
     .render()
 }
 
+fn sources_button(width: f32) -> Element {
+    if width < 430.0 {
+        IconButton::new("marketplace_sources_open", Icon::Folder, theme::component_palette())
+            .variant(ButtonVariant::Outline)
+            .size(ControlSize::Compact)
+            .tooltip("Orígenes")
+            .render()
+    } else {
+        Button::new("marketplace_sources_open", "Orígenes", theme::component_palette())
+            .icon(Icon::Folder)
+            .variant(ButtonVariant::Outline)
+            .size(ControlSize::Compact)
+            .render()
+    }
+}
+
 fn page_header(
-    state: &MarketplaceViewState,
     title: &str,
+    description: &str,
     navigation: Option<Element>,
     width: f32,
 ) -> Element {
@@ -987,14 +1036,8 @@ fn page_header(
         MARKETPLACE_HEADER
     };
     let mut header = PageHeader::new(title, theme::component_palette())
-        .description("Skills para tu agente")
-        .trailing(
-            Element::row(vec![
-                refresh_button(state, "marketplace_refresh", ControlSize::Compact).centered_y(),
-                add_source_menu(state, width < 430.0).centered_y(),
-            ])
-            .gap(sizing.row_gap),
-        )
+        .description(description)
+        .trailing(sources_button(width))
         .truncate(true)
         .sizing(sizing);
     if let Some(navigation) = navigation {
@@ -1003,7 +1046,7 @@ fn page_header(
     header.render()
 }
 
-/// One fact of the landing page: an icon, a name over a cut detail, an
+/// One source fact: an icon, a name over a cut detail, an
 /// error under them and one control at the end.
 fn info_card(
     icon: Icon,
@@ -1015,10 +1058,7 @@ fn info_card(
 ) -> Element {
     let palette = theme::component_palette();
     let mut copy = vec![
-        Text::new(name, palette)
-            .role(TextRole::Label)
-            .truncate()
-            .render(),
+        Text::new(name, palette).role(TextRole::Label).render(),
         small(detail).truncate().render(),
     ];
     if let Some(error) = error {
@@ -1143,205 +1183,10 @@ fn status_alerts(state: &MarketplaceViewState) -> Vec<Element> {
     alerts
 }
 
-/// A recommended skill on the landing page; the same mark and copy as its row.
-fn featured_card(item: &MarketplaceItem, width: f32, select_prefix: &str) -> Element {
-    let palette = theme::panel_card_palette();
-    let select = format!("{select_prefix}{}", item.id);
-    Element::clickable(
-        format!("marketplace_featured:{}", item.id),
-        Card::new(
-            Element::column(vec![
-                Element::row(vec![
-                    item_icon(item, EXTENSION_ICON).centered_y(),
-                    Element::column(vec![
-                        Text::new(&item.name, palette)
-                            .role(TextRole::Label)
-                            .truncate()
-                            .render(),
-                        Text::new(publisher(item), palette)
-                            .role(TextRole::Micro)
-                            .muted()
-                            .truncate()
-                            .render(),
-                    ])
-                    .gap(2.0)
-                    .flex(1.0),
-                ])
-                .gap(8.0),
-                small(&item.description)
-                    .render()
-                    .size(None, Some(30.0))
-                    .clip_children(),
-            ])
-            .gap(8.0),
-            palette,
-        )
-        .density(CardDensity::Regular)
-        .width(width)
-        .render(),
-    )
-    .hover_background(theme::hover_for(theme::PANEL))
-    .radius(8.0)
-    .dispatch_as(select)
-}
-
-/// The editor area with nothing selected: where to start, what is installed
-/// and where the catalog comes from. It never repeats the list.
-/// What the add-ons section holds, a tab each: the skills, the plugins and
-/// MCP servers that Settings also shows, and where skills come from.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum MarketplaceTab {
-    #[default]
-    Skills,
-    Plugins,
-    Mcp,
-    Sources,
-}
-
-impl MarketplaceTab {
-    pub const ALL: [(Self, &'static str, &'static str); 4] = [
-        (Self::Skills, "skills", "Skills"),
-        (Self::Plugins, "plugins", "Plugins"),
-        (Self::Mcp, "mcp", "MCP"),
-        (Self::Sources, "sources", "Orígenes"),
-    ];
-
-    pub fn from_key(key: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|(_, id, _)| *id == key).map(|(tab, ..)| tab)
-    }
-}
-
-/// The section's tabs, with the host's own control before them.
-pub(crate) fn section_tabs(active: MarketplaceTab, navigation: Option<Element>) -> Element {
-    let tabs = MarketplaceTab::ALL
-        .into_iter()
-        .map(|(tab, id, title)| openide_ui::Tab::new(format!("marketplace_tab:{id}"), title, 86.0).active(tab == active))
-        .collect();
-    let mut row: Vec<Element> = navigation.into_iter().collect();
-    row.push(openide_ui::Tabs::new(tabs, theme::segmented_palette()).id("marketplace_tabs").size(ControlSize::Compact).render());
-    Element::row(row).gap(8.0).padding(12.0)
-}
-
-pub(crate) fn landing(
-    state: &MarketplaceViewState,
-    available_width: f32,
-    select_prefix: &str,
-    header: Option<(&str, Option<Element>)>,
-) -> Element {
-    let palette = theme::component_palette();
-    let page = PageColumn::new("marketplace_page", available_width, palette)
-        .max_width(880.0)
-        .gap(14.0)
-        .reserve_rail(true);
-    let width = page.content_width();
-    let mut sections = Vec::new();
-    if let Some((title, navigation)) = header {
-        sections.push(page_header(state, title, navigation, width));
-    }
-    sections.extend(status_alerts(state));
-    // One per publisher, in catalog order: variety without a ranking the
-    // catalog does not have.
-    let mut publishers = std::collections::BTreeSet::new();
-    let featured: Vec<_> = state
-        .snapshot
-        .items
-        .iter()
-        .filter(|item| {
-            is_starter(&item.id)
-                && item.installed_scope.is_none()
-                && publishers.insert(publisher(item))
-        })
-        .take(6)
-        .collect();
-    if state.busy && state.snapshot.items.is_empty() {
-        sections.push(
-            Element::column(
-                SkeletonGroup::rows("marketplace_landing_loading", palette, 4)
-                    .row_height(EXTENSION_ROW_HEIGHT)
-                    .icon(true)
-                    .into_rows(),
-            )
-            .gap(2.0),
-        );
-    } else if !featured.is_empty() {
-        let grid = CardGrid::new(width, 520.0).columns(if width >= 780.0 { 3 } else { 2 });
-        let card = grid.item_width();
-        sections.push(
-            SectionHeader::new("Para empezar", palette)
-                .detail("Una skill recomendada de cada editor")
-                .width(width)
-                .render(),
-        );
-        sections.push(
-            grid.items(
-                featured
-                    .into_iter()
-                    .map(|item| featured_card(item, card, select_prefix))
-                    .collect(),
-            )
-            .render(),
-        );
-    }
-    let installed = state
-        .snapshot
-        .items
-        .iter()
-        .filter(|item| item.installed_scope.is_some());
-    let (count, active) = installed.fold((0, 0), |(count, active), item| {
-        (count + 1, active + usize::from(item.enabled))
-    });
-    sections.push(
-        SectionHeader::new("Instaladas", palette)
-            .count(count)
-            .width(width)
-            .render(),
-    );
-    let check = if width < 480.0 {
-        IconButton::new("marketplace_check_updates", Icon::Refresh, palette)
-            .variant(ButtonVariant::Outline)
-            .size(ControlSize::Compact)
-            .tooltip_with(
-                TooltipSpec::new("Buscar actualizaciones").placement(TooltipPlacement::Above),
-            )
-            .loading(state.update_checking)
-            .enabled(!state.busy && count > 0)
-            .render()
-    } else {
-        Button::new("marketplace_check_updates", "Buscar actualizaciones", palette)
-            .variant(ButtonVariant::Outline)
-            .size(ControlSize::Compact)
-            .loading(state.update_checking)
-            .enabled(!state.busy && count > 0)
-            .render()
-    };
-    sections.push(info_card(
-        Icon::Puzzle,
-        &if state.update_checking {
-            "Buscando actualizaciones…".to_owned()
-        } else if !state.updates.is_empty() {
-            match state.updates.len() {
-                1 => "1 actualización disponible".to_owned(),
-                updates => format!("{updates} actualizaciones disponibles"),
-            }
-        } else if count == 0 {
-            "Todavía no instalaste skills".to_owned()
-        } else {
-            format!("{active} de {count} activas")
-        },
-        if count == 0 {
-            "Cada instalación pregunta si es para el usuario o para este proyecto."
-        } else if state.updates_checked && state.update_error.is_none() && state.updates.is_empty()
-        {
-            "Todas coinciden con la revisión de su origen."
-        } else {
-            "El agente ve las skills activas desde su próximo turno."
-        },
-        None,
-        check,
-        width,
-    ));
+fn source_manager_body(state: &MarketplaceViewState, width: f32) -> Element {
+    let mut sections = status_alerts(state);
     sections.push(sources_section(state, width));
-    page.children(sections).render()
+    Element::column(sections).gap(12.0).size(Some(width), None)
 }
 
 fn detail_field(label: &str, value: &str) -> Element {
@@ -1481,7 +1326,9 @@ fn detail_readme(state: &MarketplaceViewState, item: &MarketplaceItem, width: f3
         Some(Ok(Some(source))) if !source.trim().is_empty() => {
             crate::rich_text::render_document_at_width(source, width).element
         }
-        Some(Ok(Some(_))) => small("Este SKILL.md no tiene instrucciones además de su descripción.").render(),
+        Some(Ok(Some(_))) => {
+            small("Este SKILL.md no tiene instrucciones además de su descripción.").render()
+        }
         Some(Ok(None)) => {
             let mut notice = Notice::new(
                 "Las instrucciones se descargan al instalar",
@@ -1631,12 +1478,14 @@ fn detail_actions(state: &MarketplaceViewState, item: &MarketplaceItem) -> Eleme
 
 /// The page of one item: who publishes it and what state it is in, the
 /// action with its scope and what installing verifies, then its instructions
-/// beside the facts. `back` returns to the list on a page too narrow for both.
+/// beside the facts. `back` returns to the full catalog; its header also
+/// preserves the host's sidebar control and access to source management.
 pub(crate) fn item_detail(
     state: &MarketplaceViewState,
     item: &MarketplaceItem,
     available_width: f32,
     back: Option<(&str, &str)>,
+    navigation: Option<Element>,
 ) -> Element {
     let palette = theme::component_palette();
     let page = PageColumn::new("marketplace_detail", available_width, palette)
@@ -1647,14 +1496,20 @@ pub(crate) fn item_detail(
     let width = page.content_width();
     let mut children = Vec::new();
     if let Some((id, label)) = back {
-        children.push(Element::row(vec![
+        let mut controls = Vec::new();
+        if let Some(navigation) = navigation {
+            controls.push(navigation);
+        }
+        controls.extend([
             Button::new(id, label, palette)
                 .icon(Icon::ArrowLeft)
                 .variant(ButtonVariant::Ghost)
                 .size(ControlSize::Compact)
                 .render(),
             Element::spacer().flex(1.0),
-        ]));
+            sources_button(width),
+        ]);
+        children.push(Element::row(controls).gap(8.0));
     }
     let starter = crate::marketplace::starter_details(&item.id);
     let mut byline = vec![
@@ -1666,7 +1521,10 @@ pub(crate) fn item_detail(
         },
     ];
     if let Some(details) = &starter {
-        byline.push(format!("rev. {}", &details.revision[..7.min(details.revision.len())]));
+        byline.push(format!(
+            "rev. {}",
+            &details.revision[..7.min(details.revision.len())]
+        ));
     }
     byline.push(
         item.license
@@ -1734,7 +1592,9 @@ pub(crate) fn item_detail(
                 .render(),
         );
     }
-    children.extend(status_alerts(state));
+    if !state.sources_open {
+        children.extend(status_alerts(state));
+    }
     children.push(Separator::horizontal(palette).render());
     if width >= DETAIL_SPLIT_WIDTH {
         let main = width - FACTS_WIDTH - 28.0;
@@ -1763,19 +1623,17 @@ pub(crate) fn detail_or_landing(
     back: Option<(&str, &str)>,
 ) -> Element {
     match state.selected() {
-        Some(item) => item_detail(state, &item, width, back),
-        // The sources and what is installed have a tab of their own: here
-        // there is only a skill to choose.
+        Some(item) => item_detail(state, &item, width, back, None),
+        // The IDE sidebar owns its catalog; the center waits for a selection.
         None => {
             let _ = (select_prefix, header);
             Element::column(vec![
                 openide_ui::Empty::new(
                     "Elegí una skill de la lista",
-                    "De dónde vienen, cuáles están instaladas y sus actualizaciones están en Orígenes.",
+                    "Consulta sus instrucciones, procedencia y opciones de instalación.",
                     theme::component_palette(),
                 )
                 .icon(Icon::Puzzle)
-                .action("marketplace_tab:sources", "Ver orígenes", ButtonVariant::Outline)
                 .compact()
                 .width((width - 48.0).max(200.0))
                 .height(188.0)
@@ -1806,8 +1664,8 @@ pub(crate) fn marketplace_page_with_navigation(
     )
 }
 
-/// The whole surface in one pane, for a host with no sidebar to hold the
-/// list: list and detail side by side, or one at a time when narrow.
+/// The full catalog uses the available width; selection opens its detail
+/// in the same pane and preserves the host-owned query and filters.
 pub(crate) fn with_list(
     state: &MarketplaceViewState,
     available_width: f32,
@@ -1817,44 +1675,57 @@ pub(crate) fn with_list(
 ) -> Element {
     const SELECT: &str = "marketplace_details:";
     let palette = theme::component_palette();
-    let back = Some(("marketplace_details_close", "Todas las skills"));
-    let content = if available_width >= SPLIT_WIDTH {
-        let list = (available_width * 0.36).clamp(300.0, 400.0).round();
-        let inner = list - 24.0;
-        let mut column = vec![page_header(state, title, navigation, inner)];
-        column.extend(catalog_list(
-            state,
-            inner,
-            search_id,
-            SELECT,
-            theme::BACKGROUND,
-            None,
-        ));
-        Element::row(vec![
-            Element::column(column)
-                .gap(8.0)
-                .padding(12.0)
-                .size(Some(list), None),
-            Separator::vertical(palette).render(),
-            // Beside the list too: the landing holds the sources and the
-            // check for updates, and a selection must not shut them away.
-            detail_or_landing(state, available_width - list - 1.0, SELECT, None, back).flex(1.0),
-        ])
-    } else if let Some(item) = state.selected() {
-        item_detail(state, &item, available_width, back)
+    let back = Some(("marketplace_details_close", "Volver al catálogo"));
+    let content = if let Some(item) = state.selected() {
+        item_detail(state, &item, available_width, back, navigation)
     } else {
-        let inner = (available_width - 24.0).max(0.0);
-        let mut column = vec![page_header(state, title, navigation, inner)];
-        column.extend(status_alerts(state));
-        column.extend(catalog_list(
-            state,
-            inner,
-            search_id,
-            SELECT,
-            theme::BACKGROUND,
-            Some(sources_section(state, (inner - 14.0).max(0.0))),
-        ));
-        Element::column(column).gap(8.0).padding(12.0)
+        let page = PageColumn::new("marketplace_catalog", available_width, palette)
+            .max_width(1280.0)
+            .gutter(14.0, 28.0, 640.0)
+            .gap(14.0)
+            .reserve_rail(true);
+        let width = page.content_width();
+        let mut sections = vec![page_header(title, "Skills para tu agente", navigation, width)];
+        sections.extend(catalog_controls(state, width, search_id));
+        if !state.sources_open {
+            sections.extend(status_alerts(state));
+        }
+        if !state.snapshot.diagnostics.is_empty() {
+            sections.push(Notice::new("Un origen necesita atención", palette)
+                .icon(Icon::WarningTriangle)
+                .description("Revisa sus errores en Orígenes.")
+                .width(width).render());
+        }
+        let groups = catalog_groups(state);
+        if groups.iter().all(|group| group.key == "remote") {
+            sections.push(empty_list(state, width));
+        }
+        for group in &groups {
+            sections.push(SectionHeader::new(group.title, palette)
+                .count(group.items.len()).width(width).render());
+            if group.key == "remote" {
+                sections.extend(remote_status(state, width));
+            }
+            let grid = CardGrid::new(width, 620.0).columns(if width >= 980.0 { 3 } else { 2 });
+            let card_width = grid.item_width();
+            let visible = state.visible_by.get(group.key).copied().unwrap_or(state.visible);
+            let cards = group.items.iter().take(visible).map(|item| {
+                Card::new(item_row(state, item, (card_width - 20.0).max(0.0), SELECT, false, theme::PANEL),
+                    theme::panel_card_palette())
+                    .density(CardDensity::Regular).width(card_width).render()
+            }).collect();
+            sections.push(grid.items(cards).render());
+            if group.items.len() > visible {
+                sections.push(Button::new(format!("marketplace_more:{}", group.key),
+                    format!("Mostrar más ({} restantes)", group.items.len() - visible), palette)
+                    .variant(ButtonVariant::Ghost).size(ControlSize::Compact).render());
+            }
+        }
+        if state.remote_shown() && !groups.iter().any(|group| group.key == "remote") {
+            sections.push(SectionHeader::new("skills.sh", palette).width(width).render());
+            sections.extend(remote_status(state, width));
+        }
+        page.children(sections).render()
     };
     with_source_modal(state, content, available_width)
 }
@@ -1924,12 +1795,30 @@ fn source_form_footer(state: &MarketplaceViewState) -> Element {
     .render()
 }
 
-/// "Agregar origen" is a modal over whichever pane holds its button.
+/// Source management and its add form overlay whichever pane owns the opener.
 pub(crate) fn with_source_modal(
     state: &MarketplaceViewState,
     page: Element,
     available_width: f32,
 ) -> Element {
+    let page = if state.sources_open {
+        let width = Modal::fit_width(available_width, 720.0).max(240.0);
+        Modal::new(page, true, "Orígenes", "Carpetas y repositorios donde se descubren skills.",
+            "marketplace_sources_close", theme::component_palette())
+            .width(width)
+            .body(source_manager_body(state, Modal::body_width(width)))
+            .footer(Element::row(vec![
+                refresh_button(state, "marketplace_refresh", ControlSize::Compact),
+                Element::spacer().flex(1.0),
+                add_source_menu(state, width < 430.0),
+            ]).gap(8.0))
+            .initial_focus(if state.busy { "marketplace_sources_close:close" } else { "marketplace_add_menu" })
+            .return_focus("marketplace_sources_open")
+            .backdrop_dismiss(true)
+            .render()
+    } else {
+        page
+    };
     let Some(kind) = state.add_source_kind else {
         return page;
     };

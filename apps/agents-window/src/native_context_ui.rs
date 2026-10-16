@@ -236,8 +236,9 @@ impl NativeContextUiState {
                         .into_iter()
                         .flatten()
                         .collect();
-                // Nothing measured and nothing sized is unknown, not empty.
-                if sizes.is_empty() && self.appended_bytes == 0 {
+                // Nothing measured and nothing sized is unknown, not empty: an
+                // estimate of zero would read as "~0% used" for a blank state.
+                if sizes.iter().all(|size| *size == 0) && self.appended_bytes == 0 {
                     return None;
                 }
                 (sizes.into_iter().fold(0, u64::saturating_add), true)
@@ -1054,6 +1055,18 @@ pub(crate) mod tests {
         assert_eq!(windowless.occupancy(), None);
         let blank = NativeContextUiState { window: Some(1_000), ..Default::default() };
         assert_eq!(blank.occupancy(), None);
+        let empty_sizes = NativeContextUiState {
+            window: Some(1_000),
+            breakdown: vec![NativeContextCategory {
+                id: "tools".into(),
+                label: "Herramientas".into(),
+                value: "0 B".into(),
+                detail: String::new(),
+                bytes: Some(0),
+            }],
+            ..Default::default()
+        };
+        assert_eq!(empty_sizes.occupancy(), None, "a zero estimate is no measurement");
         let mut failed = measured;
         failed.error = Some("journal".into());
         assert_eq!(failed.occupancy(), None);

@@ -95,6 +95,62 @@ y `File`, con los recursos Solar `text-square`, `gallery`, `soundwave`,
 `videocamera` y `file-text`. En las fichas informativas se acompañan de una
 etiqueta corta para conservar el significado sin ayuda anidada.
 
+## Marcas elegibles para integraciones
+
+`brand_icons` ofrece el catálogo completo de SVGL para presentaciones como los
+servidores MCP. No reutiliza el mapa de proveedores ni deduce identidades desde
+IDs internos. La elección manual se conserva en la configuración cosmética del
+host; no altera comandos, permisos, herramientas ni las huellas de recuperación.
+
+El snapshot oficial contiene 670 registros y 831 rutas SVG. Dos registros de
+PyCharm comparten exactamente arte y sitio: se presentan como una sola entrada
+con ambos nombres de búsqueda, por lo que hay 669 artes seleccionables. Los IDs
+se derivan de las rutas light/dark mediante SHA-256, no del orden numérico ni del
+título. Títulos iguales con arte distinto conservan entradas independientes.
+La búsqueda prioriza nombres o aliases exactos, después prefijos, coincidencias
+parciales de nombre y, finalmente, categoría o sitio; los empates conservan el
+orden del catálogo.
+El catálogo, la licencia MIT y los hashes originales/derivados están en
+`assets/brands/svgl/`. La revisión fijada es
+`f9b726cee1d1f3c697a18c880185e89d9a55bb70`.
+
+La API de [SVGL](https://svgl.app/docs/api) documenta las variantes de tema y
+recomienda cachear respuestas. Aquí la caché es el snapshot distribuido: la
+aplicación no descarga iconos, no consulta dominios de servidores o paquetes y
+no transmite términos de búsqueda. `scripts/vendor-brand-icons.py` reproduce
+los recursos desde el archivo oficial fijado por revisión y hash; también puede
+usar `--archive` para ejecutarse sin red y `--check` para verificar el resultado.
+La actualización explícita exige revisar ambos pins y el nuevo catálogo.
+
+El script elimina scripts, handlers, metadatos y declaraciones DTD sin resolver
+recursos externos. Rechaza entidades, referencias externas, CSS activo y archivos
+que excedan los límites. Conserva colores, geometría, gradientes y referencias
+internas; resuelve `currentColor` según el tema. Cinco SVG originales contienen
+imágenes PNG o texto dependiente de fuentes: se rasterizan durante el vendoring
+a PNG de 64 × 64 mediante ImageMagick/librsvg para que el renderer nativo no
+muestre una marca incompleta. No se instala software ni se rasterizan esos SVG
+en la aplicación. La reproducción de esos cinco PNG requiere la versión indicada
+en `SOURCE.json`; fuentes de texto del sistema pueden afectar ese derivado y
+`--check` detecta diferencias.
+
+`BrandEntry::element(dark)` conserva colores con tinta blanca en la caja habitual
+de 16 × 16 y ajuste **Contain**. `icon(dark)` sólo está disponible para arte
+vectorial: introducirlo en un botón que tiñe sus iconos puede cambiar los colores,
+por lo que la interfaz de selección usa `element`. Los SVG son cadenas estáticas
+incluidas en el binario; no hay un interner de SVG de duración ilimitada. Los cinco
+PNG comparten una caché pequeña de payloads y las texturas las conserva limn.
+
+La detección automática acepta un único arte asociado al host exacto del endpoint.
+Para un proceso local exige dos indicios: un sitio oficial de metadatos que
+coincida exactamente con una única entrada y un nombre de paquete o ejecutable
+que corrobore esa misma marca. Un nombre de servidor elegido por el usuario no
+basta para corroborarla. Sitios compartidos, nombres ambiguos, evidencia
+contradictoria o un endpoint distinto conservan el símbolo genérico. Las demás
+coincidencias se muestran como candidatos con su motivo y requieren elección
+explícita. Un ejecutable de lanzamiento como Python o npx no representa la marca
+de la integración. No se usan coincidencias por subcadena o sufijo de dominio.
+Automático representa indicios locales, no una verificación de identidad o afiliación.
+
 ## Archivos, carpetas y lenguajes
 
 Las identidades de recursos usan **Material Icon Theme 5.38.1**, con 165 SVG

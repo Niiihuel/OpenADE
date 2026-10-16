@@ -150,8 +150,8 @@ fn write_frame_svg_with_families(
                     clip_depth -= 1;
                 }
             }
-            // Surfaces this app does not draw.
-            DrawCommand::Glass { .. } | DrawCommand::Record { .. } => {}
+            // Surfaces this app does not draw; a rounded clip may keep its rectangle.
+            DrawCommand::Glass { .. } | DrawCommand::Record { .. } | DrawCommand::RoundClip { .. } => {}
             DrawCommand::FillRect {
                 rect,
                 color,
@@ -311,6 +311,12 @@ fn write_frame_svg_with_families(
                     "<defs><linearGradient id=\"gradient-{index}\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"{}\" stop-opacity=\"{}\"/><stop offset=\"1\" stop-color=\"{}\" stop-opacity=\"{}\"/></linearGradient></defs><rect {} fill=\"url(#gradient-{index})\"/>",
                     css_color(*top), alpha(*top), css_color(*bottom), alpha(*bottom), rect_attributes(*rect)
                 ).unwrap();
+            }
+            DrawCommand::FillHorizontalGradient { rect, left, right } => {
+                writeln!(svg, "<defs><linearGradient id=\"horizontal-{index}\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"{}\" stop-opacity=\"{}\"/><stop offset=\"1\" stop-color=\"{}\" stop-opacity=\"{}\"/></linearGradient></defs><rect {} fill=\"url(#horizontal-{index})\"/>", css_color(*left), alpha(*left), css_color(*right), alpha(*right), rect_attributes(*rect)).unwrap();
+            }
+            DrawCommand::FillMesh { .. } => {
+                return Err(io::Error::new(io::ErrorKind::Unsupported, "El exportador SVG de QA no admite mallas de color."));
             }
             DrawCommand::FillTriangle { points, color } => {
                 writeln!(

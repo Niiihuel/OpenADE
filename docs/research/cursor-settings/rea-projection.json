@@ -1,0 +1,25 @@
+{
+  "source": "/nix/store/ij7hsdlff78ksdqx68gl2i4rnff57x8x-cursor-3.17.21/lib/cursor/resources/app/out/vs/workbench/workbench.glass.main.js",
+  "sha256": "b6f06229dc965619ab318e3bbc9f102865101a3bc0f346630532e2558f6fc398",
+  "kind": "exact contiguous analyst-selected source ranges; not a complete shipped application",
+  "ranges": [
+    {
+      "path": "appearance.js",
+      "start_byte": 31502425,
+      "end_byte": 31510384,
+      "sha256": "cb377ea789f00dcafbd4e2522b16cf80d03bbe73682a65ae19eea83fdbc9d432"
+    },
+    {
+      "path": "typography.js",
+      "start_byte": 31497980,
+      "end_byte": 31501856,
+      "sha256": "d04d95a5ec2e0153729ca3c11b666d9c10df9d014b2bc7deb22fc82ab1cd30dc"
+    },
+    {
+      "path": "density.js",
+      "start_byte": 31510384,
+      "end_byte": 31512175,
+      "sha256": "7a564e0c4fb1205e0b82c311d61d550b806ec678d608ee1195830cb75f18e50b"
+    }
+  ]
+}

@@ -178,6 +178,7 @@ pub use skills::{
     MAX_SKILL_DOCUMENT_BYTES, MAX_SKILL_ENTRIES_PER_ROOT, MAX_SKILL_ROOTS,
 };
 pub use subagent_tools::{SubagentToolExecutor, SubagentToolLimits};
+pub use subagent_roles::{built_in_subagent_roles, SubagentRole};
 pub use subagent_worker::{
     finalize_resolved_subagent, SubagentBridgeEvent, SubagentEventBridge, SubagentRecoveryPause,
     SubagentRecoveryState, SubagentTurnResult, SubagentWorker, SubagentWorkerError,

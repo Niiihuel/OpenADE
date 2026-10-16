@@ -1293,6 +1293,8 @@ fn detail(
                         format!("$ {}", tool_presentation::clip_text(command, 12_000).0),
                         theme::code_palette(),
                     )
+                    .id(format!("tool-command:{}:{id}", state.selected_session.as_deref().unwrap_or("draft")))
+                    .font_size(crate::appearance_preferences::code_font_size())
                     .width(width)
                     .render(),
                 ),

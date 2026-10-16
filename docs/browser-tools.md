@@ -14,7 +14,7 @@ Las herramientas se anuncian como `mcp__openide_browser__<nombre>` al motor
 propio y con su nombre simple al proxy MCP externo y a las CLIs que OpenIDE
 inicia en una terminal (ver [CLIs externas](#clis-externas-iniciadas-por-openide)).
 Los tres caminos usan el mismo catálogo (`browser_mcp_tools`) y la misma
-validación (`BrowserCommand::validate`).
+validación de argumentos, origen esperado y comando (`BrowserCommand::validate`).
 
 ## Catálogo
 
@@ -50,13 +50,30 @@ o `selector` (un selector que identifique un único elemento).
 | `browser_tab_keep` | `id` | Lee |
 | `browser_tab_select` | `id` | Modifica |
 | `browser_tab_close` | `id` | Modifica |
-| `open_preview` | `url` opcional (sólo de este equipo) | Modifica |
+| `open_preview` | `url` (sólo de este equipo), o `expected_origin` del servidor de la conversación | Modifica |
 
 «Modifica» es la clasificación de `BrowserCommand::mutating()`: la vista marca
 la página como ocupada mientras se ejecuta y, si la respuesta se pierde después
 de despachar la acción, el efecto queda **incierto** y no se repite solo. No
-decide permisos: en el motor propio **todas** las herramientas del navegador,
-también las de lectura, piden aprobación (ver *Permisos*).
+decide permisos: las lecturas, la política del agente y los permisos por sitio
+se resuelven por separado (ver [Permisos](#permisos)).
+
+Las acciones sobre la página actual requieren además `expected_origin`: un
+origen HTTP(S) canónico, sin ruta ni barra final, como
+`http://localhost:3000`, o `about:blank` para el documento vacío. Lo requieren
+`browser_back`, `browser_forward`, `browser_reload`, `browser_click`,
+`browser_fill`, `browser_type`, `browser_press`, `browser_scroll`,
+`browser_hover`, `browser_select_option`, `browser_check`, `browser_drag`,
+`browser_evaluate`, `browser_handle_dialog` y `browser_file_upload`. Se obtiene
+del URL que devolvió la última captura. Si falta o cambió el origen, se toma
+otra captura y se vuelve a enviar la acción; no se reutiliza la aprobación de
+un origen para actuar en otro. El argumento restringe el destino: no concede
+permiso. `about:blank` nunca admite un permiso de sitio «Permitir siempre».
+
+`browser_navigate` y `browser_tab_new` con `url` ya llevan un destino explícito.
+Las lecturas y la gestión de pestañas por ID no requieren `expected_origin`.
+Este contrato corresponde a las llamadas del agente; la entrada manual del
+usuario sigue funcionando sin ese argumento.
 
 Las acciones devuelven URL, título, historial y una captura accesible nueva.
 `browser_evaluate`, `browser_console_messages`, `browser_network_requests`,
@@ -73,8 +90,9 @@ recibe un cliente MCP externo. Ver *Vista previa de un servidor local*.
 
 1. `browser_snapshot` lee la página. Cada elemento lleva una referencia como
    `[ref=e12]`; dentro de un `<iframe>` tiene la forma `f1e12`.
-2. Las acciones usan esas referencias: `browser_click {"ref":"e12"}`,
-   `browser_fill {"ref":"e5","text":"…"}`.
+2. Las acciones usan esas referencias y el origen capturado:
+   `browser_click {"ref":"e12","expected_origin":"http://localhost:3000"}`,
+   `browser_fill {"ref":"e5","text":"…","expected_origin":"http://localhost:3000"}`.
 3. Cada acción responde con una captura nueva y sus referencias. Un elemento
    conserva su referencia mientras sigue en la página con el mismo rol y nombre.
 4. Después de una navegación o de un cambio grande se vuelve a capturar.
@@ -82,7 +100,7 @@ recibe un cliente MCP externo. Ver *Vista previa de un servidor local*.
 ```text
 browser_navigate {"url":"http://localhost:3000/form"}
 browser_snapshot {}
-browser_click {"ref":"e3"}
+browser_click {"ref":"e3","expected_origin":"http://localhost:3000"}
 browser_snapshot {}
 ```
 
@@ -125,24 +143,25 @@ otra dirección se rechaza antes de tocar la página, con un error de herramient
 que nombra `browser_navigate`: «open_preview sólo abre direcciones de este
 equipo (localhost, 127.0.0.1 o [::1]). Para otro sitio usá browser_navigate.»
 
-Sin `url` abre la dirección del servidor que el agente inició en esta
-conversación: la primera dirección local que el comando publicó y que
+Sin `url`, requiere `expected_origin` y abre la dirección del servidor que el
+agente inició en esta conversación sólo si conserva ese origen: la primera
+dirección local que el comando publicó y que
 respondió a una conexión (ver *Vista previa en vivo* en
 [Comandos persistentes](persistent-commands.md#live-preview-of-a-started-server)).
 Si ninguno la publicó todavía, la respuesta lo dice y pide la dirección.
 
 ```text
 start_command {"command":"npm","args":["run","dev"],"timeout_ms":8000}
-open_preview {}
+open_preview {"expected_origin":"http://localhost:5173"}
 browser_snapshot {"interactive_only":true}
 ```
 
-Pasa por el mismo camino de permisos que las demás: pide aprobación en cada
-llamada, y navega con el mismo `BrowserCommand::Navigate` validado que
-`browser_navigate`. Como todas las herramientas del navegador, sólo se anuncia
-con una pestaña Navegador abierta e iniciada en la conversación; la apertura
-automática de la vista previa la abre cuando el servidor responde, así que en
-el turno siguiente ya está. El catálogo de un turno no cambia mientras corre.
+Pasa por el mismo camino de permisos que las demás acciones y navega con el
+mismo `BrowserCommand::Navigate` validado que `browser_navigate`. Se anuncia en
+los turnos Build con automatización habilitada y permisos por sitio válidos,
+aunque todavía no haya una pestaña Navegador; la primera llamada la abre.
+El catálogo de un turno no cambia mientras corre, pero una desactivación o un
+bloqueo posterior también rechaza llamadas de clientes ya entregados.
 
 ## Cuándo volver a capturar
 
@@ -167,10 +186,10 @@ tapado que agota los 10 s), sigue siendo un efecto incierto.
 
 ```text
 browser_snapshot {}
-browser_fill {"ref":"e1","text":"ada@example.test"}
-browser_select_option {"ref":"e4","values":["Argentina"]}
-browser_check {"ref":"e6","checked":true}
-browser_click {"ref":"e7"}
+browser_fill {"ref":"e1","text":"ada@example.test","expected_origin":"http://localhost:3000"}
+browser_select_option {"ref":"e4","values":["Argentina"],"expected_origin":"http://localhost:3000"}
+browser_check {"ref":"e6","checked":true,"expected_origin":"http://localhost:3000"}
+browser_click {"ref":"e7","expected_origin":"http://localhost:3000"}
 browser_wait_for {"text":"Guardado"}
 browser_snapshot {}
 ```
@@ -187,7 +206,7 @@ sus imágenes, estilos y marcos (`"load"`); o hace una pausa fija de hasta 10 s
 
 ```text
 browser_navigate {"url":"http://localhost:3000/checkout"}
-browser_click {"ref":"e9"}
+browser_click {"ref":"e9","expected_origin":"http://localhost:3000"}
 browser_console_messages {"level":"warning"}
 browser_network_requests {}
 ```
@@ -202,9 +221,9 @@ del fallo.
 
 ```text
 browser_snapshot {}
-browser_evaluate {"expression":"document.title"}
-browser_evaluate {"expression":"el => el.textContent","ref":"e12"}
-browser_evaluate {"expression":"() => [...document.querySelectorAll('tr')].map(row => row.innerText)"}
+browser_evaluate {"expression":"document.title","expected_origin":"http://localhost:3000"}
+browser_evaluate {"expression":"el => el.textContent","ref":"e12","expected_origin":"http://localhost:3000"}
+browser_evaluate {"expression":"() => [...document.querySelectorAll('tr')].map(row => row.innerText)","expected_origin":"http://localhost:3000"}
 ```
 
 `expression` es una expresión, o una función que se invoca y se espera. Con un
@@ -281,8 +300,8 @@ respuesta del **próximo** diálogo y debe llamarse antes de la acción que lo
 abre:
 
 ```text
-browser_handle_dialog {"accept":true,"prompt_text":"Ada"}
-browser_click {"ref":"e14"}
+browser_handle_dialog {"accept":true,"prompt_text":"Ada","expected_origin":"http://localhost:3000"}
+browser_click {"ref":"e14","expected_origin":"http://localhost:3000"}
 browser_console_messages {"level":"warning"}
 ```
 
@@ -359,8 +378,8 @@ decide qué archivos recibe el **próximo** selector que abra la página y, como
 con los diálogos, se llama antes del clic que lo abre:
 
 ```text
-browser_file_upload {"paths":["/home/ana/informe.pdf"]}
-browser_click {"ref":"e21"}
+browser_file_upload {"paths":["/home/ana/informe.pdf"],"expected_origin":"http://localhost:3000"}
+browser_click {"ref":"e21","expected_origin":"http://localhost:3000"}
 ```
 
 Las rutas son absolutas y de archivos que existen; más de una sólo si el campo
@@ -415,26 +434,49 @@ elemento.
 
 ## Permisos
 
-En el motor propio las herramientas se anuncian en cada turno Build, haya o no
-una pestaña **Navegador** abierta: la primera llamada hace que la ventana abra
+En el motor propio las herramientas se anuncian en cada turno Build con
+automatización habilitada y permisos por sitio válidos, haya o no una pestaña
+**Navegador** abierta: la primera llamada hace que la ventana abra
 la pestaña en el panel de esa conversación e inicie el navegador
 (`ConversationBrowser`, por la misma cola que usan las CLIs externas), y si el
 usuario la cierra, la siguiente llamada la vuelve a abrir. Una conversación
 que continúa fuera de pantalla abre la suya, nunca la que está a la vista.
 
-Las que sólo leen la página (`browser_snapshot`, `browser_wait_for`,
-`browser_console_messages`, `browser_network_requests` y
-`browser_take_screenshot`) no piden permiso en ningún modo: devuelven lo que el
-usuario ya ve en la pestaña. Las demás se agregan a la lista de aprobación
+Las lecturas (`browser_snapshot`, `browser_wait_for`,
+`browser_console_messages`, `browser_network_requests`,
+`browser_take_screenshot`, `browser_tabs`, `browser_downloads`,
+`browser_clipboard_read` y `browser_tab_keep`) no piden aprobación, pero siguen
+sujetas a las guardas de automatización y sitios. Las demás se agregan a la lista de aprobación
 (`environment_runtime.rs`) y el runner aplica `require_ask_unless_denied`: se
 pregunta en cada llamada y una denegación del host no se relaja. Con
 **Permitir todo** ninguna herramienta del navegador pregunta
-(`native_tool_allowed`). `browser_evaluate` sigue ese mismo camino; la tarjeta
+(`native_tool_allowed`); eso no evita un bloqueo, una desactivación ni la
+validación de `expected_origin`. `browser_evaluate` sigue ese mismo camino; la tarjeta
 de aprobación muestra el script (hasta 4 KiB, como un comando). «Permitir en la
 sesión» vale para esa misma llamada con esos mismos argumentos, y sigue
 valiendo aunque la pestaña se cierre y se abra de nuevo. Una solicitud de
 permiso no vence: espera la respuesta del usuario o el fin del turno. En modo
 Plan las herramientas MCP no se anuncian.
+
+### Desactivación y archivo inválido
+
+Ajustes → Navegador → Automatización conserva inicialmente el comportamiento
+habilitado. Desactivarla retira el catálogo de los turnos nuevos y revoca el
+uso de clientes ya abiertos. También se rechazan las llamadas que aún están
+en cola; una acción ya despachada no se deshace. La navegación, los clics y las
+descargas manuales del usuario siguen disponibles.
+
+Un error al leer `browser-sites.json` detiene la automatización; no se sustituye
+por una lista vacía de bloqueos. La lectura exige un archivo regular de hasta
+64 KiB, versión compatible, hasta 256 orígenes canónicos sin duplicados y
+valores de permiso válidos. En Unix, abrir una FIFO sin escritor tampoco
+bloquea la interfaz.
+
+Settings muestra el error y ofrece recargar el archivo después de corregirlo,
+o confirmar una recuperación explícita. La recuperación conserva el original
+como `browser-sites-backup-<UUID>.json` antes de crear una lista vacía; si no
+puede conservar la copia, no reemplaza el archivo. No se pierde la lista
+original por cambiar un interruptor o intentar agregar un sitio.
 
 ### Permisos por sitio
 
@@ -444,24 +486,59 @@ Un sitio es un origen: esquema, host y puerto (`https://example.com`,
 
 | Valor | Qué pasa con una acción del agente en ese sitio |
 | --- | --- |
-| Permitir siempre | Se ejecuta sin preguntar |
-| Requiere aprobación | Se pregunta, como en un sitio sin permiso propio |
+| Permitir siempre | Evita la pregunta sólo si la llamada está vinculada al origen real por su URL de destino o `expected_origin` |
+| Según permisos del agente | Usa la política normal del agente, como un sitio sin permiso propio; con Permitir todo no pregunta |
 | Bloquear | Se rechaza sin preguntar |
 
 El sitio de una llamada es adonde va (`browser_navigate`, `browser_tab_new`
-con `url`) o la página en la que está el navegador del agente; nunca la de una
-CLI ni la de otra conversación. La tarjeta de aprobación de una acción del
+con `url`, `open_preview` resuelto) o la página en la que está el navegador del
+agente; nunca la de una CLI ni la de otra conversación. La tarjeta de aprobación de una acción del
 navegador ofrece **Permitir siempre en ‹sitio›**, que guarda el permiso y
 aprueba esa acción. La lista se ve y se edita en Ajustes → Navegador →
-Permisos por sitio: cada fila cambia de valor o se quita, y se agregan sitios
-a mano. El permiso se aplica a la conversación que está a la vista y con un
-turno en curso; en cualquier otro caso la acción se pregunta.
+Permisos por sitio: cada fila tiene un selector explícito o se quita, y se
+agregan sitios a mano eligiendo su permiso (inicialmente, según permisos del
+agente). La autorización automática por sitio se resuelve para la conversación
+que está a la vista y con un turno en curso; en otros casos se conserva la
+política normal de aprobación. Un permiso de sitio no autoriza por sí solo una
+acción sin origen vinculado ni una operación sobre una pestaña nombrada sólo
+por ID.
 
-**Bloquear** lo hace cumplir el navegador mismo (`set_blocked_sites`), no la
-aprobación: el agente no navega a un sitio bloqueado, y sobre una página de ese
-sitio no lee ni actúa, tampoco con las herramientas que nunca preguntan, ni con
-**Permitir todo**, ni desde una CLI externa. Puede irse a otro sitio y manejar
-sus pestañas. El usuario sigue usando el sitio con normalidad.
+**Bloquear** lo hace cumplir el runtime (`set_agent_policy`), también con las
+herramientas que no preguntan, con **Permitir todo** y desde clientes MCP
+externos. Puede abandonarse el sitio bloqueado y gestionar pestañas. Los
+listados ocultan el título y conservan sólo el origen de las pestañas
+bloqueadas; no devuelven su árbol accesible ni su imagen. El usuario sigue
+usando el sitio con normalidad.
+
+Las descargas y el último texto copiado pertenecen al contexto completo y
+actualmente no tienen una procedencia verificable por origen. Por eso, mientras
+exista **cualquier** sitio bloqueado, `browser_downloads` y
+`browser_clipboard_read` se rechazan para el agente, incluso desde una pestaña
+permitida. La consulta y el uso manual de esos datos siguen disponibles.
+
+### Momento de las comprobaciones
+
+La guarda se aplica en varios puntos, para cerrar cambios entre aprobación,
+cola y respuesta:
+
+1. Antes de encolar se validan la política, el destino y `expected_origin`
+   contra el estado conocido del navegador. El worker los comprueba otra vez
+   al retirar la solicitud de la cola, antes de marcarla despachada.
+2. Antes de actuar sobre la página, el worker consulta los metadatos del
+   navegador y vuelve a comprobar el origen observado y los bloqueos. Si una
+   acción vinculada requiere verificarlo y esa consulta falla, no envía la
+   acción a la página. Una navegación con URL fija sigue vinculada a ese
+   destino, no al origen que se abandona.
+3. Después de ejecutar se revisa el sitio antes de leer árbol o imagen, y se
+   comprueba la política al responder tanto en el worker como en el cliente
+   MCP. Una revocación tardía impide entregar contenido. Si la solicitud
+   modificadora ya se marcó despachada, el fallo se informa como
+   `EffectUncertain`; primero se inspecciona y no se repite automáticamente.
+
+Son verificaciones del origen observado, no una transacción atómica con la
+página ni un cortafuegos de red. El documento puede navegar de forma
+asíncrona, incluso por una redirección de una acción ya enviada. Cambiar un
+permiso no revierte una navegación, descarga u otro efecto que ya comenzó.
 
 ## El puntero del agente
 
@@ -496,9 +573,9 @@ destino dado por selector o por nombre accesible se muestra como se escribió.
 `browser_drag`, que nombra dos elementos, sigue mostrando sólo la herramienta.
 La fila del chat mantiene la referencia sola.
 
-El proxy MCP externo (**Copiar conexión MCP**) no pasa por esa política: el
-cliente externo administra sus permisos, igual que para las demás herramientas
-del navegador.
+El proxy MCP externo (**Copiar conexión MCP**) no pasa por el diálogo de
+aprobación del motor propio: el cliente externo administra esas aprobaciones.
+Comparte las guardas de automatización, bloqueos y origen del runtime.
 
 ## CLIs externas iniciadas por OpenIDE
 
@@ -531,7 +608,8 @@ entrega el proxy externo (`screenshot_available` es `false`).
   iniciar un contexto); en modo normal OpenIDE muestra su diálogo de
   aprobación y una negativa o 50 s sin respuesta no ejecutan nada; una CLI
   iniciada en modo aceptar todo no pregunta mientras Ajustes diga «Seguir a la
-  CLI». A diferencia del motor propio, que pregunta siempre.
+  CLI». Además se aplican el interruptor global de automatización, los errores
+  de permisos por sitio y las guardas del runtime; aceptar todo no los evita.
 - **Visible, sin quitar el teclado.** La pestaña pasa al frente sólo cuando eso
   no tapa lo que el usuario está escribiendo, como la vista previa. Es el panel
   de siempre: el usuario ve la página y también puede usarla.
@@ -581,9 +659,9 @@ del modelo con la que se verifican y reanudan turnos guardados.
 ## Validación
 
 ```sh
-nix-shell --run "cargo test -p agents-window -- browser_ tool_presentation approval_ui environment_runtime"
-nix-shell --run "cargo test -p agents-window -p openide-bridge -- external_bridge tests::"
-nix-shell --run "cargo test -p agents-window -- --ignored real_cef --test-threads=1"
+rtk nix-shell --run "rtk cargo test -p agents-window -- browser_ tool_presentation approval_ui environment_runtime"
+rtk nix-shell --run "rtk cargo test -p agents-window -p openide-bridge -- external_bridge tests::"
+rtk nix-shell --run "rtk cargo test -p agents-window -- --ignored real_cef --test-threads=1"
 ```
 
 La segunda línea cubre el camino de las CLIs externas de punta a punta, por el
@@ -600,7 +678,11 @@ omisión y `0.0.0.0` abierto como `localhost`), los
 límites de cada esquema, la clasificación de `mutating()`, cada clase de fallo
 (respuesta de herramienta, efecto incierto, página que no carga, contexto
 perdido), las capturas reducidas, el camino de aprobación con la descripción
-de la referencia y las filas del chat.
+de la referencia y las filas del chat. También cubre la revocación con clientes
+ya entregados y solicitudes en cola, la recuperación de una política inválida
+con copia intacta, la ocultación de contenido bloqueado y los cambios de origen
+antes de encolar o durante la espera en cola. El puente comprueba que una
+acción sin origen no abre un navegador y que un origen distinto no se despacha.
 
 La tercera usa el [Chromium embebido](browser-cef.md#validación) real, sin
 ventana y sin GPU, y sólo visita un servidor HTTP local. Sus escenarios del

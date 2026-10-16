@@ -3,7 +3,7 @@
 //! asked about, action by action, as before.
 
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::{io::Read, path::{Path, PathBuf}};
 
 const FILE_NAME: &str = "browser-sites.json";
 const VERSION: u32 = 1;
@@ -23,6 +23,16 @@ pub(crate) enum SiteAccess {
 }
 
 impl SiteAccess {
+    pub const ALL: [Self; 3] = [Self::Allow, Self::Ask, Self::Block];
+
+    pub fn key(self) -> &'static str {
+        match self { Self::Allow => "allow", Self::Ask => "ask", Self::Block => "block" }
+    }
+
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|access| access.key() == key)
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Self::Allow => "Permitir siempre",
@@ -88,31 +98,81 @@ pub(crate) fn site_of_call(tool_name: &str, arguments: &str, page_url: &str) -> 
 impl BrowserSites {
     pub fn load(root: &Path) -> Result<Self, String> {
         let path = root.join(FILE_NAME);
-        match std::fs::metadata(&path) {
+        let mut options = std::fs::OpenOptions::new();
+        options.read(true);
+        #[cfg(unix)] {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(libc::O_NONBLOCK);
+        }
+        let file = match options.open(&path) {
+            Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Self::default()),
             Err(error) => return Err(format!("No se pudieron leer los permisos por sitio: {error}")),
-            Ok(metadata) if metadata.len() > MAX_BYTES => {
-                return Err("El archivo de permisos por sitio es demasiado grande".into())
-            }
-            Ok(_) => {}
+        };
+        let metadata = file.metadata().map_err(|error| error.to_string())?;
+        if !metadata.is_file() {
+            return Err("Los permisos por sitio deben guardarse en un archivo regular".into());
         }
-        let bytes = std::fs::read(&path).map_err(|error| format!("No se pudieron leer los permisos por sitio: {error}"))?;
+        if metadata.len() > MAX_BYTES {
+            return Err("El archivo de permisos por sitio es demasiado grande".into());
+        }
+        let mut bytes = Vec::new();
+        file.take(MAX_BYTES + 1).read_to_end(&mut bytes)
+            .map_err(|error| format!("No se pudieron leer los permisos por sitio: {error}"))?;
+        if bytes.len() as u64 > MAX_BYTES {
+            return Err("El archivo de permisos por sitio es demasiado grande".into());
+        }
         let document: Document =
             serde_json::from_slice(&bytes).map_err(|error| format!("Los permisos por sitio no son válidos: {error}"))?;
-        let valid = document.version == VERSION
-            && document.sites.len() <= MAX_SITES
-            && document.sites.iter().all(|site| origin_of(&site.origin).as_deref() == Some(&site.origin));
-        if !valid {
+        if document.version != VERSION {
             return Err("Los permisos por sitio no son válidos".into());
         }
-        Ok(Self { sites: document.sites })
+        let sites = Self { sites: document.sites };
+        sites.encoded()?;
+        Ok(sites)
     }
 
     pub fn save(&self, root: &Path) -> Result<(), String> {
-        let document = Document { version: VERSION, sites: self.sites.clone() };
-        let bytes = serde_json::to_vec_pretty(&document).map_err(|error| error.to_string())?;
+        let bytes = self.encoded()?;
         openide_harness::atomic_write(&root.join(FILE_NAME), &bytes)
             .map_err(|error| format!("No se pudieron guardar los permisos por sitio: {error}"))
+    }
+
+    fn encoded(&self) -> Result<Vec<u8>, String> {
+        let mut origins = std::collections::HashSet::new();
+        if self.sites.len() > MAX_SITES || self.sites.iter().any(|site| {
+            site.origin.len() > 4096
+                || origin_of(&site.origin).as_deref() != Some(site.origin.as_str())
+                || !origins.insert(site.origin.as_str())
+        }) {
+            return Err("Los permisos por sitio no son válidos".into());
+        }
+        let bytes = serde_json::to_vec_pretty(&Document { version: VERSION, sites: self.sites.clone() })
+            .map_err(|error| error.to_string())?;
+        if bytes.len() as u64 > MAX_BYTES {
+            return Err("El archivo de permisos por sitio es demasiado grande".into());
+        }
+        Ok(bytes)
+    }
+
+    /// Explicit recovery only. Keep the complete original, including an
+    /// oversized file, without reading it into memory or overwriting a backup.
+    pub fn reset_with_backup(root: &Path) -> Result<(Self, PathBuf), String> {
+        if Self::load(root).is_ok() {
+            return Err("El archivo de permisos ya es válido. Recargalo para conservar sus reglas.".into());
+        }
+        let path = root.join(FILE_NAME);
+        let backup = root.join(format!("browser-sites-backup-{}.json", uuid::Uuid::new_v4()));
+        std::fs::rename(&path, &backup)
+            .map_err(|error| format!("No se pudo conservar una copia de los permisos: {error}"))?;
+        let sites = Self::default();
+        if let Err(error) = sites.save(root) {
+            return match std::fs::rename(&backup, &path) {
+                Ok(()) => Err(error),
+                Err(restore) => Err(format!("{error}. La copia se conserva en {}. No se pudo restaurar: {restore}", backup.display())),
+            };
+        }
+        Ok((sites, backup))
     }
 
     pub fn access(&self, origin: &str) -> SiteAccess {
@@ -123,15 +183,21 @@ impl BrowserSites {
     /// origin is what is kept.
     pub fn set(&mut self, address: &str, access: SiteAccess) -> Result<(), String> {
         let address = address.trim();
+        if address.len() > 4096 {
+            return Err("La dirección del sitio es demasiado larga".into());
+        }
         // A host alone is its site over HTTPS.
         let origin = origin_of(address)
             .or_else(|| (!address.contains("://")).then(|| origin_of(&format!("https://{address}"))).flatten())
             .ok_or("Ingresá un sitio válido, como https://example.com")?;
-        match self.sites.iter().position(|site| site.origin == origin) {
-            Some(index) => self.sites[index].access = access,
-            None if self.sites.len() >= MAX_SITES => return Err("Hay demasiados sitios con permisos propios".into()),
-            None => self.sites.push(Site { origin, access }),
+        let mut next = self.clone();
+        match next.sites.iter().position(|site| site.origin == origin) {
+            Some(index) => next.sites[index].access = access,
+            None if next.sites.len() >= MAX_SITES => return Err("Hay demasiados sitios con permisos propios".into()),
+            None => next.sites.push(Site { origin, access }),
         }
+        next.encoded()?;
+        *self = next;
         Ok(())
     }
 }
@@ -188,5 +254,59 @@ mod tests {
         // A file that names something other than an origin is refused whole.
         std::fs::write(root.path().join(FILE_NAME), r#"{"version":1,"sites":[{"origin":"https://example.com/ruta","access":"allow"}]}"#).unwrap();
         assert!(BrowserSites::load(root.path()).is_err());
+    }
+
+    #[test]
+    fn invalid_and_oversized_site_policies_cannot_replace_a_valid_file() {
+        let root = tempfile::tempdir().unwrap();
+        let mut sites = BrowserSites::default();
+        sites.set("https://blocked.example", SiteAccess::Block).unwrap();
+        sites.save(root.path()).unwrap();
+        let original = std::fs::read(root.path().join(FILE_NAME)).unwrap();
+        let mut duplicate = sites.clone();
+        duplicate.sites.push(duplicate.sites[0].clone());
+        assert!(duplicate.save(root.path()).is_err());
+        let mut invalid = sites.clone();
+        invalid.sites[0].origin.push_str("/not-an-origin");
+        assert!(invalid.save(root.path()).is_err());
+        assert!(sites.set(&format!("https://{}.example", "x".repeat(MAX_BYTES as usize)), SiteAccess::Allow).is_err());
+        assert_eq!(std::fs::read(root.path().join(FILE_NAME)).unwrap(), original);
+        std::fs::write(root.path().join(FILE_NAME), vec![b' '; MAX_BYTES as usize + 1]).unwrap();
+        assert!(BrowserSites::load(root.path()).is_err());
+    }
+
+    #[test]
+    fn recovery_preserves_the_exact_invalid_file_and_never_resets_a_repaired_policy() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join(FILE_NAME);
+        let broken = b"{\"version\":1,\"sites\":[broken";
+        std::fs::write(&path, broken).unwrap();
+        let (recovered, backup) = BrowserSites::reset_with_backup(root.path()).unwrap();
+        assert_eq!(std::fs::read(&backup).unwrap(), broken);
+        assert_eq!(BrowserSites::load(root.path()).unwrap(), recovered);
+        assert!(recovered.sites.is_empty());
+        assert_ne!(backup, path);
+        let mut repaired = BrowserSites::default();
+        repaired.set("https://blocked.example", SiteAccess::Block).unwrap();
+        repaired.save(root.path()).unwrap();
+        assert!(BrowserSites::reset_with_backup(root.path()).is_err());
+        assert_eq!(BrowserSites::load(root.path()).unwrap(), repaired);
+        assert_eq!(std::fs::read(backup).unwrap(), broken);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_named_pipe_is_rejected_without_waiting_for_a_writer() {
+        use std::{ffi::CString, os::unix::ffi::OsStrExt};
+        let root = tempfile::tempdir().unwrap();
+        let path = CString::new(root.path().join(FILE_NAME).as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+        let directory = root.path().to_owned();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || { let _ = sender.send(BrowserSites::load(&directory)); });
+        let result = receiver.recv_timeout(std::time::Duration::from_secs(1))
+            .expect("a policy FIFO must not block the settings thread");
+        assert!(result.is_err());
+        worker.join().unwrap();
     }
 }

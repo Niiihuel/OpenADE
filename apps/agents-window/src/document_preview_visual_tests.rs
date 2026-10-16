@@ -279,6 +279,8 @@ fn region(frame: &Frame, id: &str) -> Rect {
 #[test]
 fn markdown_preview_has_its_own_tab_close_and_toolbar_above_the_breadcrumb() {
     let state = markdown_geometry_fixture();
+    let code_size = f32::from(state.appearance.code_font_size) * 13.0
+        / f32::from(state.appearance.ui_font_size);
     for size in [Size::new(1440.0, 900.0), Size::new(520.0, 680.0)] {
         let (context, mut tree) = view::ide_visual_tests::native_tree(view::build_window_view(
             &state,
@@ -341,8 +343,8 @@ fn markdown_preview_has_its_own_tab_close_and_toolbar_above_the_breadcrumb() {
         }
         assert!(frame.commands.iter().any(|command| matches!(command,
             DrawCommand::Text { position, text, font_size, font_family: FontFamily::Monospace, .. }
-                if source.contains(*position) && text.contains("proyecto") && (*font_size - 13.0).abs() < 0.1
-        )), "the original Markdown source keeps its editor font size");
+                if source.contains(*position) && text.contains("proyecto") && (*font_size - code_size).abs() < 0.1
+        )), "the original Markdown source uses its configured editor font size");
         context.end_pass().textures_delta.clear();
     }
 }

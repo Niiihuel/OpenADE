@@ -130,8 +130,10 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "chrono",
+ "color",
  "cpal",
  "eframe",
+ "fontdb",
  "fs2",
  "ignore",
  "image",
@@ -157,6 +159,7 @@ dependencies = [
  "resvg",
  "serde",
  "serde_json",
+ "serde_yaml",
  "sha1",
  "sha2",
  "tempfile",
@@ -1864,6 +1867,7 @@ checksum = "2660c5e9157bf76d2db1294e4a9feba604ef610819a3b591088d0d8392a3290f"
 dependencies = [
  "fontconfig-parser",
  "log",
+ "memmap2",
  "slotmap",
  "tinyvec",
 ]
@@ -3107,8 +3111,8 @@ dependencies = [
 
 [[package]]
 name = "limn"
-version = "0.1.39"
-source = "git+https://github.com/Niiihuel/limn.git?tag=v0.1.39#a361a16afb9fe967a978eb1610d364a23dd655a4"
+version = "0.1.43"
+source = "git+https://github.com/Niiihuel/limn.git?rev=19743e362e3975261bf57af619ee4e7574d62edf#19743e362e3975261bf57af619ee4e7574d62edf"
 dependencies = [
  "limn-editor",
  "limn-language",
@@ -3121,8 +3125,8 @@ dependencies = [
 
 [[package]]
 name = "limn-editor"
-version = "0.1.39"
-source = "git+https://github.com/Niiihuel/limn.git?tag=v0.1.39#a361a16afb9fe967a978eb1610d364a23dd655a4"
+version = "0.1.43"
+source = "git+https://github.com/Niiihuel/limn.git?rev=19743e362e3975261bf57af619ee4e7574d62edf#19743e362e3975261bf57af619ee4e7574d62edf"
 dependencies = [
  "regex",
  "ropey",
@@ -3133,8 +3137,8 @@ dependencies = [
 
 [[package]]
 name = "limn-egui"
-version = "0.1.39"
-source = "git+https://github.com/Niiihuel/limn.git?tag=v0.1.39#a361a16afb9fe967a978eb1610d364a23dd655a4"
+version = "0.1.43"
+source = "git+https://github.com/Niiihuel/limn.git?rev=19743e362e3975261bf57af619ee4e7574d62edf#19743e362e3975261bf57af619ee4e7574d62edf"
 dependencies = [
  "base64 0.22.1",
  "eframe",
@@ -3146,8 +3150,8 @@ dependencies = [
 
 [[package]]
 name = "limn-language"
-version = "0.1.39"
-source = "git+https://github.com/Niiihuel/limn.git?tag=v0.1.39#a361a16afb9fe967a978eb1610d364a23dd655a4"
+version = "0.1.43"
+source = "git+https://github.com/Niiihuel/limn.git?rev=19743e362e3975261bf57af619ee4e7574d62edf#19743e362e3975261bf57af619ee4e7574d62edf"
 dependencies = [
  "limn-editor",
  "pulldown-cmark",

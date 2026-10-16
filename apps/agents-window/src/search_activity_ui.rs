@@ -269,7 +269,10 @@ pub(crate) fn build(item: &TranscriptItem, state: &ViewState) -> Option<Element>
         _ => return None,
     };
     let owner = state.selected_session.as_deref().unwrap_or("draft");
-    let expanded = state.conversation_details.is_expanded(&disclosure, false);
+    let expanded = state.conversation_details.is_expanded(
+        &disclosure,
+        crate::session_surface::conversation_detail_default_open(state, &disclosure),
+    );
     let target = ["query", "pattern", "url", "path"]
         .into_iter()
         .find_map(|key| args.get(key).and_then(Value::as_str))
@@ -440,7 +443,10 @@ pub(crate) fn hosted(item: &TranscriptItem, state: &ViewState) -> Element {
         return Element::spacer();
     };
     let owner = state.selected_session.as_deref().unwrap_or("draft");
-    let expanded = state.conversation_details.is_expanded(id, false);
+    let expanded = state.conversation_details.is_expanded(
+        id,
+        crate::session_surface::conversation_detail_default_open(state, id),
+    );
     let receiving = *status == ModelStreamStatus::Receiving;
     let phase = hosted_phase(action, *status);
     let target = query
@@ -542,6 +548,30 @@ fn hosted_phase(action: &str, status: ModelStreamStatus) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detailed_search_defaults_open_and_explicit_collapse_stays_closed() {
+        use openide_ui::{DrawCommand, Size, UiTree};
+        let mut state = crate::view::tests::empty_state();
+        state.appearance.tool_call_density = crate::appearance_preferences::ToolCallDensity::Detailed;
+        let item = TranscriptItem::Tool {
+            id: "search".into(),
+            name: "search_text".into(),
+            arguments: serde_json::json!({"query":"density"}),
+            output: Some("src/density.rs:1:DENSITY_SEARCH".into()),
+            is_error: false,
+            activity: ActivityStatus::Completed,
+        };
+        for explicit_collapse in [false, true] {
+            if explicit_collapse {
+                state.conversation_details.set_expanded("tool:search", false);
+            }
+            let frame = UiTree::new(build(&item, &state).unwrap()).layout(Size::new(600.0, 600.0));
+            let visible = frame.commands.iter().any(|command| matches!(command,
+                DrawCommand::Text { text, .. } if text.contains("DENSITY_SEARCH")));
+            assert_eq!(visible, !explicit_collapse);
+        }
+    }
 
     #[test]
     fn directory_and_search_headers_separate_inspection_from_disclosure() {

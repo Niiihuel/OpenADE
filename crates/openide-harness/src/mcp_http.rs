@@ -27,7 +27,8 @@ use tokio::time::{timeout_at, Instant};
 use tokio_util::sync::CancellationToken;
 
 pub const MCP_HTTP_PROTOCOL_VERSION: &str = "2026-07-28";
-const MAX_TOOL_BYTES: usize = 64 * 1024;
+// Complete discovery metadata shares the bounded catalog budget. The model's
+// separate input-schema budget is enforced by ToolCatalog at advertisement.
 const MAX_CATALOG_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SSE_EVENTS: usize = 256;
 const MAX_SSE_RESUMES: usize = 8;
@@ -76,21 +77,23 @@ impl McpHttpConfig {
         self.env_headers
             .iter()
             .map(|(name, value)| {
-                let header = HeaderName::from_bytes(name.as_bytes()).ok().filter(|header| {
-                    let name = header.as_str();
-                    !name.starts_with("mcp-")
-                        && ![
-                            "authorization",
-                            "accept",
-                            "content-type",
-                            "content-length",
-                            "host",
-                            "connection",
-                            "transfer-encoding",
-                            "last-event-id",
-                        ]
-                        .contains(&name)
-                });
+                let header = HeaderName::from_bytes(name.as_bytes())
+                    .ok()
+                    .filter(|header| {
+                        let name = header.as_str();
+                        !name.starts_with("mcp-")
+                            && ![
+                                "authorization",
+                                "accept",
+                                "content-type",
+                                "content-length",
+                                "host",
+                                "connection",
+                                "transfer-encoding",
+                                "last-event-id",
+                            ]
+                            .contains(&name)
+                    });
                 let value = HeaderValue::from_str(value).ok().map(|mut value| {
                     value.set_sensitive(true);
                     value
@@ -1062,9 +1065,6 @@ impl McpHttpClient {
                 let tool_bytes = serde_json::to_vec(raw)
                     .expect("JSON values serialize")
                     .len();
-                if tool_bytes > MAX_TOOL_BYTES {
-                    return Err(McpError::CatalogLimit("tool definition too large"));
-                }
                 total_bytes = total_bytes.saturating_add(tool_bytes);
                 if total_bytes > MAX_CATALOG_BYTES {
                     return Err(McpError::CatalogLimit("tool catalog too large"));
@@ -2234,6 +2234,65 @@ mod tests {
                 ]
             }),
         ))
+    }
+
+    #[tokio::test]
+    async fn discovery_preserves_large_output_metadata_within_the_catalog_budget() {
+        let raw = json!({"name":"large_metadata","inputSchema":{"type":"object"},"outputSchema":{"type":"object","description":"output-metadata-".repeat(5_000)},"annotations":{"readOnlyHint":true}});
+        assert!(serde_json::to_vec(&raw).unwrap().len() > 64 * 1024);
+        let expected: McpTool = serde_json::from_value(raw.clone()).unwrap();
+        let (url, server) = local_server(2, move |index, request| {
+            if index == 0 {
+                discovery(request)
+            } else {
+                Reply::Json(rpc(
+                    request,
+                    json!({"resultType":"complete","tools":[raw.clone()]}),
+                ))
+            }
+        });
+        let cancellation = CancellationToken::new();
+        let client = McpHttpClient::connect(McpHttpConfig::new(url), &cancellation)
+            .await
+            .unwrap();
+        assert_eq!(
+            client.list_tools(&cancellation).await.unwrap(),
+            vec![expected]
+        );
+        client.shutdown().await.unwrap();
+        let requests = server.join().unwrap();
+        assert!(requests
+            .iter()
+            .all(|request| request.body["method"] != "tools/call"));
+    }
+
+    #[tokio::test]
+    async fn discovered_metadata_still_obeys_the_aggregate_budget_across_pages() {
+        let (url, server) = local_server(3, |index, request| {
+            if index == 0 {
+                return discovery(request);
+            }
+            let mut result = json!({"resultType":"complete","tools":[{"name":format!("page_{index}"),"inputSchema":{"type":"object"},"outputSchema":{"description":"x".repeat(MAX_CATALOG_BYTES / 2)}}]});
+            if index == 1 {
+                result["nextCursor"] = json!("next");
+            }
+            Reply::Json(rpc(request, result))
+        });
+        let cancellation = CancellationToken::new();
+        let client = McpHttpClient::connect(McpHttpConfig::new(url), &cancellation)
+            .await
+            .unwrap();
+        assert!(matches!(
+            client.list_tools(&cancellation).await,
+            Err(McpError::CatalogLimit("tool catalog too large"))
+        ));
+        assert!(client.catalog.read().await.is_empty());
+        assert!(!client.catalog_discovered.load(Ordering::Acquire));
+        client.shutdown().await.unwrap();
+        let requests = server.join().unwrap();
+        assert!(requests
+            .iter()
+            .all(|request| request.body["method"] != "tools/call"));
     }
 
     #[tokio::test]
@@ -3518,9 +3577,7 @@ mod tests {
             refused.env_headers.push((owned.into(), "x".into()));
             assert!(refused.validate().is_err(), "{owned}");
         }
-        let client = McpHttpClient::connect(config, &cancellation)
-            .await
-            .unwrap();
+        let client = McpHttpClient::connect(config, &cancellation).await.unwrap();
         assert_eq!(client.server_info().await.name, "fixture");
         assert!(!client.supports_legacy_notifications());
         let tools = client.list_tools(&cancellation).await.unwrap();

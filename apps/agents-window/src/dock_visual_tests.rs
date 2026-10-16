@@ -433,7 +433,11 @@ fn workspace_sidebars_finish_all_corners_with_their_existing_radius() {
                     assert_eq!(*color, theme::WINDOW);
                     assert_eq!(
                         *radii,
-                        openide_ui::CornerRadii::same(if settings { 12.0 } else { 6.0 })
+                        openide_ui::CornerRadii::same(if settings {
+                            openide_ui::RadiusRole::Card.px()
+                        } else {
+                            openide_ui::RadiusRole::Surface.px()
+                        })
                     );
                     Some((index, *rect, radii.top_left))
                 }

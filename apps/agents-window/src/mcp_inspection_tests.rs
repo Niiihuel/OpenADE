@@ -63,6 +63,19 @@ impl HttpFixture {
         blocked_method: Option<&'static str>,
         unsupported_notifications: bool,
     ) -> Self {
+        Self::with_catalog_options(legacy, blocked_method, unsupported_notifications, None)
+    }
+
+    pub(crate) fn with_tools(legacy: bool, tools: Vec<Value>) -> Self {
+        Self::with_catalog_options(legacy, None, false, Some(tools))
+    }
+
+    fn with_catalog_options(
+        legacy: bool,
+        blocked_method: Option<&'static str>,
+        unsupported_notifications: bool,
+        catalog: Option<Vec<Value>>,
+    ) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
@@ -195,6 +208,20 @@ impl HttpFixture {
                         json!({"jsonrpc":"2.0","id":request["id"],"result":{"protocolVersion":"2025-06-18","serverInfo":{"name":"legacy inspection fixture","version":"7"},"capabilities":{"tools":{}},"instructions":"Datos del servidor legacy"}}),
                     ),
                     "tools/list" => {
+                        if let Some(catalog) = &catalog {
+                            let mut result = json!({"tools":catalog});
+                            if !legacy {
+                                result["resultType"] = json!("complete");
+                            }
+                            respond(
+                                reader.get_mut(),
+                                "200 OK",
+                                &json!({"jsonrpc":"2.0","id":request["id"],"result":result}),
+                                legacy,
+                                None,
+                            );
+                            continue;
+                        }
                         let second = request["params"]["cursor"] == "page-2";
                         let tool = if second {
                             second_tool()
@@ -283,6 +310,177 @@ fn wait_result(controller: &mut McpInspectionController) -> McpInspectionResult 
         result.is_some()
     });
     result.unwrap()
+}
+
+#[test]
+fn explicit_inspection_keeps_more_than_the_model_budget_and_large_output_metadata_complete() {
+    let tools: Vec<Value> = (0..170).map(|index| json!({
+        "name":format!("catalog_tool_{index}"),
+        "description":"Fixture tool metadata",
+        "inputSchema":{"type":"object"},
+        "outputSchema":{"type":"object","description":if index == 0 { "large-output-metadata-".repeat(4_000) } else { "output".into() }},
+        "annotations":{"readOnlyHint":true}
+    })).collect();
+    assert!(serde_json::to_vec(&tools[0]).unwrap().len() > 64 * 1024);
+    for legacy in [false, true] {
+        let fixture = HttpFixture::with_tools(legacy, tools.clone());
+        let workspace = tempfile::tempdir().unwrap();
+        let mut controller =
+            McpInspectionController::start(fixture.server.clone(), workspace.path()).unwrap();
+        let result = wait_result(&mut controller);
+        assert!(result.error.is_none(), "{:?}", result.error);
+        assert!(result.shutdown_error.is_none());
+        let snapshot = result.snapshot.unwrap();
+        assert_eq!(snapshot.tools.len(), 170);
+        // HTTP catalogs are keyed by name and returned in lexical order. The
+        // complete metadata for every unique name must survive unchanged;
+        // input fixture insertion order is not a discovery contract.
+        let expected: std::collections::BTreeMap<String, Value> = tools
+            .iter()
+            .map(|tool| (tool["name"].as_str().unwrap().to_owned(), tool.clone()))
+            .collect();
+        let mut seen = std::collections::BTreeSet::new();
+        for tool in &snapshot.tools {
+            assert!(
+                seen.insert(&tool.name),
+                "duplicated observed tool {}",
+                tool.name
+            );
+            let expected = expected
+                .get(&tool.name)
+                .expect("unrecognized observed tool");
+            assert!(
+                &serde_json::to_value(tool).unwrap() == expected,
+                "complete metadata changed for {}",
+                tool.name
+            );
+        }
+        let details: Value = serde_json::from_str(&snapshot.details_json).unwrap();
+        assert!(
+            details["tools"] == serde_json::to_value(&snapshot.tools).unwrap(),
+            "technical JSON must preserve every tool and its complete metadata"
+        );
+        assert!(!fixture
+            .methods()
+            .iter()
+            .any(|method| method == "tools/call"));
+    }
+}
+
+/// An explicit local integration probe, never part of the regular suite. The
+/// controller owns initialize/list/shutdown only and cannot invoke MCP tools.
+#[test]
+#[ignore = "requires explicit local REA initialize/list/shutdown probe"]
+fn local_rea_inspection_probe() {
+    let program = std::env::var_os("OPENADE_MCP_REAL_PROBE")
+        .expect("set OPENADE_MCP_REAL_PROBE to the observed local REA 6.4.0 executable");
+    let program = PathBuf::from(program);
+    assert!(
+        program.is_absolute(),
+        "the probe requires an explicit absolute executable path"
+    );
+    let workspace = tempfile::tempdir().unwrap();
+    let server = McpServerSettings {
+        id: "rea-local-probe".into(),
+        enabled: true,
+        program: program.to_string_lossy().into_owned(),
+        args: vec!["--mcp".into()],
+        cwd: None,
+        credential_env_names: vec![],
+        env: Default::default(),
+        url: None,
+        http_bearer_token_env_name: None,
+        http_oauth: None,
+        http_env_headers: vec![],
+    };
+    let mut controller = McpInspectionController::start(server, workspace.path())
+        .expect("the local REA inspection worker must start");
+    let deadline = Instant::now() + Duration::from_secs(45);
+    let result = loop {
+        if let Some(result) = controller.try_recv() {
+            break result;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the opt-in inspection exceeded 45 seconds"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    // Deliberately omit remote diagnostics and metadata from failure output.
+    assert!(!result.cancelled, "the local REA inspection was cancelled");
+    assert!(
+        result.error.is_none(),
+        "the local REA inspection failed; remote diagnostics omitted"
+    );
+    assert!(
+        result.shutdown_error.is_none(),
+        "the owned REA connection did not close cleanly"
+    );
+    let snapshot = result
+        .snapshot
+        .expect("completed inspection must retain a snapshot");
+    assert_eq!(
+        snapshot.tools.len(),
+        170,
+        "this probe pins the observed REA 6.4.0 catalog"
+    );
+    let raw = serde_json::to_value(&snapshot.tools).unwrap();
+    let details: Value = serde_json::from_str(&snapshot.details_json).unwrap();
+    assert!(
+        details["tools"] == raw,
+        "the technical inspection must preserve the full received catalog"
+    );
+    let definition_sizes: Vec<_> = snapshot
+        .tools
+        .iter()
+        .map(|tool| serde_json::to_vec(tool).unwrap().len())
+        .collect();
+    let input_sizes: Vec<_> = snapshot
+        .tools
+        .iter()
+        .map(|tool| serde_json::to_vec(&tool.input_schema).unwrap().len())
+        .collect();
+    let largest_definition = *definition_sizes.iter().max().unwrap();
+    let largest_input_schema = *input_sizes.iter().max().unwrap();
+    assert!(
+        largest_definition > 64 * 1024,
+        "the real catalog must exercise the formerly rejected metadata boundary"
+    );
+    assert!(largest_input_schema <= openide_harness::MAX_TOOL_SCHEMA_BYTES);
+    let comparison = snapshot
+        .tools
+        .iter()
+        .find(|tool| tool.name == "compare_web_captures")
+        .expect("the measured large definition must be present");
+    assert!(comparison.extra.contains_key("outputSchema"));
+    assert!(comparison.extra.contains_key("annotations"));
+    let report = json!({
+        "probe":"patched_mcp_stdio_client_via_inspection_controller",
+        "observed_package_version":"6.4.0",
+        "program":program,
+        "arguments":["--mcp"],
+        "protocol_version":snapshot.server_info.protocol_version,
+        "tools":snapshot.tools.len(),
+        "catalog_definition_bytes":definition_sizes.iter().sum::<usize>(),
+        "catalog_input_schema_bytes":input_sizes.iter().sum::<usize>(),
+        "largest_definition_bytes":largest_definition,
+        "largest_input_schema_bytes":largest_input_schema,
+        "technical_json_bytes":snapshot.details_json.len(),
+        "metadata_digest":snapshot.metadata_digest,
+        "shutdown_confirmed":true,
+        "agent_turn_started":false,
+        "tools_call_sent":false
+    });
+    if let Some(path) = std::env::var_os("OPENADE_MCP_REAL_PROBE_SUMMARY") {
+        let path = PathBuf::from(path);
+        assert!(
+            path.is_absolute(),
+            "summary output must use an explicit absolute path"
+        );
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
+    }
+    println!("{}", serde_json::to_string(&report).unwrap());
 }
 
 #[test]
@@ -655,6 +853,29 @@ fn secret_observation_limit_suppresses_payload_and_diagnostics_without_new_persi
 }
 
 #[test]
+fn http_header_credentials_cannot_reach_inspection_metadata_or_diagnostics() {
+    let mut config = openide_harness::McpHttpConfig::new("https://example.test/mcp");
+    config.bearer_token = Some("fixture-bearer-private".into());
+    config.env_headers = vec![("X-Api-Key".into(), "fixture-header-private".into())];
+    let secrets = InspectionSecrets::default();
+    secrets.observe_http_config(&config);
+    for secret in ["fixture-bearer-private", "fixture-header-private"] {
+        let snapshot = sample_snapshot();
+        let mut tool = complete_tool();
+        tool["description"] = json!(format!("Reflected credential: {secret}"));
+        let result = make_snapshot(
+            snapshot.server_info,
+            vec![serde_json::from_value(tool).unwrap()],
+            &secrets,
+        );
+        assert!(result.is_err());
+        let diagnostic = secrets.sanitize(format!("Remote failure: {secret}"));
+        assert!(!diagnostic.contains(secret));
+        assert!(diagnostic.contains("[credencial]"));
+    }
+}
+
+#[test]
 fn the_last_connection_to_each_server_is_remembered_until_another_says_otherwise() {
     let workspace = tempfile::tempdir().unwrap();
     let server = |id: &str| McpServerSettings {
@@ -670,28 +891,55 @@ fn the_last_connection_to_each_server_is_remembered_until_another_says_otherwise
         http_oauth: None,
         http_env_headers: Vec::new(),
     };
-    let saved = McpSettings { servers: vec![server("uno"), server("dos")] };
+    let saved = McpSettings {
+        servers: vec![server("uno"), server("dos")],
+    };
     let mut state = McpInspectionUiState::default();
-    let mut inspect = |state: &mut McpInspectionUiState, id: &str, snapshot: Option<McpInspectionSnapshot>, error: Option<&str>, cancelled: bool| {
+    let mut inspect = |state: &mut McpInspectionUiState,
+                       id: &str,
+                       snapshot: Option<McpInspectionSnapshot>,
+                       error: Option<&str>,
+                       cancelled: bool| {
         let scope = McpInspectionScope {
             request_id: 1,
             workspace: workspace.path().canonicalize().unwrap(),
             server: server(id),
         };
         state.begin(scope.clone());
-        let result = McpInspectionResult { scope, snapshot, error: error.map(str::to_owned), shutdown_error: None, cancelled };
+        let result = McpInspectionResult {
+            scope,
+            snapshot,
+            error: error.map(str::to_owned),
+            shutdown_error: None,
+            cancelled,
+        };
         assert!(state.apply_result(result, workspace.path(), &saved));
     };
     let tools = sample_snapshot().tools.len();
     inspect(&mut state, "uno", Some(sample_snapshot()), None, false);
-    assert_eq!(state.last.get("uno"), Some(&McpServerStatus::Connected { tools }));
+    assert_eq!(
+        state.last.get("uno"),
+        Some(&McpServerStatus::Connected { tools })
+    );
     // Another server's inspection keeps what was seen of the first.
     inspect(&mut state, "dos", None, Some("conexión rechazada"), false);
-    assert_eq!(state.last.get("uno"), Some(&McpServerStatus::Connected { tools }));
-    assert_eq!(state.last.get("dos"), Some(&McpServerStatus::Failed("conexión rechazada".into())));
+    assert_eq!(
+        state.last.get("uno"),
+        Some(&McpServerStatus::Connected { tools })
+    );
+    assert_eq!(
+        state.last.get("dos"),
+        Some(&McpServerStatus::Failed("conexión rechazada".into()))
+    );
     // A cancelled one says nothing about the server; a later success replaces a failure.
     inspect(&mut state, "dos", None, None, true);
-    assert_eq!(state.last.get("dos"), Some(&McpServerStatus::Failed("conexión rechazada".into())));
+    assert_eq!(
+        state.last.get("dos"),
+        Some(&McpServerStatus::Failed("conexión rechazada".into()))
+    );
     inspect(&mut state, "dos", Some(sample_snapshot()), None, false);
-    assert_eq!(state.last.get("dos"), Some(&McpServerStatus::Connected { tools }));
+    assert_eq!(
+        state.last.get("dos"),
+        Some(&McpServerStatus::Connected { tools })
+    );
 }

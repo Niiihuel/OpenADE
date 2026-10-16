@@ -140,7 +140,7 @@ fn click(tree: &mut UiTree, rect: Rect) -> Vec<UiAction> {
 
 #[test]
 fn plugins_page_is_bounded_and_actions_are_reachable_at_compact_and_desktop_widths() {
-    for width in [360.0, 620.0, 1300.0] {
+    for width in [320.0, 360.0, 900.0, 1300.0] {
         let viewport = Size::new(width, 840.0);
         for installed in [false, true] {
             let state = state(installed);
@@ -149,6 +149,14 @@ fn plugins_page_is_bounded_and_actions_are_reachable_at_compact_and_desktop_widt
             for id in ["plugins_install_open", "plugins_refresh"] {
                 let rect = button_rect(&frame, id, viewport);
                 assert!(rect.height <= 28.5, "oversized page action {id}: {rect:?}");
+                if id == "plugins_refresh" {
+                    assert!(
+                        (rect.width - ControlSize::Compact.height()).abs() < 0.01,
+                        "refresh must remain a square icon control: {rect:?}"
+                    );
+                    let node = frame.access.iter().find(|node| node.id == id).unwrap();
+                    assert_eq!(node.name, "Actualizar plugins");
+                }
                 assert_eq!(
                     click(&mut fixture.tree, rect),
                     vec![UiAction::Clicked { id: id.into() }]
@@ -178,7 +186,7 @@ fn plugins_page_is_bounded_and_actions_are_reachable_at_compact_and_desktop_widt
 
 #[test]
 fn plugins_filter_matches_metadata_and_disabled_actions_never_dispatch() {
-    for width in [360.0, 620.0, 1300.0] {
+    for width in [320.0, 360.0, 900.0, 1300.0] {
         let viewport = Size::new(width, 840.0);
         let mut state = state(true);
         for query in ["echo", "OPENADE FIXTURES", "   Echo local   "] {

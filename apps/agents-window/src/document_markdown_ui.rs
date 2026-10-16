@@ -18,7 +18,6 @@ use crate::theme;
 // Markdown keeps its own private; take them from limn once it exposes them.
 const BODY_SIZE: f32 = 14.0;
 const BODY_LINE_HEIGHT: f32 = 22.0;
-const CODE_SIZE: f32 = 13.0;
 
 /// The height of a line of `size`: the body's reading leading, and the
 /// tighter one of a heading.
@@ -262,7 +261,7 @@ fn render_block(
         )
         .gap(4.0)
         .size(Some(width), None),
-        MarkdownBlock::Code { language, source } => code(language, source, width),
+        MarkdownBlock::Code { language, source } => code(language, source, width, &format!("{prefix}:code:{index}")),
         MarkdownBlock::Table { header, rows, .. } => {
             let columns = header
                 .len()
@@ -409,7 +408,7 @@ fn span(text: &str, style: InlineStyle, size: f32, prefix: &str) -> TextSpan {
     let mut span = TextSpan::new(
         text,
         color,
-        if style.code { CODE_SIZE } else { size },
+        if style.code { crate::appearance_preferences::code_font_size() } else { size },
         if style.code {
             FontFamily::Monospace
         } else {
@@ -442,7 +441,7 @@ fn code_spans(language: &str, source: &str) -> Vec<TextSpan> {
             preview_source_spans(line_content, syntax, &mut state)
                 .into_iter()
                 .map(|mut span| {
-                    span.font_size = CODE_SIZE;
+                    span.font_size = crate::appearance_preferences::code_font_size();
                     span
                 }),
         );
@@ -450,7 +449,7 @@ fn code_spans(language: &str, source: &str) -> Vec<TextSpan> {
             spans.push(TextSpan::new(
                 "\n",
                 theme::FOREGROUND,
-                CODE_SIZE,
+                crate::appearance_preferences::code_font_size(),
                 FontFamily::Monospace,
             ));
         }
@@ -458,7 +457,7 @@ fn code_spans(language: &str, source: &str) -> Vec<TextSpan> {
     spans
 }
 
-fn code(language: &str, source: &str, width: f32) -> Element {
+fn code(language: &str, source: &str, width: f32, id: &str) -> Element {
     // A diagram is drawn as in an answer, with its switch and its expand
     // action; a fence the app cannot draw stays code.
     if language.eq_ignore_ascii_case("mermaid") {
@@ -467,8 +466,10 @@ fn code(language: &str, source: &str, width: f32) -> Element {
         }
     }
     let mut block = CodeBlock::new(source, theme::panel_card_palette())
+        .id(id)
         .spans(code_spans(language, source))
         .sizing(CodeBlockSizing::DOCUMENT)
+        .font_size(crate::appearance_preferences::code_font_size())
         .width(width);
     if !language.is_empty() {
         block = block.label(language);

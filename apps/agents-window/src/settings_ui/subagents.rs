@@ -1,4 +1,110 @@
 use super::*;
+use crate::subagent_settings::{SubagentLimit, SubagentSettings};
+use openide_ui::{NumberInput, NumberInputButtonPlacement};
+
+fn configuration(state: &ViewState, compact: bool) -> Vec<Element> {
+    let enabled = state.subagent_settings_error.is_none();
+    let mut groups = Vec::new();
+    if let Some(error) = &state.subagent_settings_error {
+        groups.push(settings_parts::feedback_banner(
+            error,
+            FeedbackTone::Error,
+            None,
+            compact,
+        ));
+        let controls = if state.subagent_settings_reset_pending {
+            ButtonGroup::new(vec![
+                outline("subagent_settings_reset_cancel", "Cancelar").render(),
+                outline(
+                    "subagent_settings_reset_confirm",
+                    "Guardar copia y restablecer",
+                )
+                .render(),
+            ])
+            .stacked(compact)
+            .render()
+        } else {
+            ButtonGroup::new(vec![
+                outline("subagent_settings_reload", "Recargar archivo").render(),
+                outline("subagent_settings_reset", "Restablecer configuración").render(),
+            ])
+            .stacked(compact)
+            .render()
+        };
+        groups.push(settings_parts::settings_group("Recuperar configuración", vec![
+            settings_parts::settings_row("Conservar la configuración original",
+                "Los nuevos turnos quedan bloqueados hasta corregir el archivo. Restablecer guarda una copia del original y vuelve a los límites predeterminados.", controls, compact),
+        ]));
+    }
+    let mut rows = vec![settings_parts::switch_row(
+        "subagent_settings_enabled", "Permitir delegación",
+        "Permite crear subagentes y enviarles tareas en los próximos turnos de Construir. Los hijos que ya están ejecutando conservan su perfil. Puedes consultar y cancelar su trabajo; recuperarlo requiere un perfil compatible.",
+        state.subagent_settings.enabled, enabled, compact,
+    )];
+    for (limit, title, description) in [
+        (SubagentLimit::Concurrent, "Subagentes en ejecución", "Máximo de hijos ejecutando al mismo tiempo en todas las conversaciones de este perfil."),
+        (SubagentLimit::Children, "Hijos activos por agente", "Cuántos hijos puede mantener activos cada padre, incluidos los que esperan recuperación."),
+        (SubagentLimit::Depth, "Profundidad de delegación", "Cuántas generaciones de hijos puede crear una tarea."),
+        (SubagentLimit::Descendants, "Subagentes por tarea raíz", "Máximo total de descendientes registrados para una tarea. Incluye los que ya terminaron."),
+        (SubagentLimit::Tasks, "Tareas por agente", "Máximo de hijos que puede crear cada padre. Incluye sus hijos completados."),
+    ] {
+        let id = format!("subagent_setting:{}", limit.key());
+        let control = Element::row(vec![
+            NumberInput::new(&id, limit.value(&state.subagent_settings).to_string(), control_palette())
+                .min(1.0).max(f64::from(limit.max()))
+                .button_placement(NumberInputButtonPlacement::Split)
+                .size(ControlSize::Compact).width(132.0)
+                .accessibility_label(title)
+                .step_labels(format!("Reducir {title}"), format!("Aumentar {title}"))
+                .enabled(enabled).render(),
+            outline(format!("{id}:reset"), "Restablecer")
+                .enabled(enabled && limit.value(&state.subagent_settings) != limit.value(&SubagentSettings::default())).render(),
+        ]).gap(6.0).centered_y();
+        rows.push(settings_parts::settings_row(title, description, control, compact));
+    }
+    rows.push(page_note("Aplicación de los cambios",
+        "Se guardan para nuevos turnos. Los workers activos conservan sus límites. Recuperar un hijo con otro perfil requiere la revisión de identidad existente; no amplía sus permisos automáticamente.", Icon::InfoCircle));
+    groups.push(settings_parts::settings_group("Delegación y límites", rows));
+    groups
+}
+
+fn catalog(state: &ViewState, compact: bool) -> Vec<Element> {
+    let roles = openide_harness::built_in_subagent_roles().iter().map(|role| {
+        let (title, description) = match role.name {
+            "explorer" => ("Explorador", "Investiga el código y presenta archivos, símbolos y evidencia. Sólo lectura, también al continuarlo."),
+            "reviewer" => ("Revisor", "Revisa cambios con contexto propio y busca defectos verificables. Sólo lectura, también al continuarlo."),
+            "worker" => ("Ejecutor", "Realiza una tarea concreta y verifica el resultado con las herramientas y permisos del padre."),
+            _ => (role.name, role.description),
+        };
+        settings_parts::value_row(format!("{title} · {}", role.name), description,
+            if role.mode() == openide_core::TurnMode::Plan { "Sólo lectura" } else { "Construir" }, compact)
+    }).collect();
+    let mut groups = vec![settings_parts::settings_group("Roles incorporados", roles)];
+    let mut personas = state
+        .subagent_personas
+        .iter()
+        .map(|persona| {
+            settings_parts::value_row(
+                &persona.name,
+                format!("{}\n{}", persona.description, persona.file.display()),
+                &persona.origin,
+                compact,
+            )
+        })
+        .collect::<Vec<_>>();
+    if personas.is_empty() {
+        personas.push(page_note("Sin perfiles de plugins",
+            "Los plugins activados pueden aportar personas e instrucciones al agente nativo. Sus permisos siguen limitados por el perfil de openADE.", Icon::InfoCircle));
+    }
+    personas.push(settings_parts::settings_row("Administrar perfiles de plugins",
+        "Los perfiles disponibles provienen de los plugins aprobados y activados. El agente puede consultar sus instrucciones; no cambian su modelo ni conceden permisos adicionales.",
+        outline("settings_page:plugins", "Ver plugins").icon(Icon::ArrowRight).render(), compact));
+    groups.push(settings_parts::settings_group(
+        "Perfiles de plugins",
+        personas,
+    ));
+    groups
+}
 
 pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
     let selected = state.selected_session.as_deref();
@@ -17,7 +123,8 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
         .iter()
         .filter(|child| child.status == openide_harness::SubagentStatus::Running)
         .count();
-    let mut content = vec![settings_parts::settings_group(
+    let mut content = configuration(state, compact);
+    content.push(settings_parts::settings_group(
         "Subagentes nativos de openADE",
         vec![
             settings_parts::value_row(
@@ -41,7 +148,7 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
                 SettingsPage::Subagents.icon(),
             ),
         ],
-    )];
+    ));
     if let Some(cards) = crate::session_surface::related_subagent_cards(state, compact) {
         content.push(settings_parts::settings_group(
             "Estado, permisos y entradas",
@@ -72,13 +179,9 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
                 "Abre el subagente para revisar y reanudar su turno. Los efectos externos inciertos requieren verificación; cambiar modelo, instrucciones o permisos puede impedir la recuperación del perfil original.",
                 Icon::History,
             ),
-            page_note(
-                "Configuración del motor",
-                "El motor administra el parentesco y los límites de delegación. Settings todavía no permite editar perfiles especializados ni límites de concurrencia.",
-                Icon::Settings,
-            ),
         ],
     ));
+    content.extend(catalog(state, compact));
     content
 }
 
@@ -120,7 +223,13 @@ mod tests {
     }
 
     fn assert_pointer_action(state: &ViewState, width: f32, id: &str) {
-        let mut tree = UiTree::new(Element::column(page(state, width < 640.0)));
+        let mut tree = UiTree::new(
+            ScrollArea::new(
+                "subagent_settings_test_scroll",
+                Element::column(page(state, width < 640.0)),
+            )
+            .render(),
+        );
         let viewport = Size::new(width, 1500.0);
         tree.layout(viewport);
         assert!(tree.focus(id), "missing focus target {id} at {width}");
@@ -180,7 +289,8 @@ mod tests {
         assert!(!frame
             .regions
             .iter()
-            .any(|region| region.id.starts_with("subagent_")));
+            .any(|region| region.id.starts_with("subagent_")
+                && !region.id.starts_with("subagent_setting")));
     }
 
     #[test]
@@ -227,7 +337,13 @@ mod tests {
             ] {
                 assert_pointer_action(&state, width, id);
             }
-            let mut tree = UiTree::new(Element::column(page(&state, width < 640.0)));
+            let mut tree = UiTree::new(
+                ScrollArea::new(
+                    "subagent_settings_test_scroll",
+                    Element::column(page(&state, width < 640.0)),
+                )
+                .render(),
+            );
             let viewport = Size::new(width, 1500.0);
             tree.layout(viewport);
             assert!(tree.focus("subagent_input_edit:child-1:input:1"));
@@ -287,5 +403,65 @@ mod tests {
                 .iter()
                 .any(|region| region.id == "subagent_dispatch:child-1"));
         }
+    }
+
+    #[test]
+    fn delegation_controls_use_split_inputs_and_keep_roles_and_errors_accessible() {
+        let mut state = crate::view::tests::empty_state();
+        for width in [360.0, 900.0] {
+            let frame = UiTree::new(Element::column(page(&state, width < 640.0)))
+                .layout(Size::new(width, 3200.0));
+            let text = frame_text(&frame);
+            assert!(
+                text.contains("explorer") && text.contains("reviewer") && text.contains("worker")
+            );
+            for limit in SubagentLimit::ALL {
+                let id = format!("subagent_setting:{}", limit.key());
+                let rect = |suffix: &str| {
+                    frame
+                        .regions
+                        .iter()
+                        .find(|r| r.id == format!("{id}{suffix}"))
+                        .unwrap()
+                        .rect
+                };
+                let minus = rect(":decrement");
+                let value = rect("");
+                let plus = rect(":increment");
+                assert!(minus.x + minus.width <= value.x + 0.01);
+                assert!(value.x + value.width <= plus.x + 0.01);
+                assert!(minus.x >= 0.0 && plus.x + plus.width <= width + 0.01);
+            }
+        }
+        state.subagent_settings_error = Some("Configuración dañada".into());
+        let frame =
+            UiTree::new(Element::column(page(&state, true))).layout(Size::new(360.0, 3200.0));
+        assert!(
+            frame
+                .access
+                .iter()
+                .find(|node| node.id == "subagent_settings_enabled")
+                .unwrap()
+                .disabled
+        );
+        assert!(frame
+            .regions
+            .iter()
+            .any(|r| r.id == "subagent_settings_reset"));
+        assert!(!frame
+            .regions
+            .iter()
+            .any(|r| r.id == "subagent_settings_reset_confirm"));
+        state.subagent_settings_reset_pending = true;
+        let frame =
+            UiTree::new(Element::column(page(&state, true))).layout(Size::new(360.0, 3200.0));
+        assert!(frame
+            .regions
+            .iter()
+            .any(|r| r.id == "subagent_settings_reset_confirm"));
+        assert!(frame
+            .regions
+            .iter()
+            .any(|r| r.id == "subagent_settings_reset_cancel"));
     }
 }

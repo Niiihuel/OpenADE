@@ -238,17 +238,10 @@ fn native_codex_async_discovery_restores_saved_max_and_renders_effort_and_advanc
         assert!(menu.commands.iter().any(|command| matches!(command,
             DrawCommand::Text { text, .. } if text == "Esfuerzo"
         )));
-        assert!(menu.commands.iter().any(|command| matches!(command,
-            DrawCommand::Text { text, .. } if text == "Avanzado"
-        )));
         assert!(menu
             .regions
             .iter()
-            .any(|region| region.id == "composer_advanced_toggle"));
-        assert!(menu
-            .regions
-            .iter()
-            .any(|region| region.id == "composer_advanced_chip_toggle"));
+            .any(|region| region.id == "composer_advanced_toggle" && region.kind == HitKind::Button));
         click(&mut app, &menu, "composer_advanced_toggle");
         let advanced = frame(&mut app, width);
         assert!(advanced

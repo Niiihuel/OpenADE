@@ -62,6 +62,7 @@ pub struct SubagentToolExecutor {
     sessions: Arc<SessionStore>,
     control: Arc<Mutex<ControlState>>,
     limits: SubagentToolLimits,
+    delegation_enabled: bool,
 }
 
 impl SubagentToolExecutor {
@@ -105,7 +106,15 @@ impl SubagentToolExecutor {
                 scheduled: BTreeMap::new(),
             })),
             limits,
+            delegation_enabled: true,
         })
+    }
+
+    /// Restrict new work in this parent turn while retaining observation and
+    /// cancellation of existing children. Already admitted workers keep their profile.
+    pub fn with_delegation_enabled(mut self, enabled: bool) -> Self {
+        self.delegation_enabled = enabled;
+        self
     }
 
     /// Close this turn's tool surface and release its parent-lease reference.
@@ -338,15 +347,16 @@ impl SubagentToolExecutor {
         if let Err(error) = self.coordinator.input_state(&control, &args.agent_id) {
             return Ok(ToolOutput::error(error.to_string()));
         }
-        if let Err(error) = self.worker.validate_follow_up_child(&args.agent_id) {
-            return Ok(ToolOutput::error(error.to_string()));
-        }
+        let mode = match self.worker.follow_up_mode(&args.agent_id) {
+            Ok(mode) => mode,
+            Err(error) => return Ok(ToolOutput::error(error.to_string())),
+        };
         let input = match self.coordinator.enqueue_input(
             &lease,
             &args.agent_id,
             &input_id,
             &args.prompt,
-            TurnMode::Build,
+            mode,
         ) {
             Ok(input) => input,
             Err(
@@ -742,7 +752,7 @@ pub(crate) fn coordination_definitions() -> Vec<ToolDefinition> {
         },
         ToolDefinition {
             name: "send_input".to_owned(),
-            description: "Queue one durable Build follow-up for a direct subagent. The same tool call ID is idempotent. A queued input waits for the child's current turn; interrupted children require explicit recovery.".to_owned(),
+            description: "Queue one durable follow-up for a direct subagent, preserving its original Plan or Build mode. Read-only roles stay read-only. The same tool call ID is idempotent. A queued input waits for the child's current turn; interrupted children require explicit recovery.".to_owned(),
             parameters: json!({"type":"object","properties":{"agent_id":{"type":"string","minLength":1,"maxLength":128},"prompt":{"type":"string","minLength":1,"maxLength":16384}},"required":["agent_id","prompt"],"additionalProperties":false}),
         },
         ToolDefinition {
@@ -776,7 +786,8 @@ impl ToolExecutor for SubagentToolExecutor {
 
     fn definitions(&self) -> Vec<ToolDefinition> {
         let mut definitions = self.base.definitions();
-        definitions.extend(coordination_definitions());
+        definitions.extend(coordination_definitions().into_iter().filter(|definition|
+            self.delegation_enabled || !matches!(definition.name.as_str(), "spawn_agent" | "send_input")));
         definitions
     }
 
@@ -804,6 +815,9 @@ impl ToolExecutor for SubagentToolExecutor {
     ) -> Result<ToolOutput, AgentError> {
         if context.cancel.is_cancelled() {
             return Err(AgentError::Cancelled);
+        }
+        if !self.delegation_enabled && matches!(call.name.as_str(), "spawn_agent" | "send_input") {
+            return Ok(ToolOutput::error("New subagent delegation is disabled in Settings"));
         }
         match call.name.as_str() {
             "spawn_agent" => self.spawn_agent(call, context),
@@ -1143,6 +1157,99 @@ mod tests {
         // Its saved record says so too, which is what recovery reads.
         let record = fixture.tools.child_for_call_id("call-explorer").unwrap().unwrap();
         assert_eq!(record.session.id, explorer["agent_id"].as_str().unwrap());
+    }
+
+    #[tokio::test]
+    async fn readonly_roles_remain_plan_on_followup_after_store_reopen() {
+        for role in ["explorer", "reviewer"] {
+            let fixture = fixture_with_tools(4, Duration::from_millis(10), LocalTools::new().with_write_access(true));
+            let context = context(&fixture.workspace);
+            let spawned = json_output(fixture.tools.execute(&call("readonly", "spawn_agent", json!({"prompt":"inspect source", "role":role})), &context).await.unwrap());
+            let id = spawned["agent_id"].as_str().unwrap();
+            let wait = call("wait", "wait_agent", json!({"agent_id":id,"timeout_ms":3000}));
+            assert_eq!(json_output(fixture.tools.execute(&wait, &context).await.unwrap())["status"], "completed");
+            fixture.tools.shutdown().await.unwrap();
+            // Reconstruct from disk and host configuration, without retaining a role map.
+            let sessions = Arc::new(SessionStore::open(fixture._root.path().join("sessions")).unwrap());
+            let coordinator = Arc::new(SubagentCoordinator::new(sessions.clone(), SubagentLimits::default()).unwrap());
+            let worker = SubagentWorker::new(coordinator.clone(), sessions.clone(), fixture.model.clone(), fixture.tools.base.clone(), "fixture", "https://fixture.example/v1");
+            assert_eq!(worker.follow_up_mode(id).unwrap(), TurnMode::Plan);
+            let tools = SubagentToolExecutor::new(fixture.tools.base.clone(), worker, coordinator, sessions.clone(), fixture.parent_lease.clone(), SubagentToolLimits { max_tasks:4 }).unwrap();
+            let input = call("continue-readonly", "send_input", json!({"agent_id":id,"prompt":"inspect another file"}));
+            json_output(tools.execute(&input, &context).await.unwrap());
+            assert_eq!(json_output(tools.execute(&wait, &context).await.unwrap())["status"], "completed");
+            assert_eq!(fixture.model.calls.load(Ordering::SeqCst), 2);
+            for offered in fixture.model.tools.lock().unwrap().iter() {
+                assert!(offered.iter().any(|name| name == "read_file"), "{offered:?}");
+                for denied in ["write_file", "run_command", "apply_patch", "spawn_agent", "send_input"] {
+                    assert!(!offered.iter().any(|name| name == denied), "{role}: {offered:?}");
+                }
+            }
+            let stored = sessions.load(id).unwrap().unwrap();
+            let modes = stored.events.iter().filter_map(|event| match event.kind { AgentEventKind::TurnAdmitted { mode, .. } => Some(mode), _ => None }).collect::<Vec<_>>();
+            assert_eq!(modes, vec![TurnMode::Plan, TurnMode::Plan]);
+            tools.shutdown().await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn ready_followup_uses_committed_spawn_authority_and_rejects_prompt_impersonation() {
+        let mut fixture = fixture_with_tools(4, Duration::from_millis(10), LocalTools::new().with_write_access(true));
+        fixture.tools.worker = fixture.tools.worker.clone().with_system_instructions("Frozen project");
+        let context = context(&fixture.workspace);
+        let spawn_call = call("ready-readonly", "spawn_agent", json!({"prompt":"inspect source", "role":"reviewer"}));
+        let spawn_id = SubagentToolExecutor::spawn_id(&spawn_call.id).unwrap();
+        let (prompt, mode) = crate::subagent_roles::resolve("inspect source", Some("reviewer")).unwrap();
+        let child = fixture.tools.worker.prepare_child(&fixture.parent_lease, &spawn_id, &prompt, mode).unwrap();
+        let id = &child.session.id;
+        let followup = call("ready-input", "send_input", json!({"agent_id":id,"prompt":"continue"}));
+        assert!(fixture.tools.execute(&followup, &context).await.unwrap().is_error);
+        assert_eq!(fixture.coordinator.open_input_count_for_ui(id).unwrap(), 0);
+        let sessions = &fixture.tools.sessions;
+        let admission = sessions.admit_native_turn(&fixture.parent.id, "parent-turn", "parent", fixture.model.model_id(), TurnMode::Build).unwrap();
+        let kinds = [
+            AgentEventKind::SystemInstructionsCommitted { version:openide_core::SYSTEM_INSTRUCTIONS_VERSION, digest:openide_core::system_instructions_digest("Frozen project").unwrap(), content:"Frozen project".into() },
+            AgentEventKind::ModelResponseCommitted { step:1, assistant:AgentMessage::assistant("", vec![spawn_call.clone()]), response_id:None, usage:None },
+            AgentEventKind::ToolStarted { tool_call:spawn_call },
+        ];
+        for (index, kind) in kinds.into_iter().enumerate() {
+            sessions.append_native_event(&openide_core::AgentEvent::new(&fixture.parent.id, admission.sequence + index as u64 + 1, kind)).unwrap();
+        }
+        assert_eq!(fixture.tools.worker.follow_up_mode(id).unwrap(), TurnMode::Plan);
+        json_output(fixture.tools.execute(&followup, &context).await.unwrap());
+        assert_eq!(fixture.coordinator.open_input_count_for_ui(id).unwrap(), 1);
+        let control = fixture.coordinator.issue_control(&fixture.parent_lease).unwrap();
+        fixture.tools.worker.run_prepared(control, id.clone(), spawn_id, prompt, mode, CancellationToken::new()).await.unwrap();
+        let wait = call("wait-ready", "wait_agent", json!({"agent_id":id,"timeout_ms":3000}));
+        assert_eq!(json_output(fixture.tools.execute(&wait, &context).await.unwrap())["status"], "completed");
+        assert_eq!(fixture.model.calls.load(Ordering::SeqCst), 2);
+        assert!(fixture.model.tools.lock().unwrap().iter().all(|tools| !tools.iter().any(|name| name == "write_file")));
+        fixture.tools.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn disabling_delegation_preserves_wait_and_cancel_but_rejects_new_work() {
+        let fixture = fixture(4, Duration::from_secs(5));
+        let context = context(&fixture.workspace);
+        let spawned = json_output(fixture.tools.execute(&call("active", "spawn_agent", json!({"prompt":"work"})), &context).await.unwrap());
+        let id = spawned["agent_id"].as_str().unwrap();
+        tokio::time::timeout(Duration::from_secs(3), async { while fixture.model.calls.load(Ordering::SeqCst) == 0 { tokio::time::sleep(Duration::from_millis(5)).await; } }).await.unwrap();
+        let tools = fixture.tools.with_delegation_enabled(false);
+        let names = tools.definitions().into_iter().map(|definition| definition.name).collect::<Vec<_>>();
+        assert!(!names.iter().any(|name| name == "spawn_agent" || name == "send_input"));
+        assert!(names.iter().any(|name| name == "wait_agent") && names.iter().any(|name| name == "cancel_agent"));
+        for new in [call("denied-spawn", "spawn_agent", json!({"prompt":"new task"})), call("denied-input", "send_input", json!({"agent_id":id,"prompt":"new input"}))] {
+            assert!(tools.execute(&new, &context).await.unwrap().is_error);
+            let (output, _receiver) = crate::tool_output::tool_output_channel(context.cancel.clone());
+            assert!(tools.execute_streaming(&new, &context, output).await.unwrap().is_error);
+        }
+        assert_eq!(fixture.coordinator.list_children(&fixture.parent_lease).unwrap().len(), 1);
+        assert_eq!(fixture.coordinator.open_input_count_for_ui(id).unwrap(), 0);
+        json_output(tools.execute(&call("cancel", "cancel_agent", json!({"agent_id":id})), &context).await.unwrap());
+        let waited = json_output(tools.execute(&call("wait", "wait_agent", json!({"agent_id":id,"timeout_ms":3000})), &context).await.unwrap());
+        assert_eq!(waited["status"], "cancelled");
+        assert_eq!(fixture.model.calls.load(Ordering::SeqCst), 1);
+        tools.shutdown().await.unwrap();
     }
 
     #[tokio::test]
@@ -1576,6 +1683,11 @@ mod tests {
                 .await
                 .unwrap(),
         );
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while fixture.model.calls.load(Ordering::SeqCst) == 0 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        }).await.unwrap();
         let child_id = spawned["agent_id"].as_str().unwrap();
         let input = call(
             "input-follow-up",

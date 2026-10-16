@@ -19,6 +19,8 @@ pub(crate) struct Prefs {
     pub tab_width: usize,
     pub use_tabs: bool,
     pub auto_pairs: bool,
+    #[serde(flatten)]
+    pub view: ViewOptions,
     /// Exact workspace identity → language name → executable, never shell code.
     /// The language host validates/launches an override only after an explicit
     /// user request; loading preferences does not execute anything.
@@ -33,7 +35,57 @@ impl Default for Prefs {
             tab_width: 4,
             use_tabs: false,
             auto_pairs: true,
+            view: ViewOptions::default(),
             server_executables: BTreeMap::new(),
+        }
+    }
+}
+
+/// How every code editor looks and what saving does, beyond wrap and minimap.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default)]
+pub(crate) struct ViewOptions {
+    pub line_numbers: bool,
+    pub indent_guides: bool,
+    pub highlight_current_line: bool,
+    pub show_whitespace: bool,
+    /// Column of the one ruler; 0 draws none.
+    pub ruler: usize,
+    pub caret: Caret,
+    pub caret_blink: bool,
+    pub trim_on_save: bool,
+}
+
+impl Default for ViewOptions {
+    fn default() -> Self {
+        Self {
+            line_numbers: true,
+            indent_guides: true,
+            highlight_current_line: true,
+            show_whitespace: false,
+            ruler: 0,
+            caret: Caret::Line,
+            caret_blink: true,
+            trim_on_save: false,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Caret {
+    #[default]
+    Line,
+    Block,
+    Underline,
+}
+
+impl Caret {
+    pub fn style(self) -> openide_ui::CaretStyle {
+        match self {
+            Self::Line => openide_ui::CaretStyle::Line,
+            Self::Block => openide_ui::CaretStyle::Block,
+            Self::Underline => openide_ui::CaretStyle::Underline,
         }
     }
 }
@@ -73,6 +125,9 @@ impl Prefs {
     fn validate(&self) -> Result<(), String> {
         if !(1..=16).contains(&self.tab_width) {
             return Err("El ancho de tabulación debe estar entre 1 y 16.".into());
+        }
+        if self.view.ruler > 1024 {
+            return Err("La regla debe estar en una columna entre 1 y 1024.".into());
         }
         if self.server_executables.len() > 128 {
             return Err("Hay demasiadas configuraciones de servidores de lenguaje.".into());
@@ -331,6 +386,33 @@ mod tests {
         };
         assert!(writer.submit(invalid).is_err());
         assert_eq!(fs::read(path).unwrap(), before);
+    }
+
+    #[test]
+    fn view_options_round_trip_and_files_without_them_keep_todays_look() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("editor.json");
+        fs::write(&path, br#"{"version":1,"soft_wrap":true}"#).unwrap();
+        let old = Prefs::load(&path);
+        assert!(old.soft_wrap);
+        assert_eq!(old.view, ViewOptions::default());
+        let prefs = Prefs {
+            view: ViewOptions {
+                line_numbers: false,
+                show_whitespace: true,
+                ruler: 100,
+                caret: Caret::Underline,
+                caret_blink: false,
+                trim_on_save: true,
+                ..ViewOptions::default()
+            },
+            ..Prefs::default()
+        };
+        save(&path, &prefs).unwrap();
+        assert!(fs::read_to_string(&path).unwrap().contains(r#""caret": "underline""#));
+        assert_eq!(Prefs::load(&path), prefs);
+        fs::write(&path, br#"{"version":1,"ruler":5000}"#).unwrap();
+        assert_eq!(Prefs::load(&path), Prefs::default());
     }
 
     #[test]

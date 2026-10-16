@@ -188,20 +188,27 @@ fn filters_narrow_the_groups_by_state_category_and_text() {
     state.category = Some("Documentación".into());
     let groups = catalog_groups(&state);
     assert!(!groups.is_empty());
-    assert!(groups.iter().flat_map(|group| &group.items).all(|item| {
-        crate::marketplace::starter_category(&item.id) == Some("Documentación")
-    }));
+    assert!(
+        groups.iter().flat_map(|group| &group.items).all(|item| {
+            crate::marketplace::starter_category(&item.id) == Some("Documentación")
+        })
+    );
 
     state.category = None;
     state.explore.page = None;
     state.query = "  FRONTEND-design ".into();
     let groups = catalog_groups(&state);
-    assert_eq!(groups.iter().map(|group| group.items.len()).sum::<usize>(), 1);
+    assert_eq!(
+        groups.iter().map(|group| group.items.len()).sum::<usize>(),
+        1
+    );
     state.query = "anthropic".into();
-    assert!(catalog_groups(&state)
-        .iter()
-        .flat_map(|group| &group.items)
-        .all(|item| item.source_name.contains("Anthropic")));
+    assert!(
+        catalog_groups(&state)
+            .iter()
+            .flat_map(|group| &group.items)
+            .all(|item| item.source_name.contains("Anthropic"))
+    );
 }
 
 #[test]
@@ -217,7 +224,8 @@ fn a_group_builds_one_step_of_rows_and_offers_the_rest() {
             .count()
     };
     // A scroll area reports no regions for rows out of view: lay it out tall.
-    let tall = |state: &MarketplaceViewState| layout(list_sized(state, 320.0, 3000.0), 320.0, 3000.0);
+    let tall =
+        |state: &MarketplaceViewState| layout(list_sized(state, 320.0, 3000.0), 320.0, 3000.0);
     let frame = tall(&state);
     assert_eq!(rows(&frame), GROUP_STEP);
     assert!(says(
@@ -226,7 +234,12 @@ fn a_group_builds_one_step_of_rows_and_offers_the_rest() {
     ));
     // The header counts every match, not only the rows built.
     assert!(says(&frame, &starters.to_string()));
-    assert!(!frame.regions.iter().any(|region| region.id.contains("page")));
+    assert!(
+        !frame
+            .regions
+            .iter()
+            .any(|region| region.id.contains("page"))
+    );
 
     state.visible += GROUP_STEP;
     let frame = tall(&state);
@@ -237,14 +250,20 @@ fn a_group_builds_one_step_of_rows_and_offers_the_rest() {
 #[test]
 fn a_row_says_what_the_item_is_and_keeps_its_action_in_place() {
     let mut state = sample_state();
-    state
-        .snapshot
-        .items
-        .push(skill("source-1:installed", "installed-skill", Some(InstallScope::Workspace)));
+    state.snapshot.items.push(skill(
+        "source-1:installed",
+        "installed-skill",
+        Some(InstallScope::Workspace),
+    ));
     let mut tree = UiTree::new(list(&state, 300.0));
     tree.set_reduced_motion(true);
     let frame = tree.layout(Size::new(300.0, 700.0));
-    for needle in ["git-review", "Review code changes", "team-skills · Carpeta local", "Proyecto"] {
+    for needle in [
+        "git-review",
+        "Review code changes",
+        "team-skills · Carpeta local",
+        "Proyecto",
+    ] {
         assert!(says(&frame, needle), "{needle}");
     }
     let available = rect(&frame, "marketplace_row_menu:source-1:git-review");
@@ -280,14 +299,21 @@ fn installing_from_a_row_asks_for_the_scope_and_states_what_is_verified() {
     // The first row: its menu is anchored inside the viewport.
     let first = state.snapshot.items[0].id.clone();
     let frame = layout(list(&state, 320.0), 320.0, 700.0);
-    assert!(!frame.regions.iter().any(|region| {
-        region.id.starts_with("marketplace_install")
-    }), "a row never installs with one click");
+    assert!(
+        !frame
+            .regions
+            .iter()
+            .any(|region| { region.id.starts_with("marketplace_install") }),
+        "a row never installs with one click"
+    );
 
     state.menu_item = Some(format!("row:{first}"));
     let frame = layout(list(&state, 320.0), 320.0, 700.0);
     assert!(has(&frame, &format!("marketplace_install_user:{first}")));
-    assert!(has(&frame, &format!("marketplace_install_workspace:{first}")));
+    assert!(has(
+        &frame,
+        &format!("marketplace_install_workspace:{first}")
+    ));
     assert!(says(&frame, "Instalar para el usuario"));
     assert!(says(&frame, "Instalar en este proyecto"));
     assert!(says(&frame, "SHA-256"));
@@ -365,7 +391,10 @@ fn the_list_is_honest_while_loading_failing_and_finding_nothing() {
         "a filter of installed skills offers no online search"
     );
 
-    state.snapshot.diagnostics.push("team-skills: carpeta no encontrada".into());
+    state
+        .snapshot
+        .diagnostics
+        .push("team-skills: carpeta no encontrada".into());
     state.filter = MarketplaceFilter::All;
     let frame = layout(list(&state, 300.0), 300.0, 700.0);
     assert!(says(&frame, "Un origen no se pudo leer"));
@@ -411,7 +440,7 @@ fn detail(state: &MarketplaceViewState, id: &str, width: f32) -> Frame {
 
 fn detail_sized(state: &MarketplaceViewState, id: &str, width: f32, height: f32) -> Frame {
     let item = state.find_item(id).unwrap();
-    layout(item_detail(state, &item, width, None), width, height)
+    layout(item_detail(state, &item, width, None, None), width, height)
 }
 
 #[test]
@@ -446,22 +475,30 @@ fn the_detail_installs_to_a_named_scope_and_says_what_installing_verifies() {
         }
     }
     state.install_scope = InstallScope::Workspace;
-    assert!(says(&detail(&state, FRONTEND, 900.0), "Instalar en este proyecto"));
+    assert!(says(
+        &detail(&state, FRONTEND, 900.0),
+        "Instalar en este proyecto"
+    ));
 
     state.menu_item = Some(format!("detail:{FRONTEND}"));
     let frame = detail(&state, FRONTEND, 900.0);
     assert!(has(&frame, &format!("marketplace_install_user:{FRONTEND}")));
-    assert!(has(&frame, &format!("marketplace_install_workspace:{FRONTEND}")));
+    assert!(has(
+        &frame,
+        &format!("marketplace_install_workspace:{FRONTEND}")
+    ));
 
     state.menu_item = None;
     state.busy = true;
     state.busy_item = Some(FRONTEND.into());
     let frame = detail(&state, FRONTEND, 900.0);
     assert!(says(&frame, "Instalando…"));
-    assert!(!frame
-        .regions
-        .iter()
-        .any(|region| region.id == install && region.kind == HitKind::Button));
+    assert!(
+        !frame
+            .regions
+            .iter()
+            .any(|region| region.id == install && region.kind == HitKind::Button)
+    );
 }
 
 #[test]
@@ -498,7 +535,12 @@ fn the_detail_of_an_installed_item_toggles_updates_and_removes_through_the_same_
     let frame = detail(&state, id, 900.0);
     assert!(!has(&frame, &format!("marketplace_install:{id}")));
     assert!(!says(&frame, "Antes de instalar"));
-    for needle in ["Instalada · Proyecto", "Activa", "Revisión instalada", "Desactivar"] {
+    for needle in [
+        "Instalada · Proyecto",
+        "Activa",
+        "Revisión instalada",
+        "Desactivar",
+    ] {
         assert!(says(&frame, needle), "{needle}");
     }
     assert!(!has(&frame, &format!("marketplace_details_update:{id}")));
@@ -511,7 +553,13 @@ fn the_detail_of_an_installed_item_toggles_updates_and_removes_through_the_same_
             available_revision: "b".repeat(40),
         },
     );
-    let mut tree = UiTree::new(item_detail(&state, &state.find_item(id).unwrap(), 900.0, None));
+    let mut tree = UiTree::new(item_detail(
+        &state,
+        &state.find_item(id).unwrap(),
+        900.0,
+        None,
+        None,
+    ));
     tree.set_reduced_motion(true);
     let frame = tree.layout(Size::new(900.0, 1200.0));
     assert!(says(&frame, "Actualización disponible"));
@@ -561,9 +609,14 @@ fn instructions_are_shown_when_on_disk_and_never_invented() {
     state.readme = readme(Some(Ok(None)));
     let frame = detail(&state, FRONTEND, 900.0);
     assert!(says(&frame, "Las instrucciones se descargan al instalar"));
-    assert!(has(&frame, &format!("marketplace_readme_source:{FRONTEND}")));
+    assert!(has(
+        &frame,
+        &format!("marketplace_readme_source:{FRONTEND}")
+    ));
 
-    state.readme = readme(Some(Ok(Some("## Steps\n\nRead the **diff** first.".into()))));
+    state.readme = readme(Some(Ok(Some(
+        "## Steps\n\nRead the **diff** first.".into(),
+    ))));
     let frame = detail(&state, FRONTEND, 900.0);
     assert!(says(&frame, "Steps"));
     assert!(says(&frame, "Read the"));
@@ -599,7 +652,7 @@ fn a_long_readme_is_cut_at_the_renderer_limit_and_says_so() {
 }
 
 #[test]
-fn the_landing_page_starts_and_manages_sources_without_repeating_the_list() {
+fn the_sources_page_manages_provenance_without_repeating_the_skills_catalog() {
     let mut state = starter_state();
     state.snapshot.sources.push(MarketplaceSource {
         id: "source-1".into(),
@@ -613,101 +666,334 @@ fn the_landing_page_starts_and_manages_sources_without_repeating_the_list() {
         .push("team-skills: carpeta no encontrada".into());
     state.snapshot.items[0].installed_scope = Some(InstallScope::User);
     state.snapshot.items[0].enabled = true;
-    for width in [360.0, 900.0] {
-        let frame = layout(
-            landing(&state, width, "marketplace_details:", Some(("Complementos", None))),
-            width,
-            1400.0,
-        );
-        let featured = frame
-            .regions
-            .iter()
-            .filter(|region| region.id.starts_with("marketplace_featured:"))
-            .count();
-        assert_eq!(featured, 6, "one per publisher at {width}");
+    for width in [280.0, 360.0, 900.0] {
+        let (context, mut tree) = crate::view::ide_visual_tests::native_tree(source_manager_body(&state, width));
+        let frame = tree.layout(Size::new(width, 1400.0));
         assert!(!frame.regions.iter().any(|region| {
-            region.id.starts_with("marketplace_row_menu:") || region.id == "marketplace_search"
+            region.id.starts_with("marketplace_featured:")
+                || region.id.starts_with("marketplace_details:")
+                || region.id.starts_with("marketplace_row_menu:")
+                || region.id == "marketplace_search"
         }));
-        for id in [
-            "marketplace_add_menu",
-            "marketplace_refresh",
-            "marketplace_check_updates",
-            "marketplace_remove_source:source-1",
-        ] {
-            assert!(has(&frame, id), "{id} at {width}");
-        }
+        assert!(!says(&frame, "Para empezar") && !says(&frame, "Instaladas"));
+        assert!(!has(&frame, "marketplace_check_updates"));
+        assert!(has(&frame, "marketplace_remove_source:source-1"));
+        assert!(!has(&frame, "marketplace_add_menu") && !has(&frame, "marketplace_refresh"));
         for needle in [
             "Catálogo recomendado",
             "skills.sh",
             "C:/team-skills",
             "carpeta no encontrada",
-            "1 de 1 activas",
         ] {
             assert!(says(&frame, needle), "{needle} at {width}");
         }
+        for region in &frame.regions {
+            assert!(
+                region.rect.x >= 0.0 && region.rect.x + region.rect.width <= width + 0.1,
+                "{} at {width}",
+                region.id
+            );
+        }
+        let labels = frame.text_layouts();
+        let title = labels
+            .iter()
+            .find(|block| block.source == "Catálogo recomendado")
+            .expect("source name wraps rather than losing its identity");
+        let visible = title
+            .runs
+            .iter()
+            .filter(|run| run.visible.is_some())
+            .map(|run| run.text.as_str())
+            .collect::<String>();
+        assert_eq!(
+            visible
+                .chars()
+                .filter(|ch| !ch.is_whitespace())
+                .collect::<String>(),
+            "Catálogorecomendado",
+            "full source name must remain readable at {width}"
+        );
+        for run in &title.runs {
+            assert!(run.rect.x >= 0.0 && run.rect.x + run.rect.width <= width + 0.1);
+            assert!(
+                run.visible
+                    .is_some_and(|visible| visible.height >= run.rect.height - 0.1)
+            );
+        }
+        context.end_pass().textures_delta.clear();
     }
-    // A featured card selects through the host's own route.
-    let mut tree = UiTree::new(landing(&state, 900.0, "ide_extension:", None));
+    // Source management retains the established refresh action.
+    state.sources_open = true;
+    let mut tree = UiTree::new(marketplace_page(&state, 900.0));
     tree.set_reduced_motion(true);
     let frame = tree.layout(Size::new(900.0, 1400.0));
-    let card = frame
-        .regions
-        .iter()
-        .find(|region| region.id.starts_with("marketplace_featured:"))
-        .unwrap();
-    let item = card.id.trim_start_matches("marketplace_featured:").to_owned();
-    let point = Point::new(card.rect.x + 20.0, card.rect.y + 20.0);
+    let refresh = rect(&frame, "marketplace_refresh");
+    let point = Point::new(
+        refresh.x + refresh.width / 2.0,
+        refresh.y + refresh.height / 2.0,
+    );
     tree.handle_event(UiEvent::PointerDown(point));
     assert_eq!(
         tree.handle_event(UiEvent::PointerUp(point)),
         vec![UiAction::Clicked {
-            id: format!("ide_extension:{item}")
+            id: "marketplace_refresh".into()
         }]
     );
 }
 
 #[test]
-fn the_standalone_page_is_the_same_list_beside_the_same_detail() {
+fn installed_skills_keep_their_update_check_in_the_catalog_toolbar() {
     let mut state = sample_state();
-    let id = "source-1:git-review";
-    let row = format!("marketplace_details:{id}");
-    let install = format!("marketplace_install:{id}");
+    assert!(!has(
+        &layout(list(&state, 320.0), 320.0, 700.0),
+        "marketplace_updates_check"
+    ));
+    state.snapshot.items[0].installed_scope = Some(InstallScope::User);
+    let mut tree = UiTree::new(list(&state, 320.0));
+    tree.set_reduced_motion(true);
+    let frame = tree.layout(Size::new(320.0, 700.0));
+    let check = rect(&frame, "marketplace_updates_check");
+    let point = Point::new(check.x + check.width / 2.0, check.y + check.height / 2.0);
+    tree.handle_event(UiEvent::PointerDown(point));
+    assert_eq!(
+        tree.handle_event(UiEvent::PointerUp(point)),
+        vec![UiAction::Clicked {
+            id: "marketplace_check_updates".into()
+        }]
+    );
+    assert!(tree.focus("marketplace_updates_check"));
+    assert_eq!(
+        tree.handle_event(UiEvent::Key {
+            key: Key::Enter,
+            shift: false,
+            ctrl: false
+        }),
+        vec![UiAction::Clicked {
+            id: "marketplace_check_updates".into()
+        }]
+    );
+    state.busy = true;
+    let mut disabled = UiTree::new(list(&state, 320.0));
+    disabled.set_reduced_motion(true);
+    let frame = disabled.layout(Size::new(320.0, 700.0));
+    assert!(
+        !frame.regions.iter().any(
+            |region| region.id == "marketplace_updates_check" && region.kind == HitKind::Button
+        )
+    );
+    assert!(
+        frame
+            .access
+            .iter()
+            .any(|node| node.id == "marketplace_updates_check"
+                && node.disabled
+                && !node.actionable)
+    );
+    disabled.handle_event(UiEvent::PointerDown(point));
+    assert!(disabled.handle_event(UiEvent::PointerUp(point)).is_empty());
+    assert!(!disabled.focus("marketplace_updates_check"));
+    assert!(
+        disabled
+            .handle_event(UiEvent::Key {
+                key: Key::Enter,
+                shift: false,
+                ctrl: false
+            })
+            .is_empty()
+    );
+}
 
-    let frame = layout(marketplace_page(&state, 1000.0), 1000.0, 800.0);
-    // Nothing selected: a skill to choose, and the way to the sources' tab,
-    // which is where they are listed.
-    for control in ["marketplace_search", "marketplace_add_menu", row.as_str(), "marketplace_tab:sources"] {
-        assert!(has(&frame, control), "{control}");
+#[test]
+fn the_catalog_fills_the_page_with_responsive_cards_and_opens_detail_in_place() {
+    let mut state = sample_state();
+    state.snapshot.items = (0..7)
+        .map(|index| skill(&format!("source-1:skill-{index}"), &format!("Skill {index}"), None))
+        .collect();
+    for (width, columns) in [(320.0, 1), (900.0, 2), (1400.0, 3)] {
+        let (context, mut tree) = crate::view::ide_visual_tests::native_tree(
+            marketplace_page(&state, width),
+        );
+        let frame = tree.layout(Size::new(width, 1200.0));
+        assert!(has(&frame, "marketplace_search"));
+        assert!(has(&frame, "marketplace_sources_open"));
+        assert!(!has(&frame, "marketplace_add_menu"));
+        assert!(!has(&frame, "marketplace_remove_source:source-1"));
+        assert!(!frame.access.iter().any(|node| node.role == openide_ui::Role::Tab));
+        let cards = (0..7)
+            .map(|index| rect(&frame, &format!("marketplace_details:source-1:skill-{index}")))
+            .collect::<Vec<_>>();
+        assert_eq!(cards.iter().filter(|card| (card.y - cards[0].y).abs() < 0.1).count(), columns);
+        assert!(cards[columns].y > cards[0].y + cards[0].height);
+        for card in &cards {
+            assert!(card.x >= 0.0 && card.x + card.width <= width + 0.1);
+        }
+        let first = cards[0];
+        let point = Point::new(first.x + first.width / 2.0, first.y + first.height / 2.0);
+        tree.handle_event(UiEvent::PointerDown(point));
+        assert_eq!(tree.handle_event(UiEvent::PointerUp(point)), vec![UiAction::Clicked {
+            id: "marketplace_details:source-1:skill-0".into(),
+        }]);
+        context.end_pass().textures_delta.clear();
+
+        let mut selected = state.clone();
+        selected.selected_item_id = Some("source-1:skill-0".into());
+        let frame = layout(marketplace_page(&selected, width), width, 1200.0);
+        assert!(has(&frame, "marketplace_install:source-1:skill-0"));
+        assert!(has(&frame, "marketplace_details_close"));
+        assert!(says(&frame, "Volver al catálogo"));
+        assert!(!has(&frame, "marketplace_search"));
+        assert!(!has(&frame, "marketplace_details:source-1:skill-0"));
     }
-    assert!(!has(&frame, &install) && !has(&frame, "marketplace_remove_source:source-1"));
-    let sources = layout(landing(&state, 1000.0, "marketplace_details:", None), 1000.0, 800.0);
-    assert!(has(&sources, "marketplace_remove_source:source-1"));
+}
 
-    state.selected_item_id = Some(id.into());
-    let frame = layout(marketplace_page(&state, 1000.0), 1000.0, 800.0);
-    assert!(has(&frame, &row) && has(&frame, &install));
-    let list = rect(&frame, &row);
-    let detail = rect(&frame, &install);
-    assert!(list.x + list.width < detail.x, "list and detail side by side");
-    // The landing, with the sources and the updates, stays one click away.
-    assert!(has(&frame, "marketplace_details_close"));
+#[test]
+fn the_sources_modal_traps_focus_and_returns_it_to_catalog_or_detail() {
+    for width in [320.0, 900.0] {
+        for selected in [false, true] {
+            let mut state = sample_state();
+            state.selected_item_id = selected.then(|| "source-1:git-review".into());
+            let size = Size::new(width, 800.0);
+            let root = marketplace_page_with_navigation(&state, width,
+                Some(crate::view::sidebar_reopen_control(theme::BACKGROUND)));
+            let (context, mut tree) = crate::view::ide_visual_tests::native_tree(root);
+            let frame = tree.layout(size);
+            assert!(has(&frame, "toggle_sidebar_reopen"));
+            for id in ["toggle_sidebar_reopen", "marketplace_sources_open"] {
+                let target = rect(&frame, id);
+                assert!(target.x >= 0.0 && target.x + target.width <= width + 0.1);
+            }
+            assert!(tree.focus("marketplace_sources_open"));
+            assert_eq!(tree.handle_event(UiEvent::Key {
+                key: Key::Enter, shift: false, ctrl: false,
+            }), vec![UiAction::Clicked { id: "marketplace_sources_open".into() }]);
+            state.sources_open = true;
+            tree.set_root(marketplace_page(&state, width));
+            let frame = tree.layout(size);
+            assert!(frame.access.iter().any(|node| node.id == "marketplace_sources_close:dialog"
+                && node.role == openide_ui::Role::Dialog));
+            assert_eq!(tree.focused_id(), Some("marketplace_add_menu"));
+            // focus() is an explicit host override. Real keyboard navigation
+            // must cycle within the dialog, and Enter may activate only its controls.
+            let allowed = [
+                ("marketplace_sources_close:close", "marketplace_sources_close"),
+                ("marketplace_remove_source:source-1", "marketplace_remove_source:source-1"),
+                ("marketplace_refresh", "marketplace_refresh"),
+                ("marketplace_add_menu", "marketplace_add_menu"),
+            ];
+            let mut visited = std::collections::BTreeSet::new();
+            for reverse in [false, true] {
+                for _ in 0..allowed.len() * 2 {
+                    assert!(tree.handle_event(UiEvent::Key {
+                        key: Key::Tab, shift: reverse, ctrl: false,
+                    }).is_empty());
+                    let focused = tree.focused_id().expect("modal keeps keyboard focus");
+                    let (id, action) = allowed.iter().find(|(id, _)| *id == focused)
+                        .unwrap_or_else(|| panic!("focus escaped the modal to {focused}"));
+                    visited.insert(*id);
+                    assert_eq!(tree.handle_event(UiEvent::Key {
+                        key: Key::Enter, shift: false, ctrl: false,
+                    }), vec![UiAction::Clicked { id: (*action).into() }]);
+                }
+            }
+            assert_eq!(visited.len(), allowed.len());
+            let opener = rect(&frame, "marketplace_sources_open");
+            let point = Point::new(opener.x + opener.width / 2.0, opener.y + opener.height / 2.0);
+            let mut actions = tree.handle_event(UiEvent::PointerDown(point));
+            actions.extend(tree.handle_event(UiEvent::PointerUp(point)));
+            assert_eq!(actions, vec![UiAction::Clicked { id: "marketplace_sources_close".into() }],
+                "the backdrop consumes the click over the covered opener");
+            assert_eq!(tree.handle_event(UiEvent::Key {
+                key: Key::Escape, shift: false, ctrl: false,
+            }), vec![UiAction::Clicked { id: "marketplace_sources_close".into() }]);
+            state.sources_open = false;
+            tree.set_root(marketplace_page(&state, width));
+            tree.layout(size);
+            assert_eq!(tree.focused_id(), Some("marketplace_sources_open"));
+            context.end_pass().textures_delta.clear();
+        }
+    }
+}
 
-    // Too narrow for both: the detail with a way back, then the list.
-    let frame = layout(marketplace_page(&state, 420.0), 420.0, 800.0);
-    assert!(has(&frame, &install) && !has(&frame, &row));
-    assert!(has(&frame, "marketplace_details_close"));
-    state.selected_item_id = None;
-    let frame = layout(marketplace_page(&state, 420.0), 420.0, 800.0);
-    assert!(has(&frame, &row) && has(&frame, "marketplace_search"));
-    assert!(has(&frame, "marketplace_remove_source:source-1"));
-    for region in &frame.regions {
-        assert!(region.rect.x + region.rect.width <= 420.01, "{}", region.id);
+#[test]
+fn source_management_remains_dismissible_while_a_refresh_is_running() {
+    let state = MarketplaceViewState { sources_open: true, busy: true, ..sample_state() };
+    let mut tree = UiTree::new(marketplace_page(&state, 900.0));
+    tree.set_reduced_motion(true);
+    let frame = tree.layout(Size::new(900.0, 700.0));
+    assert_eq!(tree.focused_id(), Some("marketplace_sources_close:close"));
+    assert!(frame.access.iter().any(|node| node.id == "marketplace_add_menu" && node.disabled));
+    assert_eq!(tree.handle_event(UiEvent::Key {
+        key: Key::Escape, shift: false, ctrl: false,
+    }), vec![UiAction::Clicked { id: "marketplace_sources_close".into() }]);
+}
+
+#[test]
+fn the_full_catalog_keeps_each_group_bounded_and_its_more_action() {
+    let mut state = sample_state();
+    state.snapshot.items = (0..100)
+        .map(|index| skill(&format!("source-1:skill-{index}"), &format!("Skill {index}"), None))
+        .collect();
+    state.visible_by.insert("sources".into(), 3);
+    let frame = layout(marketplace_page(&state, 1400.0), 1400.0, 900.0);
+    for index in 0..3 {
+        assert!(has(&frame, &format!("marketplace_details:source-1:skill-{index}")));
+    }
+    assert!(!has(&frame, "marketplace_details:source-1:skill-3"));
+    assert!(has(&frame, "marketplace_more:sources"));
+    assert!(says(&frame, "Mostrar más (97 restantes)"));
+}
+
+#[test]
+fn catalog_navigation_and_source_controls_fit_narrow_and_wide_panes() {
+    let mut state = sample_state();
+    for width in [320.0, 900.0, 1400.0] {
+        let root = marketplace_page_with_navigation(&state, width,
+            Some(crate::view::sidebar_reopen_control(theme::BACKGROUND)));
+        let (context, mut tree) = crate::view::ide_visual_tests::native_tree(root);
+        let frame = tree.layout(Size::new(width, 800.0));
+        let opener = rect(&frame, "marketplace_sources_open");
+        assert!(opener.x >= 0.0 && opener.x + opener.width <= width + 0.1);
+        assert!(tree.focus("marketplace_sources_open"));
+        assert_eq!(tree.handle_event(UiEvent::Key {
+            key: Key::Enter, shift: false, ctrl: false,
+        }), vec![UiAction::Clicked { id: "marketplace_sources_open".into() }]);
+        state.sources_open = true;
+        tree.set_root(marketplace_page(&state, width));
+        let frame = tree.layout(Size::new(width, 800.0));
+        for id in ["marketplace_sources_close:close", "marketplace_refresh", "marketplace_add_menu"] {
+            let target = rect(&frame, id);
+            assert!(target.x >= 0.0 && target.x + target.width <= width + 0.1, "{id} at {width}");
+        }
+        state.sources_open = false;
+        context.end_pass().textures_delta.clear();
+    }
+}
+
+#[test]
+fn the_ide_empty_detail_does_not_repeat_the_catalog_or_source_manager() {
+    let state = sample_state();
+    for width in [320.0, 900.0] {
+        let root = detail_or_landing(&state, width, "marketplace_details:", None, None);
+        let (context, mut tree) = crate::view::ide_visual_tests::native_tree(root);
+        let frame = tree.layout(Size::new(width, 600.0));
+        assert!(says(&frame, "Elegí una skill de la lista"));
+        assert!(says(&frame, "Consulta sus instrucciones, procedencia y opciones de instalación."));
+        assert!(!has(&frame, "marketplace_search"));
+        assert!(!has(&frame, "marketplace_sources_open"));
+        assert!(!frame.regions.iter().any(|region| region.id.starts_with("marketplace_details:")));
+        for block in frame.text_layouts() {
+            for run in &block.runs {
+                assert!(run.rect.x >= 0.0 && run.rect.x + run.rect.width <= width + 0.1);
+            }
+        }
+        context.end_pass().textures_delta.clear();
     }
 }
 
 #[test]
 fn source_form_only_submits_a_selected_nonempty_location() {
     let mut state = MarketplaceViewState {
+        sources_open: true,
         add_menu_open: true,
         ..Default::default()
     };
@@ -763,6 +1049,7 @@ fn source_notice_keeps_modal_submit_and_cancel_actions_reachable() {
 #[test]
 fn the_source_modal_takes_focus_closes_with_escape_and_returns_it() {
     let mut state = sample_state();
+    state.sources_open = true;
     state.add_menu_open = true;
     let mut tree = UiTree::new(marketplace_page(&state, 920.0));
     tree.set_reduced_motion(true);
@@ -806,275 +1093,178 @@ fn offline_starter_details_reveal_provenance_without_installing_or_adding_source
     assert!(says(&frame, "LICENSE.txt"));
     let after = store.snapshot().unwrap();
     assert!(after.sources.is_empty());
-    assert!(after.items.iter().all(|item| item.installed_scope.is_none()));
+    assert!(
+        after
+            .items
+            .iter()
+            .all(|item| item.installed_scope.is_none())
+    );
     assert!(!root.path().join("data/marketplace/installed").exists());
 }
 
 #[test]
-#[ignore = "export the extensions list, detail, landing and pages for manual visual review"]
+#[ignore = "export six native Marketplace states for manual visual review"]
 fn export_marketplace_visual_review() {
-    let output = std::path::PathBuf::from(format!(
-        "{}/../../docs/ui-separation/shots/extensions-panel",
-        env!("CARGO_MANIFEST_DIR")
-    ));
+    let output = std::env::var_os("OPENIDE_MARKETPLACE_VISUAL_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(format!(
+            "{}/../../docs/ui-separation/shots/extensions-panel", env!("CARGO_MANIFEST_DIR")
+        )));
     std::fs::create_dir_all(&output).unwrap();
-    let save = |root: Element, width: f32, height: f32, name: &str| {
+    for (width, phase) in [(320.0, "catalog"), (900.0, "catalog"), (1400.0, "catalog"),
+        (320.0, "sources"), (900.0, "detail"), (1400.0, "installed")] {
+        let mut state = starter_state();
+        for index in [0, 5, 9] {
+            state.snapshot.items[index].installed_scope = Some(InstallScope::User);
+            state.snapshot.items[index].enabled = index != 9;
+        }
+        if phase == "sources" {
+            state.sources_open = true;
+            state.snapshot.sources.push(MarketplaceSource {
+                id: "source-1".into(), name: "team-skills".into(),
+                location: "/workspace/team-skills".into(), kind: SourceKind::Local,
+            });
+        } else if phase == "detail" {
+            state.selected_item_id = Some(FRONTEND.into());
+            state.readme = Some(MarketplaceReadme { item_id: FRONTEND.into(),
+                body: Some(Ok(Some("# Frontend design\n\nCreate an interface with a deliberate visual identity.\n\n## Workflow\n\n1. Read the brief.\n2. Build the interface.\n3. Check it at narrow and wide widths.".into()))),
+            });
+        } else if phase == "installed" {
+            state.filter = MarketplaceFilter::Installed;
+        }
+        let height = 900.0;
+        let root = Element::panel(marketplace_page(&state, width)).background(theme::BACKGROUND);
         let (context, mut tree) = crate::view::ide_visual_tests::native_tree(root);
         let frame = tree.layout(Size::new(width, height));
-        let path = output.join(format!("{name}.svg"));
-        crate::settings_ui::visual_qa::write_native_frame_svg(&frame, &path, width, height)
-            .unwrap();
-        let parsed = resvg::usvg::Tree::from_str(
-            &std::fs::read_to_string(&path).unwrap(),
-            &crate::settings_ui::visual_qa::native_svg_options(),
-        )
-        .unwrap();
+        let path = output.join(format!("marketplace-{width:.0}-{phase}.svg"));
+        crate::settings_ui::visual_qa::write_native_frame_svg(&frame, &path, width, height).unwrap();
+        let parsed = resvg::usvg::Tree::from_str(&std::fs::read_to_string(&path).unwrap(),
+            &crate::settings_ui::visual_qa::native_svg_options()).unwrap();
         let mut pixels = resvg::tiny_skia::Pixmap::new(width as u32, height as u32).unwrap();
-        resvg::render(
-            &parsed,
-            resvg::tiny_skia::Transform::identity(),
-            &mut pixels.as_mut(),
-        );
+        resvg::render(&parsed, resvg::tiny_skia::Transform::identity(), &mut pixels.as_mut());
         pixels.save_png(path.with_extension("png")).unwrap();
         std::fs::remove_file(path).unwrap();
         context.end_pass().textures_delta.clear();
-    };
-    let update = |state: &mut MarketplaceViewState, id: &str| {
-        state.updates.insert(
-            id.into(),
-            SkillUpdate {
-                item_id: id.into(),
-                installed_revision: Some("a".repeat(40)),
-                available_revision: "b".repeat(40),
-            },
-        );
-    };
-    // A catalog with three installed skills, one outdated and one inactive.
-    let populated = || {
-        let mut state = starter_state();
-        for (index, scope) in [(0, InstallScope::User), (5, InstallScope::Workspace), (9, InstallScope::User)] {
-            state.snapshot.items[index].installed_scope = Some(scope);
-            state.snapshot.items[index].enabled = index != 9;
-        }
-        let outdated = state.snapshot.items[5].id.clone();
-        update(&mut state, &outdated);
-        state.updates_checked = true;
-        state
-    };
-    let readme = "# Frontend design\n\nUse this skill when the user asks for an interface with a deliberate visual identity.\n\n## When to use\n\n- A landing page, dashboard or component needs a point of view.\n- The request names a mood, a brand or a reference.\n\n## Steps\n\n1. Read the brief and name the **tone** in one sentence.\n2. Choose a type scale and a palette before any layout.\n3. Build the layout with real content.\n\n```css\n:root { --ink: #111; --accent: #c4513a; }\n```\n\n> Avoid defaults: system fonts, centered hero, purple gradients.\n\nSee [the guidelines](https://github.com/anthropics/skills) for examples.\n";
-    let sidebar = |state: &MarketplaceViewState, width: f32| {
-        let mut view = crate::view::ide_visual_tests::fixture();
-        view.ide.extensions_open = true;
-        view.marketplace = state.clone();
-        Element::panel(crate::view::ide_activity_ui::extensions_sidebar(&view, width, 720.0))
-            .background(theme::SIDEBAR)
-    };
-    for width in [280.0, 420.0] {
-        let mut state = populated();
-        state.selected_item_id = Some(FRONTEND.into());
-        save(sidebar(&state, width), width, 720.0, &format!("list-{width:.0}-default"));
-        state.query = "azure".into();
-        save(sidebar(&state, width), width, 720.0, &format!("list-{width:.0}-searching"));
-        state.explore = remote_state().explore;
-        state.query = "quality".into();
-        save(sidebar(&state, width), width, 720.0, &format!("list-{width:.0}-skills-sh"));
-        let mut state = populated();
-        state.filter = MarketplaceFilter::Installed;
-        save(sidebar(&state, width), width, 720.0, &format!("list-{width:.0}-installed"));
-        state.menu_item = Some(format!("row:{}", state.snapshot.items[5].id));
-        save(sidebar(&state, width), width, 720.0, &format!("list-{width:.0}-manage-menu"));
-        let mut state = populated();
-        state.menu_item = Some(format!("row:{}", state.snapshot.items[1].id));
-        save(sidebar(&state, width), width, 720.0, &format!("list-{width:.0}-install-menu"));
-        let loading = MarketplaceViewState {
-            busy: true,
-            ..Default::default()
-        };
-        save(sidebar(&loading, width), width, 720.0, &format!("list-{width:.0}-loading"));
-        let failed = MarketplaceViewState {
-            status: Some("Registro del marketplace inválido: EOF while parsing".into()),
-            status_error: true,
-            ..Default::default()
-        };
-        save(sidebar(&failed, width), width, 720.0, &format!("list-{width:.0}-error"));
-        let mut state = populated();
-        state.query = "kubernetes".into();
-        save(sidebar(&state, width), width, 720.0, &format!("list-{width:.0}-empty"));
-        state.explore.query = "kubernetes".into();
-        state.explore.error = Some("No se pudo conectar con skills.sh. Intenta de nuevo.".into());
-        save(sidebar(&state, width), width, 720.0, &format!("list-{width:.0}-offline"));
-    }
-    let page = |state: &MarketplaceViewState, width: f32| {
-        Element::panel(detail_or_landing(
-            state,
-            width,
-            "marketplace_details:",
-            Some(("Complementos", None)),
-            None,
-        ))
-        .background(theme::BACKGROUND)
-    };
-    for width in [360.0, 900.0] {
-        let mut state = populated();
-        state.selected_item_id = Some(FRONTEND.into());
-        state.snapshot.items.iter_mut().find(|item| item.id == FRONTEND).unwrap().installed_scope = None;
-        state.readme = Some(MarketplaceReadme { item_id: FRONTEND.into(), body: Some(Ok(None)) });
-        save(page(&state, width), width, 900.0, &format!("detail-{width:.0}-not-installed"));
-        state.busy = true;
-        state.busy_item = Some(FRONTEND.into());
-        save(page(&state, width), width, 900.0, &format!("detail-{width:.0}-installing"));
-        state.busy = false;
-        state.busy_item = None;
-        state.menu_item = Some(format!("detail:{FRONTEND}"));
-        save(page(&state, width), width, 900.0, &format!("detail-{width:.0}-scope-menu"));
-        state.menu_item = None;
-        let item = state.snapshot.items.iter_mut().find(|item| item.id == FRONTEND).unwrap();
-        item.installed_scope = Some(InstallScope::User);
-        item.enabled = true;
-        update(&mut state, FRONTEND);
-        state.readme = Some(MarketplaceReadme { item_id: FRONTEND.into(), body: Some(Ok(Some(readme.into()))) });
-        save(page(&state, width), width, 900.0, &format!("detail-{width:.0}-installed"));
-        state.readme = Some(MarketplaceReadme {
-            item_id: FRONTEND.into(),
-            body: Some(Ok(Some(readme.repeat(40)))),
-        });
-        save(page(&state, width), width, 1600.0, &format!("detail-{width:.0}-long-readme"));
-        let mut remote = remote_state();
-        remote.selected_item_id = Some(REMOTE.into());
-        remote.readme = Some(MarketplaceReadme { item_id: REMOTE.into(), body: Some(Ok(None)) });
-        save(page(&remote, width), width, 900.0, &format!("detail-{width:.0}-skills-sh"));
-        let mut state = populated();
-        state.snapshot.sources.push(MarketplaceSource {
-            id: "source-1".into(),
-            name: "vercel-labs/skills".into(),
-            location: "https://github.com/vercel-labs/skills.git".into(),
-            kind: SourceKind::Github,
-        });
-        state.snapshot.sources.push(MarketplaceSource {
-            id: "source-2".into(),
-            name: "team-skills".into(),
-            location: "/home/dev/team-skills".into(),
-            kind: SourceKind::Local,
-        });
-        state.snapshot.diagnostics.push("team-skills: No such file or directory (os error 2)".into());
-        save(page(&state, width), width, 900.0, &format!("landing-{width:.0}"));
-    }
-    for width in [420.0, 1000.0, 1440.0] {
-        let mut state = populated();
-        save(
-            Element::panel(marketplace_page(&state, width)).background(theme::BACKGROUND),
-            width,
-            860.0,
-            &format!("page-{width:.0}-landing"),
-        );
-        state.selected_item_id = Some(FRONTEND.into());
-        state.readme = Some(MarketplaceReadme { item_id: FRONTEND.into(), body: Some(Ok(Some(readme.into()))) });
-        save(
-            Element::panel(marketplace_page(&state, width)).background(theme::BACKGROUND),
-            width,
-            860.0,
-            &format!("page-{width:.0}-detail"),
-        );
-        state.selected_item_id = None;
-        state.add_source_kind = Some(SourceKind::Github);
-        save(
-            Element::panel(marketplace_page(&state, width)).background(theme::BACKGROUND),
-            width,
-            860.0,
-            &format!("page-{width:.0}-add-source"),
-        );
-    }
-    for (width, sidebar_open, phase) in [
-        (1440.0, true, "detail"),
-        (1440.0, true, "landing"),
-        (1440.0, true, "installed"),
-        (1000.0, true, "detail"),
-        (1440.0, false, "detail"),
-    ] {
-        let mut state = crate::view::ide_visual_tests::fixture();
-        state.ide.activity = crate::ide_workspace::IdeActivity::Extensions;
-        state.ide.explorer_open = sidebar_open;
-        state.ide.agent_open = false;
-        state.ide.extensions_open = true;
-        state.marketplace = populated();
-        if phase != "landing" {
-            let id = if phase == "installed" {
-                state.marketplace.snapshot.items[5].id.clone()
-            } else {
-                FRONTEND.to_owned()
-            };
-            state.marketplace.readme = Some(MarketplaceReadme {
-                item_id: id.clone(),
-                body: Some(if phase == "installed" { Ok(Some(readme.into())) } else { Ok(None) }),
-            });
-            if phase == "detail" {
-                state.marketplace.snapshot.items.iter_mut().find(|item| item.id == id).unwrap().installed_scope = None;
-            }
-            state.marketplace.selected_item_id = Some(id);
-        }
-        save(
-            crate::view::build_window_view(&state, width, 900.0),
-            width,
-            900.0,
-            &format!("ide-{width:.0}-{phase}{}", if sidebar_open { "" } else { "-no-sidebar" }),
-        );
     }
 }
 
 #[test]
-fn the_section_holds_skills_plugins_mcp_and_sources_a_tab_each() {
-    use crate::marketplace_view::MarketplaceTab;
+fn marketplace_is_a_catalog_and_management_remains_in_settings() {
     use crate::settings_ui::SettingsPage;
     let mut state = crate::view::tests::empty_state();
     state.main_page = crate::view::MainPage::Marketplace;
+    state.marketplace = sample_state();
     let size = Size::new(1200.0, 800.0);
-    let has = |state: &crate::view::ViewState, id: &str| {
-        UiTree::new(crate::view::build_view_sized(state, size.width, size.height)).layout(size).regions.iter().any(|region| region.id == id)
-    };
-    for key in ["skills", "plugins", "mcp", "sources"] {
-        assert!(has(&state, &format!("marketplace_tab:{key}")), "{key}");
-    }
-    // Each tab is its own page; the ones Settings also holds work here too.
-    assert!(has(&state, "marketplace_search") && !has(&state, "mcp_new"));
+    let frame = layout(crate::view::build_view_sized(&state, size.width, size.height), size.width, size.height);
+    assert!(has(&frame, "marketplace_search"));
+    assert!(has(&frame, "marketplace_sources_open"));
+    assert!(!frame.regions.iter().any(|region| region.id.starts_with("marketplace_tab:")));
+    assert!(!has(&frame, "mcp_new") && !has(&frame, "plugins_refresh"));
     assert!(!state.shows(SettingsPage::Mcp) && !state.shows(SettingsPage::Plugins));
-    state.marketplace.tab = MarketplaceTab::Mcp;
-    assert!(has(&state, "mcp_new") && !has(&state, "marketplace_search"));
-    assert!(state.shows(SettingsPage::Mcp) && !state.shows(SettingsPage::Plugins));
-    state.marketplace.tab = MarketplaceTab::Plugins;
-    assert!(has(&state, "plugins_refresh") || has(&state, "plugins_pick_folder") || state.shows(SettingsPage::Plugins));
-    assert!(state.shows(SettingsPage::Plugins));
-    // In Settings, the page in view there is the one that counts.
     state.show_settings = true;
     state.settings_page = SettingsPage::Mcp;
     assert!(state.shows(SettingsPage::Mcp) && !state.shows(SettingsPage::Plugins));
+    state.settings_page = SettingsPage::Plugins;
+    assert!(state.shows(SettingsPage::Plugins) && !state.shows(SettingsPage::Mcp));
 }
 
 #[test]
-fn appearance_offers_the_three_themes_as_cards_and_marks_the_one_in_use() {
+fn appearance_offers_built_in_and_local_themes_in_one_native_selector() {
     use crate::settings_ui::SettingsPage;
     let mut state = crate::view::tests::empty_state();
     state.show_settings = true;
     state.settings_page = SettingsPage::Appearance;
+    let local = crate::custom_theme::CustomTheme::new(
+        "Tema local",
+        crate::custom_theme::ThemeAppearance::Dark,
+    );
+    state.appearance.active_custom_theme = Some(local.id.clone());
+    state.appearance.custom_themes.push(local.clone());
     let size = Size::new(1200.0, 800.0);
-    let frame = UiTree::new(crate::view::build_view_sized(&state, size.width, size.height)).layout(size);
-    for theme in ["system", "light", "dark"] {
-        assert!(has(&frame, &format!("settings_theme:{theme}")), "{theme}");
-    }
-    let said: Vec<&str> = frame
-        .commands
-        .iter()
-        .filter_map(|command| match command {
-            openide_ui::DrawCommand::Text { text, .. } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect();
-    // Dark is what the window is until a choice is saved.
-    assert_eq!(said.iter().filter(|text| **text == "Activo").count(), 1, "{said:?}");
-    for name in ["Sistema", "Claro", "Oscuro"] {
-        assert!(said.contains(&name), "{name}");
-    }
-}
+    let trigger = "settings_choice_toggle:appearance_theme_selection";
+    let mut tree = UiTree::new(crate::view::build_view_sized(
+        &state,
+        size.width,
+        size.height,
+    ));
+    tree.set_reduced_motion(true);
+    let frame = tree.layout(size);
+    assert!(has(&frame, trigger));
+    assert!(
+        !has(&frame, "settings_theme:dark"),
+        "closed selectors hide their options"
+    );
+    let said = frame.access.iter().find(|node| node.id == trigger).unwrap();
+    assert_eq!(said.role, openide_ui::Role::ComboBox);
+    assert_eq!(said.name, "Tema");
+    assert_eq!(said.expanded, Some(false));
+    assert!(
+        said.value_text
+            .as_deref()
+            .is_some_and(|label| !label.is_empty())
+    );
+    assert!(tree.focus(trigger));
+    assert_eq!(
+        tree.handle_event(UiEvent::Key {
+            key: Key::Enter,
+            shift: false,
+            ctrl: false
+        }),
+        vec![UiAction::Clicked { id: trigger.into() }],
+    );
 
+    state.settings_choice_menu_open = Some("appearance_theme_selection".into());
+    tree.set_root(crate::view::build_view_sized(
+        &state,
+        size.width,
+        size.height,
+    ));
+    let frame = tree.layout(size);
+    let local_action = format!("appearance_theme_apply:{}", local.id);
+    for action in [
+        "settings_theme:system",
+        "settings_theme:light",
+        "settings_theme:dark",
+        "settings_theme:high_contrast_light",
+        "settings_theme:high_contrast_dark",
+        local_action.as_str(),
+    ] {
+        assert!(has(&frame, action), "missing option {action}");
+        assert!(
+            tree.focus(action),
+            "option {action} must accept keyboard focus"
+        );
+    }
+    for name in [
+        "Sistema",
+        "Claro",
+        "Oscuro",
+        "Claro con contraste",
+        "Oscuro con contraste",
+        "Tema local · Personalizado",
+    ] {
+        assert!(says(&frame, name), "missing label {name}");
+    }
+    let selected = frame
+        .access
+        .iter()
+        .filter(|node| {
+            node.selected == Some(true)
+                && (node.id.starts_with("settings_theme:") || node.id == local_action)
+        })
+        .count();
+    assert_eq!(selected, 1, "the menu must mark exactly the active theme");
+    assert_eq!(
+        tree.handle_event(UiEvent::Key {
+            key: Key::Escape,
+            shift: false,
+            ctrl: false
+        }),
+        vec![UiAction::Clicked {
+            id: "settings_choice_dismiss".into()
+        }],
+    );
+}
 
 #[test]
 fn settings_are_found_by_what_a_row_does_and_the_editor_has_its_page() {
@@ -1083,21 +1273,60 @@ fn settings_are_found_by_what_a_row_does_and_the_editor_has_its_page() {
     state.show_settings = true;
     let size = Size::new(1200.0, 800.0);
     let shown = |state: &crate::view::ViewState, id: &str| {
-        has(&UiTree::new(crate::view::build_view_sized(state, size.width, size.height)).layout(size), id)
+        has(
+            &UiTree::new(crate::view::build_view_sized(
+                state,
+                size.width,
+                size.height,
+            ))
+            .layout(size),
+            id,
+        )
     };
     // A word of a row, in either language, finds the page that holds it.
-    for (query, page) in [("idioma", "appearance"), ("language", "appearance"), ("minimapa", "editor"), ("sandbox", "agent")] {
+    for (query, page) in [
+        ("idioma", "appearance"),
+        ("language", "appearance"),
+        ("minimapa", "editor"),
+        ("sandbox", "agent"),
+    ] {
         state.settings_nav_query = query.into();
         assert!(shown(&state, &format!("settings_page:{page}")), "{query}");
         assert!(!shown(&state, "settings_page:terminal"), "{query}");
     }
     state.settings_nav_query.clear();
     state.settings_page = SettingsPage::Editor;
-    for control in ["editor_wrap", "editor_minimap", "editor_pairs", "editor_indent_kind", "editor_indent_width"] {
-        assert!(shown(&state, control), "{control}");
+    // The page is taller than the window: its controls are on its first or last screen.
+    let mut editor = UiTree::new(crate::view::build_view_sized(&state, size.width, size.height));
+    editor.set_reduced_motion(true);
+    let top = editor.layout(size);
+    editor.scroll_to_end("settings_page:Editor");
+    let bottom = editor.layout(size);
+    for control in [
+        "editor_wrap",
+        "editor_minimap",
+        "editor_view:line_numbers",
+        "editor_view:ruler",
+        "editor_view:caret",
+        "editor_view:trim_on_save",
+        "editor_pairs",
+        "editor_indent_kind",
+        "editor_indent_width",
+    ] {
+        assert!(has(&top, control) || has(&bottom, control), "{control}");
     }
     state.settings_page = SettingsPage::Appearance;
-    assert!(shown(&state, "settings_language:es") && shown(&state, "settings_language:en"));
+    let mut appearance = UiTree::new(crate::view::build_view_sized(
+        &state,
+        size.width,
+        size.height,
+    ));
+    appearance.set_reduced_motion(true);
+    appearance.layout(size);
+    appearance.scroll_to_end("settings_page:Appearance");
+    let frame = appearance.layout(size);
+    assert!(has(&frame, "settings_language:es") && has(&frame, "settings_language:en"));
+    assert!(appearance.focus("settings_language:es") && appearance.focus("settings_language:en"));
     state.settings_page = SettingsPage::Data;
     assert!(shown(&state, "settings_open_data_folder"));
 }

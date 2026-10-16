@@ -110,6 +110,19 @@ garantía frente a reemplazos concurrentes después de la validación.
 
 ## Presentación
 
+Crear y editar una tarea abre un modal sobre toda la ventana, con tres pasos:
+tarea, horario y agente. El listado y el historial quedan detrás del modal;
+el ancho de la ventana no cambia este flujo. Cada paso valida sus campos antes
+de continuar y sólo el último guarda la definición. Cancelar, salir de la
+sección o cambiar de proyecto descarta el borrador sin escribirlo en el store.
+
+La hora usa un campo compacto `HH:MM`. El calendario y los selectores de motor
+y modelo se abren al usarlos. El modelo se busca entre las rutas nativas
+seleccionables; se conserva su ID original al filtrar. Una edición que mantiene
+la fecha y hora visibles de una tarea de una sola vez conserva también los
+segundos y milisegundos de su programación original, aunque ya haya terminado.
+Editar un intervalo conserva su ancla mediante el store existente.
+
 La sesión muestra origen, ruta registrada y perfil de lectura. Conserva
 detener una ejecución activa, recuperación y **Nueva tarea nativa**; no presenta
 composer de mensajes ni steering. Memoria deshabilita la edición de goals y

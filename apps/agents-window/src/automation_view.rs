@@ -5,9 +5,10 @@
 use chrono::{Datelike, Local, TimeZone};
 use openide_ui::{
     Alert, AlertTone, Button, ButtonGroup, ButtonVariant, Card, CardGrid, Component, ControlSize,
-    DateTimePicker, Element, Empty, FontFamily, FormField, Icon, IconButton,
-    Modal, PageColumn, PageHeader, SearchField, Separator, Step, Stepper, Switch, Tab, Tabs, Text, TextArea,
-    TextField, TextRole, TimePicker, Tooltip, TooltipPlacement, TooltipSpec,
+    DatePicker, DropdownMenu, DropdownMenuEntry, DropdownOption, Element, Empty, FontFamily,
+    FormField, Icon, IconButton, Modal, PageColumn, PageHeader, SearchField, Select, SelectVariant,
+    Separator, Step, Stepper, Switch, Tab, Tabs, Text, TextArea, TextField, TextRole, Tooltip,
+    TooltipPlacement, TooltipSpec,
 };
 
 use crate::{
@@ -258,9 +259,31 @@ impl AutomationForm {
 
     fn parsed_schedule(&self, now_ms: i64) -> Result<AutomationSchedule, AutomationError> {
         let schedule = match self.frequency {
-            AutomationFrequency::Once => AutomationSchedule::Once {
-                at_ms: parse_local_once(&self.once_at)?,
-            },
+            AutomationFrequency::Once => {
+                // Editing the title must preserve seconds/milliseconds (and
+                // an already completed one-off) omitted by the local field.
+                let kept = self
+                    .kept_schedule
+                    .as_ref()
+                    .and_then(|schedule| match schedule {
+                        AutomationSchedule::Once { at_ms }
+                            if Local.timestamp_millis_opt(*at_ms).single().is_some_and(
+                                |time| {
+                                    time.format("%Y-%m-%d %H:%M").to_string() == self.once_at.trim()
+                                },
+                            ) =>
+                        {
+                            Some(*at_ms)
+                        }
+                        _ => None,
+                    });
+                AutomationSchedule::Once {
+                    at_ms: match kept {
+                        Some(at_ms) => at_ms,
+                        None => parse_local_once(&self.once_at)?,
+                    },
+                }
+            }
             AutomationFrequency::EveryMinutes => AutomationSchedule::EveryMinutes {
                 interval: self.interval_minutes.trim().parse().map_err(|_| {
                     AutomationError::Invalid(
@@ -277,15 +300,25 @@ impl AutomationForm {
                 let (hour, minute) = parse_time(&self.time)?;
                 // One day keeps the shape tasks have always been saved in.
                 if self.weekdays.count_ones() == 1 {
-                    AutomationSchedule::Weekly { weekday: self.weekdays.trailing_zeros() as u8, hour, minute }
+                    AutomationSchedule::Weekly {
+                        weekday: self.weekdays.trailing_zeros() as u8,
+                        hour,
+                        minute,
+                    }
                 } else {
-                    AutomationSchedule::Weekdays { days: self.weekdays, hour, minute }
+                    AutomationSchedule::Weekdays {
+                        days: self.weekdays,
+                        hour,
+                        minute,
+                    }
                 }
             }
             AutomationFrequency::Monthly => {
                 let (hour, minute) = parse_time(&self.time)?;
                 let day = self.month_day.trim().parse().map_err(|_| {
-                    AutomationError::Invalid("El día del mes debe ser un número del 1 al 31".to_owned())
+                    AutomationError::Invalid(
+                        "El día del mes debe ser un número del 1 al 31".to_owned(),
+                    )
                 })?;
                 AutomationSchedule::Monthly { day, hour, minute }
             }
@@ -376,6 +409,9 @@ pub struct AutomationViewState {
     pub selected_id: Option<String>,
     pub form: AutomationForm,
     pub editor_step: AutomationEditorStep,
+    /// The editor's controlled selector, never an expanded inline list.
+    pub editor_menu: Option<String>,
+    pub model_query: String,
     pub calendar_year: i32,
     pub calendar_month: u32,
     pub filter: AutomationFilter,
@@ -414,6 +450,8 @@ impl AutomationViewState {
             selected_id: None,
             form: AutomationForm::new(backend),
             editor_step: AutomationEditorStep::Content,
+            editor_menu: None,
+            model_query: String::new(),
             calendar_year: today.year(),
             calendar_month: today.month(),
             filter: AutomationFilter::All,
@@ -442,6 +480,8 @@ impl AutomationViewState {
         self.form = form;
         self.selected_id = selected_id;
         self.editor_step = AutomationEditorStep::Content;
+        self.editor_menu = None;
+        self.model_query.clear();
         self.screen = AutomationScreen::Edit;
         self.error = None;
     }
@@ -960,25 +1000,65 @@ fn frequency_control(form: &AutomationForm, available_width: f32) -> Element {
     }
 }
 
+fn time_field(id: &str, value: &str, label: &str) -> Element {
+    TextField::new(id, value, "09:00", theme::control_palette())
+        .icon(Icon::Clock)
+        .accessibility_label(label)
+        .size(ControlSize::Regular)
+        .width(144.0)
+        .render()
+}
+
+fn date_selector(state: &AutomationViewState) -> Element {
+    let date = state.form.once_parts().0;
+    let trigger = "automation_choice_toggle:date";
+    let calendar = DatePicker::new("automation_once_date", date, theme::component_palette())
+        .display_month(state.calendar_year, state.calendar_month)
+        .accessibility_label("Fecha de ejecución")
+        .render();
+    DropdownMenu::new(
+        Button::new(
+            trigger,
+            if date.is_empty() {
+                "Elegir fecha"
+            } else {
+                date
+            },
+            theme::component_palette(),
+        )
+        .variant(ButtonVariant::Outline)
+        .trailing_icon(Icon::ChevronDown)
+        .size(ControlSize::Regular)
+        .width(172.0)
+        .accessibility_label("Fecha de ejecución")
+        .render(),
+        vec![DropdownMenuEntry::custom(calendar)],
+        state.editor_menu.as_deref() == Some("date"),
+        "automation_choice_dismiss",
+        theme::menu_palette(),
+    )
+    .context_menu_style()
+    .width(264.0)
+    .render()
+    .popover_initial_focus("automation_once_date")
+    .popover_return_focus(trigger)
+}
+
 fn schedule_editor(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
     let form = &state.form;
     let field = |label: &str, control: Element| form_field(label, control).rows();
-    // The track has always stopped 26 px short of the form; see the ledger.
-    let mut rows = field("Frecuencia", frequency_control(form, content_width - 26.0));
+    let mut rows = field("Frecuencia", frequency_control(form, content_width));
     match form.frequency {
         AutomationFrequency::Once => {
-            let (date, time) = form.once_parts();
-            rows.push(
-                DateTimePicker::new(
-                    "automation_once_date",
+            rows.extend(field("Fecha local", date_selector(state)));
+            rows.extend(field(
+                "Hora local",
+                time_field(
                     "automation_once_time",
-                    date,
-                    time,
-                    theme::component_palette(),
-                )
-                .display_month(state.calendar_year, state.calendar_month)
-                .render(),
-            );
+                    form.once_parts().1,
+                    "Hora de ejecución",
+                ),
+            ));
         }
         AutomationFrequency::EveryMinutes => rows.extend(field(
             "Cada cuántos minutos",
@@ -986,23 +1066,32 @@ fn schedule_editor(state: &AutomationViewState, content_width: f32) -> Vec<Eleme
                 "automation_interval",
                 &form.interval_minutes,
                 "60",
-                theme::component_palette(),
+                theme::control_palette(),
             )
             .size(ControlSize::Regular)
+            .width(144.0)
             .render(),
         )),
         AutomationFrequency::Daily => rows.extend(field(
             "Hora local",
-            TimePicker::new("automation_time", &form.time, theme::component_palette()).render(),
+            time_field("automation_time", &form.time, "Hora local"),
         )),
         AutomationFrequency::Weekly => {
-            let days = ["L", "M", "X", "J", "V", "S", "D"];
+            let days = [
+                ("L", "Lunes"),
+                ("M", "Martes"),
+                ("X", "Miércoles"),
+                ("J", "Jueves"),
+                ("V", "Viernes"),
+                ("S", "Sábado"),
+                ("D", "Domingo"),
+            ];
             rows.extend(field(
                 "Días de la semana",
                 Element::row(
                     days.into_iter()
                         .enumerate()
-                        .map(|(index, day)| {
+                        .map(|(index, (day, label))| {
                             let selected = form.weekdays & (1 << index) != 0;
                             Button::new(
                                 format!("automation_weekday:{index}"),
@@ -1015,7 +1104,8 @@ fn schedule_editor(state: &AutomationViewState, content_width: f32) -> Vec<Eleme
                                 ButtonVariant::Ghost
                             })
                             .size(ControlSize::Compact)
-                            .width(((content_width - 26.0 - 24.0) / 7.0).max(28.0))
+                            .width(((content_width - 24.0) / 7.0).max(28.0))
+                            .accessibility_label(label)
                             .active(selected)
                             .render()
                         })
@@ -1024,125 +1114,173 @@ fn schedule_editor(state: &AutomationViewState, content_width: f32) -> Vec<Eleme
                 .gap(4.0),
             ));
             rows.push(
-                Button::new("automation_weekdays_work", "Días hábiles", theme::component_palette())
-                    .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Compact)
-                    .render(),
+                Button::new(
+                    "automation_weekdays_work",
+                    "Días hábiles",
+                    theme::component_palette(),
+                )
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Compact)
+                .render(),
             );
             rows.extend(field(
                 "Hora local",
-                TimePicker::new("automation_time", &form.time, theme::component_palette()).render(),
+                time_field("automation_time", &form.time, "Hora local"),
             ));
         }
         AutomationFrequency::Monthly => {
             rows.extend(field(
                 "Día del mes",
-                TextField::new("automation_month_day", &form.month_day, "1", theme::component_palette())
-                    .size(ControlSize::Regular)
-                    .render(),
+                TextField::new(
+                    "automation_month_day",
+                    &form.month_day,
+                    "1",
+                    theme::control_palette(),
+                )
+                .size(ControlSize::Regular)
+                .width(144.0)
+                .render(),
             ));
             rows.extend(field(
                 "Hora local",
-                TimePicker::new("automation_time", &form.time, theme::component_palette()).render(),
+                time_field("automation_time", &form.time, "Hora local"),
             ));
         }
     }
+    rows.push(
+        Text::new(
+            "Se usa la zona horaria local de este equipo. La hora se escribe como HH:MM.",
+            theme::component_palette(),
+        )
+        .role(TextRole::Small)
+        .muted()
+        .render(),
+    );
     rows
 }
 
 fn editor_agent_step(state: &AutomationViewState, content_width: f32) -> Element {
-    let backend_controls = if state.backends.is_empty() {
-        Text::new(
-            "No hay agentes disponibles para programar tareas.",
-            theme::component_palette(),
-        )
-        .muted()
-        .render()
-    } else {
-        let backend_options: Vec<_> = state
+    let palette = theme::control_palette();
+    let trigger_width = content_width.min(360.0);
+    let menu_width = trigger_width;
+    let backend_label = state
+        .backends
+        .iter()
+        .find(|(id, _)| *id == state.form.backend)
+        .map(|(_, label)| label.as_str())
+        .unwrap_or("Agente no disponible");
+    let backend = Select::new(
+        "automation_choice_toggle:backend",
+        backend_label,
+        state
             .backends
             .iter()
             .map(|(id, title)| {
-                Button::new(
-                    format!("automation_backend:{id}"),
-                    title,
-                    theme::component_palette(),
-                )
-                .variant(if state.form.backend == *id {
-                    ButtonVariant::Secondary
-                } else {
-                    ButtonVariant::Ghost
-                })
-                .size(ControlSize::Compact)
-                .active(state.form.backend == *id)
-                .render()
+                DropdownOption::new(format!("automation_backend:{id}"), title)
+                    .selected(*id == state.form.backend)
             })
-            .collect();
-        if content_width < 430.0 && backend_options.len() > 2 {
-            Element::column(backend_options).gap(4.0)
-        } else {
-            Element::row(backend_options).gap(4.0)
-        }
-    };
-    // With a single way to run a task there is nothing to choose.
-    let mut backend_rows = if state.backends.len() == 1 {
-        vec![section_label("Modelo del agente")]
-    } else {
-        vec![
-            section_label("Motor del agente"),
-            Text::new(
-                "Elige quién iniciará cada ejecución.",
-                theme::component_palette(),
-            )
-            .muted()
-            .render(),
-            backend_controls,
-        ]
-    };
+            .collect(),
+        state.editor_menu.as_deref() == Some("backend"),
+        "automation_choice_dismiss",
+        palette,
+    )
+    .variant(SelectVariant::Field)
+    .size(ControlSize::Regular)
+    .accessibility_label("Motor del agente")
+    .width(trigger_width)
+    .menu_width(menu_width)
+    .enabled(state.backends.len() > 1)
+    .menu_palette(theme::menu_palette())
+    .render()
+    .popover_return_focus("automation_choice_toggle:backend");
+    let mut rows = form_field("Motor del agente", backend).rows();
     if state.form.backend == "native" {
-        let selected = state
+        let chosen = state
             .form
             .native_provider
             .as_ref()
-            .map(|settings| format!("{} · {}", settings.provider_id, settings.model_id))
-            .unwrap_or_else(|| "Configuración nativa actual".to_owned());
-        backend_rows.push(
-            Text::new(
-                format!("Modelo de esta tarea: {selected}"),
-                theme::component_palette(),
-            )
-            .muted()
-            .render(),
-        );
-        backend_rows.push(
-            Button::new(
-                "automation_native_current",
-                "Usar modelo actual de Settings",
-                theme::component_palette(),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Regular)
-            .render(),
-        );
-        // Or any other the connected providers offer, kept with the task.
-        if !state.models.is_empty() {
-            let chosen = state.form.native_provider.as_ref().map(|settings| (settings.provider_id.as_str(), settings.model_id.as_str()));
-            let models = state.models.clone();
-            let picked: Vec<bool> = models.iter().map(|(provider, model, _)| chosen == Some((provider.as_str(), model.as_str()))).collect();
-            let width = content_width;
-            backend_rows.push(
-                openide_ui::ScrollArea::uniform_list("automation_models", models.len(), 30.0, move |index| {
-                    openide_ui::ListRow::new(format!("automation_model:{index}"), &models[index].2, theme::component_palette())
-                        .trailing_icon(if picked[index] { Icon::Check } else { Icon::ChevronRight })
-                        .width(width - 8.0)
-                        .render()
-                })
-                .render()
-                .size(Some(content_width), Some((state.models.len() as f32 * 30.0).min(150.0))),
+            .map(|settings| (settings.provider_id.as_str(), settings.model_id.as_str()));
+        let selected = state
+            .models
+            .iter()
+            .find(|(provider, model, _)| chosen == Some((provider.as_str(), model.as_str())))
+            .map(|(_, _, label)| label.clone())
+            .unwrap_or_else(|| {
+                state
+                    .form
+                    .native_provider
+                    .as_ref()
+                    .map(|settings| format!("{} · {}", settings.provider_id, settings.model_id))
+                    .unwrap_or_else(|| "Modelo actual de Settings".into())
+            });
+        let query = state.model_query.trim().to_lowercase();
+        let mut options = Vec::new();
+        if query.is_empty() || "usar modelo actual de settings".contains(&query) {
+            options.push(
+                DropdownOption::new(
+                    "automation_native_current",
+                    "Usar modelo actual de Settings",
+                )
+                .selected(chosen.is_none()),
             );
         }
+        options.extend(
+            state
+                .models
+                .iter()
+                .enumerate()
+                .filter(|(_, (provider, model, label))| {
+                    query.is_empty()
+                        || format!("{provider} {model} {label}")
+                            .to_lowercase()
+                            .contains(&query)
+                })
+                .map(|(index, (provider, model, label))| {
+                    DropdownOption::new(format!("automation_model:{index}"), label)
+                        .selected(chosen == Some((provider.as_str(), model.as_str())))
+                }),
+        );
+        if options.is_empty() {
+            options.push(
+                DropdownOption::new("automation_model_empty", "No hay modelos que coincidan")
+                    .enabled(false),
+            );
+        }
+        let model = Select::new(
+            "automation_choice_toggle:model",
+            selected,
+            options,
+            state.editor_menu.as_deref() == Some("model"),
+            "automation_choice_dismiss",
+            palette,
+        )
+        .variant(SelectVariant::Field)
+        .size(ControlSize::Regular)
+        .accessibility_label("Modelo del agente")
+        .width(trigger_width)
+        .menu_width(menu_width)
+        .menu_palette(theme::menu_palette())
+        .header(
+            SearchField::new(
+                "automation_model_query",
+                &state.model_query,
+                "Buscar modelos",
+                palette,
+            )
+            .size(ControlSize::Compact)
+            .width((menu_width - 16.0).max(0.0))
+            .render(),
+        )
+        .render()
+        .popover_initial_focus("automation_model_query")
+        .popover_return_focus("automation_choice_toggle:model");
+        rows.extend(
+            form_field("Modelo del agente", model)
+                .hint("Se guarda el proveedor y el modelo elegidos con esta tarea.")
+                .rows(),
+        );
     } else {
-        backend_rows.push(
+        rows.push(
             Text::new(
                 "Se usa la CLI detectada en PATH para este equipo.",
                 theme::component_palette(),
@@ -1151,7 +1289,7 @@ fn editor_agent_step(state: &AutomationViewState, content_width: f32) -> Element
             .render(),
         );
     }
-    Element::column(backend_rows)
+    Element::column(rows)
         .gap(10.0)
         .size(Some(content_width), None)
 }
@@ -1161,32 +1299,31 @@ fn content_fields(state: &AutomationViewState) -> Vec<Element> {
     let mut rows = Vec::new();
     rows.extend(
         form_field(
-        "Título",
-        TextField::new(
-            "automation_title",
-            &state.form.title,
-            "Ej. Resumen diario",
-            theme::component_palette(),
+            "Título",
+            TextField::new(
+                "automation_title",
+                &state.form.title,
+                "Ej. Resumen diario",
+                theme::component_palette(),
+            )
+            .size(ControlSize::Regular)
+            .render(),
         )
-        .size(ControlSize::Regular)
-        .render(),
-    )
-    .rows(),
+        .rows(),
     );
-    rows.extend(
-        form_field(
-        "Instrucciones",
-        TextArea::new(
-            "automation_prompt",
-            &state.form.prompt,
-            "Describe el resultado esperado y los límites de esta tarea…",
-            theme::component_palette(),
-        )
-        .height(112.0)
-        .render(),
+    let instructions = TextArea::new(
+        "automation_prompt",
+        &state.form.prompt,
+        "Describe el resultado esperado y los límites de esta tarea…",
+        theme::component_palette(),
     )
-    .hint("Nadie aprueba nada durante una ejecución: el agente nativo sólo lee el proyecto, y a un agente externo se le niega lo que pediría permiso.")
-    .rows(),
+    .height(112.0)
+    .render();
+    let approval_note = "Nadie aprueba nada durante una ejecución: el agente nativo solo lee el proyecto y un agente externo no recibe los permisos que pida.";
+    rows.extend(
+        form_field("Instrucciones", instructions)
+            .hint(approval_note)
+            .rows(),
     );
     rows
 }
@@ -1213,14 +1350,11 @@ pub fn editor_modal_body(state: &AutomationViewState, width: f32) -> Element {
 fn editor_modal_layout(state: &AutomationViewState, width: f32, form: Element) -> Element {
     let stepper = Stepper::new(
         vec![
-            Step::new("automation_step:content", "Contenido")
-                .description("Define la tarea")
+            Step::new("automation_step:content", "Tarea")
                 .icon(Icon::Text),
             Step::new("automation_step:schedule", "Horario")
-                .description("Elige cuándo")
                 .icon(Icon::Clock),
             Step::new("automation_step:agent", "Agente")
-                .description("Quién la ejecuta")
                 .icon(Icon::Settings),
         ],
         state.editor_step.index(),
@@ -1629,96 +1763,42 @@ fn list_pane(state: &AutomationViewState, width: f32) -> Vec<Element> {
 /// The task in view, all of it at once: what it does, when, who runs it,
 /// and under them what its runs left.
 fn detail_pane(state: &AutomationViewState, width: f32) -> Vec<Element> {
-    let grid = || CardGrid::new(width, 690.0);
-    match state.screen {
-        AutomationScreen::History => history_page(state, width),
-        AutomationScreen::List => vec![
-            Empty::new(
-                if state.items.is_empty() { "Todavía no hay tareas programadas" } else { "Elegí una tarea de la lista" },
-                "Crea una tarea recurrente o empieza desde una plantilla.",
-                theme::component_palette(),
-            )
-            .icon(Icon::Clock)
-            .action("automation_new", "Crear tarea programada", ButtonVariant::Default)
-            .compact()
-            .width(width)
-            .height(188.0)
-            .render(),
-            Separator::horizontal(theme::component_palette()).render(),
-            section_label("Plantillas de tareas programadas"),
-            grid().items(TEMPLATES.iter().map(|template| template_card(template, grid().item_width())).collect()).render(),
-        ],
-        AutomationScreen::Edit => {
-            let existing = state.selected();
-            let mut header = vec![Element::truncated_text(match existing {
-                Some(item) => item.title.as_str(),
-                None => "Nueva tarea programada",
-            })
-            .font_family(FontFamily::Sans)
-            .font_size(22.0)
-            .foreground(theme::FOREGROUND)
-            .centered_y()
-            .flex(1.0)];
-            if let Some(item) = existing {
-                let busy = state.busy_ids.contains(&item.id);
-                let toggle_id = format!("automation_toggle:{}", item.id);
-                header.extend([
-                    Button::new(format!("automation_run:{}", item.id), if busy { "En curso…" } else { "Ejecutar ahora" }, theme::component_palette())
-                        .variant(ButtonVariant::Outline)
-                        .size(ControlSize::Compact)
-                        .enabled(!busy)
-                        .render(),
-                    Tooltip::new(
-                        Switch::new(toggle_id.clone(), item.enabled, theme::component_palette()).render(),
-                        toggle_id,
-                        if item.enabled { "Pausar tarea" } else { "Activar tarea" },
-                        theme::component_palette(),
-                    )
-                    .render()
-                    .centered_y(),
-                    IconButton::new(format!("automation_delete_request:{}", item.id), Icon::Trash, theme::component_palette())
-                        .variant(ButtonVariant::Ghost)
-                        .size(ControlSize::Regular)
-                        .tooltip_with(TooltipSpec::new("Eliminar tarea").placement(TooltipPlacement::Above))
-                        .render(),
-                ]);
-            }
-            let mut body = vec![Element::row(header).gap(8.0)];
-            if let Some(error) = &state.error {
-                body.push(Alert::new("Revisa la automatización", error, theme::component_palette()).tone(AlertTone::Error).compact(true).render());
-            }
-            let form = crate::ui_sizing::form_width(width.min(620.0));
-            body.push(section_label("¿Qué hará esta tarea?"));
-            body.extend(content_fields(state));
-            body.push(section_label("¿Cuándo se ejecutará?"));
-            body.extend(schedule_editor(state, form));
-            body.push(editor_agent_step(state, form));
-            body.push(
-                ButtonGroup::new(vec![
-                    Button::new("automation_cancel", "Cancelar", theme::component_palette())
-                        .variant(ButtonVariant::Ghost)
-                        .size(ControlSize::Regular)
-                        .render(),
-                    Button::new(
-                        "automation_save_all",
-                        if existing.is_some() { "Guardar cambios" } else { "Crear tarea" },
-                        theme::component_palette(),
-                    )
-                    .icon(Icon::Check)
-                    .size(ControlSize::Regular)
-                    .render(),
-                ])
-                .align_end()
-                .render(),
-            );
-            if existing.is_some() {
-                body.push(Separator::horizontal(theme::component_palette()).render());
-                // Its own way back is the list beside it.
-                body.extend(history_page(state, width).into_iter().skip(1));
-            }
-            body
-        }
+    if state.screen == AutomationScreen::History
+        || (state.screen == AutomationScreen::Edit && state.selected().is_some())
+    {
+        return history_page(state, width);
     }
+    let grid = || CardGrid::new(width, 690.0);
+    vec![
+        Empty::new(
+            if state.items.is_empty() {
+                "Todavía no hay tareas programadas"
+            } else {
+                "Elegí una tarea de la lista"
+            },
+            "Crea una tarea recurrente o empieza desde una plantilla.",
+            theme::component_palette(),
+        )
+        .icon(Icon::Clock)
+        .action_element(
+            Button::new("automation_create_from_empty", "Crear tarea programada", theme::component_palette())
+                .size(ControlSize::Compact).render().dispatch_as("automation_new"),
+        )
+        .compact()
+        .width(width)
+        .height(188.0)
+        .render(),
+        Separator::horizontal(theme::component_palette()).render(),
+        section_label("Plantillas de tareas programadas"),
+        grid()
+            .items(
+                TEMPLATES
+                    .iter()
+                    .map(|template| template_card(template, grid().item_width()))
+                    .collect(),
+            )
+            .render(),
+    ]
 }
 
 fn split_page(state: &AutomationViewState, width: f32) -> Element {
@@ -1746,6 +1826,7 @@ pub fn build_automations(state: &AutomationViewState, width: f32) -> Element {
     let content_width = page.content_width();
     let mut body = match state.screen {
         AutomationScreen::List => list_page(state, content_width),
+        AutomationScreen::Edit if state.selected().is_some() => history_page(state, content_width),
         AutomationScreen::Edit => list_page(state, content_width),
         AutomationScreen::History => history_page(state, content_width),
     };
@@ -1777,25 +1858,31 @@ pub fn build_automations(state: &AutomationViewState, width: f32) -> Element {
             );
         }
     }
-    let base = page.children(body).render();
-    if state.screen == AutomationScreen::Edit {
-        let width = Modal::fit_width(width, 560.0).max(240.0);
-        let body = editor_modal_body(state, crate::ui_sizing::form_width(width));
-        editor_modal(state, base, width, body)
-    } else {
-        base
+    page.children(body).render()
+}
+
+/// The host wraps its whole window so the modal owns focus and the backdrop,
+/// including outside the center pane. The base page never embeds an editor.
+pub fn editor_overlay(state: &AutomationViewState, base: Element, viewport_width: f32) -> Element {
+    if state.screen != AutomationScreen::Edit {
+        return base;
     }
+    let width = Modal::fit_width(viewport_width, 620.0);
+    let body = editor_modal_body(state, crate::ui_sizing::form_width(width));
+    editor_modal(state, base, width, body)
 }
 
 fn editor_modal(state: &AutomationViewState, base: Element, width: f32, body: Element) -> Element {
     let initial_focus = match state.editor_step {
         AutomationEditorStep::Content => "automation_title".to_owned(),
         AutomationEditorStep::Schedule => state.form.frequency.action_id().to_owned(),
-        AutomationEditorStep::Agent => state
-            .backends
-            .first()
-            .map(|(id, _)| format!("automation_backend:{id}"))
-            .unwrap_or_else(|| "automation_previous".to_owned()),
+        AutomationEditorStep::Agent if state.backends.len() > 1 => {
+            "automation_choice_toggle:backend".into()
+        }
+        AutomationEditorStep::Agent if state.form.backend == "native" => {
+            "automation_choice_toggle:model".into()
+        }
+        AutomationEditorStep::Agent => "automation_previous".into(),
     };
     Modal::new(
         base,
@@ -1805,7 +1892,7 @@ fn editor_modal(state: &AutomationViewState, base: Element, width: f32, body: El
         } else {
             "Nueva tarea programada"
         },
-        "Inicia una sesión nueva en este proyecto cuando llegue el horario.",
+        "Una tarea para este proyecto.",
         "automation_cancel",
         theme::component_palette(),
     )
@@ -1814,13 +1901,28 @@ fn editor_modal(state: &AutomationViewState, base: Element, width: f32, body: El
     .body(body)
     .footer(editor_modal_footer(state))
     .initial_focus(initial_focus)
+    .return_focus(
+        state
+            .selected_id
+            .as_ref()
+            .map(|id| format!("automation_edit:{id}"))
+            .unwrap_or_else(|| "automation_new".into()),
+    )
     .render()
 }
+
+#[cfg(test)]
+#[path = "automation_editor_view_tests.rs"]
+mod editor_view_tests;
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use openide_ui::{Key, Point, Size, UiAction, UiEvent, UiTree};
+
+    fn build_automations(state: &AutomationViewState, width: f32) -> Element {
+        editor_overlay(state, super::build_automations(state, width), width)
+    }
 
     fn state() -> AutomationViewState {
         AutomationViewState::new(
@@ -2337,14 +2439,24 @@ mod tests {
         assert!(calendar
             .regions
             .iter()
-            .any(|r| r.id == "automation_once_date"));
+            .any(|r| r.id == "automation_choice_toggle:date"));
+        assert!(
+            !calendar
+                .regions
+                .iter()
+                .any(|r| r.id.starts_with("automation_once_date:day:")),
+            "the calendar stays collapsed"
+        );
         assert!(calendar_tree.focus("automation_once_time"));
         let time_visible = calendar_tree.layout(viewport);
         assert!(time_visible
             .regions
             .iter()
             .any(|r| r.id == "automation_once_time"));
-        assert!(calendar_tree.scroll_offset("modal_body:automation_cancel") > 0.0);
+        assert!(
+            !time_visible.regions.iter().any(|region| region.id.starts_with("automation_once_time:")),
+            "the time entry has no expanded clock controls"
+        );
         for region in &time_visible.regions {
             assert!(
                 region.rect.x + region.rect.width <= viewport.width + 0.5,
@@ -2433,44 +2545,59 @@ mod tests {
             state.screen = AutomationScreen::List;
             tree.set_root(build_automations(&state, 840.0));
             tree.layout(Size::new(840.0, 780.0));
-            assert_eq!(tree.focused_id(), Some(trigger));
+            assert_eq!(tree.focused_id(), Some("automation_new"));
         }
     }
 
     #[test]
-    fn a_wide_window_lists_the_tasks_beside_the_one_in_view_with_all_of_it_at_once() {
+    fn a_wide_window_keeps_the_list_but_edits_only_the_current_step_in_a_modal() {
         let mut state = state();
         state.items.push(sample());
         let viewport = Size::new(1100.0, 780.0);
-        let has = |state: &AutomationViewState, id: &str| {
-            UiTree::new(build_automations(state, viewport.width)).layout(viewport).regions.iter().any(|r| r.id == id)
-        };
-        // Nothing open: the list, and the templates where the task would be.
-        assert!(has(&state, "automation_edit:one") && has(&state, "automation_template:risk_scan"));
-        assert!(!has(&state, "automation_title"));
-        // Open: what it does, when and who runs it together, with its own
-        // actions and one save, over no modal.
+        let base = UiTree::new(super::build_automations(&state, viewport.width)).layout(viewport);
+        assert!(base
+            .regions
+            .iter()
+            .any(|region| region.id == "automation_edit:one"));
         state.screen = AutomationScreen::Edit;
         state.selected_id = Some("one".into());
+        let base = UiTree::new(super::build_automations(&state, viewport.width)).layout(viewport);
+        assert!(!base
+            .regions
+            .iter()
+            .any(|region| region.id == "automation_title"));
+        let mut tree = UiTree::new(build_automations(&state, viewport.width));
+        let frame = tree.layout(viewport);
         for id in [
-            "automation_edit:one",
+            "popover_surface:automation_cancel",
             "automation_title",
             "automation_prompt",
-            "automation_frequency:once",
-            "automation_save_all",
-            "automation_cancel",
-            "automation_run:one",
-            "automation_toggle:one",
-            "automation_delete_request:one",
+            "automation_next",
         ] {
-            assert!(has(&state, id), "missing {id}");
+            assert!(
+                frame.regions.iter().any(|region| region.id == id),
+                "missing {id}"
+            );
         }
-        for id in ["automation_next", "modal_body:automation_cancel", "automation_template:risk_scan"] {
-            assert!(!has(&state, id), "unexpected {id}");
-        }
-        // A new one has nothing to run, pause or delete yet.
-        state.selected_id = None;
-        assert!(has(&state, "automation_save_all") && !has(&state, "automation_run:one"));
+        assert!(!frame
+            .regions
+            .iter()
+            .any(|region| region.id == "automation_save_all"));
+        assert!(!frame
+            .regions
+            .iter()
+            .any(|region| region.id == "automation_frequency:once"));
+        assert_eq!(tree.focused_id(), Some("automation_title"));
+        assert_eq!(
+            tree.handle_event(UiEvent::Key {
+                key: Key::Escape,
+                shift: false,
+                ctrl: false
+            }),
+            vec![UiAction::Clicked {
+                id: "automation_cancel".into()
+            }]
+        );
     }
 
     #[test]

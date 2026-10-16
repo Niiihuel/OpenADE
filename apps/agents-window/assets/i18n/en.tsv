@@ -133,6 +133,7 @@ Aceptar cambios	Accept changes
 Acercar	Zoom in
 Activa	Active
 Activación no disponible	Activation not available
+Activado	Enabled
 Activando plugin…	Enabling plugin…
 Activando skill…	Enabling skill…
 Activar	Enable
@@ -237,9 +238,11 @@ Ahora no	Not now
 Ahora usaría el modelo seleccionado: el catálogo no muestra otro del mismo proveedor que soporte herramientas y cueste la mitad o menos.	It would now use the selected model: the catalog shows no other model from the same provider that supports tools and costs half as much or less.
 Ahora usaría {}. Elige, dentro del mismo proveedor, el modelo más capaz que cueste la mitad o menos que el seleccionado y soporte herramientas.	It would now use {}. It picks, within the same provider, the most capable model that costs half as much or less than the selected one and supports tools.
 Aislamiento de comandos	Command isolation
+Ajusta las líneas largas de los bloques de código de la conversación.	Wraps long lines in conversation code blocks.
 Ajustando terminal	Adjusting terminal
 Ajustar al panel	Fit to panel
 Ajustar líneas al ancho	Wrap lines
+Ajustar líneas de código	Code block word wrap
 Ajustes de notificaciones guardados	Notification settings saved
 Al abrir un paréntesis, una llave o una comilla, se escribe también el cierre.	Typing an opening parenthesis, brace or quote also writes the closing one.
 Al activar un plugin, el agente nativo recibe el nombre y la descripción de cada skill y puede leer sus archivos cuando la tarea lo pida. No se ejecuta nada del plugin. Si el plugin se actualiza, hay que volver a activarlo.	When you enable a plugin, the native agent receives the name and description of each skill and can read its files when the task calls for it. Nothing from the plugin is executed. If the plugin is updated, you need to enable it again.
@@ -401,6 +404,7 @@ Bloque siguiente	Next hunk
 Bloque {} de {}	Hunk {} of {}
 Bloqueado · resultado confirmado	Blocked · result confirmed
 Bloquear	Block
+Bordes y texto de alto contraste.	High contrast borders and text.
 Borrador	Draft
 Borrador conservado sin cargar: {error}	Kept draft not loaded: {error}
 Borrador intacto	Draft intact
@@ -690,6 +694,7 @@ Cierra una captura antes de abrir otra (máximo 16)	Close a snapshot before open
 Cierre de pestaña	Tab close
 Cinco vistas del proyecto	Five views of the project
 Claro	Light
+Claro con contraste	High contrast light
 Clasificación elegida: {} (pendiente de confirmar)	Chosen classification: {} (pending confirmation)
 Claude Code ya tiene una línea de estado configurada	Claude Code already has a status line configured
 Clave de API	API key
@@ -746,6 +751,7 @@ Coincidencia actual / total	Current match / total
 Coincidencia anterior	Previous match
 Coincidencia siguiente	Next match
 Cola pendiente	Pending queue
+Colores	Colors
 Columna inválida	Invalid column
 Columnas	Columns
 Columnas inválidas: usa un entero entre 20 y 500.	Invalid columns: use an integer between 20 and 500.
@@ -767,6 +773,8 @@ Commit de GitHub inválido	Invalid GitHub commit
 Commit o push	Commit or push
 Commit y push	Commit and push
 Commits, cambios de módulos y estado de CI desde el día anterior.	Commits, module changes and CI status since the previous day.
+Compacta	Compact
+Compacta agrupa llamadas; equilibrada las separa; detallada abre sus resultados.	Compact groups tool calls; balanced separates them; detailed opens their results.
 Compactada	Compacted
 Compactando	Compacting
 Compactando contexto...	Compacting context...
@@ -971,7 +979,9 @@ Control del comando	Command control
 Control del equipo	Computer control
 Control del equipo no disponible	Computer control unavailable
 Control del escritorio y sus permisos.	Desktop control and its permissions.
+Controla cuánto tinte se aplica a las superficies.	Control how strongly the tint is applied to surfaces.
 Controlar	Control
+Conversaciones del agente	Agent conversations
 Conversaciones, eventos y borradores guardados en este equipo.	Conversations, events and drafts saved on this machine.
 Conversación	Conversation
 Conversación activa	Active conversation
@@ -1168,6 +1178,7 @@ Demasiados modelos	Too many models
 Demasiados proveedores configurados	Too many configured providers
 Demasiados scopes OAuth para {id}	Too many OAuth scopes for {id}
 Denegar	Deny
+Densidad de herramientas	Tool call density
 Depuración	Debugging
 Depurador	Debugger
 Desactivada	Off
@@ -1244,6 +1255,7 @@ Destino inválido	Invalid destination
 Destino no disponible	Target not available
 Destino remoto	Remote destination
 Destino sin carpeta padre	Destination without a parent folder
+Detallada	Detailed
 Detalle	Details
 Detalle del navegador	Browser details
 Detalles	Details
@@ -1910,6 +1922,7 @@ Elegí una ruta absoluta para el nuevo worktree	Choose an absolute path for the 
 Elegí una skill de la lista	Choose a skill from the list
 Elegí una tarea de la lista	Pick a task from the list
 Elige cuándo	Choose when
+Elige el color del tinte de las superficies.	Choose a tint color for surfaces.
 Elige el parámetro documentado para esta ruta Chat Completions.	Choose the documented parameter for this Chat Completions route.
 Elige el proyecto, en qué copia local trabaja (tu carpeta o un worktree) y la rama de Git.	Choose the project, which local copy it works in (your folder or a worktree), and the Git branch.
 Elige la cuenta que quieres usar en openADE.	Choose the account you want to use in openADE.
@@ -1920,7 +1933,9 @@ Elige un proveedor y modelo nativo para esta automatización	Choose a native pro
 Elige una cuenta de GitHub	Choose a GitHub account
 Elige una cuenta para verificarla	Choose an account to verify it
 Elige una del catálogo y dónde instalarla.	Choose one from the catalog and where to install it.
+Elige una familia instalada en este equipo.	Choose a font family installed on this computer.
 Elige una fecha y hora futuras	Choose a future date and time
+Elige una fuente monoespaciada para editores y diferencias.	Choose a monospaced font for editors and diffs.
 Elige una ruta relativa dentro del proyecto, sin '..'.	Choose a relative path inside the project, without '..'.
 Elige una vista para este panel.	Choose a view for this panel.
 Eligiendo opción	Choosing option
@@ -2018,6 +2033,7 @@ Enviar respuesta	Send answer
 Enviar sin imágenes	Send without images
 Enviar todos a la papelera…	Move all to trash…
 Enviá o borrá lo que estás escribiendo antes de traer un mensaje de la cola	Send or clear what you're typing before bringing back a queued message
+Equilibrada	Balanced
 Equipo	Machine
 Error al abrir sesión: {error}	Error opening session: {error}
 Error al guardar borrador: {error}	Error saving draft: {error}
@@ -2036,6 +2052,7 @@ Error en la conversación	Conversation error
 Es la única pestaña: no se cierra.	It is the only tab: it cannot be closed.
 Esa rama está abierta en otra carpeta de trabajo	That branch is open in another working folder
 Escala de dispositivo permitida: 0,5 a 4	Allowed device scale: 0.5 to 4
+Escala la interfaz completa, incluidos sus controles.	Scales the entire interface, including its controls.
 Escribe al menos 2 caracteres y pulsa Enter para buscar en skills.sh.	Type at least 2 characters and press Enter to search skills.sh.
 Escribe el mensaje a partir de los cambios preparados, con el modelo elegido para revisiones. Podés corregirlo antes de crear el commit.	Write the message from the staged changes, using the model chosen for reviews. You can edit it before creating the commit.
 Escribe lo que verificaste manualmente. Esta llamada no se repetirá al reanudar.	Write what you verified manually. This call will not be repeated on resume.
@@ -2343,6 +2360,7 @@ Finalizó · código {}	Finished · code {}
 Finalizó · {code}	Finished · {code}
 Firma de ChatGPT no admitida	Unsupported ChatGPT signature
 Fixture sin proceso	Fixture without process
+Fondos de diferencias	Diff backgrounds
 Formatear documento	Format document
 Formato de imagen no compatible.	Unsupported image format.
 Formato de imagen no disponible	Image format not available
@@ -2350,6 +2368,8 @@ Formato de micrófono no admitido: {format}	Unsupported microphone format: {form
 Foto de perfil de {login}	Profile picture of {login}
 Frecuencia	Frequency
 Fuente Markdown · lectura por páginas	Markdown source · paged reading
+Fuente de código	Code font family
+Fuente de interfaz	UI font family
 Fuente no disponible	Source not available
 Fuentes	Sources
 Fuentes y herramientas	Sources and tools
@@ -2421,6 +2441,7 @@ Guardar como	Save as
 Guardar como…	Save as…
 Guardar el seleccionado	Save selected
 Guardar entrada	Save input
+Guardar regla	Save rule
 Guardar tope	Save cap
 Guardar y usar	Save and use
 Guardá el archivo para activar este punto de interrupción	Save the file to enable this breakpoint
@@ -2655,6 +2676,7 @@ Instrucciones registradas	Recorded instructions
 Instrucciones y herramientas	Instructions and tools
 Instrucción para el subagente	Instruction for the subagent
 Integración del proyecto	Project integration
+Intensidad	Intensity
 Interacción con página	Page interaction
 Interactuar con una página	Interact with a page
 Interfaz	Interface
@@ -2883,7 +2905,6 @@ La instalación contiene un enlace simbólico	The installation contains a symbol
 La instrucción debe tener entre 1 y 10 000 caracteres	The instruction must be between 1 and 10,000 characters
 La integridad de {} no coincide con la revisión publicada	The integrity of {} doesn't match the published revision
 La intención durable por sí sola no confirma ni autoriza repetir un efecto.	Durable intent alone does not confirm or authorize repeating an effect.
-La interfaz sólo permite solicitar aprobación o bloquear	The interface only allows asking for approval or blocking
 La lectura no devolvió contenido	The read returned no content
 La licencia declarada no es válida	The declared license is not valid
 La licencia supera el límite del bundle	The license exceeds the bundle limit
@@ -3084,7 +3105,6 @@ Las llamadas pendientes siguen sin resolver en el journal	The pending calls rema
 Las líneas largas siguen en el renglón de abajo en vez de salirse del editor.	Long lines continue on the next row instead of running off the editor.
 Las preferencias del editor superan el tamaño permitido.	Editor preferences exceed the allowed size.
 Las que están corriendo se cancelan, y ninguna tarea programada se ejecuta mientras openADE está cerrado.	Running ones are canceled, and no scheduled task runs while openADE is closed.
-Las reglas de Settings sólo admiten solicitar aprobación o bloquear	Settings rules only support asking for approval or blocking
 Las reglas de comandos exceden el límite de tamaño	The command rules exceed the size limit
 Las reglas de comandos no son válidas: {error}	The command rules are invalid: {error}
 Las reglas respetan los permisos de herramientas del agente. Los intérpretes de shell requieren comprobaciones adicionales.	Rules respect the agent's tool permissions. Shell interpreters require additional checks.
@@ -3342,6 +3362,7 @@ Mover líneas abajo	Move lines down
 Mover líneas arriba	Move lines up
 Movido	Moved
 Moviendo	Moving
+Movimiento	Motion
 Movimiento de archivo	File move
 Muestra la interfaz en inglés. Lo que todavía no tiene traducción se ve en español.	Shows the interface in English. Anything not yet translated appears in Spanish.
 Muy alta	Very high
@@ -3365,7 +3386,7 @@ Método no soportado	Unsupported method
 Mínimo	Minimum
 Nada responde en ese puerto de este equipo. Iniciá el servidor del proyecto, o revisá el puerto, y reintentá.	Nothing is responding on that port on this machine. Start the project server, or check the port, and retry.
 Nada se ejecuta sin que lo actives	Nothing runs unless you enable it
-Nadie aprueba nada durante una ejecución: el agente nativo sólo lee el proyecto, y a un agente externo se le niega lo que pediría permiso.	Nobody approves anything during a run: the native agent only reads the project, and an external agent is denied whatever it would ask permission for.
+Nadie aprueba nada durante una ejecución: el agente nativo solo lee el proyecto y un agente externo no recibe los permisos que pida.	Nobody approves anything during a run: the native agent only reads the project, and an external agent is denied whatever it would ask permission for.
 Nativo	Native
 Navegación	Navigation
 Navegación anterior	Previous navigation
@@ -3953,9 +3974,11 @@ Objetivo vigente de esta tarea:\n{objective}\nTen presente este objetivo al resp
 Objetivos persistentes	Persistent goals
 Observación Unix ms: {}\nSHA-256 de metadatos: {}\n{}\nEsta inspección no es el catálogo congelado del turno ni un conteo de tokens.	Observation Unix ms: {}\nMetadata SHA-256: {}\n{}\nThis inspection is not the turn's frozen catalog or a token count.
 Obtener clave de API	Get API key
+Oculta parcialmente los correos de las cuentas en la interfaz.	Partially hides account email addresses in the interface.
 Ocultar agente	Hide agent
 Ocultar barra lateral	Hide sidebar
 Ocultar contenido	Hide content
+Ocultar correo electrónico	Hide email address
 Ocultar depuración	Hide debugging
 Ocultar detalle	Hide details
 Ocultar entradas	Hide inputs
@@ -4006,6 +4029,7 @@ Origen local agregado	Local source added
 Origen: acción explícita de una persona. Estas operaciones no fabrican eventos del modelo ni reanudan procesos al abrir el historial.	Origin: explicit action by a person. These operations do not fabricate model events or resume processes when the history is opened.
 Orígenes	Sources
 Oscuro	Dark
+Oscuro con contraste	High contrast dark
 Otra CLI	Another CLI
 Otra captura o guardado usa esta carpeta; reintentá guardar	Another capture or save is using this folder; retry saving
 Otra instancia está actualizando esta conexión	Another instance is updating this connection
@@ -4089,7 +4113,6 @@ Permisos: {}. Inspeccionar y planificar con las lecturas habilitadas, sin editar
 Permitido · resultado confirmado	Allowed · result confirmed
 Permitir	Allow
 Permitir en esta sesión	Allow in this session
-Permitir según reglas	Allow per rules
 Permitir siempre	Always allow
 Permitir siempre en {}	Always allow in {}
 Permitir todo	Allow everything
@@ -4141,6 +4164,7 @@ PreToolUse puede permitir o bloquear. PostToolUse observa el resultado y no revi
 PreToolUse puede permitir o bloquear. PostToolUse observa el resultado y no revierte una acción. Los hooks de Claude Code listados arriba también corren al iniciar la sesión, al enviar un mensaje, al iniciar un subagente y al terminar. Todos usan límites de tiempo y salida.	PreToolUse can allow or block. PostToolUse observes the result and does not undo an action. The Claude Code hooks listed above also run when the session starts, when a message is sent, when a subagent starts and at the end. All of them have time and output limits.
 Precio por millón de tokens · USD	Price per million tokens · USD
 Precisa la búsqueda para ver otros resultados.	Refine the search to see other results.
+Predeterminada	Default
 Predeterminada del sistema	System default
 Predeterminado	Default
 Preferencia de límites guardada	Limits preference saved
@@ -4152,6 +4176,7 @@ Preferencias	Preferences
 Preferencias de la aplicación	Application preferences
 Preferencias guardadas habilitadas para próximos turnos, sin conectar servidores. No prueban el catálogo congelado ni cantidad o tokens de herramientas.	Saved preferences enabled for upcoming turns, without connecting servers. They don't prove the frozen catalog or the number of tools or tokens.
 Prefijo de comando (JSON)	Command prefix (JSON)
+Prefijo: {}\n\n{}	Prefix: {}\n\n{}
 Prefijos exactos	Exact prefixes
 Pregunta	Question
 Pregunta omitida	Question skipped
@@ -4185,6 +4210,7 @@ Prepará al menos un archivo para crear el commit.	Stage at least one file to cr
 Presentaciones	Presentations
 Presupuesto de contexto congelado inválido	Invalid frozen context budget
 Primeras líneas · completo en Ver datos	First lines · full in View data
+Privacidad	Privacy
 Probar	Test
 Problemas	Problems
 Problemas del archivo	File problems
@@ -4372,6 +4398,7 @@ Recuperá o cancelá el subagente antes de archivarlo	Recover or cancel the suba
 Red de la página	Page network
 Redirigir: enviarlo ahora, sin detener el turno	Redirect: send it now, without stopping the turn
 Reducir movimiento	Reduce motion
+Reducir transparencia	Reduce transparency
 Reemplaza el archivo inválido por una política vacía después de tu confirmación.	Replaces the invalid file with an empty policy after your confirmation.
 Reemplaza el archivo inválido y borra las selecciones de todos los proyectos después de confirmar.	Replaces the invalid file and clears the selections of all projects after confirmation.
 Reemplazar	Replace
@@ -4434,6 +4461,7 @@ Repositorio y pull requests	Repository and pull requests
 Requiere aprobación	Requires approval
 Requiere conexión	Requires connection
 Requiere resolución en la sesión	Requires resolution in the session
+Resalta el fondo de las líneas agregadas y eliminadas.	Highlights the background of added and removed lines.
 Reserva de salida del presupuesto	Output reserve of the budget
 Resolver permiso y reanudar	Resolve permission and resume
 Resolvé los conflictos antes de crear un commit	Resolve the conflicts before creating a commit
@@ -4860,6 +4888,7 @@ Sin uso	No usage
 Sin uso verificable para esta ruta	No verifiable usage for this route
 Sistema	System
 Sistema (del entorno)	System (from environment)
+Sistema sigue la preferencia del escritorio cuando está disponible.	System follows the desktop preference when available.
 Skill (SKILL.md) para el agente nativo	Skill (SKILL.md) for the native agent
 Skill activada	Skill enabled
 Skill actualizada	Skill updated
@@ -4941,8 +4970,11 @@ Sólo se aceptan repositorios públicos con formato owner/repository de GitHub	O
 Sólo se permiten URLs HTTP/HTTPS sin credenciales incrustadas.	Only HTTP/HTTPS URLs without embedded credentials are allowed.
 TAREAS	TASKS
 Tabulaciones	Tabs
+Tamaño de código	Code font size
+Tamaño de interfaz	UI font size
 Tamaño del terminal	Terminal size
 Tamaño del terminal actualizado	Terminal size updated
+Tamaño independiente para editores, bloques de código y diferencias.	Independent size for editors, code blocks, and diffs.
 Tarea	Task
 Tarea del escritorio	Desktop task
 Tarea no disponible	Task unavailable
@@ -4959,6 +4991,7 @@ Tecla pulsada	Key pressed
 Teclado del navegador	Browser keyboard
 Tema	Theme
 Tema y movimiento de la interfaz nativa.	Theme and motion of the native interface.
+Tema, conversaciones, colores, tipografía, movimiento y privacidad.	Theme, conversations, colors, typography, motion, and privacy.
 Tema, idioma y movimiento de la interfaz.	Theme, language and motion of the interface.
 Terminado	Terminated
 Terminados	Finished
@@ -4984,6 +5017,7 @@ Tipo	Type
 Tipo cambiado	Type changed
 Tipo de archivo no admitido en una skill	File type not supported in a skill
 Tipo de credencial no admitido	Unsupported credential type
+Tipografía	Typography
 Todas	All
 Todas coinciden con la revisión de su origen.	All match the revision of their source.
 Todas las categorías	All categories
@@ -5014,6 +5048,7 @@ Todos los días a las {}	Every day at {}
 Tokens acumulados de {} respuestas registradas de esta ruta exacta; {} no reportaron uso y {} fueron excluidas por procedencia. No es ocupación actual ni facturación completa; cache y razonamiento son subconteos, sin sumar de nuevo.	Accumulated tokens from {} recorded responses of this exact route; {} did not report usage and {} were excluded by provenance. This is not current occupancy or complete billing; cache and reasoning are subcounts, not added again.
 Tokens que el proveedor informó en las respuestas confirmadas de esta conversación y, sumados, en las de todos sus subagentes. Cada subagente tiene su propio journal y su propia ventana de contexto.	Tokens the provider reported in this conversation's confirmed responses and, summed, in those of all its subagents. Each subagent has its own journal and its own context window.
 Tomar el del composer	Use the composer's model
+Tono	Hue
 Tope de salida guardado para los próximos turnos de este modelo	Output limit saved for upcoming turns of this model
 Tope de salida por respuesta	Output cap per response
 Tope de salida retirado para este modelo	Output limit removed for this model
@@ -5115,6 +5150,7 @@ Usa AAAA-MM-DD HH:MM	Use YYYY-MM-DD HH:MM
 Usa HTTPS para endpoints remotos; HTTP sólo se permite en localhost	Use HTTPS for remote endpoints; HTTP is only allowed on localhost
 Usa el menú de cada tarea en la barra lateral. Eliminar una tarea requiere confirmación.	Use each task's menu in the sidebar. Deleting a task requires confirmation.
 Usa entre 1 y 80 caracteres, sin saltos de línea.	Use between 1 and 80 characters, with no line breaks.
+Usa fondos opacos en las superficies translúcidas.	Use opaque backgrounds for translucent surfaces.
 Usa la clave de tu cuenta de MiniMax. openADE consulta sus modelos disponibles antes de guardar la conexión.	Use your MiniMax account key. openADE queries its available models before saving the connection.
 Usa transiciones mínimas al cambiar de panel o abrir superficies.	Uses minimal transitions when switching panels or opening surfaces.
 Usa tu cuenta y plan de ChatGPT	Use your ChatGPT account and plan
@@ -5673,6 +5709,7 @@ ya no existe	it no longer exists
 {}{} líneas encontradas	{}{} lines found
 «.» y «..» no son nombres válidos	«.» and «..» are not valid names
 «Permitir todo» está elegido en el compositor: escribe y ejecuta sin pedir aprobación. Se cambia desde el selector de permisos del compositor.	“Allow all” is chosen in the composer: it writes and runs without asking for approval. Change it from the composer's permission selector.
+«Permitir» no restringe el prefijo ni salta la aprobación: el permiso de comandos del agente sigue decidiendo si se pregunta antes de ejecutarlo.	“Allow” neither restricts the prefix nor skips approval: the agent's command permission still decides whether it asks before running it.
 «{path}» irá a la papelera del sistema.	«{path}» will go to the system trash.
 «{}» ya no es un archivo sin seguimiento	«{}» is no longer an untracked file
 «{}»\n\nSe eliminará esta conversación, sus subagentes y su historial. Los archivos del proyecto se conservarán. Esta acción no se puede deshacer.	«{}»\n\nThis conversation, its subagents, and its history will be deleted. Project files will be kept. This action cannot be undone.
@@ -5689,6 +5726,7 @@ ya no existe	it no longer exists
 ¿Enviar a la papelera?	Move to trash?
 ¿Enviar desde un mensaje anterior?	Send from an earlier message?
 ¿Enviar {count} archivos a la papelera?	Move {count} files to the trash?
+¿Guardar la regla «Permitir»?	Save the “Allow” rule?
 ¿Permitir todo?	Allow everything?
 ¿Quitar el origen «{}»?	Remove the source «{}»?
 ¿Quitar el perfil «{}»?	Remove the profile «{}»?
@@ -5722,3 +5760,231 @@ ya no existe	it no longer exists
 última respuesta	last response
 último dato	last data
 … Vista parcial de argumentos	… Partial view of arguments
+Escribe un color hexadecimal RGB válido antes de guardar.	Enter a valid RGB hex color before saving.
+Activa la colocación subpíxel; al desactivarlo, los trazos quedan más nítidos. El antialiasing permanece activo.	Enables subpixel positioning; disabling it makes strokes crisper. Antialiasing remains active.
+Advertencias	Warnings
+Alto contraste	High contrast
+Barras laterales, tarjetas y campos (comparten color)	Sidebars, cards and fields (shared color)
+Base	Base
+Bordes y foco	Borders and focus
+Botones principales	Primary buttons
+Cadenas de código	Code strings
+Color	Color
+Color a editar	Color to edit
+Color hexadecimal	Hex color
+Color predeterminado	Default color
+Crea un tema o importa YAML y colores de VS Code. Hasta 30 temas locales.	Create a theme or import YAML and VS Code colors. Up to 30 local themes.
+Crear tema	Create theme
+Define los colores predeterminados que no hayas modificado.	Sets the default colors you have not customized.
+Editar tema	Edit theme
+Eliminar este tema	Delete this theme
+Eliminar tema	Delete theme
+Enlaces y acciones azules	Links and blue actions
+Errores y acciones destructivas	Errors and destructive actions
+Esperando selector…	Waiting for file picker…
+Exportar…	Export…
+Fondo de editores y espacio de trabajo	Editor and workspace background
+Fondo de líneas añadidas	Added line background
+Fondo de líneas eliminadas	Removed line background
+Guardar aplica los cambios; cancelar conserva el tema anterior.	Saving applies the changes; cancelling keeps the previous theme.
+Guardar tema	Save theme
+Guardar y aplicar	Save and apply
+Iconos destacados	Emphasized icons
+Importar…	Import…
+La transparencia se conserva al guardar y exportar.	Transparency is preserved when saving and exporting.
+Los colores del terminal y otros tokens sin equivalente independiente se conservan para exportar. Este editor muestra los grupos que modifican la interfaz nativa.	Terminal colors and other tokens without an independent equivalent are preserved for export. This editor shows the groups that affect the native interface.
+Los grupos compartidos se aplican juntos en la interfaz nativa.	Shared groups apply together throughout the native interface.
+Mi tema	My theme
+Nombre del tema	Theme name
+Nuevo tema	New theme
+Números de código	Code numbers
+Opacidad	Opacity
+Opacidad del color	Color opacity
+Paneles y menús	Panels and menus
+Quita la personalización de este grupo.	Restores the default color for this group.
+Restablecer color	Reset color
+Saturación y brillo	Saturation and brightness
+Se conserva en este equipo y al exportar.	Saved on this computer and included in exports.
+Selecciona el color o escribe su valor hexadecimal RGB.	Pick a color or enter its RGB hex value.
+Si está activo, se volverá al tema oscuro de openADE.	If active, openADE will return to its built-in dark theme.
+Sintaxis de palabras clave y esfuerzo alto	Keyword syntax and high effort
+Suavizado de fuentes	Font smoothing
+Tema aplicado	Theme applied
+Tema eliminado	Theme deleted
+Tema guardado y aplicado	Theme saved and applied
+Tema local	Local theme
+Tema local de alto contraste	Local high contrast theme
+Temas personalizados	Custom themes
+Texto de botones principales	Primary button text
+Texto y marcas añadidas	Added text and markers
+Texto y marcas eliminadas	Removed text and markers
+Texto y texto secundario derivado	Text and derived secondary text
+Tono del color	Color hue
+Tu biblioteca de temas	Your theme library
+Usa valores de alto contraste para los colores sin personalizar.	Uses high contrast defaults for colors you have not customized.
+Biblioteca de temas	Theme library
+Crea un tema propio o importa uno desde un archivo.	Create your own theme or import one from a file.
+Seleccionando archivo	Choosing a file
+Importar	Import
+Exportar	Export
+Tema actual	Current theme
+Selecciona un tema integrado o de tu biblioteca. Sistema sigue el tema del escritorio.	Choose a built-in theme or one from your library. System follows your desktop theme.
+{} · Personalizado	{} · Custom
+{} · No disponible	{} · Unavailable
+Buscar fuente	Search fonts
+Buscar fuente de interfaz	Search UI fonts
+Buscar fuente de código	Search code fonts
+No se encontraron fuentes	No matching fonts
+Vista previa de código	Code preview
+Reducir tamaño de interfaz	Decrease UI font size
+Aumentar tamaño de interfaz	Increase UI font size
+Restablecer tamaño de interfaz	Reset UI font size
+Reducir tamaño de código	Decrease code font size
+Aumentar tamaño de código	Increase code font size
+Restablecer tamaño de código	Reset code font size
+Los colores de este tema se ajustan desde Editar tema.	Adjust this theme's colors with Edit theme.
+Permisos y aislamiento	Permissions and isolation
+«Permitir todo» habilita comandos sin aislamiento. Elegir «Proyecto, sin red» desactiva ese permiso y vuelve a pedir aprobación antes de ejecutar comandos.	“Allow everything” enables commands without isolation. Choosing “Project, offline” disables that permission and asks for approval before running commands again.
+Según permisos del agente	Follow agent permissions
+Permiso del nuevo sitio	New site permission
+Permiso de {}	Permission for {}
+Automatización del navegador	Browser automation
+Permitir automatización	Allow automation
+Ofrece las herramientas de navegador al agente. Desactivarla detiene nuevas acciones de automatización, incluidas las de clientes ya conectados; podés seguir usando el navegador manualmente.	Makes browser tools available to the agent. Turning it off stops new automation actions, including those from connected clients; you can keep using the browser manually.
+Alcance de los permisos	Permission scope
+Las herramientas leen la pestaña de esta conversación. Las acciones siguen los permisos del agente y los permisos por sitio; un sitio bloqueado permanece cerrado al agente incluso con «Permitir todo».	Tools read this conversation’s tab. Actions follow agent and site permissions; a blocked site stays inaccessible to the agent even with “Allow everything”.
+Los sitios sin permiso propio siguen los permisos del agente: la lectura no pregunta y las acciones requieren aprobación salvo con «Permitir todo».	Sites without their own permission follow agent permissions: reading needs no approval, while actions require approval unless “Allow everything” is enabled.
+Datos de todo el navegador	Browser-wide data
+Mientras haya sitios bloqueados, el agente no puede leer la lista de descargas ni el portapapeles del navegador porque no tienen un origen verificable. Vos podés seguir usándolos.	While any sites are blocked, the agent cannot read the download list or browser clipboard because their origin cannot be verified. You can keep using them manually.
+Automatización bloqueada	Automation blocked
+No se pudieron cargar los permisos por sitio. {error}	Could not load site permissions. {error}
+Conservar las reglas	Keep the rules
+Podés corregir el archivo y recargarlo, o restablecer los permisos guardando una copia del archivo original. Mientras tanto, el navegador manual sigue disponible.	You can fix and reload the file, or reset permissions while keeping a copy of the original. Manual browsing remains available.
+Recargar archivo	Reload file
+Restablecer permisos	Reset permissions
+¿Restablecer los permisos por sitio?	Reset site permissions?
+Se conservará el archivo original como una copia en la misma carpeta. La lista quedará vacía y los sitios volverán a seguir los permisos del agente.	A copy of the original file will be kept in the same folder. The list will be cleared, and sites will follow agent permissions again.
+Guardar copia y restablecer	Back up and reset
+Sigue los permisos del agente. Con «Permitir todo», las acciones no preguntan.	Follows agent permissions. With “Allow everything”, actions need no approval.
+El agente no puede leer ni actuar en este sitio. El navegador manual sigue disponible.	The agent cannot read or act on this site. Manual browsing remains available.
+Un origen como https://example.com. Elegí el permiso antes de agregarlo; sólo se guarda el origen, sin rutas.	An origin such as https://example.com. Choose its permission before adding it; only the origin is saved, without paths.
+Dirección del sitio	Site address
+Restablecer configuración	Reset configuration
+Conservar la configuración original	Keep the original configuration
+Los nuevos turnos quedan bloqueados hasta corregir el archivo. Restablecer guarda una copia del original y vuelve a los límites predeterminados.	New turns are blocked until the file is fixed. Resetting keeps a copy of the original and restores the default limits.
+Permitir delegación	Allow delegation
+Permite crear subagentes y enviarles tareas en los próximos turnos de Construir. Los hijos que ya están ejecutando conservan su perfil. Puedes consultar y cancelar su trabajo; recuperarlo requiere un perfil compatible.	Allows creating subagents and sending them tasks in future Build turns. Running children keep their profile. You can check and cancel their work; recovery requires a compatible profile.
+Subagentes en ejecución	Running subagents
+Máximo de hijos ejecutando al mismo tiempo en todas las conversaciones de este perfil.	Maximum children running at the same time across all conversations in this profile.
+Hijos activos por agente	Active children per agent
+Cuántos hijos puede mantener activos cada padre, incluidos los que esperan recuperación.	How many active children each parent can have, including those awaiting recovery.
+Profundidad de delegación	Delegation depth
+Cuántas generaciones de hijos puede crear una tarea.	How many generations of children a task can create.
+Subagentes por tarea raíz	Subagents per root task
+Máximo total de descendientes registrados para una tarea. Incluye los que ya terminaron.	Maximum total descendants registered for a task, including those that have finished.
+Máximo de hijos que puede crear cada padre. Incluye sus hijos completados.	Maximum children each parent can create, including completed children.
+Reducir {title}	Decrease {title}
+Aumentar {title}	Increase {title}
+Se guardan para nuevos turnos. Los workers activos conservan sus límites. Recuperar un hijo con otro perfil requiere la revisión de identidad existente; no amplía sus permisos automáticamente.	Changes are saved for new turns. Active workers keep their limits. Recovering a child under another profile requires the existing identity review; it does not automatically expand permissions.
+Delegación y límites	Delegation and limits
+Explorador	Explorer
+Revisor	Reviewer
+Ejecutor	Worker
+Explorador · explorer	Explorer · explorer
+Revisor · reviewer	Reviewer · reviewer
+Ejecutor · worker	Worker · worker
+Investiga el código y presenta archivos, símbolos y evidencia. Sólo lectura, también al continuarlo.	Investigates the code and reports files, symbols and evidence. Read-only, including follow-ups.
+Revisa cambios con contexto propio y busca defectos verificables. Sólo lectura, también al continuarlo.	Reviews changes with its own context and looks for verifiable defects. Read-only, including follow-ups.
+Realiza una tarea concreta y verifica el resultado con las herramientas y permisos del padre.	Performs a specific task and verifies the result using the parent’s tools and permissions.
+Roles incorporados	Built-in roles
+Sin perfiles de plugins	No plugin personas
+Los plugins activados pueden aportar personas e instrucciones al agente nativo. Sus permisos siguen limitados por el perfil de openADE.	Enabled plugins can provide personas and instructions to the native agent. Their permissions remain limited by the openADE profile.
+Administrar perfiles de plugins	Manage plugin personas
+Los perfiles disponibles provienen de los plugins aprobados y activados. El agente puede consultar sus instrucciones; no cambian su modelo ni conceden permisos adicionales.	Available personas come from approved, enabled plugins. The agent can read their instructions; they do not change its model or grant additional permissions.
+Ver plugins	View plugins
+Perfiles de plugins	Plugin personas
+{live} conectados	{live} connected
+Ámbito	Scope
+Este proyecto	This project
+Guardado en este perfil para todos los proyectos. Un servidor del proyecto con el mismo ID reemplaza esta configuración, incluso si está deshabilitado.	Saved in this profile for all projects. A project server with the same ID overrides this configuration, even when disabled.
+Guardado localmente sólo para este proyecto. No se comparte ni se transfiere al clonar. Reemplaza la configuración de usuario con el mismo ID, incluso si está deshabilitado.	Saved locally for this project only. It is not shared or transferred when cloning. It overrides the user configuration with the same ID, even when disabled.
+Configuración efectiva	Effective configuration
+Recargar configuración	Reload configuration
+{} configurados · {}	{} configured · {}
+Trae la configuración local de Cursor, Codex y Claude Code para este ámbito. Entra deshabilitada para revisarla. De las credenciales sólo se copian nombres de variables.	Imports local Cursor, Codex and Claude Code configuration for this scope. Imported servers are disabled for review. Only variable names are copied for credentials.
+Última conexión correcta · 1 herramienta	Last connection successful · 1 tool
+Última conexión correcta · {tools} herramientas	Last connection successful · {tools} tools
+Último intento falló	Last attempt failed
+{status} · Reemplazado por este proyecto	{status} · Overridden by this project
+Última conexión correcta · {tools} herramientas · Reemplazado por este proyecto	Last connection successful · {tools} tools · Overridden by this project
+Streamable HTTP: {url}	Streamable HTTP: {url}
+Programa: {}	Program: {}
+OAuth 2.1 · issuer: {} · scopes: {}	OAuth 2.1 · issuer: {} · scopes: {}
+{} servidores habilitados para el próximo turno. Los plugins se administran por separado.	{} servers enabled for the next turn. Plugins are managed separately.
+La configuración efectiva requiere atención: {error}	The effective configuration needs attention: {error}
+Ver herramientas	View tools
+Elegir icono	Choose icon
+Icono genérico	Generic icon
+Buscar servidores	Search servers
+Proceso local · stdio	Local process · stdio
+Ejecutable encontrado	Executable found
+Ejecutable no encontrado en PATH	Executable not found in PATH
+Endpoint configurado	Configured endpoint
+Prueba otro nombre o programa.	Try another name or command.
+Buscar herramientas	Search tools
+Guardar selección	Save selection
+Descartar cambios	Discard changes
+Ninguna	None
+Detalles técnicos	Technical details
+Ocultar detalles técnicos	Hide technical details
+Instalación local	Local installation
+Sin marca	No brand
+Cerrar selector	Close picker
+Buscar empresa o producto	Search companies or products
+No hay iconos que coincidan.	No matching icons.
+No hay herramientas que coincidan con la búsqueda.	No tools match the search.
+Herramientas del servidor	Server tools
+Inspecciona esta configuración para consultar sus herramientas y elegir cuáles ofrecer al agente.	Inspect this configuration to review its tools and choose which ones to offer to the agent.
+Inspeccionar	Inspect
+Cancelar autorización	Cancel authorization
+Administra de dónde se descubren las skills.	Manage where skills are discovered.
+De dónde vienen las skills se administra en Orígenes. Las instaladas y sus actualizaciones están en los filtros de la lista.	Manage skill sources in Sources. Installed skills and their updates are available in the list filters.
+Agente no disponible	Agent unavailable
+Buscar modelos	Search models
+Elegir fecha	Choose date
+Fecha de ejecución	Run date
+Fecha local	Local date
+Hora de ejecución	Run time
+Modelo actual de Settings	Current model from Settings
+No hay modelos que coincidan	No matching models
+Se guarda el proveedor y el modelo elegidos con esta tarea.	The selected provider and model are saved with this task.
+Se usa la zona horaria local de este equipo. La hora se escribe como HH:MM.	Uses this computer’s local time zone. Enter the time as HH:MM.
+Una tarea para este proyecto.	A task for this project.
+Ámbito de los servidores MCP	MCP server scope
+Habilitar servidor {}	Enable server {}
+Icono del servidor	Server icon
+Conexión y detalles técnicos	Connection and technical details
+Endpoint	Endpoint
+Paquete local	Local package
+Versión	Version
+Manifiesto	Manifest
+Servidor de autorización	Authorization server
+Sin catálogo inspeccionado. Usa Inspeccionar para consultar las herramientas de esta configuración.	No inspected catalog. Use Inspect to review the tools in this configuration.
+Detalles de {}	Details for {}
+Servidor guardado	Saved server
+Proyecto de esta consulta	Project for this inspection
+Protocolo negociado	Negotiated protocol
+Servidor anunciado	Reported server
+Versión anunciada	Reported version
+Herramientas recibidas	Received tools
+Observado	Observed
+Huella SHA-256	SHA-256 fingerprint
+Administrar orígenes	Manage sources
+Carpetas y repositorios que aportan skills al catálogo.	Folders and repositories that add skills to the catalog.
+Permisos del agente	Agent permissions
+Actualizar plugins	Refresh plugins
+Buscar plugins instalados	Search installed plugins
+Carpetas y repositorios donde se descubren skills.	Folders and repositories where skills are discovered.
+Consulta sus instrucciones, procedencia y opciones de instalación.	View its instructions, provenance, and installation options.
+Un origen necesita atención	A source needs attention
+Volver al catálogo	Back to catalog

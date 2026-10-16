@@ -8,7 +8,7 @@ use crate::{
 };
 use openide_ui::{
     AlertDialog, Button, ButtonGroup, ButtonVariant, Card, Component, ControlSize, Element, Icon,
-    Modal, SearchField, Separator, Text, TextField, TextRole,
+    IconButton, Modal, SearchField, Separator, Text, TextField, TextRole,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -41,7 +41,7 @@ fn metadata(manifest: &PluginManifest) -> String {
     format!("{} · {}", manifest.publisher, manifest.version)
 }
 
-pub(crate) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
+pub(crate) fn page(state: &ViewState, compact: bool, width: f32) -> Vec<Element> {
     let plugins = &state.plugins;
     let ready = !plugins.busy && !plugins.load_error;
     let mut rows = vec![Element::row(vec![
@@ -56,8 +56,9 @@ pub(crate) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
         .enabled(!plugins.busy)
         .render(),
         Element::spacer().flex(1.0),
-        Button::new("plugins_refresh", "Actualizar", theme::component_palette())
-            .icon(Icon::Refresh)
+        IconButton::new("plugins_refresh", Icon::Refresh, theme::control_palette())
+            .accessibility_label("Actualizar plugins")
+            .tooltip("Actualizar plugins")
             .variant(ButtonVariant::Outline)
             .size(ControlSize::Compact)
             .enabled(!plugins.busy)
@@ -87,10 +88,12 @@ pub(crate) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
         SearchField::new(
             "plugins_search",
             &plugins.query,
-            "Buscar plugins instalados…",
-            theme::component_palette(),
+            "Buscar plugins instalados",
+            theme::control_palette(),
         )
-        .size(ControlSize::Compact)
+        .accessibility_label("Buscar plugins instalados")
+        .size(ControlSize::Regular)
+        .width(width.max(0.0))
         .render(),
     );
     let query = plugins.query.trim().to_lowercase();
@@ -175,9 +178,7 @@ pub(crate) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
         } else {
             Element::row(vec![status.flex(1.0), actions]).gap(10.0)
         });
-        cards.push(
-            Card::new(Element::column(content).gap(10.0), theme::card_palette()).render(),
-        );
+        cards.push(Card::new(Element::column(content).gap(10.0), theme::card_palette()).render());
     }
     if cards.is_empty() {
         rows.push(settings_parts::empty_state(

@@ -129,9 +129,14 @@ impl McpInspectionUiState {
         self.shutdown_error = result.shutdown_error;
         // A cancelled inspection says nothing about the server.
         let status = match (self.phase, &self.snapshot) {
-            (McpInspectionPhase::Completed, Some(snapshot)) => Some(McpServerStatus::Connected { tools: snapshot.tools.len() }),
+            (McpInspectionPhase::Completed, Some(snapshot)) => Some(McpServerStatus::Connected {
+                tools: snapshot.tools.len(),
+            }),
             (McpInspectionPhase::Failed, _) => Some(McpServerStatus::Failed(
-                self.error.clone().or_else(|| self.shutdown_error.clone()).unwrap_or_default(),
+                self.error
+                    .clone()
+                    .or_else(|| self.shutdown_error.clone())
+                    .unwrap_or_default(),
             )),
             _ => None,
         };
@@ -323,6 +328,15 @@ struct SecretValues {
 struct InspectionSecrets(Arc<Mutex<SecretValues>>);
 
 impl InspectionSecrets {
+    fn observe_http_config(&self, config: &openide_harness::McpHttpConfig) {
+        if let Some(token) = &config.bearer_token {
+            self.add(token.clone());
+        }
+        for (_, value) in &config.env_headers {
+            self.add(value.clone());
+        }
+    }
+
     fn add(&self, value: impl Into<String>) {
         let value = value.into();
         let mut values = self.0.lock().unwrap_or_else(|poison| poison.into_inner());
@@ -436,9 +450,7 @@ async fn connect(
     if server.url.is_some() {
         let mut config = server.runtime_http_config()?;
         config.request_timeout = limits.request_timeout;
-        if let Some(token) = &config.bearer_token {
-            secrets.add(token.clone());
-        }
+        secrets.observe_http_config(&config);
         if server.http_oauth.is_some() {
             let store: Arc<dyn TokenStore> = Arc::new(InspectionTokenStore {
                 inner: platform_token_store()?,

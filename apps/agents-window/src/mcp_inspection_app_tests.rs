@@ -4,6 +4,14 @@ use crate::mcp_inspection::{McpInspectionPhase, McpInspectionResult};
 use openide_ui::{Point, Size, UiEvent};
 
 fn click_inspection(app: &mut AgentsWindow, width: f32) {
+    if app.view.mcp_presentation.details.as_deref() != Some("inspection-local") {
+        app.apply_action(
+            UiAction::Clicked {
+                id: "mcp_details:inspection-local".into(),
+            },
+            &egui::Context::default(),
+        );
+    }
     let id = "mcp_inspect:inspection-local";
     let mut tree = UiTree::new(build_view(&app.view, width));
     let viewport = Size::new(width, 700.0);
