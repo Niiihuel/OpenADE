@@ -1061,7 +1061,9 @@ pub(crate) fn sidebar_card(state: &ViewState, width: f32) -> Element {
         let detail = if out_of_date {
             "Sin actualizar".to_owned()
         } else if let Some((window, _)) = plan {
-            format!("{value} {}", window.label.to_lowercase())
+            // Said before it is lowered: the catalog knows the label as written.
+            let label = crate::i18n::text(&window.label).unwrap_or_else(|| window.label.clone());
+            format!("{value} {}", label.to_lowercase())
         } else {
             value.clone()
         };

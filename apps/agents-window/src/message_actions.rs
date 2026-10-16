@@ -168,8 +168,8 @@ pub(crate) fn activity_summary(items: &[TranscriptItem]) -> String {
         .zip(phrases)
         .filter_map(|(count, (one, many))| match count {
             0 => None,
-            1 => Some(one.to_owned()),
-            _ => Some(many.replace("{}", &count.to_string())),
+            1 => Some(crate::i18n::piece(one.to_owned())),
+            _ => Some(crate::i18n::piece(many.replace("{}", &count.to_string()))),
         })
         .collect::<Vec<_>>()
         .join(", ")

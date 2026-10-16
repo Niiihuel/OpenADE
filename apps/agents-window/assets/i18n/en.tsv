@@ -25,10 +25,14 @@
 1 actualización disponible	1 update available
 1 agente sigue trabajando en su modelo actual.	1 agent is still working on its current model.
 1 archivo	1 file
+1 búsqueda	1 search
 1 contribución en el último año	1 contribution in the last year
 1 herramienta más	1 more tool
+1 listado	1 listing
 1 mensaje en cola	1 queued message
 1 notificación nueva	1 new notification
+1 página	1 page
+1 resultado	1 result
 1. Abre github.com/login/device en el navegador.\n2. Introduce el código y autoriza openADE.	1. Open github.com/login/device in the browser.\n2. Enter the code and authorize openADE.
 @{} seguirá conectado hasta verificar la nueva cuenta.	@{} will stay connected until the new account is verified.
 AGENTE	AGENT
@@ -509,6 +513,7 @@ Cada regla incluye el ejecutable y sus argumentos. Puedes declarar alternativas 
 Cada sesión recibe un acceso propio que deja de valer al cerrarla. Una CLI abierta por fuera de openADE no puede conectarse.	Each session gets its own access that stops being valid when it closes. A CLI opened outside openADE cannot connect.
 Cada tarea es una conversación con un agente sobre tu proyecto. Puedes tener varias a la vez.	Each task is a conversation with an agent about your project. You can have several at once.
 Cada variable de entorno va como NOMBRE=valor	Each environment variable goes as NAME=value
+Cada {day} a las {hour:02}:{minute:02}	Every {day} at {hour:02}:{minute:02}
 Cada {day} a las {}	Every {day} at {}
 Cada {} a las {hour:02}:{minute:02}	Every {} at {hour:02}:{minute:02}
 Caducó la consulta a Codex app-server	The Codex app-server query timed out
@@ -697,6 +702,7 @@ Claro	Light
 Claro con contraste	High contrast light
 Clasificación elegida: {} (pendiente de confirmar)	Chosen classification: {} (pending confirmation)
 Claude Code ya tiene una línea de estado configurada	Claude Code already has a status line configured
+Claude Code, Codex y otras CLIs iniciadas desde openADE reciben las herramientas activadas abajo. Desactivado, ninguna llamada externa llega a openADE.	Claude Code, Codex and other CLIs started from openADE get the tools turned on below. When it is off, no outside call reaches openADE.
 Clave de API	API key
 Clave de firma inválida	Invalid signing key
 Clave de {} guardada. El acceso se comprobará al usar un modelo.	{} key saved. Access will be checked when a model is used.
@@ -2103,6 +2109,7 @@ Esfuerzos	Efforts
 Espacio de trabajo	Workspace
 Espacio reservado por el motor para una próxima respuesta, incluido razonamiento. Puede ser menor que el máximo declarado si el usuario configuró un tope de salida; no se suma al consumo registrado.	Space reserved by the engine for an upcoming response, including reasoning. It may be lower than the declared maximum if the user configured an output cap; it is not added to the recorded usage.
 Espacios	Spaces
+Espacios: {}	Spaces: {}
 Espera a que finalice la ejecución para revisar esta versión.	Wait for the run to finish to review this version.
 Espera a que se preparen los adjuntos	Wait for the attachments to be prepared
 Espera a que termine el agente para cambiar de rama.	Wait for the agent to finish to switch branch.
@@ -3121,6 +3128,7 @@ Lectura de límites activada	Limit reading enabled
 Lectura de límites desactivada	Limit reading disabled
 Lectura de skill	Skill read
 Lectura del navegador	Browser read
+Lectura hasta el evento {} · {} copias adicionales iniciales guardadas	Read up to event {} · {} additional initial copies saved
 Lectura no disponible	Reading not available
 Lee aquí los límites de tu suscripción	Read your subscription limits here
 Lee conversaciones de este proyecto, nunca de otros. Su contenido puede incluir datos sensibles o instrucciones que la CLI tome como propias.	Reads conversations from this project, never from others. Their content may include sensitive data or instructions that the CLI treats as its own.
@@ -4396,6 +4404,7 @@ Recuperar configuración	Recover settings
 Recuperar un turno nativo sin repetir efectos inciertos	Recover a native turn without repeating uncertain effects
 Recuperá o cancelá el subagente antes de archivarlo	Recover or cancel the subagent before archiving it
 Red de la página	Page network
+Redimensionar la PTY Windows: {columns} columnas × {rows} filas.	Resize the Windows PTY: {columns} columns × {rows} rows.
 Redirigir: enviarlo ahora, sin detener el turno	Redirect: send it now, without stopping the turn
 Reducir movimiento	Reduce motion
 Reducir transparencia	Reduce transparency
@@ -4808,6 +4817,7 @@ Shell guardado. Se aplicará a las nuevas terminales.	Shell saved. It will apply
 Shell predeterminado	Default shell
 Shell y comportamiento de la terminal integrada.	Shell and behavior of the built-in terminal.
 Si la conversación no entra en el modelo elegido se resume antes de continuar y queda un aviso en la conversación. Con esto activado se pregunta primero. El historial completo nunca se borra.	If the conversation does not fit in the chosen model, it is summarized before continuing and a notice is left in the conversation. With this on, you are asked first. The full history is never deleted.
+Sigue a {upstream}. Cambiar de rama…	Tracks {upstream}. Switch branch…
 Sigue el tema del escritorio.	Follows the desktop's theme.
 Siguiente	Next
 Siguiente coincidencia	Next match
@@ -5403,6 +5413,7 @@ descripción	description
 deslizador	slider
 dic	Dec
 diff textual no disponible para este archivo binario	text diff not available for this binary file
+dimensiones ahora inciertas	size now uncertain
 diálogo	dialog
 domingo	Sunday
 donde	where
@@ -5464,6 +5475,10 @@ finalizado · código {}	finished · code {}
 fuera del proyecto	outside the project
 git diff no pudo leer los cambios	git diff couldn't read the changes
 git ls-files no pudo leer los archivos sin seguimiento	git ls-files couldn't read the untracked files
+hace {minutes} min	{minutes} min ago
+hace {} d	{} d ago
+hace {} h	{} h ago
+hace {} min	{} min ago
 herramientas	tools
 herramientas MCP	MCP tools
 herramientas más	more tools
@@ -5558,6 +5573,7 @@ ruta excluida del snapshot inicial	path excluded from the initial snapshot
 rutas iniciales con identidad ambigua	initial paths with ambiguous identity
 salida estructurada	structured output
 salida máx.	max output
+salida pendiente	output pending
 se actualizó {} y sigue activo	{} was updated and remains active
 se alcanzó el límite agregado de líneas o bytes del diff	the diff's combined line or byte limit was reached
 se alcanzó el tiempo máximo de diff de la edición	the edit's maximum diff time was reached
@@ -5573,6 +5589,7 @@ sin tipo de salida guardado	no saved output type
 sin verificar	unverified
 size debe ser uno de: {}	size must be one of: {}
 skills.sh no tiene resultados para «{}».	skills.sh has no results for "{}".
+solo lectura	read-only
 solo se copian archivos, carpetas y enlaces	only files, folders and links are copied
 supuesta (128k) hasta que el proveedor informe la suya	assumed (128k) until the provider reports its own
 sábado	Saturday
@@ -5614,7 +5631,9 @@ ya no existe	it no longer exists
 {count} imágenes adjuntas	{count} images attached
 {count} mensajes en cola	{count} queued messages
 {count} orígenes no se pudieron leer	{count} sources could not be read
+{count} resultados	{count} results
 {count} {} · Información de cada cuenta	{count} {} · Info for each account
+{count}+ resultados	{count}+ results
 {done} de {}	{done} of {}
 {error}. No se acepta un digest nuevo automáticamente ni se mide texto activado desde una selección inválida.	{error}. A new digest is not accepted automatically and activated text is not measured from an invalid selection.
 {error}. No se pudo restaurar la copia: {rollback}	{error}. Could not restore the copy: {rollback}
@@ -5665,6 +5684,7 @@ ya no existe	it no longer exists
 {} archivos{}	{} files{}
 {} bytes de metadatos	{} bytes of metadata
 {} bytes observados · {} guardados · {} omitidos\nRango: {}–{} · revisión {}	{} bytes observed · {} saved · {} omitted\nRange: {}–{} · revision {}
+{} búsquedas	{} searches
 {} commits propios · {} commits en la base	{} own commits · {} commits in the base
 {} con uso · {} sin uso	{} with usage · {} without usage
 {} conectado. Elige un modelo para empezar.	{} connected. Choose a model to get started.
@@ -5674,6 +5694,7 @@ ya no existe	it no longer exists
 {} de {} tokens · {}{}. Abrir contexto y compactación.	{} of {} tokens · {}{}. Open context and compaction.
 {} días	{} days
 {} errores · {} advertencias · {} informativos · {} sugerencias · {} sin severidad{} · Mostrar problemas del archivo	{} errors · {} warnings · {} info · {} hints · {} without severity{} · Show file problems
+{} listados	{} listings
 {} modelos en tu catálogo	{} models in your catalog
 {} no está conectado.	{} is not connected.
 {} no está en ejecución en esta tarea	{} is not running in this task
@@ -5681,6 +5702,7 @@ ya no existe	it no longer exists
 {} no se restauran: {}.	{} not restored: {}.
 {} por enviar	{} to push
 {} por recibir	{} to pull
+{} páginas	{} pages
 {} recibe los eventos del puntero en su lugar	{} receives the pointer events instead
 {} registrados · {running} en ejecución	{} registered · {running} running
 {} respuestas excluidas por procedencia ausente o ruta distinta. Coincidencia exacta de proveedor, modelo, endpoint y perfil de petición; no agrupa otras rutas por nombre parecido.	{} responses excluded due to missing provenance or a different route. Exact match of provider, model, endpoint, and request profile; other routes are not grouped by similar name.

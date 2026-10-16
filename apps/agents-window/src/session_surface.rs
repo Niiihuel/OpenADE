@@ -2062,8 +2062,8 @@ pub(crate) fn exploration_summary(items: &[TranscriptItem]) -> String {
         match (count, file.filter(|_| one == "archivo")) {
             (0, _) => {}
             (1, Some(file)) => parts.push(file.to_owned()),
-            (1, None) => parts.push(format!("1 {one}")),
-            _ => parts.push(format!("{count} {many}")),
+            (1, None) => parts.push(crate::i18n::piece(format!("1 {one}"))),
+            _ => parts.push(crate::i18n::piece(format!("{count} {many}"))),
         }
     }
     parts.join(", ")
