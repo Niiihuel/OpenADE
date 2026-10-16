@@ -8,11 +8,24 @@
 
 use openide_core::TurnMode;
 
-pub(crate) struct SubagentRole {
+/// A compiled role that narrows the child prompt and execution mode.
+pub struct SubagentRole {
     pub name: &'static str,
     pub description: &'static str,
     preamble: &'static str,
     read_only: bool,
+}
+
+impl SubagentRole {
+    /// The initial mode enforced by the native role, independent of its label.
+    pub fn mode(&self) -> TurnMode {
+        if self.read_only { TurnMode::Plan } else { TurnMode::Build }
+    }
+}
+
+/// The same built-in role descriptions advertised by `spawn_agent`.
+pub fn built_in_subagent_roles() -> &'static [SubagentRole] {
+    &ROLES
 }
 
 pub(crate) const ROLES: [SubagentRole; 3] = [
@@ -50,11 +63,7 @@ pub(crate) fn resolve(prompt: &str, role: Option<&str>) -> Result<(String, TurnM
     })?;
     Ok((
         format!("{}\n\nTask:\n{prompt}", role.preamble),
-        if role.read_only {
-            TurnMode::Plan
-        } else {
-            TurnMode::Build
-        },
+        role.mode(),
     ))
 }
 

@@ -206,7 +206,16 @@ fn task_data(sessions: &[SessionView], backend_options: &[(String, String)]) -> 
 pub(super) fn tasks_card(state: &ViewState, content_width: f32) -> Element {
     let width = (content_width - 20.0).max(0.0);
     let total = state.sessions.len();
-    let data = task_data(&state.sessions, &state.backend_options);
+    // A task run by an external CLI is recorded as `cli:<id>`; it is shown by the CLI's name.
+    let names: Vec<(String, String)> = state
+        .backend_options
+        .iter()
+        .cloned()
+        .chain(state.agent_clis.iter().map(|cli| {
+            (format!("{}{}", crate::view::CLI_BACKEND, cli.id), cli.label.clone())
+        }))
+        .collect();
+    let data = task_data(&state.sessions, &names);
     let agent_count = data.len();
     let title = Text::new("Tareas por agente", theme::component_palette()).render();
     let total = Text::new(
@@ -248,11 +257,19 @@ pub(super) fn tasks_card(state: &ViewState, content_width: f32) -> Element {
             .compact()
             .render(),
         );
+    } else if let [only] = data.as_slice() {
+        // One agent has nothing to compare against: its name and its count say it all.
+        rows.push(
+            Element::row(vec![
+                Text::new(&only.label, theme::component_palette()).truncate().render().flex(1.0),
+                Text::new(task_count_label(only.value as usize), theme::component_palette()).render(),
+            ])
+            .gap(10.0),
+        );
     } else {
-        // Category/value axes and restrained column widths follow the bar
-        // chart model documented by ECharts, using our native element tree.
-        // https://echarts.apache.org/handbook/en/how-to/chart-types/bar/basic-bar/
-        // No minimum bar height: every painted height reflects its count.
+        // Ranked horizontal bars: long agent names stay readable beside their
+        // bar, each bar says its count, and the height follows the agents.
+        // No minimum bar length: every painted length reflects its count.
         rows.push(
             BarChart::new(
                 "usage-tasks",
@@ -266,10 +283,9 @@ pub(super) fn tasks_card(state: &ViewState, content_width: f32) -> Element {
             )
             .width(width)
             .color(TASK_BAR_COLOR)
-            .vertical()
-            .height(if width < 400.0 { 220.0 } else { 240.0 })
-            .max_bar_width(48.0)
-            .integer_ticks(true)
+            .max_bar_width(18.0)
+            .grid(false)
+            .value_axis(false)
             .render(),
         );
         rows.push(
@@ -326,14 +342,23 @@ mod tests {
         };
         for width in [260.0, 480.0, 900.0] {
             let mut tree = UiTree::new(calendar_chart(&calendar, width));
+            tree.set_reduced_motion(true);
             let now = Instant::now();
             let frame = tree.layout_at(Size::new(width, 250.0), now);
-            assert_eq!(frame.regions.len(), 366);
+            assert_eq!(frame.regions.len(), 1, "the calendar owns one hover surface");
             assert!(frame
                 .regions
                 .iter()
                 .all(|region| region.kind == HitKind::Hover
+                    && region.id == "github-contributions"
                     && region.rect.x + region.rect.width <= width + 0.01));
+            let cells: Vec<_> = frame.commands.iter().filter_map(|command| match command {
+                DrawCommand::FillRect { rect, color, .. } if *color == contribution_scale().color(0) => Some(*rect),
+                _ => None,
+            }).collect();
+            assert_eq!(cells.len(), 366, "every recorded day must be painted at {width}px");
+            assert!(cells.iter().all(|cell| cell.width > 0.0 && cell.height == cell.width
+                && cell.x >= 0.0 && cell.x + cell.width <= width + 0.01));
             let first_month = frame.commands.iter().find_map(|command| match command {
                 DrawCommand::Text { text, .. } if MONTHS.contains(&text.as_str()) => {
                     Some(text.as_str())
@@ -343,14 +368,12 @@ mod tests {
             // February 29 and March 1 share the partial first week. Its tick
             // names the new month, including at widths that cull later ticks.
             assert_eq!(first_month, Some("Mar"), "first month at {width}px");
-            let leap_day = frame
-                .regions
-                .iter()
-                .find(|region| region.id == "github-contributions:2024-02-29")
-                .expect("leap-day cell");
+            // The first occupied cell is February 29, after the holes of its
+            // partial week. The plot resolves the day from this real geometry.
+            let leap_day = cells[0];
             tree.handle_event(UiEvent::PointerMove(Point::new(
-                leap_day.rect.x + leap_day.rect.width / 2.0,
-                leap_day.rect.y + leap_day.rect.height / 2.0,
+                leap_day.x + leap_day.width / 2.0,
+                leap_day.y + leap_day.height / 2.0,
             )));
             let tooltip_frame =
                 tree.layout_at(Size::new(width, 250.0), now + Duration::from_secs(2));

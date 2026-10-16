@@ -1,6 +1,26 @@
 # Validación nativa de Marketplace
 
-## Recorrido reproducible
+## Catálogo único y modal de orígenes
+
+La revisión del 15 de octubre de 2026 pasó 2.505 pruebas de `agents-window`,
+sin fallos y con 179 ignoradas. Los eventos del árbol nativo comprueban tarjetas,
+selección y vuelta al catálogo, filtros, límites por grupo, Tab, Shift+Tab, Enter,
+Escape y retorno de foco desde catálogo y detalle. También comprueban que los
+accesos anteriores a MCP y Plugins abran Ajustes y que las acciones MCP atrasadas
+no cambien registros ni dejen una confirmación abierta en Marketplace.
+
+Se revisaron seis capturas con las fuentes del host: catálogo a 320, 900 y
+1.400 px, orígenes a 320 px, detalle a 900 px e instaladas a 1.400 px. Se regeneran
+con `OPENIDE_MARKETPLACE_VISUAL_DIR` y el test ignorado
+`marketplace_view::tests::export_marketplace_visual_review`. Artefactos locales:
+`target/marketplace-ux-visual-qa` y `target/marketplace-ux-app-validation.log`.
+El build de escritorio terminó sin errores y el IDE se abrió en Linux.
+
+Esta etapa no ejecutó el script Wayland descrito a continuación: conserva
+selectores de pestañas y del antiguo modal de detalle que requieren actualización.
+Su validación previa no certifica esta presentación ni Windows/macOS.
+
+## Recorrido Wayland previo
 
 `scripts/marketplace-desktop-e2e.py` requiere un binario compilado con `editor-e2e` y el compositor privado de `scripts/headless-desktop-fixture.py`. Rechaza ejecutarse sobre el escritorio normal. Todas las entradas pasan por teclado y puntero Wayland de esa instancia; el observer sólo publica estado y geometría, no acepta órdenes.
 

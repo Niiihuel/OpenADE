@@ -199,6 +199,9 @@ impl AgentsWindow {
             return true;
         }
         if id == "window_mode_toggle" {
+            if self.view.automations.screen == AutomationScreen::Edit {
+                self.close_automation_editor();
+            }
             self.view.ide.menu_open = None;
             self.view.ide.new_file = None;
             self.view.ide.extensions_open = false;

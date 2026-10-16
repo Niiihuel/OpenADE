@@ -1,5 +1,17 @@
 #[path = "marketplace_app.rs"]
 mod marketplace_app;
+#[path = "appearance_app.rs"]
+mod appearance_app;
+#[path = "custom_theme_app.rs"]
+mod custom_theme_app;
+#[path = "browser_settings_app.rs"]
+mod browser_settings_app;
+#[path = "subagent_settings_app.rs"]
+mod subagent_settings_app;
+#[path = "mcp_settings_app.rs"]
+mod mcp_settings_app;
+#[path = "mcp_presentation_app.rs"]
+mod mcp_presentation_app;
 #[path = "plugins_app.rs"]
 mod plugins_app;
 use marketplace_app::{MarketplaceOperation, MarketplaceResponse, MarketplaceRemoteHost};
@@ -66,6 +78,9 @@ mod native_automation_result_app_tests;
 #[cfg(all(test, unix))]
 #[path = "native_automation_scope_tests.rs"]
 mod native_automation_scope_tests;
+#[cfg(test)]
+#[path = "automation_modal_app_tests.rs"]
+mod automation_modal_app_tests;
 #[cfg(all(test, unix))]
 #[path = "native_child_commands_app_tests.rs"]
 mod native_child_commands_app_tests;
@@ -239,7 +254,7 @@ use crate::{
     marketplace::{InstallScope, MarketplaceStore, SourceKind},
     marketplace_view::MarketplaceViewState,
     mcp_oauth_controller::{
-        forget_oauth_registration, oauth_registration_changed, McpOAuthController, McpOAuthEvent,
+        forget_oauth_registration_if_unreferenced, oauth_registration_changed, McpOAuthController, McpOAuthEvent,
     },
     mcp_settings::{McpHttpOAuthSettings, McpSettings},
     model_catalog::{self, CatalogSnapshot},
@@ -287,14 +302,18 @@ use openide_harness::{
     PermissionMode, PermissionPolicy, PersistentCommandManager, PersistentCommandSessionInfo,
     ProjectInstructionLimits, ResponsesBackend, ResumeDisposition, RunLimits, SubagentBridgeEvent,
     SubagentCoordinator, SubagentEventBridge, SubagentLimits, SubagentRecoveryPause,
-    SubagentRecoveryState, SubagentStatus, SubagentToolExecutor, SubagentToolLimits,
+    SubagentRecoveryState, SubagentStatus, SubagentToolExecutor,
     SubagentWorker, TokenBudgetPolicy, ToolExecutor, ToolOutput,
     DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS,
 };
+#[cfg(test)]
+use openide_harness::SubagentToolLimits;
 use openide_ui::{
-    DatePicker, Easing, Element, FontFamily, FontMetrics, Frame as UiFrame, ScalarTransition, Size,
+    DatePicker, Easing, Element, FontMetrics, Frame as UiFrame, ScalarTransition, Size,
     TimePicker, UiAction, UiEvent, UiTree,
 };
+#[cfg(test)]
+use openide_ui::FontFamily;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
@@ -1104,31 +1123,7 @@ struct BackgroundAutomationRun {
 }
 
 fn install_text_measurer(tree: &mut UiTree, context: &egui::Context) {
-    let height_context = context.clone();
-    tree.set_text_height_measurer(move |size, family| {
-        let family = match family {
-            FontFamily::Monospace => egui::FontFamily::Monospace,
-            FontFamily::Sans | FontFamily::SansItalic | FontFamily::SansMedium | FontFamily::SansBold => egui::FontFamily::Proportional,
-        };
-        height_context.fonts_mut(|fonts| fonts.row_height(&egui::FontId::new(size, family)))
-    });
-    let context = context.clone();
-    tree.set_text_measurer(move |value, size, family| {
-        let family = match family {
-            FontFamily::Monospace => egui::FontFamily::Monospace,
-            FontFamily::Sans | FontFamily::SansItalic | FontFamily::SansMedium | FontFamily::SansBold => egui::FontFamily::Proportional,
-        };
-        context.fonts_mut(|fonts| {
-            fonts
-                .layout_no_wrap(
-                    value.to_owned(),
-                    egui::FontId::new(size, family),
-                    egui::Color32::WHITE,
-                )
-                .size()
-                .x
-        })
-    });
+    limn_egui::attach_fonts(tree, context);
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1324,6 +1319,7 @@ pub struct AgentsWindow {
         crate::composer_pending::PendingComposerSelection,
     >,
     settings_preferences: SettingsPreferences,
+    theme_file_task: Option<custom_theme_app::ThemeFileTask>,
     agent_tool_settings: AgentToolSettings,
     external_agent_settings: ExternalAgentSettings,
     exec_policy_settings: ExecPolicySettings,
@@ -1377,6 +1373,7 @@ pub struct AgentsWindow {
     pending_child_recovery_permission: Option<SubagentPermissionView>,
     active_mcp_oauth: Option<McpOAuthController>,
     active_mcp_inspection: Option<crate::mcp_inspection::McpInspectionController>,
+    active_mcp_discovery: Option<crate::mcp_discovery::McpDiscoveryController>,
     subagent_bridge: Arc<SubagentEventBridge>,
     subagent_events: Receiver<SubagentBridgeEvent>,
     last_subagent_poll: Instant,
@@ -1573,6 +1570,9 @@ pub struct AgentsWindow {
     github_worker: Option<GithubWorker>,
     /// What the agent may do in the browser on each site without asking.
     browser_sites: crate::browser_sites::BrowserSites,
+    subagent_settings: crate::subagent_settings::SubagentSettings,
+    subagent_settings_error: Option<String>,
+    active_mcp_import: Option<crate::mcp_import::McpImportController>,
     /// The commit message a model is writing for the git panel's form.
     commit_generation: Option<crate::commit_message::Generation>,
     github_status: GithubStatus,
@@ -4860,26 +4860,26 @@ impl AgentsWindow {
     /// own browser: never the page of a CLI's browser or of another chat.
     pub(crate) fn agent_browser_site(&self, tool_name: &str, arguments: &str) -> Option<String> {
         let scope = self.dock_scope();
-        let tab = self
+        let runtime = self
             .dock
             .tabs(&scope.workspace_id)
             .iter()
-            .find(|tab| tab.kind == DockTabKind::Browser && tab.owner == scope.owner)?;
-        let page = self.browsers.get(&tab.id.get()).map(|runtime| runtime.snapshot().url).unwrap_or_default();
-        crate::browser_sites::site_of_call(tool_name, arguments, &page)
-    }
-
-    fn blocked_browser_sites(&self) -> Vec<String> {
-        self.browser_sites
-            .sites
-            .iter()
-            .filter(|site| site.access == crate::browser_sites::SiteAccess::Block)
-            .map(|site| site.origin.clone())
-            .collect()
+            .find(|tab| tab.kind == DockTabKind::Browser && tab.owner == scope.owner)
+            .and_then(|tab| self.browsers.get(&tab.id.get()));
+        match runtime {
+            Some(runtime) => runtime.agent_site_for_call(
+                tool_name.strip_prefix(crate::browser_runtime::NATIVE_TOOL_PREFIX)?,
+                &serde_json::from_str(arguments).ok()?,
+            ),
+            None => crate::browser_sites::site_of_call(tool_name, arguments, ""),
+        }
     }
 
     /// Keeps a site's permission and shows it in the settings.
     pub(crate) fn set_browser_site(&mut self, address: &str, access: Option<crate::browser_sites::SiteAccess>) -> Result<(), String> {
+        if let Some(error) = &self.view.browser_sites_error {
+            return Err(format!("Corrige los permisos por sitio antes de modificarlos: {error}"));
+        }
         let mut sites = self.browser_sites.clone();
         match access {
             Some(access) => sites.set(address, access)?,
@@ -4888,11 +4888,7 @@ impl AgentsWindow {
         sites.save(&self.data_root)?;
         self.view.browser_sites = sites.sites.clone();
         self.browser_sites = sites;
-        // The browsers that are open stop at a blocked site from now on.
-        let blocked = self.blocked_browser_sites();
-        for runtime in self.browsers.values() {
-            runtime.set_blocked_sites(blocked.clone());
-        }
+        self.sync_browser_agent_policy();
         Ok(())
     }
 
@@ -5230,7 +5226,7 @@ impl AgentsWindow {
                 Ok(runtime) => {
                     let repaint = ctx.clone();
                     runtime.on_frame(move || repaint.request_repaint());
-                    runtime.set_blocked_sites(self.blocked_browser_sites());
+                        runtime.set_agent_policy(self.settings_preferences.browser_automation_enabled, &self.browser_sites, self.view.browser_sites_error.as_deref());
                     self.browsers.insert(id, runtime);
                 }
                 Err(error) if self.view.browser.tab_id == Some(id) => {
@@ -6640,6 +6636,8 @@ impl AgentsWindow {
         crate::theme_mode::load(&root);
         let data_folder = root.display().to_string();
         let settings_preferences = SettingsPreferences::load(&root);
+        crate::theme_mode::set_appearance(&settings_preferences.appearance);
+        crate::appearance_preferences::set_current(&settings_preferences.appearance);
         let ide = crate::ide_workspace::IdeWorkspaceState::load(&root);
         let (agent_tool_settings, agent_tool_settings_error) = match AgentToolSettings::load(&root)
         {
@@ -6715,7 +6713,11 @@ impl AgentsWindow {
                     Some(error),
                 ),
             };
-        let (mcp_settings, mcp_load_error) = match McpSettings::load(&root, Path::new(&workspace)) {
+        let (browser_sites, browser_sites_error) = match crate::browser_sites::BrowserSites::load(&root) {
+            Ok(sites) => (sites, None),
+            Err(error) => (Default::default(), Some(error)),
+        };
+        let (mcp_settings, mcp_load_error) = match McpSettings::load_scope(&root, Path::new(&workspace), Default::default()) {
             Ok(settings) => (settings, None),
             Err(error) => (McpSettings::default(), Some(error)),
         };
@@ -7003,6 +7005,9 @@ impl AgentsWindow {
             plugins: Default::default(),
             native_hooks: HookUiState::from_load(NativeHookSettings::load(&root)),
             mcp_servers: mcp_settings.servers,
+            mcp_settings_scope: Default::default(),
+            mcp_effective_summary: String::new(),
+            mcp_shadowed_user_ids: Vec::new(),
             mcp_selected_id: None,
             mcp_editor_open: false,
             pending_mcp_delete_id: None,
@@ -7017,6 +7022,7 @@ impl AgentsWindow {
             mcp_draft_oauth_scopes: String::new(),
             mcp_oauth_status: None,
             mcp_inspection: Default::default(),
+            mcp_presentation: Default::default(),
             conversation_activity: Default::default(),
             conversation_details: Default::default(),
             stream_presentation: Default::default(),
@@ -7029,6 +7035,9 @@ impl AgentsWindow {
             vim_mode: settings_preferences.vim_mode,
                 settings_keymap_menu_open: false,
                 settings_reduced_motion: settings_preferences.reduced_motion,
+                appearance: settings_preferences.appearance.clone(),
+                appearance_font_query: Default::default(),
+                custom_theme_ui: Default::default(),
             settings_reopen_last_workspace: settings_preferences.reopen_last_workspace,
             settings_terminal_shell: settings_preferences.terminal_shell.clone(),
             settings_terminal_shell_draft: match &settings_preferences.terminal_shell {
@@ -7108,8 +7117,16 @@ impl AgentsWindow {
             agent_page_url: String::new(),
             queued_messages: Vec::new(),
             queue_paused: false,
-            browser_sites: crate::browser_sites::BrowserSites::load(&root).unwrap_or_default().sites,
+            browser_sites: browser_sites.sites.clone(),
             browser_site_draft: String::new(),
+            browser_automation_enabled: settings_preferences.browser_automation_enabled,
+            browser_sites_error,
+            browser_site_draft_access: Default::default(),
+            browser_sites_reset_confirm: false,
+            subagent_settings: Default::default(),
+            subagent_settings_error: None,
+            subagent_personas: Vec::new(),
+            subagent_settings_reset_pending: false,
             review_detail: None,
             terminal_tabs: Vec::new(),
             terminal_controls: Default::default(),
@@ -7197,6 +7214,7 @@ impl AgentsWindow {
             composer_preferences,
             pending_composer_selections: HashMap::new(),
             settings_preferences,
+            theme_file_task: None,
             agent_tool_settings,
             external_agent_settings,
             exec_policy_settings,
@@ -7244,6 +7262,7 @@ impl AgentsWindow {
             pending_child_recovery_permission: None,
             active_mcp_oauth: None,
             active_mcp_inspection: None,
+            active_mcp_discovery: None,
             subagent_bridge,
             subagent_events,
             last_subagent_poll: Instant::now(),
@@ -7431,7 +7450,10 @@ impl AgentsWindow {
             detail_generation: 0,
             detail_request: None,
             github_worker: GithubWorker::spawn().ok(),
-            browser_sites: crate::browser_sites::BrowserSites::load(&root).unwrap_or_default(),
+            browser_sites,
+            subagent_settings: Default::default(),
+            subagent_settings_error: None,
+            active_mcp_import: None,
             commit_generation: None,
             turn_queue_next: 1 + load_turn_queues(&root).values().flat_map(|queue| &queue.items).map(|turn| turn.id).max().unwrap_or(0),
             turn_queue: load_turn_queues(&root),
@@ -7454,6 +7476,8 @@ impl AgentsWindow {
         }
         app.init_code_editor_recovery();
         app.init_editor_preferences();
+        app.refresh_subagent_settings();
+        app.refresh_mcp_effective_summary();
         app.sync_dock_view();
         app.refresh_file_rows();
         app.load_automation_stores();
@@ -7555,14 +7579,21 @@ impl AgentsWindow {
                         .cloned()
                 })
                 .collect();
-            self.view.automations.models = self
-                .view
-                .composer_routes
-                .iter()
-                .map(|route| {
-                    (route.provider_id.clone(), route.model_id.clone(), format!("{} · {}", route.provider_name, route.model_name))
-                })
-                .collect();
+            if self.view.automations.editor_menu.as_deref() != Some("model") {
+                self.view.automations.models = self
+                    .view
+                    .composer_routes
+                    .iter()
+                    .filter(|route| route.backend == "native" && route.selectable())
+                    .map(|route| {
+                        (
+                            route.provider_id.clone(),
+                            route.model_id.clone(),
+                            format!("{} · {}", route.provider_name, route.model_name),
+                        )
+                    })
+                    .collect();
+            }
             self.view.automations.busy_ids = self
                 .background_automation_runs
                 .iter()
@@ -8131,6 +8162,22 @@ impl AgentsWindow {
         changed
     }
 
+    fn automation_editor_active(&self) -> bool {
+        !self.view.show_settings
+            && self.view.main_page == MainPage::Automations
+            && self.view.automations.screen == AutomationScreen::Edit
+            && self.view.automations.workspace == self.view.workspace
+    }
+
+    fn close_automation_editor(&mut self) {
+        self.view.automations.screen = AutomationScreen::List;
+        self.view.automations.selected_id = None;
+        self.view.automations.editor_menu = None;
+        self.view.automations.model_query.clear();
+        self.view.automations.error = None;
+        self.view.automations.pending_delete_id = None;
+    }
+
     fn sync_automation_form_inputs(&mut self) {
         let form = &self.view.automations.form;
         let (once_date, once_time) = form.once_parts();
@@ -8148,20 +8195,88 @@ impl AgentsWindow {
     }
 
     fn handle_automation_action(&mut self, id: &str) {
+        if self.view.show_settings
+            || self.view.main_page != MainPage::Automations
+            || self.view.automations.workspace != self.view.workspace
+        {
+            return;
+        }
+        let editor_action = matches!(
+            id,
+            "automation_cancel"
+                | "automation_previous"
+                | "automation_next"
+                | "automation_save"
+                | "automation_native_current"
+                | "automation_choice_dismiss"
+                | "automation_weekdays_work"
+        ) || [
+            "automation_step:",
+            "automation_frequency:",
+            "automation_weekday:",
+            "automation_backend:",
+            "automation_model:",
+            "automation_choice_toggle:",
+            "automation_once_date:",
+            "automation_once_time:",
+            "automation_time:",
+        ]
+        .iter()
+        .any(|prefix| id.starts_with(prefix));
+        if editor_action != self.automation_editor_active() {
+            return;
+        }
+        if id == "automation_save_all" {
+            return;
+        }
         // What the last action said has been read by the time of the next.
         self.view.automations.notice = None;
-        // Beside the list the whole task is in view: saving is one step.
-        let id = if id == "automation_save_all" {
-            self.view.automations.editor_step = crate::automation_view::AutomationEditorStep::Agent;
-            "automation_save"
-        } else {
-            id
-        };
         let now_ms = chrono::Utc::now().timestamp_millis();
         let current_native = self.native_settings();
         let state = &mut self.view.automations;
+        use crate::automation_view::AutomationEditorStep;
+        if let Some(choice) = id.strip_prefix("automation_choice_toggle:") {
+            let allowed = match choice {
+                "backend" => state.editor_step == AutomationEditorStep::Agent,
+                "model" => {
+                    state.editor_step == AutomationEditorStep::Agent
+                        && state.form.backend == "native"
+                }
+                "date" => {
+                    state.editor_step == AutomationEditorStep::Schedule
+                        && state.form.frequency == AutomationFrequency::Once
+                }
+                _ => false,
+            };
+            if allowed {
+                state.editor_menu =
+                    (state.editor_menu.as_deref() != Some(choice)).then(|| choice.to_owned());
+                if choice == "model" {
+                    state.model_query.clear();
+                    self.tree.set_input_value("automation_model_query", "");
+                }
+            }
+            return;
+        }
+        if id == "automation_choice_dismiss" {
+            state.editor_menu = None;
+            return;
+        }
+        if (id.starts_with("automation_frequency:")
+            || id.starts_with("automation_weekday:")
+            || id == "automation_weekdays_work"
+            || id.starts_with("automation_once_")
+            || id.starts_with("automation_time:"))
+            && state.editor_step != AutomationEditorStep::Schedule
+        {
+            return;
+        }
         if let Some(date) = DatePicker::selected_date(id, "automation_once_date") {
+            if state.editor_menu.as_deref() != Some("date") {
+                return;
+            }
             state.form.set_once_date(date);
+            state.editor_menu = None;
             self.tree.set_input_value("automation_once_date", date);
             state.calendar_year = date[..4].parse().unwrap_or(state.calendar_year);
             state.calendar_month = date[5..7].parse().unwrap_or(state.calendar_month);
@@ -8169,6 +8284,9 @@ impl AgentsWindow {
             return;
         }
         if id == "automation_once_date:month_prev" || id == "automation_once_date:month_next" {
+            if state.editor_menu.as_deref() != Some("date") {
+                return;
+            }
             let delta = if id.ends_with("month_prev") { -1 } else { 1 };
             (state.calendar_year, state.calendar_month) =
                 DatePicker::shift_month(state.calendar_year, state.calendar_month, delta);
@@ -8194,12 +8312,14 @@ impl AgentsWindow {
         }
         if let Some(frequency) = AutomationFrequency::from_action_id(id) {
             state.form.frequency = frequency;
+            state.editor_menu = None;
             state.error = None;
             return;
         }
         if let Some(step) = crate::automation_view::AutomationEditorStep::from_action_id(id) {
             if state.screen == AutomationScreen::Edit && step.index() <= state.editor_step.index() {
                 state.editor_step = step;
+                state.editor_menu = None;
                 state.error = None;
             }
             return;
@@ -8222,7 +8342,13 @@ impl AgentsWindow {
             return;
         }
         if let Some(backend) = id.strip_prefix("automation_backend:") {
+            if state.editor_step != AutomationEditorStep::Agent
+                || state.editor_menu.as_deref() != Some("backend")
+            {
+                return;
+            }
             if state.backends.iter().any(|item| item.0 == backend) {
+                state.editor_menu = None;
                 state.form.backend = backend.to_owned();
                 if backend == "native" {
                     state.form.native_provider.get_or_insert(current_native);
@@ -8231,6 +8357,13 @@ impl AgentsWindow {
             return;
         }
         if id == "automation_native_current" {
+            if state.editor_step != AutomationEditorStep::Agent
+                || state.form.backend != "native"
+                || state.editor_menu.as_deref() != Some("model")
+            {
+                return;
+            }
+            state.editor_menu = None;
             state.form.native_provider = Some(current_native);
             return;
         }
@@ -8238,14 +8371,24 @@ impl AgentsWindow {
             .strip_prefix("automation_model:")
             .and_then(|index| state.models.get(index.parse::<usize>().ok()?))
         {
+            if state.editor_step != AutomationEditorStep::Agent
+                || state.form.backend != "native"
+                || state.editor_menu.as_deref() != Some("model")
+            {
+                return;
+            }
             // Its own endpoint goes with the provider it was written for.
-            let custom_endpoint =
-                if *provider == current_native.provider_id { current_native.custom_endpoint } else { String::new() };
+            let custom_endpoint = if *provider == current_native.provider_id {
+                current_native.custom_endpoint
+            } else {
+                String::new()
+            };
             state.form.native_provider = Some(crate::native_provider::NativeProviderSettings {
                 provider_id: provider.clone(),
                 model_id: model.clone(),
                 custom_endpoint,
             });
+            state.editor_menu = None;
             return;
         }
         match id {
@@ -8260,10 +8403,7 @@ impl AgentsWindow {
                 return;
             }
             "automation_back" | "automation_cancel" => {
-                state.screen = AutomationScreen::List;
-                state.selected_id = None;
-                state.error = None;
-                state.pending_delete_id = None;
+                self.close_automation_editor();
                 return;
             }
             "automation_delete_cancel" => {
@@ -8273,6 +8413,7 @@ impl AgentsWindow {
             "automation_previous" => {
                 if state.screen == AutomationScreen::Edit {
                     state.editor_step = state.editor_step.previous();
+                    state.editor_menu = None;
                     state.error = None;
                 }
                 return;
@@ -8282,6 +8423,7 @@ impl AgentsWindow {
                     match state.form.validate_step(state.editor_step, now_ms) {
                         Ok(()) => {
                             state.editor_step = state.editor_step.next();
+                            state.editor_menu = None;
                             state.error = None;
                         }
                         Err(error) => state.error = Some(error.to_string()),
@@ -8290,7 +8432,9 @@ impl AgentsWindow {
                 return;
             }
             "automation_save" => {
-                if state.screen != AutomationScreen::Edit {
+                if state.screen != AutomationScreen::Edit
+                    || state.editor_step != AutomationEditorStep::Agent
+                {
                     return;
                 }
                 for step in [
@@ -8299,13 +8443,10 @@ impl AgentsWindow {
                 ] {
                     if let Err(error) = state.form.validate_step(step, now_ms) {
                         state.editor_step = step;
+                        state.editor_menu = None;
                         state.error = Some(error.to_string());
                         return;
                     }
-                }
-                if state.editor_step != crate::automation_view::AutomationEditorStep::Agent {
-                    state.editor_step = crate::automation_view::AutomationEditorStep::Agent;
-                    return;
                 }
                 if state.form.backend == "native" {
                     state.form.native_provider.get_or_insert(current_native);
@@ -8332,6 +8473,7 @@ impl AgentsWindow {
                     Ok(()) => {
                         self.view.automations.screen = AutomationScreen::List;
                         self.view.automations.selected_id = None;
+                        self.view.automations.editor_menu = None;
                         self.view.automations.error = None;
                         self.view.automations.notice = Some("Automatización guardada".to_owned());
                         self.refresh_automation_view();
@@ -8365,7 +8507,10 @@ impl AgentsWindow {
         } else if let Some(selected_id) = id.strip_prefix("automation_delete_request:") {
             // A run in course still writes its outcome to the task's history.
             if state.busy_ids.iter().any(|busy| busy == selected_id) {
-                state.error = Some("Esta tarea se está ejecutando. Esperá a que termine para eliminarla.".to_owned());
+                state.error = Some(
+                    "Esta tarea se está ejecutando. Esperá a que termine para eliminarla."
+                        .to_owned(),
+                );
             } else {
                 state.pending_delete_id = Some(selected_id.to_owned());
             }
@@ -9756,8 +9901,27 @@ impl AgentsWindow {
         self.view.mcp_draft_env_names.clear();
     }
 
+    fn refresh_mcp_effective_summary(&mut self) {
+        let workspace = Path::new(&self.view.workspace);
+        self.view.mcp_effective_summary = match McpSettings::load(&self.data_root, workspace) {
+            Ok(settings) => format!("{} servidores habilitados para el próximo turno. Los plugins se administran por separado.",
+                settings.servers.iter().filter(|server| server.enabled).count()),
+            Err(error) => format!("La configuración efectiva requiere atención: {error}"),
+        };
+        self.view.mcp_shadowed_user_ids = match (
+            McpSettings::load_scope(&self.data_root, workspace, crate::mcp_settings::McpSettingsScope::User),
+            McpSettings::load_scope(&self.data_root, workspace, crate::mcp_settings::McpSettingsScope::Project),
+        ) {
+            (Ok(user), Ok(project)) => user.servers.into_iter()
+                .filter(|server| project.servers.iter().any(|entry| entry.id == server.id))
+                .map(|server| server.id).collect(),
+            _ => Vec::new(),
+        };
+    }
+
     fn refresh_mcp_settings(&mut self) {
-        match McpSettings::load(&self.data_root, Path::new(&self.view.workspace)) {
+        self.invalidate_mcp_import();
+        match McpSettings::load_scope(&self.data_root, Path::new(&self.view.workspace), self.view.mcp_settings_scope) {
             Ok(settings) => {
                 let kept = &self.view.mcp_servers;
                 self.view.mcp_inspection.last.retain(|id, _| {
@@ -9774,6 +9938,8 @@ impl AgentsWindow {
         self.clear_mcp_draft();
         self.view.mcp_editor_open = false;
         self.view.pending_mcp_delete_id = None;
+        self.refresh_mcp_effective_summary();
+        self.refresh_mcp_presentation();
     }
 
     fn select_mcp_server(&mut self, id: &str) {
@@ -9839,14 +10005,28 @@ impl AgentsWindow {
             );
             return false;
         }
+        match McpSettings::load_scope(&self.data_root, Path::new(&self.view.workspace), self.view.mcp_settings_scope) {
+            Ok(saved) if saved.servers == self.view.mcp_servers => {}
+            Ok(_) => {
+                self.set_settings_notice("La configuración MCP guardada cambió. Recarga el ámbito antes de guardar para conservar los cambios externos.", true);
+                return false;
+            }
+            Err(error) => {
+                self.view.mcp_load_error = Some(error.clone());
+                self.set_settings_notice(error, true);
+                return false;
+            }
+        }
         let settings = McpSettings { servers };
-        match settings.save(&self.data_root, Path::new(&self.view.workspace)) {
+        match settings.save_scope(&self.data_root, Path::new(&self.view.workspace), self.view.mcp_settings_scope) {
             Ok(()) => {
                 let kept = &self.view.mcp_servers;
                 self.view.mcp_inspection.last.retain(|id, _| {
                     settings.servers.iter().find(|server| &server.id == id).is_some_and(|server| kept.contains(server))
                 });
                 self.view.mcp_servers = settings.servers;
+                self.refresh_mcp_effective_summary();
+                self.refresh_mcp_presentation();
                 self.set_settings_notice(message, false);
                 true
             }
@@ -9973,17 +10153,18 @@ impl AgentsWindow {
         }) {
             self.cancel_mcp_oauth();
         }
-        if let Some(previous) = &previous {
-            if oauth_registration_changed(previous, &server) {
-                if let Err(error) = forget_oauth_registration(previous) {
-                    self.set_settings_notice(error, true);
-                    return;
-                }
-            }
-        }
+        let replacement = McpSettings { servers: servers.clone() };
         if self.commit_mcp_settings(servers, "Servidor MCP guardado") {
             self.view.mcp_editor_open = false;
             self.clear_mcp_draft();
+            if let Some(previous) = previous.filter(|previous| oauth_registration_changed(previous, &server)) {
+                if let Err(error) = forget_oauth_registration_if_unreferenced(
+                    &self.data_root, Path::new(&self.view.workspace), self.view.mcp_settings_scope,
+                    &previous, &replacement,
+                ) {
+                    self.set_settings_notice(format!("Configuración guardada; credencial anterior conservada: {error}"), true);
+                }
+            }
         }
     }
 
@@ -10015,24 +10196,28 @@ impl AgentsWindow {
             self.cancel_mcp_oauth();
         }
         let mut servers = self.view.mcp_servers.clone();
-        if let Some(existing) = servers.iter().find(|server| server.id == id) {
-            if let Err(error) = forget_oauth_registration(existing) {
-                self.set_settings_notice(error, true);
-                return false;
-            }
-        }
+        let previous = servers.iter().find(|server| server.id == id).cloned();
         let before = servers.len();
         servers.retain(|server| server.id != id);
         if servers.len() == before {
             self.set_settings_notice("Servidor MCP no encontrado", true);
             return false;
         }
+        let replacement = McpSettings { servers: servers.clone() };
         if !self.commit_mcp_settings(servers, "Servidor MCP eliminado") {
             return false;
         }
         if self.view.mcp_selected_id.as_deref() == Some(id) {
             self.view.mcp_editor_open = false;
             self.clear_mcp_draft();
+        }
+        if let Some(previous) = previous {
+            if let Err(error) = forget_oauth_registration_if_unreferenced(
+                &self.data_root, Path::new(&self.view.workspace), self.view.mcp_settings_scope,
+                &previous, &replacement,
+            ) {
+                self.set_settings_notice(format!("Configuración guardada; credencial anterior conservada: {error}"), true);
+            }
         }
         true
     }
@@ -10114,7 +10299,7 @@ impl AgentsWindow {
             return;
         }
         let result = (|| {
-            let saved = McpSettings::load(&self.data_root, Path::new(&self.view.workspace))?;
+            let saved = McpSettings::load_scope(&self.data_root, Path::new(&self.view.workspace), self.view.mcp_settings_scope)?;
             let server = saved
                 .servers
                 .iter()
@@ -10135,11 +10320,15 @@ impl AgentsWindow {
         })();
         match result {
             Ok(controller) => {
+                if self.view.mcp_presentation.details.as_deref() != Some(id) {
+                    self.handle_mcp_presentation_action(&format!("mcp_details:{id}"));
+                }
                 self.view.mcp_inspection.begin(controller.scope().clone());
                 self.active_mcp_inspection = Some(controller);
                 self.clear_settings_notice();
             }
             Err(error) => {
+                self.set_settings_notice(error.clone(), true);
                 self.view.mcp_inspection = McpInspectionUiState {
                     phase: McpInspectionPhase::Failed,
                     error: Some(error),
@@ -10166,7 +10355,7 @@ impl AgentsWindow {
                 )
             {
                 if let Some(scope) = &self.view.mcp_inspection.scope {
-                    let saved = McpSettings::load(&self.data_root, Path::new(&self.view.workspace));
+                    let saved = McpSettings::load_scope(&self.data_root, Path::new(&self.view.workspace), self.view.mcp_settings_scope);
                     if !saved.as_ref().is_ok_and(|saved| {
                         scope.matches_saved(Path::new(&self.view.workspace), saved)
                     }) {
@@ -10180,7 +10369,7 @@ impl AgentsWindow {
             return false;
         };
         let workspace = Path::new(&self.view.workspace);
-        let saved = McpSettings::load(&self.data_root, workspace);
+        let saved = McpSettings::load_scope(&self.data_root, workspace, self.view.mcp_settings_scope);
         let stale = !saved
             .as_ref()
             .is_ok_and(|saved| controller.scope().matches_saved(workspace, saved));
@@ -10220,6 +10409,9 @@ impl AgentsWindow {
             return false;
         }
         self.settings_preferences = next;
+        crate::theme_mode::set_appearance(&self.settings_preferences.appearance);
+        crate::appearance_preferences::set_current(&self.settings_preferences.appearance);
+        self.view.appearance = self.settings_preferences.appearance.clone();
         self.set_settings_notice(message, false);
         true
     }
@@ -10770,6 +10962,11 @@ impl AgentsWindow {
         // "Permitir todo" covers the rest of it, as it does the commands that
         // can do more than a page. Any other call of its asks.
         let full_access = self.agent_tool_settings.full_access();
+        if !self.browser_automation_available() {
+            return Ok(crate::browser_runtime::native_tool_names()
+                .into_iter()
+                .fold(policy, |policy, name| policy.with_tool(name, PermissionMode::Deny)));
+        }
         Ok(crate::browser_runtime::native_tool_names()
             .into_iter()
             .filter(|name| crate::browser_runtime::native_tool_allowed(name, full_access))
@@ -12391,6 +12588,7 @@ impl AgentsWindow {
             self.view.status = "Detén el agente antes de cambiar de sesión".to_owned();
             return;
         }
+        self.close_automation_editor();
         self.reveal_ide_agent();
         self.view.composer_error = None;
         self.save_draft();
@@ -13565,6 +13763,12 @@ impl AgentsWindow {
         } else {
             Vec::new()
         };
+        let native_mcp_selections = if backend == "native" && self.view.turn_mode == TurnMode::Build {
+            match crate::mcp_tool_selection::McpToolSelections::load_effective(&self.data_root, &workspace) {
+                Ok(selections) => selections,
+                Err(error) => { self.show_composer_error(error); return; }
+            }
+        } else { Default::default() };
         let native_hooks = if backend == "native" {
             match NativeHookSettings::load(&self.data_root).and_then(|settings| {
                 settings.registry_for(
@@ -13859,7 +14063,7 @@ impl AgentsWindow {
             };
             // An agent is told of the browser it is given, or it reaches for
             // the system's. A Plan turn is given no browser.
-            let native_instructions = if request.mode == TurnMode::Build {
+            let native_instructions = if request.mode == TurnMode::Build && self.browser_automation_available() {
                 crate::browser_runtime::with_agent_note(native_instructions)
             } else {
                 native_instructions
@@ -13876,8 +14080,12 @@ impl AgentsWindow {
                 }
             };
             let command_hooks = native_hooks.expect("native hooks were validated");
+            let subagent_settings = match self.subagent_settings_for_run() {
+                Ok(settings) => settings,
+                Err(error) => { self.view.status = error; return; }
+            };
             let coordinator =
-                match SubagentCoordinator::new(store.clone(), SubagentLimits::default()) {
+                match SubagentCoordinator::new(store.clone(), subagent_settings.coordinator_limits()) {
                     Ok(coordinator) => Arc::new(coordinator),
                     Err(error) => {
                         self.view.status =
@@ -13897,7 +14105,7 @@ impl AgentsWindow {
             .with_session_approvals(self.agent_tool_settings.command_isolation())
             .with_event_bridge(self.subagent_bridge.clone())
             .with_command_hooks(command_hooks.clone())
-            .with_nested_subagents(SubagentToolLimits::default())
+            .with_nested_subagents(subagent_settings.tool_limits())
             .with_native_goals()
             .with_system_instructions(crate::turn_check::child_instructions(
                 &instructions,
@@ -13939,9 +14147,9 @@ impl AgentsWindow {
                 coordinator,
                 store.clone(),
                 lease.clone(),
-                SubagentToolLimits::default(),
+                subagent_settings.tool_limits(),
             ) {
-                Ok(tools) => Arc::new(tools),
+                Ok(tools) => Arc::new(tools.with_delegation_enabled(subagent_settings.enabled)),
                 Err(error) => {
                     self.view.status =
                         format!("No se pudieron preparar las herramientas de subagentes: {error}");
@@ -14011,7 +14219,7 @@ impl AgentsWindow {
                 self.dock.promote_draft(&self.view.workspace, session_id);
             }
             // Its tab opens with the agent's first call, in this conversation's dock.
-            let browser = self.conversation_browser(
+            let browser = self.browser_for_tools(
                 DockScope::for_owner(Path::new(&self.view.workspace), session_id),
                 session_id,
             );
@@ -14020,9 +14228,10 @@ impl AgentsWindow {
                 session_id.to_owned(),
                 Arc::new(stored.events.clone()),
                 native_mcp_servers,
-                Some(browser),
+                browser,
             )
-            .with_browser_allowed(self.agent_tool_settings.full_access());
+            .with_browser_allowed(self.agent_tool_settings.full_access())
+            .with_mcp_tool_selections(native_mcp_selections);
             if self.view.turn_mode == TurnMode::Build {
                 environment = environment
                     .with_plugins(self.data_root.clone())
@@ -14429,7 +14638,13 @@ impl AgentsWindow {
                         && self.view.selected_session.as_deref() == Some(event.session_id.as_str()))
                     .then(|| self.agent_browser_site(&tool_call.name, &tool_call.arguments.to_string()))
                     .flatten()
-                    .map(|site| self.browser_sites.access(&site))
+                    .and_then(|site| {
+                        let access = self.browser_sites.access(&site);
+                        (access != crate::browser_sites::SiteAccess::Allow
+                            || crate::browser_runtime::browser_site_auto_allow_is_bound(
+                                &tool_call.name, &tool_call.arguments, Some(&site),
+                            )).then_some(access)
+                    })
                     .filter(|access| *access != crate::browser_sites::SiteAccess::Ask);
                     if let Some(access) = decided {
                         self.answer_permission(request_id, access == crate::browser_sites::SiteAccess::Allow);
@@ -14507,12 +14722,6 @@ impl AgentsWindow {
                 self.view.running = false;
                 self.view.status = "Turno cancelado".to_owned();
                 self.restore_pending_prompt();
-            }
-            AgentEventKind::HostNotice { code, detail } if code == openide_core::NOTICE_MCP_UNAVAILABLE => {
-                if let Some((id, why)) = detail.split_once('\n') {
-                    let status = crate::mcp_inspection::McpServerStatus::Failed(why.to_owned());
-                    self.view.mcp_inspection.last.insert(id.to_owned(), status);
-                }
             }
             AgentEventKind::HostNotice { code, detail } if code == openide_core::NOTICE_CONTEXT_LIMIT => {
                 // The provider said how much it takes: budget with it from now on.
@@ -15008,9 +15217,10 @@ impl AgentsWindow {
             .is_some_and(|turn| turn.mode == TurnMode::Build)
         {
             let settings = McpSettings::load(&self.data_root, workspace)?;
+            let selections = crate::mcp_tool_selection::McpToolSelections::load_effective(&self.data_root, workspace)?;
             // The conversation's own tab, in its own dock: on screen or not,
             // the turn is given the tools it was admitted with.
-            let browser = self.conversation_browser(
+            let browser = self.browser_for_tools(
                 DockScope::for_owner(workspace, &session_id),
                 &session_id,
             );
@@ -15021,9 +15231,10 @@ impl AgentsWindow {
                         session_id.clone(),
                         Arc::new(stored.events.clone()),
                         settings.servers,
-                        Some(browser),
+                        browser,
                     )
                     .with_browser_allowed(self.agent_tool_settings.full_access())
+                    .with_mcp_tool_selections(selections)
                     .with_plugins(self.data_root.clone())
                     .with_image_generation(self.image_client_for(workspace)),
                 ) as Arc<dyn openide_harness::ToolPreparation>,
@@ -15049,6 +15260,7 @@ impl AgentsWindow {
         let permission_policy = self.native_permission_policy()?;
         let request = ResumeWorkerRequest {
             native_automation: None,
+            subagent_settings: self.subagent_settings_for_run()?,
             session_id,
             sessions: store,
             checkpoints,
@@ -15216,6 +15428,7 @@ impl AgentsWindow {
             system_instructions: frozen.instructions().to_owned(),
             pre_context_instructions: None,
             limits: frozen.limits(),
+            subagent_settings: Default::default(),
             native_automation: Some(frozen),
             sessions,
             checkpoints,
@@ -15251,6 +15464,7 @@ impl AgentsWindow {
         stored: &StoredSession,
         off_screen: bool,
     ) -> Result<SubagentRecoveryRequest, String> {
+        let subagent_settings = self.subagent_settings_for_run()?;
         let child_id = stored.session.id.clone();
         let link = stored
             .session
@@ -15373,7 +15587,7 @@ impl AgentsWindow {
             .clone()
             .ok_or("El historial no está disponible")?;
         let coordinator = Arc::new(
-            SubagentCoordinator::new(sessions.clone(), SubagentLimits::default())
+            SubagentCoordinator::new(sessions.clone(), subagent_settings.coordinator_limits())
                 .map_err(|error| error.to_string())?,
         );
         let hooks = Arc::new(NativeHookSettings::load(&self.data_root)?.registry_for(
@@ -15394,7 +15608,7 @@ impl AgentsWindow {
         .with_session_approvals(self.agent_tool_settings.command_isolation())
         .with_event_bridge(self.subagent_bridge.clone())
         .with_command_hooks(hooks)
-        .with_nested_subagents(SubagentToolLimits::default())
+        .with_nested_subagents(subagent_settings.tool_limits())
         .with_native_goals()
         .with_system_instructions(instructions);
         if let Some(profile) = self.native_command_sessions.command_profile(
@@ -17026,7 +17240,11 @@ impl AgentsWindow {
             MainPage::Marketplace => self.marketplace_operation(MarketplaceOperation::Load),
             MainPage::Workspace => {}
         }
-        Path::new(&self.view.workspace) == target.workspace()
+        let restored = Path::new(&self.view.workspace) == target.workspace();
+        if restored {
+            self.close_automation_editor();
+        }
+        restored
     }
 
     fn go_back(&mut self) {
@@ -17066,6 +17284,7 @@ impl AgentsWindow {
         if self.view.workspace == value {
             return;
         }
+        self.close_automation_editor();
         if self.view.selected_session.is_some() {
             self.new_session();
         } else {
@@ -17504,8 +17723,37 @@ impl AgentsWindow {
         true
     }
 
+    fn settings_choice_allowed(page: SettingsPage, choice: &str) -> bool {
+        if page == SettingsPage::Browser {
+            return matches!(choice, "chat_links" | "preview_opening" | "browser_site_draft")
+                || choice.strip_prefix("browser_site:").is_some_and(|index| {
+                    !index.is_empty() && index.bytes().all(|c| c.is_ascii_digit())
+                        && index.parse::<usize>().is_ok_and(|index| index < 256)
+                });
+        }
+        matches!(
+            (page, choice),
+            (SettingsPage::Data, "organization" | "sort")
+                | (SettingsPage::Agent, "isolation" | "review_model" | "review_provider" | "review_pick" | "native_web_search" | "image_model" | "image_quality")
+                | (SettingsPage::ExternalAgents, "external_permission")
+                | (SettingsPage::Mcp, "mcp_scope")
+                | (SettingsPage::Appearance, "appearance_motion" | "appearance_ui_font" | "appearance_code_font" | "appearance_theme_base" | "appearance_theme_token" | "appearance_theme_selection")
+        )
+    }
+
+    fn settings_choice_visible(&self, choice: &str) -> bool {
+        self.view.show_settings
+            && Self::settings_choice_allowed(self.view.settings_page, choice)
+    }
+
     fn apply_action(&mut self, action: UiAction, ctx: &egui::Context) {
         let mut action = action;
+        if matches!(&action,
+            UiAction::Clicked { id } | UiAction::InputChanged { id, .. } | UiAction::Submitted { id, .. }
+                if id.starts_with("mcp_") && !self.view.shows(SettingsPage::Mcp))
+        {
+            return;
+        }
         if matches!(&action, UiAction::Clicked { id } if self.message_edit_action(id)) {
             return;
         }
@@ -17545,18 +17793,21 @@ impl AgentsWindow {
         if matches!(&action, UiAction::Clicked { id } if id != "ide_agent_new_toggle") {
             self.view.ide.agent_new_open = false;
         }
-        if matches!(&action, UiAction::Clicked { id } if id == "plugins_open") {
-            // The plugins are a tab of the add-ons section, in either window.
+        let addon_settings = match &action {
+            UiAction::Clicked { id } => match id.as_str() {
+                "plugins_open" | "marketplace_tab:plugins" => Some(SettingsPage::Plugins),
+                "marketplace_tab:mcp" => Some(SettingsPage::Mcp),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(page) = addon_settings {
             self.view.composer_add_menu_open = false;
             self.view.plugins.close_dialogs();
-            self.view.show_settings = false;
-            self.view.marketplace.tab = crate::marketplace_view::MarketplaceTab::Plugins;
-            if self.ide_workspace_active() {
-                self.select_ide_activity(crate::ide_workspace::IdeActivity::Extensions, false);
-                self.view.ide.extensions_open = true;
-            } else {
-                self.apply_action(UiAction::Clicked { id: "open_marketplace".into() }, ctx);
-            }
+            self.view.marketplace.sources_open = false;
+            self.view.show_settings = true;
+            self.apply_action(UiAction::Clicked { id: page.action_id().into() }, ctx);
+            self.visit_navigation();
             return;
         }
         if self.apply_plugin_action(&action) {
@@ -17617,6 +17868,11 @@ impl AgentsWindow {
             return;
         }
         if self.apply_debug_action(&action, ctx) { return; }
+        if self.apply_browser_settings_action(&action)
+            || self.apply_subagent_settings_action(&action, ctx)
+        {
+            return;
+        }
         if self.apply_editor_workbench_action(&action, ctx) {
             return;
         }
@@ -17658,6 +17914,9 @@ impl AgentsWindow {
         if self.apply_native_command_control_action(&action) {
             return;
         }
+        if self.apply_appearance_action(&action, ctx) {
+            return;
+        }
         match action {
             UiAction::Clicked { id } if id.starts_with("chat_link_open:") => {
                 if let Some(url) = crate::rich_text::web_link_url_from_action(&id) {
@@ -17679,28 +17938,6 @@ impl AgentsWindow {
                     if self.commit_settings_preferences(next, "Destino de los enlaces guardado") {
                         self.view.chat_link_opening = opening;
                     }
-                }
-            }
-            UiAction::Clicked { id } if id.starts_with("browser_site_") => {
-                let listed = |index: &str| index.parse::<usize>().ok().and_then(|index| self.view.browser_sites.get(index).cloned());
-                let changed = match id.split_once(':') {
-                    Some(("browser_site_cycle", index)) => listed(index).map(|site| self.set_browser_site(&site.origin, Some(site.access.next()))),
-                    Some(("browser_site_remove", index)) => listed(index).map(|site| self.set_browser_site(&site.origin, None)),
-                    _ if id == "browser_site_add" => {
-                        let draft = self.view.browser_site_draft.clone();
-                        let added = self.set_browser_site(&draft, Some(crate::browser_sites::SiteAccess::Allow));
-                        if added.is_ok() {
-                            self.view.browser_site_draft.clear();
-                            self.tree.set_input_value("browser_site_draft", "");
-                        }
-                        Some(added)
-                    }
-                    _ => None,
-                };
-                match changed {
-                    Some(Ok(())) => self.set_settings_notice("Permisos por sitio guardados", false),
-                    Some(Err(error)) => self.set_settings_notice(error, true),
-                    None => {}
                 }
             }
             UiAction::Clicked { id } if id.starts_with(crate::preview::SETTING_ACTION_PREFIX) => {
@@ -18099,6 +18336,7 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id == "open_marketplace" => {
                 self.view.show_settings = false;
                 self.view.main_page = MainPage::Marketplace;
+                self.view.marketplace.sources_open = false;
                 self.marketplace_operation(MarketplaceOperation::Load);
                 self.visit_navigation();
             }
@@ -19908,6 +20146,9 @@ impl AgentsWindow {
                             HookUiState::from_load(NativeHookSettings::load(&self.data_root));
                         self.refresh_compat_hooks();
                     }
+                    if page == SettingsPage::Subagents {
+                        self.refresh_subagent_settings();
+                    }
                     if page == SettingsPage::ExternalAgents {
                         self.refresh_agent_clis();
                     }
@@ -19986,12 +20227,36 @@ impl AgentsWindow {
                     self.view.native_exec_rules.draft_decision = ExecDecision::Deny;
                 }
             }
+            UiAction::Clicked { id } if id == "exec_rule_decision:allow" => {
+                if self.view.native_exec_rules.editor_open {
+                    self.view.native_exec_rules.draft_decision = ExecDecision::Allow;
+                }
+            }
             UiAction::Clicked { id } if id == "exec_rule_cancel" => {
                 self.view.native_exec_rules.clear_draft();
                 self.clear_settings_notice();
             }
             UiAction::Clicked { id } if id == "exec_rule_save" => {
-                if self.view.native_exec_rules.editor_open {
+                let rules = &self.view.native_exec_rules;
+                if rules.editor_open && rules.draft_decision != ExecDecision::Allow {
+                    self.save_exec_rule_draft();
+                } else if rules.editor_open {
+                    // A refused rule is reported in the editor, never confirmed.
+                    match rules.clone().upsert_draft() {
+                        Ok(()) => {
+                            self.clear_settings_notice();
+                            self.view.native_exec_rules.allow_confirm_open = true;
+                        }
+                        Err(error) => self.set_settings_notice(error, true),
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id == "exec_rule_allow_cancel" => {
+                self.view.native_exec_rules.allow_confirm_open = false;
+                self.clear_settings_notice();
+            }
+            UiAction::Clicked { id } if id == "exec_rule_allow_confirm" => {
+                if self.view.native_exec_rules.allow_confirm_open {
                     self.save_exec_rule_draft();
                 }
             }
@@ -20178,29 +20443,35 @@ impl AgentsWindow {
                     self.save_command_hook_draft();
                 }
             }
-            UiAction::Clicked { id } if id == "mcp_import" => {
-                let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
-                let found = crate::mcp_import::discover(&home, Path::new(&self.view.workspace), &self.view.mcp_servers);
-                let room = crate::mcp_settings::MAX_SERVERS.saturating_sub(self.view.mcp_servers.len());
-                let count = found.servers.len().min(room);
-                if count == 0 {
-                    self.set_settings_notice(
-                        if found.servers.is_empty() {
-                            "Codex y Claude Code no tienen servidores MCP que no estén ya en esta lista"
-                        } else {
-                            "La lista de servidores MCP está completa: eliminá alguno antes de importar"
-                        },
-                        found.servers.is_empty() == false,
-                    );
-                } else {
-                    let mut servers = self.view.mcp_servers.clone();
-                    servers.extend(found.servers.into_iter().take(count));
-                    let left_out = if found.skipped > 0 { format!(" {} no se pudieron usar.", found.skipped) } else { String::new() };
-                    self.commit_mcp_settings(
-                        servers,
-                        &format!("Se importaron {count} servidores MCP, deshabilitados para que los revises.{left_out}"),
-                    );
+            UiAction::Clicked { id } if self.handle_mcp_presentation_action(&id) => {}
+            UiAction::Clicked { id } if id.starts_with("mcp_scope:") => {
+                if self.view.shows(SettingsPage::Mcp) {
+                    if let Some(scope) = crate::mcp_settings::McpSettingsScope::from_key(id.trim_start_matches("mcp_scope:")) {
+                        self.view.settings_choice_menu_open = None;
+                        if scope != self.view.mcp_settings_scope {
+                            self.cancel_mcp_oauth();
+                            self.cancel_mcp_inspection();
+                            self.active_mcp_inspection = None;
+                            self.invalidate_mcp_import();
+                            self.view.mcp_inspection = Default::default();
+                            self.view.mcp_settings_scope = scope;
+                            self.refresh_mcp_settings();
+                            self.clear_settings_notice();
+                        }
+                    }
                 }
+            }
+            UiAction::Clicked { id } if id == "mcp_refresh" => {
+                if self.view.shows(SettingsPage::Mcp) {
+                    self.cancel_mcp_oauth();
+                    self.cancel_mcp_inspection();
+                    self.active_mcp_inspection = None;
+                    self.refresh_mcp_settings();
+                    self.clear_settings_notice();
+                }
+            }
+            UiAction::Clicked { id } if id == "mcp_import" => {
+                self.start_mcp_import();
             }
             UiAction::Clicked { id } if id == "mcp_new" => {
                 self.clear_mcp_draft();
@@ -20294,7 +20565,14 @@ impl AgentsWindow {
                 }
             }
             UiAction::Clicked { id } if id.starts_with("settings_theme:") => {
+                if !self.view.shows(SettingsPage::Appearance)
+                    || self.view.custom_theme_ui.editor.is_some()
+                    || self.view.custom_theme_ui.file_busy {
+                    return;
+                }
+                self.view.settings_choice_menu_open = None;
                 if let Some(choice) = crate::theme_mode::ThemeChoice::from_key(id.trim_start_matches("settings_theme:")) {
+                    if choice == crate::theme_mode::ThemeChoice::Custom { return; }
                     match crate::theme_mode::save(&self.data_root, choice) {
                         Ok(()) => crate::theme_mode::set_choice(choice),
                         Err(error) => self.view.status = format!("No se pudo guardar el tema: {error}"),
@@ -20317,6 +20595,11 @@ impl AgentsWindow {
                 let mut next = self.settings_preferences.clone();
                 next.reduced_motion = !next.reduced_motion;
                 let reduced = next.reduced_motion;
+                next.appearance.reduce_motion = if reduced {
+                    crate::appearance_preferences::MotionPreference::Always
+                } else {
+                    crate::appearance_preferences::MotionPreference::Never
+                };
                 if self.commit_settings_preferences(next, "Preferencia de movimiento guardada") {
                     self.reduced_motion = reduced;
                     self.view.settings_reduced_motion = reduced;
@@ -20408,15 +20691,16 @@ impl AgentsWindow {
             }
             UiAction::Clicked { id } if id.starts_with("settings_choice_toggle:") => {
                 let choice = id.trim_start_matches("settings_choice_toggle:");
-                let valid = self.view.show_settings
-                    && matches!(
-                        (self.view.settings_page, choice),
-                        (SettingsPage::Data, "organization" | "sort")
-                            | (SettingsPage::Agent, "isolation" | "review_model" | "review_provider" | "review_pick" | "native_web_search" | "image_model" | "image_quality")
-                            | (SettingsPage::ExternalAgents, "external_permission")
-                            | (SettingsPage::Browser, "chat_links" | "preview_opening")
-                    );
+                let valid = self.settings_choice_visible(choice);
                 if valid {
+                    if let Some((index, kind)) = match choice {
+                        "appearance_ui_font" => Some((0, "ui")),
+                        "appearance_code_font" => Some((1, "code")),
+                        _ => None,
+                    } {
+                        self.view.appearance_font_query[index].clear();
+                        self.tree.set_input_value(&format!("appearance_font_query:{kind}"), "");
+                    }
                     self.view.settings_terminal_shell_menu_open = false;
                     self.view.settings_keymap_menu_open = false;
                     self.view.settings_choice_menu_open =
@@ -21410,7 +21694,6 @@ impl AgentsWindow {
                     self.view.settings_terminal_shell_editing = true;
                     self.clear_settings_notice();
                 }
-                "browser_site_draft" => self.view.browser_site_draft = value,
                 "provider_draft_id" | "provider_draft_name" | "provider_draft_endpoint"
                 | "provider_draft_key_env" => {
                     if let Some(draft) = &mut self.view.provider_draft {
@@ -21436,6 +21719,9 @@ impl AgentsWindow {
                         }
                     }
                 }
+                "mcp_search" => self.view.mcp_presentation.search = value,
+                "mcp_tool_query" => self.view.mcp_presentation.tool_query = value,
+                "mcp_brand_query" => self.view.mcp_presentation.icon_query = value,
                 "mcp_draft_id" => self.view.mcp_draft_id = value,
                 "mcp_draft_url" => self.view.mcp_draft_url = value,
                 "mcp_draft_http_bearer_token_env_name" => {
@@ -21503,10 +21789,36 @@ impl AgentsWindow {
                 "rename_title" => self.view.rename_draft = value,
                 "group_create_draft" => self.view.group_create_draft = value,
                 "group_rename_draft" => self.view.group_rename_draft = value,
-                "automation_query" => self.view.automations.query = value,
-                "automation_title" => self.view.automations.form.title = value,
-                "automation_prompt" => self.view.automations.form.prompt = value,
-                "automation_once_date" => {
+                "automation_query"
+                    if !self.view.show_settings && self.view.main_page == MainPage::Automations =>
+                {
+                    self.view.automations.query = value
+                }
+                "automation_model_query"
+                    if self.automation_editor_active()
+                        && self.view.automations.editor_menu.as_deref() == Some("model") =>
+                {
+                    self.view.automations.model_query = value
+                }
+                "automation_title"
+                    if self.automation_editor_active()
+                        && self.view.automations.editor_step
+                            == crate::automation_view::AutomationEditorStep::Content =>
+                {
+                    self.view.automations.form.title = value
+                }
+                "automation_prompt"
+                    if self.automation_editor_active()
+                        && self.view.automations.editor_step
+                            == crate::automation_view::AutomationEditorStep::Content =>
+                {
+                    self.view.automations.form.prompt = value
+                }
+                "automation_once_date"
+                    if self.automation_editor_active()
+                        && self.view.automations.editor_step
+                            == crate::automation_view::AutomationEditorStep::Schedule =>
+                {
                     if DatePicker::is_valid_date(&value) {
                         self.view.automations.calendar_year = value[..4]
                             .parse()
@@ -21517,10 +21829,34 @@ impl AgentsWindow {
                     }
                     self.view.automations.form.set_once_date(&value);
                 }
-                "automation_once_time" => self.view.automations.form.set_once_time(&value),
-                "automation_interval" => self.view.automations.form.interval_minutes = value,
-                "automation_month_day" => self.view.automations.form.month_day = value,
-                "automation_time" => self.view.automations.form.time = value,
+                "automation_once_time"
+                    if self.automation_editor_active()
+                        && self.view.automations.editor_step
+                            == crate::automation_view::AutomationEditorStep::Schedule =>
+                {
+                    self.view.automations.form.set_once_time(&value)
+                }
+                "automation_interval"
+                    if self.automation_editor_active()
+                        && self.view.automations.editor_step
+                            == crate::automation_view::AutomationEditorStep::Schedule =>
+                {
+                    self.view.automations.form.interval_minutes = value
+                }
+                "automation_month_day"
+                    if self.automation_editor_active()
+                        && self.view.automations.editor_step
+                            == crate::automation_view::AutomationEditorStep::Schedule =>
+                {
+                    self.view.automations.form.month_day = value
+                }
+                "automation_time"
+                    if self.automation_editor_active()
+                        && self.view.automations.editor_step
+                            == crate::automation_view::AutomationEditorStep::Schedule =>
+                {
+                    self.view.automations.form.time = value
+                }
                 "marketplace_search" => self.set_marketplace_query(value),
                 "marketplace_source_draft" => self.view.marketplace.source_draft = value,
                 _ => {}
@@ -21596,19 +21932,19 @@ impl AgentsWindow {
                     self.view.settings_keymap_menu_open = false;
             self.settings_terminal_path_focus_pending = false;
         }
-        if !self.view.show_settings
-            || !matches!(
-                (
-                    self.view.settings_page,
-                    self.view.settings_choice_menu_open.as_deref()
-                ),
-                (SettingsPage::Data, Some("organization" | "sort"))
-                    | (SettingsPage::Agent, Some("isolation" | "review_model" | "review_provider" | "review_pick" | "native_web_search"))
-                    | (SettingsPage::ExternalAgents, Some("external_permission"))
-                    | (SettingsPage::Browser, Some("chat_links" | "preview_opening"))
-            )
+        if !self.view.settings_choice_menu_open.as_deref()
+            .is_some_and(|choice| self.settings_choice_visible(choice))
         {
             self.view.settings_choice_menu_open = None;
+        }
+        if !self.view.shows(SettingsPage::Mcp) {
+            self.view.pending_mcp_delete_id = None;
+            self.view.mcp_editor_open = false;
+        }
+        if self.view.show_settings || self.view.main_page != MainPage::Automations {
+            if self.view.automations.screen == AutomationScreen::Edit {
+                self.close_automation_editor();
+            }
         }
     }
 
@@ -21853,6 +22189,8 @@ impl eframe::App for AgentsWindow {
         let mut early_changed = self.poll_run();
         early_changed |= self.poll_message_edit_stop();
         let ctx = ui.ctx().clone();
+        self.sync_appearance(&ctx);
+        early_changed |= self.poll_theme_file_task();
         render::normalize_keyboard_input(&ctx);
         self.expire_text_paste_request();
         let quit_confirm_before = self.view.code_editor_quit_confirm;
@@ -21904,6 +22242,8 @@ impl eframe::App for AgentsWindow {
             | self.poll_dictation(&ctx)
             | self.poll_provider_connections(&ctx)
             | self.poll_provider_usage()
+            | self.poll_mcp_import()
+            | self.poll_mcp_discovery()
             | self.poll_mcp_oauth()
             | self.poll_mcp_inspection()
             | self.poll_subagent_dispatches()
@@ -21951,7 +22291,7 @@ impl eframe::App for AgentsWindow {
             || self.view.file_delete.is_some()
             || self.view.git_panel.confirm.is_some()
             || self.view.composer_full_access_confirm.is_some()
-            || self.view.automations.screen == AutomationScreen::Edit
+            || self.automation_editor_active()
             || self.view.pending_delete_session_id.is_some()
             || self.view.pending_archive_session_id.is_some()
             || self.view.renaming_session_id.is_some()
@@ -21961,9 +22301,10 @@ impl eframe::App for AgentsWindow {
             || self.view.github_sign_in.is_some()
             || self.view.provider_connect.is_some()
             || self.view.marketplace.add_source_kind.is_some()
+            || (self.view.marketplace_visible() && self.view.marketplace.sources_open)
             || self.view.marketplace.pending_uninstall_id.is_some()
             || self.view.marketplace.pending_remove_source_id.is_some()
-            || self.view.pending_mcp_delete_id.is_some()
+            || (self.view.shows(SettingsPage::Mcp) && self.view.pending_mcp_delete_id.is_some())
             || self.view.pending_native_command_termination.is_some()
             || self.view.terminal_controls.closing.is_some()
             || (self.view.show_settings
@@ -22462,6 +22803,7 @@ impl eframe::App for AgentsWindow {
             ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
         }
         if self.active_run.is_some()
+            || self.active_mcp_import.is_some()
             || self.active_compact.is_some()
             || self.active_resume.is_some()
             || self.active_child_recovery.is_some()
@@ -25111,6 +25453,35 @@ mod tests {
     }
 
     #[test]
+    fn hooks_load_error_can_reload_the_corrected_file_from_its_page() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("native-command-hooks.json");
+        std::fs::write(&path, b"invalid json").unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        app.view.show_settings = true;
+        app.view.settings_page = SettingsPage::Hooks;
+        assert!(app.view.native_hooks.load_error.is_some());
+        let mut tree = UiTree::new(settings_ui::build_settings_page(
+            &app.view, SettingsPage::Hooks, 360.0, true,
+        ));
+        let frame = tree.layout(Size::new(360.0, 1200.0));
+        let reload = frame.regions.iter().find(|region| region.id == "hooks_reload").unwrap();
+        let point = openide_ui::Point::new(reload.rect.x + reload.rect.width / 2.0,
+            reload.rect.y + reload.rect.height / 2.0);
+        tree.handle_event(openide_ui::UiEvent::PointerDown(point));
+        let actions = tree.handle_event(openide_ui::UiEvent::PointerUp(point));
+        assert_eq!(actions, vec![clicked("settings_page:hooks")]);
+        let ctx = egui::Context::default();
+        app.apply_action(actions[0].clone(), &ctx);
+        assert!(app.view.native_hooks.load_error.is_some());
+        assert_eq!(std::fs::read(&path).unwrap(), b"invalid json");
+        NativeHookSettings::default().save(root.path()).unwrap();
+        app.apply_action(actions[0].clone(), &ctx);
+        assert!(app.view.native_hooks.load_error.is_none());
+        assert!(app.view.native_hooks.hooks.is_empty());
+    }
+
+    #[test]
     fn command_hook_settings_validate_persist_and_change_runtime_digest() {
         let root = tempfile::tempdir().unwrap();
         let executable = root.path().join("trusted-hook.bin");
@@ -25179,6 +25550,91 @@ mod tests {
             .unwrap()
             .hooks
             .is_empty());
+    }
+
+    #[test]
+    fn allow_command_rule_is_confirmed_before_saving_and_stays_allow_when_edited() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        let ctx = egui::Context::default();
+        let call = ToolCall {
+            id: "status".into(),
+            name: "run_command".into(),
+            arguments: json!({"command":"git","args":["status"]}),
+        };
+        let mode = |app: &AgentsWindow| {
+            app.native_permission_policy()
+                .unwrap()
+                .mode_for_call_with_session_grants("s", root.path(), root.path(), "", &call, &[])
+        };
+        let unruled = mode(&app);
+        let saved = || ExecPolicySettings::load(root.path()).unwrap().rules;
+        let pattern = |app: &mut AgentsWindow, value: &str| {
+            app.apply_action(
+                UiAction::InputChanged {
+                    id: "exec_rule_draft_pattern".into(),
+                    value: value.into(),
+                },
+                &ctx,
+            )
+        };
+
+        // A prefix that would match every command is refused before asking.
+        app.apply_action(clicked("exec_rule_new"), &ctx);
+        app.apply_action(clicked("exec_rule_decision:allow"), &ctx);
+        pattern(&mut app, "[]");
+        app.apply_action(clicked("exec_rule_save"), &ctx);
+        assert!(app.view.settings_notice_error);
+        assert!(!app.view.native_exec_rules.allow_confirm_open);
+        app.apply_action(clicked("exec_rule_allow_confirm"), &ctx);
+        assert!(saved().is_empty());
+
+        pattern(&mut app, "[\"git\",\"status\"]");
+        app.apply_action(clicked("exec_rule_save"), &ctx);
+        assert!(!app.view.settings_notice_error);
+        assert!(app.view.native_exec_rules.allow_confirm_open);
+        assert!(saved().is_empty());
+        app.apply_action(clicked("exec_rule_allow_cancel"), &ctx);
+        assert!(app.view.native_exec_rules.editor_open);
+        assert_eq!(app.view.native_exec_rules.draft_decision, ExecDecision::Allow);
+        assert!(saved().is_empty() && app.view.native_exec_rules.rules.is_empty());
+
+        app.apply_action(clicked("exec_rule_save"), &ctx);
+        app.apply_action(clicked("exec_rule_allow_confirm"), &ctx);
+        assert!(!app.view.native_exec_rules.editor_open);
+        assert!(!app.view.native_exec_rules.allow_confirm_open);
+        assert_eq!(saved(), app.view.native_exec_rules.rules);
+        assert_eq!(saved()[0].decision(), ExecDecision::Allow);
+        // The rule is written, and the harness still decides as without it.
+        assert_eq!(mode(&app), unruled);
+
+        let mut reopened = AgentsWindow::with_data_root(root.path().to_path_buf());
+        assert!(reopened.view.native_exec_rules.load_error.is_none());
+        reopened.apply_action(clicked("exec_rule_select:0"), &ctx);
+        assert_eq!(
+            reopened.view.native_exec_rules.draft_decision,
+            ExecDecision::Allow
+        );
+        reopened.apply_action(
+            UiAction::InputChanged {
+                id: "exec_rule_draft_justification".into(),
+                value: "Sólo lectura".into(),
+            },
+            &ctx,
+        );
+        reopened.apply_action(clicked("exec_rule_save"), &ctx);
+        assert_eq!(saved()[0].justification(), None);
+        reopened.apply_action(clicked("exec_rule_allow_confirm"), &ctx);
+        assert_eq!(saved().len(), 1);
+        assert_eq!(saved()[0].decision(), ExecDecision::Allow);
+        assert_eq!(saved()[0].justification(), Some("Sólo lectura"));
+
+        // Leaving Allow saves at once, as Ask and Deny always did.
+        reopened.apply_action(clicked("exec_rule_select:0"), &ctx);
+        reopened.apply_action(clicked("exec_rule_decision:ask"), &ctx);
+        reopened.apply_action(clicked("exec_rule_save"), &ctx);
+        assert!(!reopened.view.native_exec_rules.allow_confirm_open);
+        assert_eq!(saved()[0].decision(), ExecDecision::Ask);
     }
 
     #[test]
@@ -25500,6 +25956,8 @@ mod tests {
         let mut app = AgentsWindow::with_data_root(root.path().join("data"));
         app.change_workspace(workspace.to_string_lossy().into_owned());
         let ctx = egui::Context::default();
+        app.view.show_settings = true;
+        app.view.settings_page = SettingsPage::Mcp;
         app.apply_action(clicked("mcp_new"), &ctx);
         assert!(app.view.mcp_editor_open);
         for (id, value) in [
@@ -25768,6 +26226,7 @@ mod tests {
         type_in(&mut app, "automation_prompt", "hola");
         app.apply_action(clicked("automation_next"), &ctx);
         app.apply_action(clicked("automation_next"), &ctx);
+        app.apply_action(clicked("automation_choice_toggle:backend"), &ctx);
         assert!(shows(&app, "automation_backend:my-cli"));
         app.apply_action(clicked("automation_backend:my-cli"), &ctx);
         app.apply_action(clicked("automation_save"), &ctx);
@@ -25848,6 +26307,8 @@ mod tests {
         let mut app = AgentsWindow::with_data_root(root.path().join("data"));
         app.change_workspace(workspace.to_string_lossy().into_owned());
         let ctx = egui::Context::default();
+        app.view.show_settings = true;
+        app.view.settings_page = SettingsPage::Mcp;
         app.apply_action(clicked("mcp_new"), &ctx);
         app.apply_action(clicked("mcp_transport:http"), &ctx);
         assert!(app.view.mcp_draft_http);
@@ -25892,6 +26353,8 @@ mod tests {
         let mut app = AgentsWindow::with_data_root(root.path().join("data"));
         app.change_workspace(workspace.to_string_lossy().into_owned());
         let ctx = egui::Context::default();
+        app.view.show_settings = true;
+        app.view.settings_page = SettingsPage::Mcp;
         app.apply_action(clicked("mcp_new"), &ctx);
         app.apply_action(clicked("mcp_transport:http"), &ctx);
         app.apply_action(clicked("mcp_auth:oauth"), &ctx);
@@ -27206,6 +27669,8 @@ mod tests {
         let mut app = AgentsWindow::with_data_root(root.path().join("data"));
         app.change_workspace(workspace.to_string_lossy().into_owned());
         let ctx = egui::Context::default();
+        app.view.show_settings = true;
+        app.view.settings_page = SettingsPage::Mcp;
         app.apply_action(clicked("mcp_new"), &ctx);
         app.apply_action(
             UiAction::InputChanged {
@@ -27242,6 +27707,8 @@ mod tests {
         app.change_workspace(workspace.to_string_lossy().into_owned());
         let ctx = egui::Context::default();
 
+        app.view.show_settings = true;
+        app.view.settings_page = SettingsPage::Mcp;
         app.apply_action(clicked("mcp_new"), &ctx);
         app.apply_action(clicked("mcp_transport:http"), &ctx);
         assert!(app.view.mcp_draft_http);
@@ -28211,7 +28678,7 @@ mod tests {
 
         app.apply_action(clicked("open_automations"), &ctx);
         app.apply_action(clicked("automation_new"), &ctx);
-        app.apply_action(clicked("automation_save"), &ctx);
+        app.apply_action(clicked("automation_next"), &ctx);
         assert_eq!(app.view.automations.screen, AutomationScreen::Edit);
         assert!(app.view.automations.error.is_some());
         assert!(app.view.automations.items.is_empty());
@@ -30329,10 +30796,10 @@ mod tests {
         for _ in 0..100 {
             app.poll_run();
         }
-        assert!(matches!(
-            app.view.mcp_inspection.last.get("fixture"),
-            Some(crate::mcp_inspection::McpServerStatus::Failed(_))
-        ));
+        // Runtime notices identify a server ID, not its exact User/Project
+        // registration. Keep them in the turn's journal; only a scoped
+        // inspection may update a Settings row with that ID.
+        assert!(app.view.mcp_inspection.last.get("fixture").is_none());
     }
 
     #[test]

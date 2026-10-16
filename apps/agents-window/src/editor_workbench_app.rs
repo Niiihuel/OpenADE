@@ -1,6 +1,7 @@
 //! Host coordination for explicit editor actions and last-wins background search.
 use super::*;
 use crate::editor_workbench_ui::{EditorForm, EditorWorkbenchView};
+use crate::editor_preferences::Caret;
 use openide_editor::{
     BufferSnapshot, EditorCommand, IndentStyle, LineEnding, Position, SearchOptions, SearchResults,
     Selection,
@@ -158,6 +159,8 @@ impl AgentsWindow {
             IndentStyle::Spaces(prefs.tab_width)
         };
         self.view.editor_workbench.auto_pairs = prefs.auto_pairs;
+        self.view.editor_workbench.view = prefs.view;
+        self.code_editor.trim_on_save = prefs.view.trim_on_save;
         self.editor_services.preferences = prefs;
     }
     pub(super) fn persist_editor_preferences(&mut self, server: bool) {
@@ -168,6 +171,8 @@ impl AgentsWindow {
         prefs.tab_width = state.indent.width();
         prefs.use_tabs = matches!(state.indent, IndentStyle::Tabs(_));
         prefs.auto_pairs = state.auto_pairs;
+        prefs.view = state.view;
+        self.code_editor.trim_on_save = state.view.trim_on_save;
         if server {
             if let Some(view) = &self.view.code_editor {
                 let language = state
@@ -577,7 +582,11 @@ impl AgentsWindow {
     ) -> bool {
         // A preview keeps its source buffer alive, but stale editor controls
         // must not mutate that buffer while it is absent from the UI.
-        if self
+        let settings_preference = self.view.shows(crate::settings_ui::SettingsPage::Editor)
+            && matches!(action, UiAction::Clicked { id } if matches!(id.as_str(),
+                "editor_wrap" | "editor_minimap" | "editor_indent_kind" | "editor_indent_width" | "editor_pairs")
+                    || id.starts_with("editor_view:"));
+        if !settings_preference && self
             .view
             .document_preview
             .as_ref()
@@ -793,6 +802,34 @@ impl AgentsWindow {
                 state.auto_pairs = !state.auto_pairs;
                 None
             }
+            _ if command.starts_with("view:") => {
+                let view = &mut state.view;
+                match &command[5..] {
+                    "line_numbers" => view.line_numbers = !view.line_numbers,
+                    "indent_guides" => view.indent_guides = !view.indent_guides,
+                    "current_line" => view.highlight_current_line = !view.highlight_current_line,
+                    "whitespace" => view.show_whitespace = !view.show_whitespace,
+                    "caret_blink" => view.caret_blink = !view.caret_blink,
+                    "trim_on_save" => view.trim_on_save = !view.trim_on_save,
+                    "ruler" => {
+                        view.ruler = match view.ruler {
+                            0 => 80,
+                            80 => 100,
+                            100 => 120,
+                            _ => 0,
+                        }
+                    }
+                    "caret" => {
+                        view.caret = match view.caret {
+                            Caret::Line => Caret::Block,
+                            Caret::Block => Caret::Underline,
+                            Caret::Underline => Caret::Line,
+                        }
+                    }
+                    _ => return false,
+                }
+                None
+            }
             "language" => {
                 state.language_menu_open = !state.language_menu_open;
                 None
@@ -1004,7 +1041,8 @@ impl AgentsWindow {
         if matches!(
             command,
             "wrap" | "minimap" | "indent_kind" | "indent_width" | "pairs" | "server_connect"
-        ) {
+        ) || command.starts_with("view:")
+        {
             self.persist_editor_preferences(command == "server_connect");
         }
         ctx.request_repaint();

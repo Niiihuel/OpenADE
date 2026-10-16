@@ -819,6 +819,13 @@ impl SubagentWorker {
     /// has no first admission yet; its original worker or explicit recovery
     /// must establish that identity before the queued input can run.
     pub fn validate_follow_up_child(&self, child_id: &str) -> Result<(), SubagentWorkerError> {
+        self.follow_up_mode(child_id).map(|_| ())
+    }
+
+    /// Model-facing follow-ups retain the child's first mode. Ready children
+    /// have no admission: only the committed parent spawn can establish it.
+    /// Trusted host APIs may still explicitly admit a generic Plan-to-Build transition.
+    pub fn follow_up_mode(&self, child_id: &str) -> Result<TurnMode, SubagentWorkerError> {
         let stored = self
             .sessions
             .load(child_id)?
@@ -828,8 +835,15 @@ impl SubagentWorker {
             _ => None,
         }) {
             self.worker_for_existing_child(child_id, prompt, mode, true)?;
+            return Ok(mode);
         }
-        Ok(())
+        let link = stored.session.subagent.as_ref()
+            .ok_or_else(|| SubagentWorkerError::InvalidChildAdmission(child_id.to_owned()))?;
+        let parent = self.sessions.load(&link.parent_session_id)?
+            .ok_or_else(|| SubagentWorkerError::InvalidChildAdmission(child_id.to_owned()))?;
+        let (prompt, _, _, mode) = SubagentToolExecutor::reserved_spawn_request(&parent.events, &link.spawn_id)?;
+        self.worker_for_existing_child(child_id, &prompt, mode, false)?;
+        Ok(mode)
     }
 
     fn catalog_for_mode(
@@ -5316,6 +5330,34 @@ mod tests {
         )
         .with_nested_subagents(SubagentToolLimits::default());
         let parent_lease = Arc::new(sessions.try_acquire_native_lease(&parent.id).unwrap());
+        // Preferences are part of a child's frozen runtime identity. Neither
+        // raising nor lowering them silently reinterprets interrupted work.
+        let before = sessions.load(&child_id).unwrap().unwrap().events.len();
+        let mut changed_workers = vec![worker.clone().with_nested_subagents(SubagentToolLimits { max_tasks: 1 })];
+        for field in 0..4 {
+            let mut changed = limits;
+            match field {
+                0 => changed.max_depth += 1,
+                1 => changed.max_children_per_parent += 1,
+                2 => changed.max_concurrent_children += 1,
+                _ => changed.max_total_descendants += 1,
+            }
+            changed_workers.push(SubagentWorker {
+                coordinator: Arc::new(SubagentCoordinator::new(sessions.clone(), changed).unwrap()),
+                ..worker.clone()
+            });
+        }
+        for changed in changed_workers {
+            assert!(changed.resume(parent_lease.clone(), child_id.clone(), "recursive-recover".into(), "delegate".into(), TurnMode::Build, CancellationToken::new()).await.is_err());
+            assert_eq!(sessions.load(&child_id).unwrap().unwrap().events.len(), before);
+        }
+        // The host delegation toggle lives on the parent wrapper, not on the
+        // child identity: disabling new work must not prevent this recovery.
+        let disabled_parent = SubagentToolExecutor::new(
+            Arc::new(LocalTools::new()), worker.clone(), coordinator.clone(), sessions.clone(), parent_lease.clone(), SubagentToolLimits::default(),
+        ).unwrap().with_delegation_enabled(false);
+        assert!(!disabled_parent.definitions().iter().any(|tool| tool.name == "spawn_agent"));
+        disabled_parent.shutdown().await.unwrap();
         let recovered = worker
             .resume(
                 parent_lease,

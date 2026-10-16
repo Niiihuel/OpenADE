@@ -399,7 +399,7 @@ fn ide_sidebar_controls_contrast_on_gray_and_keep_their_host_actions() {
                         "marketplace_refresh".to_owned(),
                     ),
                     (
-                        "ide_extensions_open_catalog".to_owned(),
+                        "marketplace_sources_open".to_owned(),
                         "ide_extensions_catalog".to_owned(),
                     ),
                 ],

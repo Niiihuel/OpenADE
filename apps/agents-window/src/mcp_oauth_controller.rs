@@ -6,10 +6,11 @@
 //! vault (Windows) or in private files of the application's data (Unix)
 //! before reporting success.
 
-use crate::mcp_settings::McpServerSettings;
+use crate::mcp_settings::{McpServerSettings, McpSettings};
 use openide_harness::{McpHttpConfig, OAuthError, OAuthSession, TokenKey, TokenStore};
 use reqwest::header::{ACCEPT, WWW_AUTHENTICATE};
 use reqwest::{Client, StatusCode, Url};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread::JoinHandle;
@@ -377,12 +378,170 @@ pub(crate) fn forget_oauth_registration(server: &McpServerSettings) -> Result<()
     }
 }
 
+/// Call after a successful settings commit. Removing a local row does not
+/// revoke a grant still used by another saved row, scope, or closed project.
+/// This only removes a local credential; it does not contact a revoke endpoint.
+pub(crate) fn forget_oauth_registration_if_unreferenced(
+    root: &Path,
+    workspace: &Path,
+    scope: crate::mcp_settings::McpSettingsScope,
+    previous: &McpServerSettings,
+    replacement: &McpSettings,
+) -> Result<(), String> {
+    if !oauth_registration_referenced_elsewhere(root, workspace, scope, previous, replacement)? {
+        forget_oauth_registration(previous)?;
+    }
+    Ok(())
+}
+
+fn oauth_registration_referenced_elsewhere(
+    root: &Path,
+    workspace: &Path,
+    scope: crate::mcp_settings::McpSettingsScope,
+    previous: &McpServerSettings,
+    replacement: &McpSettings,
+) -> Result<bool, String> {
+    let Some(key) = oauth_token_key(previous)? else {
+        return Ok(true);
+    };
+    replacement.validate_structure()?;
+    let others = McpSettings::other_scope_servers(root, workspace, scope)?;
+    for server in replacement.servers.iter().chain(&others) {
+        if oauth_token_key(server)?.as_ref() == Some(&key) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::mcp_settings::McpHttpOAuthSettings;
     use std::io::{Read, Write};
     use std::net::TcpListener;
+
+    fn oauth_server(id: &str) -> McpServerSettings {
+        McpServerSettings {
+            id: id.into(),
+            enabled: true,
+            program: String::new(),
+            args: vec![],
+            cwd: None,
+            credential_env_names: vec![],
+            env: Default::default(),
+            url: Some("https://mcp.example.test/mcp".into()),
+            http_bearer_token_env_name: None,
+            http_oauth: Some(McpHttpOAuthSettings {
+                client_id: "public-client".into(),
+                issuer: "https://auth.example.test".into(),
+                scopes: vec!["read".into()],
+            }),
+            http_env_headers: vec![],
+        }
+    }
+
+    #[test]
+    fn oauth_cleanup_preserves_shared_grants_across_rows_scopes_and_closed_projects() {
+        use crate::mcp_settings::McpSettingsScope;
+        let root = tempfile::tempdir().unwrap();
+        let workspace = tempfile::tempdir().unwrap();
+        let closed_project = tempfile::tempdir().unwrap();
+        let previous = oauth_server("old");
+        let empty = McpSettings::default();
+        let referenced = |replacement: &McpSettings| {
+            oauth_registration_referenced_elsewhere(
+                root.path(),
+                workspace.path(),
+                McpSettingsScope::User,
+                &previous,
+                replacement,
+            )
+            .unwrap()
+        };
+        assert!(!referenced(&empty));
+        // Another row in the document being committed has the same principal.
+        assert!(referenced(&McpSettings {
+            servers: vec![oauth_server("another-id")]
+        }));
+        let mut disabled = oauth_server("project-row");
+        disabled.enabled = false;
+        McpSettings {
+            servers: vec![disabled],
+        }
+        .save_scope(
+            root.path(),
+            closed_project.path(),
+            McpSettingsScope::Project,
+        )
+        .unwrap();
+        assert!(referenced(&empty));
+        // Scopes and enabled state do not identify a distinct credential.
+        let mut other = oauth_server("other");
+        other.http_oauth.as_mut().unwrap().scopes = vec!["write".into()];
+        assert!(referenced(&McpSettings {
+            servers: vec![other]
+        }));
+        empty
+            .save_scope(
+                root.path(),
+                closed_project.path(),
+                McpSettingsScope::Project,
+            )
+            .unwrap();
+        assert!(!referenced(&empty));
+        McpSettings {
+            servers: vec![oauth_server("user-row")],
+        }
+        .save(root.path(), workspace.path())
+        .unwrap();
+        assert!(oauth_registration_referenced_elsewhere(
+            root.path(),
+            workspace.path(),
+            McpSettingsScope::Project,
+            &previous,
+            &empty
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn oauth_cleanup_refuses_unverifiable_or_unbounded_project_registry() {
+        use crate::mcp_settings::McpSettingsScope;
+        let root = tempfile::tempdir().unwrap();
+        let workspace = tempfile::tempdir().unwrap();
+        let previous = oauth_server("old");
+        let invalid = root.path().join("mcp-projects").join("a".repeat(64));
+        std::fs::create_dir_all(&invalid).unwrap();
+        std::fs::write(invalid.join("mcp-servers.json"), "broken").unwrap();
+        assert!(oauth_registration_referenced_elsewhere(
+            root.path(),
+            workspace.path(),
+            McpSettingsScope::User,
+            &previous,
+            &McpSettings::default()
+        )
+        .is_err());
+        std::fs::remove_dir_all(&invalid).unwrap();
+        for index in 0..1025 {
+            std::fs::write(
+                root.path()
+                    .join("mcp-projects")
+                    .join(format!("entry-{index}")),
+                "",
+            )
+            .unwrap();
+        }
+        let error = oauth_registration_referenced_elsewhere(
+            root.path(),
+            workspace.path(),
+            McpSettingsScope::User,
+            &previous,
+            &McpSettings::default(),
+        )
+        .unwrap_err();
+        assert!(error.contains("se conserva la credencial"));
+    }
 
     #[test]
     fn cancel_waits_for_worker_before_credential_cleanup_can_continue() {

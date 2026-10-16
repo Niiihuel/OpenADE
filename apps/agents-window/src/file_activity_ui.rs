@@ -2,17 +2,44 @@
 //! Previews come only from the recorded call; confirmed diffs come from the worker.
 
 use crate::{
+    appearance_preferences::ToolCallDensity,
     chat_diff_ui, file_activity_preview, theme, tool_presentation,
     transcript::{ActivityStatus, ModelStreamStatus, TranscriptItem},
     view::ViewState,
 };
 use openide_ui::{
-    CodeDiff, CodeLanguage, Component, Element, FileActivity, FontFamily, Text, TextRole,
-    Tooltip, TooltipPlacement,
+    CodeDiff, CodeLanguage, Component, Element, FileActivity, FontFamily, Text, TextRole, Tooltip,
+    TooltipPlacement,
 };
 use std::path::Path;
 
 pub(crate) fn default_expanded_calls(state: &ViewState) -> Vec<&str> {
+    match state.appearance.tool_call_density {
+        ToolCallDensity::Compact => return Vec::new(),
+        ToolCallDensity::Detailed => {
+            return state
+                .transcript
+                .iter()
+                .filter_map(|item| match item {
+                    TranscriptItem::Tool { id, name, .. }
+                        if file_activity_preview::is_file_tool(name) =>
+                    {
+                        Some(id.as_str())
+                    }
+                    TranscriptItem::ToolPreview {
+                        id,
+                        call_id,
+                        name: Some(name),
+                        ..
+                    } if file_activity_preview::is_file_tool(name) => {
+                        Some(call_id.as_deref().unwrap_or(id))
+                    }
+                    _ => None,
+                })
+                .collect();
+        }
+        ToolCallDensity::Grouped => {}
+    }
     // A bounded live tail opens naturally. Earlier history stays compact, and
     // explicit choices in ConversationDetails always take precedence.
     state
@@ -42,7 +69,11 @@ pub(crate) fn default_expanded_calls(state: &ViewState) -> Vec<&str> {
 }
 
 pub(crate) fn default_expanded(state: &ViewState, call: &str) -> bool {
-    default_expanded_calls(state).contains(&call)
+    match state.appearance.tool_call_density {
+        ToolCallDensity::Detailed => true,
+        ToolCallDensity::Compact => false,
+        ToolCallDensity::Grouped => default_expanded_calls(state).contains(&call),
+    }
 }
 
 /// Resolve paths against this captured row at click time, never from an action
@@ -406,6 +437,8 @@ pub(crate) fn build(
                                 format!("file-preview:{owner}:{call}:{index}"),
                                 file.lines.clone(),
                             )
+                            .font_size(crate::appearance_preferences::code_font_size())
+                            .diff_backgrounds(state.appearance.themed_diff_backgrounds)
                             .single_gutter(matches!(name, "read_file" | "write_file"))
                             .follow_tail(running)
                             .language(CodeLanguage::from_extension(
@@ -501,6 +534,44 @@ mod tests {
     use eframe::egui;
     use openide_ui::{DrawCommand, Frame as UiFrame, Rect, ScrollArea, Size, UiTree};
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn file_density_defaults_change_without_overriding_manual_disclosures() {
+        use crate::appearance_preferences::ToolCallDensity;
+        let item = preview_item(
+            "write_file",
+            ModelStreamStatus::Receiving,
+            true,
+            "DENSITY_EDIT",
+        );
+        let mut state = crate::view::tests::empty_state();
+        state.selected_session = Some("owner".into());
+        state.transcript.push(item.clone());
+        for (density, expanded) in [
+            (ToolCallDensity::Grouped, true),
+            (ToolCallDensity::Compact, false),
+            (ToolCallDensity::Detailed, true),
+        ] {
+            state.appearance.tool_call_density = density;
+            assert_eq!(default_expanded(&state, "edit"), expanded);
+            let frame = UiTree::new(build(&item, &state, false, None, None).unwrap())
+                .layout(Size::new(600.0, 600.0));
+            assert_eq!(
+                frame
+                    .regions
+                    .iter()
+                    .any(|region| region.id == "file-preview:owner:edit:0"),
+                expanded
+            );
+        }
+        state.conversation_details.set_expanded("tool:edit", false);
+        let frame = UiTree::new(build(&item, &state, false, None, None).unwrap())
+            .layout(Size::new(600.0, 600.0));
+        assert!(!frame
+            .regions
+            .iter()
+            .any(|region| region.id == "file-preview:owner:edit:0"));
+    }
 
     fn preview_item(
         name: &str,
@@ -852,7 +923,10 @@ mod tests {
                                 egui::FontId::new(
                                     size,
                                     match family {
-                                        FontFamily::Sans | FontFamily::SansItalic | FontFamily::SansMedium | FontFamily::SansBold => egui::FontFamily::Proportional,
+                                        FontFamily::Sans
+                                        | FontFamily::SansItalic
+                                        | FontFamily::SansMedium
+                                        | FontFamily::SansBold => egui::FontFamily::Proportional,
                                         FontFamily::Monospace => egui::FontFamily::Monospace,
                                     },
                                 ),

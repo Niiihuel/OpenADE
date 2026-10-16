@@ -47,13 +47,22 @@ fn text_in(frame: &Frame) -> String {
 }
 
 fn bars(frame: &Frame) -> Vec<Rect> {
+    let Some(plot) = frame.regions.iter().find(|region| region.id == "usage-tasks") else {
+        return Vec::new();
+    };
     frame
         .commands
         .iter()
         .filter_map(|command| match command {
-            DrawCommand::FillRect { rect, color, .. }
-            | DrawCommand::FillCornerRect { rect, color, .. }
-                if *color == TASK_BAR_COLOR =>
+            // Bars have round tips on the right and square feet. A tooltip's
+            // series swatch uses the same RGB, but is not an observation.
+            DrawCommand::FillCornerRect { rect, color, radii }
+                if (color.r, color.g, color.b) == (TASK_BAR_COLOR.r, TASK_BAR_COLOR.g, TASK_BAR_COLOR.b)
+                    && radii.top_right > 0.0 && radii.bottom_right > 0.0
+                    && radii.top_left == 0.0 && radii.bottom_left == 0.0
+                    && rect.x >= plot.rect.x - 0.51 && rect.y >= plot.rect.y - 0.51
+                    && rect.x + rect.width <= plot.rect.x + plot.rect.width + 0.51
+                    && rect.y + rect.height <= plot.rect.y + plot.rect.height + 0.51 =>
             {
                 Some(*rect)
             }
@@ -129,7 +138,7 @@ fn task_counts_preserve_recorded_agents_and_sort_ties_independently_of_history_o
 }
 
 #[test]
-fn task_columns_keep_real_totals_zero_baseline_and_proportions_at_native_font_widths() {
+fn task_bars_keep_real_totals_one_baseline_and_proportions_at_native_font_widths() {
     let state = fixture(&["native", "native", "native", "codex", "codex", "custom"]);
     for width in [280.0, 360.0, 900.0] {
         let (ctx, mut tree) = native_tree(&state, width);
@@ -138,60 +147,60 @@ fn task_columns_keep_real_totals_zero_baseline_and_proportions_at_native_font_wi
         assert!(text.contains("Tareas por agente"));
         assert!(text.contains("6 tareas visibles"));
         assert!(text.contains("3 agentes"));
-        assert!(
-            frame
-                .commands
-                .iter()
-                .any(|command| matches!(command, DrawCommand::Text { text, .. } if text == "0")),
-            "the numeric scale starts at zero"
-        );
+        for name in ["Nativo", "Codex CLI", "Agente personalizado"] {
+            assert!(text.contains(name), "{name} at {width}px: {text}");
+        }
+        assert!(!text.contains("0.5"), "a count has no half ticks");
         let painted = bars(&frame);
         assert_eq!(painted.len(), 3);
         for bar in &painted {
-            assert!(bar.width > 0.0 && bar.width <= 48.0);
-            assert!(bar.height > 0.0 && bar.x >= 16.0 && bar.x + bar.width <= width - 16.0 + 0.1);
-            assert!((bar.y + bar.height - painted[0].y - painted[0].height).abs() < 0.01);
+            assert!(bar.height > 0.0 && bar.height <= 18.0);
+            assert!(bar.width > 0.0 && bar.x >= 16.0 && bar.x + bar.width <= width - 16.0 + 0.1);
+            assert!((bar.x - painted[0].x).abs() < 0.01, "every bar starts at zero");
         }
-        assert!((painted[0].height - painted[2].height * 3.0).abs() < 0.01);
-        assert!((painted[1].height - painted[2].height * 2.0).abs() < 0.01);
+        assert!(painted.windows(2).all(|pair| pair[0].y < pair[1].y), "the largest count is on top");
+        // The plot snaps edges to whole pixels; each length still follows
+        // the observed 3:2:1 counts within one raster pixel.
+        assert!((painted[1].width - painted[0].width * 2.0 / 3.0).abs() <= 1.0);
+        assert!((painted[2].width - painted[0].width / 3.0).abs() <= 1.0);
         let observations = frame
             .regions
             .iter()
-            .filter(|region| region.kind == HitKind::Hover && region.id.starts_with("usage-tasks:"))
-            .collect::<Vec<_>>();
-        assert_eq!(observations.len(), 3);
-        assert!(
-            observations
-                .iter()
-                .all(|region| region.kind == HitKind::Hover)
-        );
+            .filter(|region| region.kind == HitKind::Hover && region.id == "usage-tasks")
+            .count();
+        assert_eq!(observations, 1, "the plot owns hover for all three observations");
         ctx.end_pass().textures_delta.clear();
     }
 }
 
 #[test]
-fn one_observed_agent_stays_centered_with_a_narrow_bar_and_singular_count() {
+fn one_observed_agent_is_a_line_with_its_name_and_count_without_a_chart() {
     let state = fixture(&["native"]);
     for width in [280.0, 900.0] {
         let (ctx, mut tree) = native_tree(&state, width);
         let frame = tree.layout(Size::new(width, 520.0));
         let text = text_in(&frame);
-        assert!(text.contains("1 tarea visible") && text.contains("1 agente"));
-        assert!(!text.contains("1 tareas") && !text.contains("1 agentes"));
-        let painted = bars(&frame);
-        assert_eq!(painted.len(), 1);
-        assert!(painted[0].width <= 48.0);
-        let category = frame
-            .regions
-            .iter()
-            .find(|region| region.id == "usage-tasks:native")
-            .unwrap()
-            .rect;
-        assert!(
-            (painted[0].x + painted[0].width / 2.0 - category.x - category.width / 2.0).abs() < 0.1
-        );
+        assert!(text.contains("1 tarea visible") && text.contains("Nativo 1 tarea"), "{text}");
+        assert!(!text.contains("1 tareas"));
+        assert!(bars(&frame).is_empty());
+        assert!(!frame.regions.iter().any(|region| region.id == "usage-tasks"));
         ctx.end_pass().textures_delta.clear();
     }
+}
+
+#[test]
+fn tasks_of_an_external_cli_are_named_after_the_cli() {
+    let mut state = fixture(&["cli:opencode", "cli:opencode", "native"]);
+    state.agent_clis = vec![crate::view::AgentCliRowView {
+        id: "opencode".into(),
+        label: "OpenCode".into(),
+        resolved: None,
+        manual: String::new(),
+    }];
+    let (ctx, mut tree) = native_tree(&state, 600.0);
+    let text = text_in(&tree.layout(Size::new(600.0, 520.0)));
+    assert!(text.contains("OpenCode") && !text.contains("cli:opencode"), "{text}");
+    ctx.end_pass().textures_delta.clear();
 }
 
 #[test]
@@ -202,12 +211,7 @@ fn task_column_hover_exposes_complete_agent_and_count_without_activating() {
     let (ctx, mut tree) = native_tree(&state, 320.0);
     let now = Instant::now();
     let frame = tree.layout_at(Size::new(320.0, 520.0), now);
-    let rect = frame
-        .regions
-        .iter()
-        .find(|region| region.id == "usage-tasks:native")
-        .unwrap()
-        .rect;
+    let rect = bars(&frame)[0];
     let point = Point::new(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0);
     assert!(tree.handle_event(UiEvent::PointerDown(point)).is_empty());
     assert!(tree.handle_event(UiEvent::PointerUp(point)).is_empty());
@@ -244,7 +248,7 @@ fn empty_task_history_retains_the_card_identity_and_never_draws_sample_data() {
             !frame
                 .regions
                 .iter()
-                .any(|region| region.id.starts_with("usage-tasks:"))
+                .any(|region| region.id == "usage-tasks")
         );
     }
     assert_eq!(execution_count_label(1), "1 ejecución");

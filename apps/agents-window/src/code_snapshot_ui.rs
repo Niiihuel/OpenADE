@@ -75,6 +75,7 @@ pub(crate) fn build(view: &CodeSnapshotView, width: f32) -> Element {
             controller,
             language,
         } => CodeEditor::new(view_id(view.tab_id), controller.clone())
+            .font_size(crate::appearance_preferences::code_font_size())
             .read_only(true)
             .status_bar(true)
             .language(*language)
@@ -89,6 +90,10 @@ pub(crate) fn build(view: &CodeSnapshotView, width: f32) -> Element {
             .single_gutter(*single_gutter)
             .language(*language)
             .palette(theme::component_palette())
+            .font_size(crate::appearance_preferences::code_font_size())
+            .diff_backgrounds(
+                crate::appearance_preferences::themed_diff_backgrounds(),
+            )
             .render(),
     };
     Element::column(vec![
@@ -106,6 +111,59 @@ mod tests {
     use super::*;
     use openide_editor::TextBuffer;
     use openide_ui::{Key, Size, UiAction, UiEvent, UiTree};
+
+    #[test]
+    fn appearance_code_size_is_independent_of_ui_zoom_for_text_and_diff_snapshots() {
+        use crate::appearance_preferences::{self, AppearancePreferences};
+        use openide_ui::{CodeDiffLineKind, DrawCommand};
+
+        let previous = appearance_preferences::current();
+        let mut frames = Vec::new();
+        for (ui_font_size, code_font_size) in [(13, 22), (26, 12)] {
+            appearance_preferences::set_current(&AppearancePreferences {
+                ui_font_size,
+                code_font_size,
+                ..Default::default()
+            });
+            for content in [
+                CodeSnapshotContent::Text {
+                    controller: EditorController::new(TextBuffer::new("appearance_sample").unwrap()),
+                    language: CodeLanguage::Plain,
+                },
+                CodeSnapshotContent::Diff {
+                    lines: vec![CodeDiffLine {
+                        kind: CodeDiffLineKind::Added,
+                        old_line: None,
+                        new_line: Some(1),
+                        text: "appearance_sample".into(),
+                    }]
+                    .into(),
+                    language: CodeLanguage::Plain,
+                    single_gutter: true,
+                },
+            ] {
+                let view = CodeSnapshotView {
+                    tab_id: 7,
+                    source: "owner:call:0".into(),
+                    title: "main.rs".into(),
+                    path: "src/main.rs".into(),
+                    caption: "Solo lectura".into(),
+                    review: None,
+                    content,
+                };
+                let frame = UiTree::new(build(&view, 600.0)).layout(Size::new(600.0, 400.0));
+                frames.push((frame, f32::from(code_font_size) * 13.0 / f32::from(ui_font_size)));
+            }
+        }
+        appearance_preferences::set_current(&previous);
+
+        for (frame, expected) in frames {
+            assert!(frame.commands.iter().any(|command| matches!(command,
+                DrawCommand::Text { text, font_size, .. }
+                    if text == "appearance_sample" && *font_size == expected
+            )), "snapshot code must paint at {expected} logical pixels");
+        }
+    }
 
     #[test]
     fn recorded_write_is_copyable_but_never_editable_or_saveable_from_the_snapshot_view() {

@@ -27,6 +27,7 @@ pub(crate) struct EnvironmentToolPreparation {
     session_id: String,
     prior_events: Arc<Vec<AgentEvent>>,
     servers: Vec<McpServerSettings>,
+    tool_selections: crate::mcp_tool_selection::McpToolSelections,
     browser: Option<ConversationBrowser>,
     browser_allowed: bool,
     image: Option<ImageMcpClient>,
@@ -46,11 +47,20 @@ impl EnvironmentToolPreparation {
             session_id,
             prior_events,
             servers,
+            tool_selections: Default::default(),
             browser,
             browser_allowed: false,
             image: None,
             plugin_root: None,
         }
+    }
+
+    pub fn with_mcp_tool_selections(
+        mut self,
+        selections: crate::mcp_tool_selection::McpToolSelections,
+    ) -> Self {
+        self.tool_selections = selections;
+        self
     }
 
     /// The user allowed everything in this conversation: the browser this
@@ -170,21 +180,11 @@ impl ToolPreparation for EnvironmentToolPreparation {
             self.session_id.clone(),
             workspace.clone(),
         );
-        let inner = if servers.is_empty() {
-            None
-        } else {
-            Some(
-                McpToolPreparation::new(servers)
-                    .prepare(&workspace, base_tools.clone(), cancellation)
-                    .await?,
-            )
-        };
-        let mut tools = inner
-            .as_ref()
-            .map_or(base_tools, |prepared| prepared.tools());
-        let mut asks = inner
-            .as_ref()
-            .map_or_else(Vec::new, |prepared| prepared.ask_tool_names().to_vec());
+        // Compose window-owned tools first so remote admission accounts for
+        // their definitions as well as ordinary local tools within the model
+        // budget. Their permissions remain the same after this reordering.
+        let mut tools = base_tools;
+        let mut asks = Vec::new();
         // The tools this window serves itself. Each of them asks every time,
         // but the browser's that only read the page, and all of the
         // browser's once the user has allowed everything.
@@ -209,19 +209,13 @@ impl ToolPreparation for EnvironmentToolPreparation {
                     .map_err(|error| AgentError::Runtime(error.to_string()))
             }
             .await;
-            let composite = match composite {
-                Ok(composite) => composite,
-                Err(error) => {
-                    if let Some(prepared) = &inner {
-                        let _ = prepared.shutdown().await;
-                    }
-                    return Err(if cancellation.is_cancelled() {
-                        AgentError::Cancelled
-                    } else {
-                        error
-                    });
+            let composite = composite.map_err(|error| {
+                if cancellation.is_cancelled() {
+                    AgentError::Cancelled
+                } else {
+                    error
                 }
-            };
+            })?;
             let browser_allowed = self.browser_allowed;
             asks.extend(
                 composite
@@ -232,6 +226,20 @@ impl ToolPreparation for EnvironmentToolPreparation {
                     .map(str::to_owned),
             );
             tools = Arc::new(composite);
+        }
+        let inner = if servers.is_empty() {
+            None
+        } else {
+            Some(
+                McpToolPreparation::new(servers)
+                    .with_tool_selections(self.tool_selections.clone())
+                    .prepare(&workspace, tools.clone(), cancellation)
+                    .await?,
+            )
+        };
+        if let Some(prepared) = &inner {
+            tools = prepared.tools();
+            asks.extend(prepared.ask_tool_names().iter().cloned());
         }
         let external_identity = inner
             .as_ref()
@@ -288,7 +296,10 @@ impl PreparedToolSession for EnvironmentPrepared {
         self.resume_identity.as_deref()
     }
     fn notices(&self) -> Vec<(String, String)> {
-        self.inner.as_ref().map(|prepared| prepared.notices()).unwrap_or_default()
+        self.inner
+            .as_ref()
+            .map(|prepared| prepared.notices())
+            .unwrap_or_default()
     }
     async fn shutdown(&self) -> Result<(), AgentError> {
         match &self.inner {
@@ -407,26 +418,30 @@ mod tests {
                 None,
             )
             .with_image_generation(image)
-            .prepare(workspace, Arc::new(LocalTools::new()), &CancellationToken::new())
+            .prepare(
+                workspace,
+                Arc::new(LocalTools::new()),
+                &CancellationToken::new(),
+            )
             .await
             .unwrap()
         };
         let name = crate::image_runtime::TOOL;
         let offered = |prepared: &dyn PreparedToolSession| {
-            prepared.tools().definitions().iter().any(|tool| tool.name == name)
+            prepared
+                .tools()
+                .definitions()
+                .iter()
+                .any(|tool| tool.name == name)
         };
         // No connected provider, a Plan turn or a read-only one: nothing is bound.
         let without = prepare(None).await;
         assert!(!offered(without.as_ref()) && without.ask_tool_names().is_empty());
         assert!(without.mcp_resume_identity_digest().is_none());
 
-        let client = ImageMcpClient::new(
-            workspace,
-            root,
-            "http://127.0.0.1:9/v1",
-            true,
-            || Err("the credential is not read to offer the tool".into()),
-        );
+        let client = ImageMcpClient::new(workspace, root, "http://127.0.0.1:9/v1", true, || {
+            Err("the credential is not read to offer the tool".into())
+        });
         let identity = client.identity_digest();
         let prepared = prepare(Some(client)).await;
         assert!(offered(prepared.as_ref()));
@@ -444,7 +459,14 @@ mod tests {
             for name in prepared.ask_tool_names() {
                 policy.require_ask_unless_denied(name);
             }
-            policy.mode_for_call_with_session_grants("fixture", workspace, workspace, "", &call, &[])
+            policy.mode_for_call_with_session_grants(
+                "fixture",
+                workspace,
+                workspace,
+                "",
+                &call,
+                &[],
+            )
         };
         let open = PermissionPolicy::new().with_default_mode(PermissionMode::Allow);
         assert_eq!(mode(open.clone()), PermissionMode::Ask);
@@ -457,6 +479,87 @@ mod tests {
             mode(PermissionPolicy::new().with_default_mode(PermissionMode::Deny)),
             PermissionMode::Ask
         );
+    }
+
+    #[tokio::test]
+    async fn remote_tool_selection_counts_window_owned_tools_in_the_same_model_budget() {
+        use crate::mcp_tool_selection::McpToolSelections;
+        use openide_harness::LocalTools;
+        let root = tempfile::tempdir().unwrap();
+        let workspace = tempfile::tempdir().unwrap();
+        let fixture = crate::mcp_inspection::tests::HttpFixture::with_tools(
+            false,
+            (0..170)
+                .map(
+                    |index| json!({"name":format!("tool_{index}"),"inputSchema":{"type":"object"}}),
+                )
+                .collect(),
+        );
+        let prepare = |servers, selections| {
+            EnvironmentToolPreparation::new(
+                root.path().into(),
+                "budget-fixture".into(),
+                Arc::new(Vec::new()),
+                servers,
+                Some(ConversationBrowser::new(|| {
+                    Err("must not open a browser".into())
+                })),
+            )
+            .with_mcp_tool_selections(selections)
+        };
+        let base = prepare(vec![], McpToolSelections::default())
+            .prepare(
+                workspace.path(),
+                Arc::new(LocalTools::new()),
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        let base_count = base.tools().definitions().len();
+        assert!(base_count > 3);
+        let capacity = openide_harness::MAX_ADVERTISED_TOOLS - base_count;
+        base.shutdown().await.unwrap();
+        for count in [capacity + 1, capacity] {
+            let mut selections = McpToolSelections::default();
+            selections
+                .set_for(
+                    &fixture.server,
+                    Some((0..count).map(|index| format!("tool_{index}")).collect()),
+                )
+                .unwrap();
+            let prepared = prepare(vec![fixture.server.clone()], selections)
+                .prepare(
+                    workspace.path(),
+                    Arc::new(LocalTools::new()),
+                    &CancellationToken::new(),
+                )
+                .await
+                .unwrap();
+            let definitions = prepared.tools().definitions();
+            if count > capacity {
+                assert_eq!(definitions.len(), base_count);
+                assert_eq!(prepared.notices().len(), 1);
+            } else {
+                assert_eq!(definitions.len(), openide_harness::MAX_ADVERTISED_TOOLS);
+                assert!(prepared.notices().is_empty());
+                assert_eq!(
+                    prepared
+                        .ask_tool_names()
+                        .iter()
+                        .filter(|name| name.starts_with("mcp__inspection-local__"))
+                        .count(),
+                    count
+                );
+            }
+            assert!(definitions
+                .iter()
+                .any(|definition| definition.name == "mcp__openide_browser__browser_snapshot"));
+            prepared.shutdown().await.unwrap();
+        }
+        assert!(!fixture
+            .methods()
+            .iter()
+            .any(|method| method == "tools/call"));
     }
 
     #[tokio::test]
@@ -553,7 +656,11 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(allowed.ask_tool_names().is_empty(), "{:?}", allowed.ask_tool_names());
+        assert!(
+            allowed.ask_tool_names().is_empty(),
+            "{:?}",
+            allowed.ask_tool_names()
+        );
         assert_eq!(crate::browser_runtime::native_tool_names(), expected);
     }
 }

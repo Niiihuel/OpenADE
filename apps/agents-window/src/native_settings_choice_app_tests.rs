@@ -66,6 +66,59 @@ fn click(app: &mut AgentsWindow, frame: &openide_ui::Frame, id: &str) {
 }
 
 #[test]
+fn appearance_menus_survive_the_full_dispatcher_until_dismissed_or_chosen() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app = fixture(root.path(), SettingsPage::Appearance);
+    for width in [360.0, 900.0] {
+        for choice in [
+            "appearance_theme_selection",
+            "appearance_motion",
+            "appearance_ui_font",
+            "appearance_code_font",
+        ] {
+            let trigger = format!("settings_choice_toggle:{choice}");
+            let closed = frame(&mut app, width);
+            click(&mut app, &closed, &trigger);
+            assert_eq!(app.view.settings_choice_menu_open.as_deref(), Some(choice));
+            let opened = frame(&mut app, width);
+            assert!(opened
+                .access
+                .iter()
+                .any(|node| node.id == trigger && node.expanded == Some(true)));
+            assert!(opened
+                .regions
+                .iter()
+                .any(|region| region.id == "popover_surface:settings_choice_dismiss"));
+            for action in app.tree.handle_event(UiEvent::Key {
+                key: Key::Escape,
+                shift: false,
+                ctrl: false,
+            }) {
+                app.apply_action(action, &egui::Context::default());
+            }
+            assert!(app.view.settings_choice_menu_open.is_none());
+            let closed = frame(&mut app, width);
+            assert!(closed
+                .access
+                .iter()
+                .any(|node| node.id == trigger && node.expanded == Some(false)));
+        }
+    }
+    apply(&mut app, "settings_choice_toggle:appearance_motion");
+    let opened = frame(&mut app, 900.0);
+    click(&mut app, &opened, "appearance_motion:always");
+    assert!(app.view.settings_choice_menu_open.is_none());
+    assert_eq!(
+        SettingsPreferences::load(root.path())
+            .appearance
+            .reduce_motion,
+        crate::appearance_preferences::MotionPreference::Always
+    );
+    crate::appearance_preferences::set_current(&Default::default());
+    crate::theme_mode::set_appearance(&Default::default());
+}
+
+#[test]
 fn settings_choice_toggles_are_page_scoped_and_keep_only_one_open_menu() {
     let root = tempfile::tempdir().unwrap();
     let mut app = fixture(root.path(), SettingsPage::Data);
@@ -98,6 +151,135 @@ fn settings_choice_toggles_are_page_scoped_and_keep_only_one_open_menu() {
     apply(&mut app, "settings_choice_toggle:isolation");
     assert!(app.view.settings_choice_menu_open.is_none());
     assert!(app.active_run.is_none() && app.active_resume.is_none());
+}
+
+#[test]
+fn browser_permission_and_mcp_scope_menus_work_through_painted_controls() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app = fixture(root.path(), SettingsPage::Browser);
+    app.set_browser_site(
+        "https://example.test",
+        Some(crate::browser_sites::SiteAccess::Block),
+    )
+    .unwrap();
+    for width in [360.0, 900.0] {
+        for choice in ["browser_site_draft", "browser_site:0"] {
+            let trigger = format!("settings_choice_toggle:{choice}");
+            let closed = frame(&mut app, width);
+            click(&mut app, &closed, &trigger);
+            assert_eq!(app.view.settings_choice_menu_open.as_deref(), Some(choice));
+            let opened = frame(&mut app, width);
+            assert!(opened
+                .access
+                .iter()
+                .any(|node| node.id == trigger && node.expanded == Some(true)));
+            export_visual(&opened, width, &choice.replace(':', "-"));
+            apply(&mut app, "settings_choice_dismiss");
+        }
+        app.view.settings_page = SettingsPage::Mcp;
+        let closed = frame(&mut app, width);
+        click(&mut app, &closed, "settings_choice_toggle:mcp_scope");
+        let opened = frame(&mut app, width);
+        export_visual(&opened, width, "mcp-scope");
+        click(&mut app, &opened, "mcp_scope:project");
+        assert_eq!(
+            app.view.mcp_settings_scope,
+            crate::mcp_settings::McpSettingsScope::Project
+        );
+        assert!(app.view.settings_choice_menu_open.is_none());
+        apply(&mut app, "mcp_scope:user");
+        app.view.settings_page = SettingsPage::Browser;
+    }
+    let closed = frame(&mut app, 900.0);
+    click(&mut app, &closed, "settings_choice_toggle:browser_site:0");
+    let opened = frame(&mut app, 900.0);
+    click(&mut app, &opened, "browser_site_set:0:ask");
+    assert_eq!(
+        crate::browser_sites::BrowserSites::load(root.path())
+            .unwrap()
+            .access("https://example.test"),
+        crate::browser_sites::SiteAccess::Ask
+    );
+    for invalid in [
+        "browser_site:",
+        "browser_site:-1",
+        "browser_site:256",
+        "browser_site:0x0",
+        "mcp_scope",
+    ] {
+        apply(&mut app, &format!("settings_choice_toggle:{invalid}"));
+        assert!(app.view.settings_choice_menu_open.is_none());
+    }
+}
+
+#[test]
+fn integrated_settings_pages_fit_compact_width_and_export_review_frames() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app = fixture(root.path(), SettingsPage::Browser);
+    app.set_browser_site(
+        "https://example.test",
+        Some(crate::browser_sites::SiteAccess::Block),
+    )
+    .unwrap();
+    let server = crate::mcp_settings::McpServerSettings {
+        id: "example-server".into(),
+        enabled: true,
+        program: "example-mcp".into(),
+        args: Vec::new(),
+        cwd: None,
+        credential_env_names: Vec::new(),
+        env: Default::default(),
+        url: None,
+        http_bearer_token_env_name: None,
+        http_oauth: None,
+        http_env_headers: Vec::new(),
+    };
+    McpSettings {
+        servers: vec![server.clone()],
+    }
+    .save(root.path(), Path::new(&app.view.workspace))
+    .unwrap();
+    let mut overridden = server;
+    overridden.enabled = false;
+    McpSettings {
+        servers: vec![overridden],
+    }
+    .save_scope(
+        root.path(),
+        Path::new(&app.view.workspace),
+        crate::mcp_settings::McpSettingsScope::Project,
+    )
+    .unwrap();
+    app.refresh_mcp_settings();
+    app.view.mcp_inspection.last.insert(
+        "example-server".into(),
+        crate::mcp_inspection::McpServerStatus::Connected { tools: 12 },
+    );
+    for page in [
+        SettingsPage::Browser,
+        SettingsPage::Subagents,
+        SettingsPage::Mcp,
+    ] {
+        app.view.settings_page = page;
+        for width in [360.0, 900.0] {
+            let painted = frame(&mut app, width);
+            for region in &painted.regions {
+                if matches!(region.kind, HitKind::Button | HitKind::TextInput) {
+                    assert!(
+                        region.rect.x >= 0.0 && region.rect.x + region.rect.width <= width + 0.01,
+                        "{page:?} at {width}: {} {:?}",
+                        region.id,
+                        region.rect
+                    );
+                }
+            }
+            export_visual(
+                &painted,
+                width,
+                page.action_id().trim_start_matches("settings_page:"),
+            );
+        }
+    }
 }
 
 #[test]
@@ -288,17 +470,36 @@ fn hosted_web_search_is_chosen_from_the_agent_page_for_the_provider_that_support
     let toggle = "settings_choice_toggle:native_web_search".to_owned();
 
     app.view.native_provider_id = "custom".into();
-    assert!(!ids(&app).contains(&toggle), "other providers have no hosted search");
+    assert!(
+        !ids(&app).contains(&toggle),
+        "other providers have no hosted search"
+    );
 
     app.view.native_provider_id = "openai".into();
     assert!(ids(&app).contains(&toggle));
     app.apply_action(UiAction::Clicked { id: toggle.clone() }, &ctx);
-    assert_eq!(app.view.settings_choice_menu_open.as_deref(), Some("native_web_search"));
-    for id in ["native_web_search:off", "native_web_search:cached", "native_web_search:indexed", "native_web_search:live"] {
+    assert_eq!(
+        app.view.settings_choice_menu_open.as_deref(),
+        Some("native_web_search")
+    );
+    for id in [
+        "native_web_search:off",
+        "native_web_search:cached",
+        "native_web_search:indexed",
+        "native_web_search:live",
+    ] {
         assert!(ids(&app).iter().any(|region| region == id), "missing {id}");
     }
-    app.apply_action(UiAction::Clicked { id: "native_web_search:live".into() }, &ctx);
-    assert_eq!(app.view.hosted_web_search_mode, Some(HostedWebSearchMode::Live));
+    app.apply_action(
+        UiAction::Clicked {
+            id: "native_web_search:live".into(),
+        },
+        &ctx,
+    );
+    assert_eq!(
+        app.view.hosted_web_search_mode,
+        Some(HostedWebSearchMode::Live)
+    );
     assert!(app.view.settings_choice_menu_open.is_none());
     assert_eq!(
         crate::settings_preferences::SettingsPreferences::load(root.path()).hosted_web_search_mode,
@@ -331,7 +532,11 @@ fn the_file_tree_follows_the_folder_without_a_manual_refresh() {
             if done(&names(app)) {
                 return;
             }
-            assert!(Instant::now() < deadline, "tree never caught up: {:?}", names(app));
+            assert!(
+                Instant::now() < deadline,
+                "tree never caught up: {:?}",
+                names(app)
+            );
             std::thread::sleep(Duration::from_millis(20));
         }
     };
@@ -354,12 +559,23 @@ fn the_file_tree_follows_the_folder_without_a_manual_refresh() {
         .iter()
         .position(|row| row.name == "src")
         .unwrap();
-    app.apply_action(UiAction::Clicked { id: format!("file_row:{src}") }, &ctx);
-    follow_until(&mut app, &|rows| rows.iter().any(|row| row.ends_with("inner.rs")));
+    app.apply_action(
+        UiAction::Clicked {
+            id: format!("file_row:{src}"),
+        },
+        &ctx,
+    );
+    follow_until(&mut app, &|rows| {
+        rows.iter().any(|row| row.ends_with("inner.rs"))
+    });
     std::fs::write(project.join("src/added.rs"), "x").unwrap();
-    follow_until(&mut app, &|rows| rows.iter().any(|row| row.ends_with("added.rs")));
+    follow_until(&mut app, &|rows| {
+        rows.iter().any(|row| row.ends_with("added.rs"))
+    });
     std::fs::remove_file(project.join("src/inner.rs")).unwrap();
-    follow_until(&mut app, &|rows| !rows.iter().any(|row| row.ends_with("inner.rs")));
+    follow_until(&mut app, &|rows| {
+        !rows.iter().any(|row| row.ends_with("inner.rs"))
+    });
 }
 
 #[cfg(unix)]
@@ -378,7 +594,8 @@ fn a_cli_task_is_created_from_the_home_screen_and_is_its_terminal() {
     app.view.workspace = project.to_string_lossy().into_owned();
     let ctx = egui::Context::default();
     let home_ids = |app: &AgentsWindow| {
-        let mut tree = openide_ui::UiTree::new(crate::home::build_home_sized(&app.view, 900.0, 700.0));
+        let mut tree =
+            openide_ui::UiTree::new(crate::home::build_home_sized(&app.view, 900.0, 700.0));
         tree.layout(Size::new(900.0, 700.0))
             .regions
             .iter()
@@ -389,21 +606,44 @@ fn a_cli_task_is_created_from_the_home_screen_and_is_its_terminal() {
     // Nothing is offered until a CLI is actually found.
     *app.login_path.lock().unwrap() = Some("/nonexistent-dir".into());
     assert!(app.follow_agent_clis());
-    assert!(!app.follow_agent_clis(), "an unchanged path is not scanned again");
+    assert!(
+        !app.follow_agent_clis(),
+        "an unchanged path is not scanned again"
+    );
     assert!(!home_ids(&app).iter().any(|id| id.starts_with("cli_task:")));
     *app.login_path.lock().unwrap() = Some(bin.clone().into_os_string());
     assert!(app.follow_agent_clis());
     assert_eq!(
-        home_ids(&app).iter().filter(|id| id.starts_with("cli_task:")).collect::<Vec<_>>(),
+        home_ids(&app)
+            .iter()
+            .filter(|id| id.starts_with("cli_task:"))
+            .collect::<Vec<_>>(),
         ["cli_task:claude"]
     );
 
-    app.apply_action(UiAction::Clicked { id: "cli_task:claude".into() }, &ctx);
-    let session = app.view.selected_session.clone().expect("the task is selected");
+    app.apply_action(
+        UiAction::Clicked {
+            id: "cli_task:claude".into(),
+        },
+        &ctx,
+    );
+    let session = app
+        .view
+        .selected_session
+        .clone()
+        .expect("the task is selected");
     assert_eq!(app.view.selected_backend, "cli:claude");
     assert!(crate::view::cli_task(&app.view));
-    let row = app.view.sessions.iter().find(|row| row.id == session).unwrap();
-    assert_eq!((row.title.as_str(), row.backend.as_str()), ("Claude Code", "cli:claude"));
+    let row = app
+        .view
+        .sessions
+        .iter()
+        .find(|row| row.id == session)
+        .unwrap();
+    assert_eq!(
+        (row.title.as_str(), row.backend.as_str()),
+        ("Claude Code", "cli:claude")
+    );
     let terminals = app.dock.terminal_tabs(&app.dock_scope());
     assert_eq!(terminals.len(), 1);
     let terminal = terminals[0].id.get();
@@ -420,7 +660,10 @@ fn a_cli_task_is_created_from_the_home_screen_and_is_its_terminal() {
         if lines.iter().any(|line| line.contains("CLI_IS_RUNNING")) {
             break;
         }
-        assert!(Instant::now() < deadline, "the CLI never started: {lines:?}");
+        assert!(
+            Instant::now() < deadline,
+            "the CLI never started: {lines:?}"
+        );
         std::thread::sleep(Duration::from_millis(20));
     }
     assert!(app.view.show_terminal_panel);
@@ -428,7 +671,11 @@ fn a_cli_task_is_created_from_the_home_screen_and_is_its_terminal() {
     assert_eq!(crate::view::terminal_panel_height(&app.view, 800.0), 0.0);
     let mut tree = openide_ui::UiTree::new(crate::view::build_view_sized(&app.view, 1200.0, 800.0));
     let frame = tree.layout(Size::new(1200.0, 800.0));
-    let ids: Vec<_> = frame.regions.iter().map(|region| region.id.as_str()).collect();
+    let ids: Vec<_> = frame
+        .regions
+        .iter()
+        .map(|region| region.id.as_str())
+        .collect();
     assert!(ids.contains(&"cli_task_restart"), "{ids:?}");
     assert!(!ids.contains(&"prompt"), "a CLI task has no composer");
     let shown: Vec<_> = frame
@@ -440,14 +687,25 @@ fn a_cli_task_is_created_from_the_home_screen_and_is_its_terminal() {
         })
         .collect();
     assert!(shown.contains(&"Claude Code"), "{shown:?}");
-    assert!(!shown.contains(&"Problemas"), "no bottom panel chrome: {shown:?}");
+    assert!(
+        !shown.contains(&"Problemas"),
+        "no bottom panel chrome: {shown:?}"
+    );
 
     // Restarting replaces the terminal with a new one for the same CLI.
-    app.apply_action(UiAction::Clicked { id: "cli_task_restart".into() }, &ctx);
+    app.apply_action(
+        UiAction::Clicked {
+            id: "cli_task_restart".into(),
+        },
+        &ctx,
+    );
     let restarted = app.dock.terminal_tabs(&app.dock_scope());
     assert_eq!(restarted.len(), 1);
     assert_ne!(restarted[0].id.get(), terminal);
-    let (program, _, _) = app.agent_terminal_command(restarted[0].id.get()).unwrap().unwrap();
+    let (program, _, _) = app
+        .agent_terminal_command(restarted[0].id.get())
+        .unwrap()
+        .unwrap();
     assert_eq!(program, binary.as_os_str());
 
     // Selecting the task again reuses its terminal instead of starting another.
@@ -458,7 +716,12 @@ fn a_cli_task_is_created_from_the_home_screen_and_is_its_terminal() {
     app.new_session();
     assert!(!crate::view::cli_task(&app.view));
     let before = app.view.sessions.len();
-    app.apply_action(UiAction::Clicked { id: "cli_task:unknown".into() }, &ctx);
+    app.apply_action(
+        UiAction::Clicked {
+            id: "cli_task:unknown".into(),
+        },
+        &ctx,
+    );
     assert_eq!(app.view.sessions.len(), before);
 }
 
@@ -498,7 +761,10 @@ fn ide_agent_tabs_switch_freely_between_cli_tasks_and_close_to_their_neighbour()
         .map(|region| region.id.clone())
         .collect();
     for id in ["new_session_header", "cli_task:claude", "cli_task:codex"] {
-        assert!(ids.iter().any(|region| region == id), "missing {id}: {ids:?}");
+        assert!(
+            ids.iter().any(|region| region == id),
+            "missing {id}: {ids:?}"
+        );
     }
     click(&mut app, "cli_task:claude");
     assert!(!app.view.ide.agent_new_open);
@@ -512,11 +778,21 @@ fn ide_agent_tabs_switch_freely_between_cli_tasks_and_close_to_their_neighbour()
     assert_eq!(crate::view::terminal_panel_height(&app.view, 800.0), 0.0);
     let mut tree = openide_ui::UiTree::new(crate::view::build_view_sized(&app.view, 1500.0, 800.0));
     let frame = tree.layout(Size::new(1500.0, 800.0));
-    let ids: Vec<_> = frame.regions.iter().map(|region| region.id.clone()).collect();
-    for id in [format!("session:{claude}"), format!("ide_agent_tab_close:{codex}")] {
+    let ids: Vec<_> = frame
+        .regions
+        .iter()
+        .map(|region| region.id.clone())
+        .collect();
+    for id in [
+        format!("session:{claude}"),
+        format!("ide_agent_tab_close:{codex}"),
+    ] {
         assert!(ids.contains(&id), "missing {id}: {ids:?}");
     }
-    assert!(!ids.iter().any(|id| id == "prompt"), "a CLI tab has no composer");
+    assert!(
+        !ids.iter().any(|id| id == "prompt"),
+        "a CLI tab has no composer"
+    );
 
     // Switching tabs keeps both CLIs alive.
     let codex_terminal = app.dock.terminal_tabs(&app.dock_scope())[0].id.get();
@@ -524,7 +800,10 @@ fn ide_agent_tabs_switch_freely_between_cli_tasks_and_close_to_their_neighbour()
     assert_eq!(app.view.selected_session.as_deref(), Some(claude.as_str()));
     let claude_terminal = app.dock.terminal_tabs(&app.dock_scope())[0].id.get();
     assert_ne!(claude_terminal, codex_terminal);
-    assert!(app.terminals.contains_key(&codex_terminal), "the other CLI keeps running");
+    assert!(
+        app.terminals.contains_key(&codex_terminal),
+        "the other CLI keeps running"
+    );
 
     // The list opens beside the content and offers every task.
     click(&mut app, "ide_agent_list_toggle");
@@ -536,7 +815,10 @@ fn ide_agent_tabs_switch_freely_between_cli_tasks_and_close_to_their_neighbour()
         .iter()
         .map(|region| region.id.clone())
         .collect();
-    for id in [format!("ide_agent_list:{claude}"), format!("ide_agent_list:{codex}")] {
+    for id in [
+        format!("ide_agent_list:{claude}"),
+        format!("ide_agent_list:{codex}"),
+    ] {
         assert!(ids.contains(&id), "missing {id}");
     }
 
@@ -554,10 +836,28 @@ fn ide_agent_tabs_switch_freely_between_cli_tasks_and_close_to_their_neighbour()
 #[test]
 fn a_cli_task_takes_the_name_the_cli_gives_its_conversation() {
     use std::os::unix::fs::PermissionsExt;
-    assert_eq!(cli_conversation_title("✳ Arreglar el login", "claude").as_deref(), Some("Arreglar el login"));
-    assert_eq!(cli_conversation_title("⠋ Arreglar el login", "claude").as_deref(), Some("Arreglar el login"));
-    for generic in ["", "✳", "claude", "✳ Claude Code", "~/projects/app", "user@host: ~", "ok"] {
-        assert_eq!(cli_conversation_title(generic, "claude"), None, "{generic:?}");
+    assert_eq!(
+        cli_conversation_title("✳ Arreglar el login", "claude").as_deref(),
+        Some("Arreglar el login")
+    );
+    assert_eq!(
+        cli_conversation_title("⠋ Arreglar el login", "claude").as_deref(),
+        Some("Arreglar el login")
+    );
+    for generic in [
+        "",
+        "✳",
+        "claude",
+        "✳ Claude Code",
+        "~/projects/app",
+        "user@host: ~",
+        "ok",
+    ] {
+        assert_eq!(
+            cli_conversation_title(generic, "claude"),
+            None,
+            "{generic:?}"
+        );
     }
 
     let root = tempfile::tempdir().unwrap();
@@ -577,9 +877,17 @@ fn a_cli_task_takes_the_name_the_cli_gives_its_conversation() {
     *app.login_path.lock().unwrap() = Some(bin.into_os_string());
     app.follow_agent_clis();
     let ctx = egui::Context::default();
-    app.apply_action(UiAction::Clicked { id: "cli_task:claude".into() }, &ctx);
+    app.apply_action(
+        UiAction::Clicked {
+            id: "cli_task:claude".into(),
+        },
+        &ctx,
+    );
     let session = app.view.selected_session.clone().unwrap();
-    assert_eq!(app.view.selected_session_title.as_deref(), Some("Claude Code"));
+    assert_eq!(
+        app.view.selected_session_title.as_deref(),
+        Some("Claude Code")
+    );
 
     let deadline = Instant::now() + Duration::from_secs(10);
     while app.view.selected_session_title.as_deref() != Some("Arreglar el login") {
@@ -590,12 +898,24 @@ fn a_cli_task_takes_the_name_the_cli_gives_its_conversation() {
             }
         }
         app.follow_cli_task_title();
-        assert!(Instant::now() < deadline, "title never arrived: {:?}", app.view.selected_session_title);
+        assert!(
+            Instant::now() < deadline,
+            "title never arrived: {:?}",
+            app.view.selected_session_title
+        );
         std::thread::sleep(Duration::from_millis(20));
     }
-    let row = app.view.sessions.iter().find(|row| row.id == session).unwrap();
+    let row = app
+        .view
+        .sessions
+        .iter()
+        .find(|row| row.id == session)
+        .unwrap();
     assert_eq!(row.title, "Arreglar el login");
-    assert!(!app.follow_cli_task_title(), "an unchanged title is not saved again");
+    assert!(
+        !app.follow_cli_task_title(),
+        "an unchanged title is not saved again"
+    );
     let stored = app.store.as_ref().unwrap().load(&session).unwrap().unwrap();
     assert_eq!(stored.session.title.as_deref(), Some("Arreglar el login"));
 }

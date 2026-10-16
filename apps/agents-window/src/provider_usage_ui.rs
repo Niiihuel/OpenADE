@@ -16,6 +16,7 @@ use crate::{
     claude_limits,
     provider_connections,
     provider_icons::icon_for_provider,
+    settings_parts,
     provider_usage::{
         ProviderUsageSnapshot, ProviderUsageStatus, STALE_AFTER, UsageUnit, UsageWindow,
     },
@@ -341,8 +342,8 @@ fn progress(window: &UsageWindow) -> Option<Element> {
     }
     Some(
         Element::row(pieces)
-            .size(None, Some(4.0))
-            .radius(2.0)
+            .size(None, Some(6.0))
+            .radius(3.0)
             .clip_children(),
     )
 }
@@ -354,10 +355,10 @@ fn window_row(window: &UsageWindow, now: u64) -> Element {
             amount(window.used, window.unit),
             amount(limit, window.unit)
         ),
-        // A plan measured in percent is read by what is left of it.
-        _ if window.unit == UsageUnit::Percent && window.remaining.is_some() => format!(
-            "{} restante",
-            amount(window.remaining.unwrap_or_default(), window.unit)
+        // Every row reads like the headline and the bar: what is used.
+        _ if window.unit == UsageUnit::Percent => format!(
+            "{} usado",
+            amount(window.used_percent().unwrap_or(window.used), window.unit)
         ),
         _ => format!("{} usado", amount(window.used, window.unit)),
     };
@@ -520,12 +521,12 @@ fn usage_card(
             .truncate()
             .render(),
     ];
-    let subtitle = snapshot
+    let subtitle = crate::fonts::account_label(snapshot
         .account
         .as_deref()
-        .unwrap_or(status_label(snapshot.status));
+        .unwrap_or(status_label(snapshot.status)));
     titles.push(
-        Text::new(subtitle, theme::component_palette())
+        Text::new(&subtitle, theme::component_palette())
             .role(TextRole::Small)
             .ink(status_color)
             .truncate()
@@ -591,8 +592,10 @@ fn usage_card(
     } else {
         rows.push(Text::new(empty, theme::component_palette()).render());
     }
+    // The small print under a card reads as one block, not as separate rows.
+    let mut notes = Vec::new();
     if let Some(message) = &snapshot.message {
-        rows.push(
+        notes.push(
             Text::new(message, theme::component_palette())
                 .role(TextRole::Small)
                 .ink(status_color)
@@ -607,7 +610,7 @@ fn usage_card(
             .as_ref()
             .and_then(|catalog| catalog.providers.get(&snapshot.provider_id))
         {
-            rows.push(
+            notes.push(
                 Text::new(
                     format!("{} modelos en tu catálogo", provider.models.len()),
                     theme::component_palette(),
@@ -624,12 +627,15 @@ fn usage_card(
             ProviderUsageStatus::Loading | ProviderUsageStatus::Error
         )
     {
-        rows.push(
+        notes.push(
             Text::new(updated(snapshot, now), theme::component_palette())
                 .role(TextRole::Small)
                 .ink(status_color)
                 .render(),
         );
+    }
+    if !notes.is_empty() {
+        rows.push(Element::column(notes).gap(3.0));
     }
     // Keep actions independent of copy length and account state. The body
     // absorbs the extra height of its row, so every footer shares a baseline.
@@ -710,7 +716,7 @@ fn popup_account(snapshot: &ProviderUsageSnapshot, now: u64) -> (Element, f32) {
     }
     if let Some(account) = &snapshot.account {
         identity.push(
-            Text::new(account, theme::component_palette())
+            Text::new(crate::fonts::account_label(account), theme::component_palette())
                 .role(TextRole::Small)
                 .muted()
                 .truncate()
@@ -723,7 +729,7 @@ fn popup_account(snapshot: &ProviderUsageSnapshot, now: u64) -> (Element, f32) {
         .account
         .as_deref()
         .unwrap_or(status_label(snapshot.status));
-    let mut help = vec![account.to_owned()];
+    let mut help = vec![crate::fonts::account_label(account)];
     if let Some(plan) = &snapshot.plan_label {
         help.push(plan.clone());
     }
@@ -1148,10 +1154,7 @@ pub(crate) fn sidebar_compact(state: &ViewState) -> Element {
 /// Settings cards for the same four-account catalog used by provider setup.
 /// The outer Settings page owns scrolling and the page heading.
 pub(crate) fn usage_page(state: &ViewState, content_width: f32) -> Vec<Element> {
-    let count = provider_connections::PROVIDERS
-        .iter()
-        .filter(|(id, _, _)| connected(state, id))
-        .count();
+    let count = roster().filter(|(id, _)| connected(state, id)).count();
     let subtle = ComponentPalette {
         muted: theme::SETTINGS_FOREGROUND_SUBTLE,
         ..theme::component_palette()
@@ -1178,11 +1181,30 @@ pub(crate) fn usage_page(state: &ViewState, content_width: f32) -> Vec<Element> 
     } else {
         content_width
     };
-    let accounts = provider_connections::PROVIDERS
-        .iter()
-        .map(|(id, name, _)| account_card(state, &snapshot(state, id, name), card_width, now))
-        .chain(claude_card(state, card_width, now))
-        .map(|card| card.size(Some(card_width), None));
+    // Accounts with something to say come first, measured ones before the
+    // rest; the ones never connected wait in one compact list below them.
+    let mut accounts = Vec::new();
+    let mut unconnected = Vec::new();
+    for (id, name, _) in provider_connections::PROVIDERS {
+        let snapshot = snapshot(state, id, name);
+        if snapshot.status == ProviderUsageStatus::Disconnected {
+            unconnected.push(settings_parts::settings_row(
+                *name,
+                "Conecta una cuenta para ver su uso",
+                account_action(&snapshot),
+                content_width < 500.0,
+            ));
+        } else {
+            accounts.push((connected(state, id), account_card(state, &snapshot, card_width, now)));
+        }
+    }
+    if let Some(card) = claude_card(state, card_width, now) {
+        accounts.push((connected(state, claude_limits::PROVIDER_ID), card));
+    }
+    accounts.sort_by_key(|(connected, _)| !connected);
+    let accounts = accounts
+        .into_iter()
+        .map(|(_, card)| card.size(Some(card_width), None));
     if two_columns {
         // Two independent columns: a tall card does not stretch its neighbour.
         let (mut left, mut right) = (Vec::new(), Vec::new());
@@ -1198,6 +1220,9 @@ pub(crate) fn usage_page(state: &ViewState, content_width: f32) -> Vec<Element> 
         );
     } else {
         cards.extend(accounts);
+    }
+    if !unconnected.is_empty() {
+        cards.push(settings_parts::settings_group("Sin conectar", unconnected));
     }
     cards.push(Text::new("Los límites y el saldo pertenecen a cada proveedor. El contexto de una conversación y los precios del catálogo no representan el consumo de tu suscripción.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
     cards
@@ -1448,11 +1473,11 @@ mod tests {
         let mut card = native_tree(provider_card(&state, "codex", 420.0).unwrap());
         let frame = card.layout(Size::new(420.0, 600.0));
         let painted = frame_text(&frame);
-        for text in ["58%", "usado · Semanal", "42% restante", "ChatGPT Pro", "Se renueva en 3 d 0 h", "Medido por Codex · hace 20 h"] {
+        for text in ["58%", "usado · Semanal", "58% usado", "ChatGPT Pro", "Se renueva en 3 d 0 h", "Medido por Codex · hace 20 h"] {
             assert!(painted.contains(text), "missing {text}: {painted}");
         }
         assert!(!painted.contains("se consulta en tu cuenta"), "{painted}");
-        assert!(bar(&frame, theme::FOREGROUND, 4.0));
+        assert!(bar(&frame, theme::FOREGROUND, 6.0));
 
         state.provider_usage_open = true;
         let frame = popup_tree(&state, 360.0).layout(Size::new(360.0, 720.0));
@@ -1572,8 +1597,8 @@ mod tests {
             "Claude Max",
             "85%",
             "usado · Semanal",
-            "70% restante",
-            "15% restante",
+            "30% usado",
+            "85% usado",
             "Se renueva en 2 h",
             "Medido por Claude Code · hace 2 min",
         ] {
@@ -1582,7 +1607,7 @@ mod tests {
         assert!(has(&frame, "claude_limits_disable"));
         assert!(frame.commands.iter().any(|command| matches!(command,
             DrawCommand::FillRect { rect, color, .. }
-                if *color == theme::WARNING && rect.height == 4.0 && rect.width > 0.0)));
+                if *color == theme::WARNING && rect.height == 6.0 && rect.width > 0.0)));
     }
 
     #[test]
@@ -2323,7 +2348,17 @@ mod tests {
                         _ => None,
                     })
                     .collect();
-                assert_eq!(cards.len(), provider_connections::PROVIDERS.len());
+                // Each account with something to say has its card; the ones
+                // never connected share one wider list below them.
+                let unconnected = provider_connections::PROVIDERS
+                    .iter()
+                    .filter(|(id, name, _)| snapshot(&state, id, name).status == ProviderUsageStatus::Disconnected)
+                    .count();
+                assert!(unconnected > 0);
+                assert_eq!(cards.len(), provider_connections::PROVIDERS.len() - unconnected + 1);
+                let narrowest = cards.iter().map(|card| card.width).fold(f32::MAX, f32::min);
+                let cards: Vec<_> = cards.into_iter().filter(|card| card.width == narrowest).collect();
+                assert_eq!(cards.len(), provider_connections::PROVIDERS.len() - unconnected);
                 // Two independent columns: equal widths, and a card keeps its
                 // own height instead of stretching to a taller neighbour.
                 assert!(cards.iter().all(|card| card.width == cards[0].width));
@@ -2332,8 +2367,8 @@ mod tests {
                 columns.sort_by(f32::total_cmp);
                 columns.dedup();
                 assert_eq!(columns.len(), 2);
-                let shortest = cards.iter().map(|card| card.height).fold(f32::MAX, f32::min);
-                assert!(cards.iter().filter(|card| card.height == shortest).count() >= 2);
+                let tallest = cards.iter().map(|card| card.height).fold(0.0, f32::max);
+                assert!(cards.iter().any(|card| card.height < tallest), "no card is stretched to the tallest");
             }
             let painted = frame_text(&frame);
             assert!(painted.contains("Abrir cuenta") && painted.contains("Conectar"));

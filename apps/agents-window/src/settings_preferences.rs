@@ -20,7 +20,9 @@ use crate::image_runtime::{DEFAULT_QUALITY, IMAGE_MODELS};
 use crate::keymap::KeymapProfile;
 
 const FILE_NAME: &str = "settings-preferences.json";
-const MAX_FILE_BYTES: u64 = 64 * 1024;
+// Thirty complete core themes can exceed 64 KiB with long escaped names and
+// alpha colors. Bound the whole file with room for the other preferences.
+const MAX_FILE_BYTES: u64 = 512 * 1024;
 const CURRENT_VERSION: u64 = 1;
 const DEFAULT_SETTINGS_PAGE: &str = "settings_page:general";
 static SAVE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -114,6 +116,7 @@ pub(crate) struct TourRecord {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SettingsPreferences {
+    pub appearance: crate::appearance_preferences::AppearancePreferences,
     pub reduced_motion: bool,
     /// Application shortcut preset. This does not enable modal text editing.
     pub keymap_profile: KeymapProfile,
@@ -145,6 +148,9 @@ pub(crate) struct SettingsPreferences {
     pub chat_links: crate::chat_links::ChatLinkOpening,
     /// When the preview of a server the agent starts opens.
     pub preview_opening: crate::preview::PreviewOpening,
+    /// Whether agent tools may automate the embedded browser. Manual browsing
+    /// is independent; existing clients also observe this revocable setting.
+    pub browser_automation_enabled: bool,
     /// The model and quality `generate_image` uses, as the user chose them.
     /// `image_runtime::image_choice` says what a call sends for the pair.
     pub image_model: String,
@@ -154,6 +160,7 @@ pub(crate) struct SettingsPreferences {
 impl Default for SettingsPreferences {
     fn default() -> Self {
         Self {
+            appearance: Default::default(),
             reduced_motion: env::var("OPENIDE_REDUCED_MOTION").is_ok_and(|value| {
                 matches!(
                     value.trim().to_ascii_lowercase().as_str(),
@@ -174,6 +181,7 @@ impl Default for SettingsPreferences {
             github_account: GithubAccountPreference::Automatic,
             tours: Default::default(),
             chat_links: Default::default(),
+            browser_automation_enabled: true,
             preview_opening: Default::default(),
             image_model: IMAGE_MODELS[0].id.to_owned(),
             image_quality: DEFAULT_QUALITY.to_owned(),
@@ -205,6 +213,10 @@ impl SettingsPreferences {
         {
             preferences.reduced_motion = reduced_motion;
         }
+        preferences.appearance = crate::appearance_preferences::AppearancePreferences::load_value(
+            value.get("appearance"),
+            preferences.reduced_motion,
+        );
         if let Some(profile) = value
             .get("keymap_profile")
             .and_then(serde_json::Value::as_str)
@@ -305,6 +317,9 @@ impl SettingsPreferences {
         {
             preferences.preview_opening = opening;
         }
+        if let Some(enabled) = value.get("browser_automation_enabled") {
+            preferences.browser_automation_enabled = enabled.as_bool().unwrap_or(false);
+        }
         // A model or level this build does not list keeps the default.
         let known = |key: &str, listed: &dyn Fn(&str) -> bool| {
             value.get(key)?.as_str().filter(|id| listed(id)).map(str::to_owned)
@@ -362,6 +377,7 @@ impl SettingsPreferences {
     /// Write to a unique temporary file, fsync it, then atomically replace the
     /// previous JSON (including on Windows). A failed write leaves it intact.
     pub fn save(&self, root: &Path) -> Result<(), String> {
+        self.appearance.validate()?;
         if !self.github_account.valid() {
             return Err("La cuenta de GitHub no es válida.".into());
         }
@@ -387,6 +403,7 @@ impl SettingsPreferences {
             .map_err(|error| format!("No se pudo crear la carpeta de configuración: {error}"))?;
         let payload = serde_json::to_vec_pretty(&serde_json::json!({
             "version": CURRENT_VERSION,
+            "appearance": self.appearance,
             "reduced_motion": self.reduced_motion,
             "keymap_profile": self.keymap_profile.id(),
             "vim_mode": self.vim_mode,
@@ -403,10 +420,14 @@ impl SettingsPreferences {
             "tours": self.tours,
             "chat_links": self.chat_links,
             "preview_opening": self.preview_opening,
+            "browser_automation_enabled": self.browser_automation_enabled,
             "image_model": self.image_model,
             "image_quality": self.image_quality,
         }))
         .map_err(|error| format!("No se pudieron serializar las preferencias: {error}"))?;
+        if payload.len() as u64 > MAX_FILE_BYTES {
+            return Err("Las preferencias superan el límite de 512 KiB.".into());
+        }
         let temp = root.join(format!(
             ".settings-preferences-{}-{}.tmp",
             std::process::id(),
@@ -583,6 +604,93 @@ fn replace_atomically(temporary: &Path, destination: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn browser_automation_reopens_disabled_and_invalid_explicit_values_fail_closed() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(SettingsPreferences::load(root.path()).browser_automation_enabled);
+        let prefs = SettingsPreferences { browser_automation_enabled: false, ..Default::default() };
+        prefs.save(root.path()).unwrap();
+        assert_eq!(SettingsPreferences::load(root.path()), prefs);
+        for invalid in [serde_json::json!(null), serde_json::json!("true"), serde_json::json!(1)] {
+            fs::write(root.path().join(FILE_NAME), serde_json::to_vec(&serde_json::json!({
+                "version": CURRENT_VERSION, "browser_automation_enabled": invalid, "vim_mode": true,
+            })).unwrap()).unwrap();
+            let loaded = SettingsPreferences::load(root.path());
+            assert!(!loaded.browser_automation_enabled);
+            assert!(loaded.vim_mode);
+        }
+    }
+
+    #[test]
+    fn thirty_complete_custom_themes_round_trip_without_exceeding_file_bound() {
+        use crate::custom_theme::{CustomTheme, ThemeAppearance, MAX_CUSTOM_THEMES};
+        let root = tempfile::tempdir().unwrap();
+        let mut preferences = SettingsPreferences::default();
+        preferences.appearance.custom_themes = (0..MAX_CUSTOM_THEMES)
+            .map(|index| {
+                // Valid maximum-length metadata and alpha colors cover the
+                // former 64 KiB bound, not only the shortest possible themes.
+                let mut theme = CustomTheme::new(&format!("{}{index:02}", "\"".repeat(118)), ThemeAppearance::Dark);
+                theme.id = format!("theme-{index:02}-{}", "x".repeat(71));
+                for value in theme.colors.values_mut() { *value = "#12345678".into(); }
+                theme
+            })
+            .collect();
+        preferences.appearance.active_custom_theme = Some(preferences.appearance.custom_themes[0].id.clone());
+        preferences.save(root.path()).unwrap();
+        let length = fs::metadata(root.path().join(FILE_NAME)).unwrap().len();
+        assert!(length > 64 * 1024, "the fixture must cover the previous read limit: {length}");
+        assert!(length <= MAX_FILE_BYTES);
+        assert_eq!(SettingsPreferences::load(root.path()), preferences);
+    }
+
+    #[test]
+    fn appearance_round_trips_and_invalid_fields_preserve_their_valid_siblings() {
+        use crate::appearance_preferences::{AppearancePreferences, MotionPreference, ToolCallDensity};
+        let root = tempfile::tempdir().unwrap();
+        let preferences = SettingsPreferences {
+            appearance: AppearancePreferences {
+                tool_call_density: ToolCallDensity::Detailed,
+                code_word_wrap: true,
+                themed_diff_backgrounds: false,
+                hue_degrees: 215,
+                tint_intensity: 640,
+                reduce_transparency: true,
+                ui_font_size: 19,
+                code_font_size: 17,
+                ui_font_family: "Ubuntu".into(),
+                code_font_family: "Hack".into(),
+                reduce_motion: MotionPreference::Never,
+                hide_email: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        preferences.save(root.path()).unwrap();
+        assert_eq!(SettingsPreferences::load(root.path()), preferences);
+
+        let mut value = serde_json::to_value(&preferences.appearance).unwrap();
+        value["ui_font_size"] = serde_json::json!(100);
+        value["code_font_family"] = serde_json::json!("bad\nfont");
+        value["tool_call_density"] = serde_json::json!("future_density");
+        fs::write(root.path().join(FILE_NAME), serde_json::to_vec(&serde_json::json!({
+            "version": CURRENT_VERSION, "appearance": value, "vim_mode": true,
+        })).unwrap()).unwrap();
+        let loaded = SettingsPreferences::load(root.path());
+        assert_eq!(loaded.appearance.ui_font_size, AppearancePreferences::default().ui_font_size);
+        assert_eq!(loaded.appearance.code_font_family, AppearancePreferences::default().code_font_family);
+        assert_eq!(loaded.appearance.tool_call_density, ToolCallDensity::Grouped);
+        assert_eq!(loaded.appearance.hue_degrees, 215);
+        assert_eq!(loaded.appearance.reduce_motion, MotionPreference::Never);
+        assert!(loaded.vim_mode);
+
+        let before = fs::read(root.path().join(FILE_NAME)).unwrap();
+        let mut invalid = preferences;
+        invalid.appearance.tint_intensity = 1001;
+        assert!(invalid.save(root.path()).is_err());
+        assert_eq!(fs::read(root.path().join(FILE_NAME)).unwrap(), before);
+    }
 
     #[test]
     fn github_choice_round_trips_and_malformed_choice_never_discovers_another_account() {

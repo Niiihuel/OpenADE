@@ -66,6 +66,17 @@ del tema oscuro y no incluye el catálogo completo.
 
 ## SVGL y recursos actuales de proveedores
 
+El catálogo completo en `apps/agents-window/assets/brands/svgl/` también proviene
+de [SVGL](https://github.com/pheralb/svgl), revisión
+`f9b726cee1d1f3c697a18c880185e89d9a55bb70`, Copyright (c) 2022 Pablo Hdez,
+bajo [licencia MIT](apps/agents-window/assets/brands/svgl/LICENSE).
+Se conservan los 670 registros oficiales; dos aliases del mismo arte se agrupan
+en 669 opciones. `SOURCE.json` registra hashes de las 831 rutas originales y
+los derivados seguros. Se eliminan contenido activo/metadatos externos y se
+resuelve el color de tema. Cinco recursos con imágenes/texto se distribuyen como
+PNG de 64 × 64 generado con ImageMagick/librsvg. Las marcas pertenecen a sus
+titulares; su presencia no implica aprobación, afiliación ni verificación.
+
 Los SVG de Codex, OpenAI, OpenRouter, OpenCode, NVIDIA, DeepSeek, Anthropic,
 Groq, Mistral y xAI en `apps/agents-window/assets/providers/svgl/` provienen de
 [SVGL](https://github.com/pheralb/svgl), revisión

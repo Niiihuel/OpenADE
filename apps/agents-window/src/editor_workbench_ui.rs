@@ -50,6 +50,7 @@ pub(crate) struct EditorWorkbenchView {
     pub minimap: bool,
     pub indent: IndentStyle,
     pub auto_pairs: bool,
+    pub view: crate::editor_preferences::ViewOptions,
     pub language_override: Option<CodeLanguage>,
     pub language_menu_open: bool,
     pub server_path: String,
@@ -102,6 +103,7 @@ impl Default for EditorWorkbenchView {
             minimap: true,
             indent: IndentStyle::default(),
             auto_pairs: true,
+            view: Default::default(),
             language_override: None,
             language_menu_open: false,
             server_path: String::new(),
@@ -779,6 +781,7 @@ pub(crate) fn tools(
         if let Some(disk) = &state.conflict_disk {
             rows.push(
                 openide_ui::CodeEditor::new("editor_conflict_disk", disk.clone())
+                    .font_size(crate::appearance_preferences::code_font_size())
                     .read_only(true)
                     .language(CodeLanguage::from_path(&view.path))
                     .palette(theme::component_palette())
@@ -832,6 +835,51 @@ mod compact_menu_tests {
         CodeEditor, DrawCommand, EditorController, Frame, Key, Point, Size, UiAction, UiEvent,
         UiTree,
     };
+
+    #[test]
+    fn appearance_code_size_remains_independent_of_ui_zoom_in_disk_conflicts() {
+        use crate::appearance_preferences::{self, AppearancePreferences};
+
+        let previous = appearance_preferences::current();
+        let view = CodeEditorView {
+            tab_id: 7,
+            path: "main.txt".into(),
+            controller: None,
+            loading: false,
+            saving: false,
+            error: None,
+            notice: None,
+            conflict: true,
+            recovered: false,
+            missing: false,
+        };
+        let state = EditorWorkbenchView {
+            conflict_open: true,
+            conflict_disk: Some(EditorController::new(
+                TextBuffer::new("appearance_sample").unwrap(),
+            )),
+            ..Default::default()
+        };
+        let mut frames = Vec::new();
+        for (ui_font_size, code_font_size) in [(13, 22), (26, 12)] {
+            appearance_preferences::set_current(&AppearancePreferences {
+                ui_font_size,
+                code_font_size,
+                ..Default::default()
+            });
+            let frame = UiTree::new(Element::column(tools(&view, &state, 600.0)))
+                .layout(Size::new(600.0, 500.0));
+            frames.push((frame, f32::from(code_font_size) * 13.0 / f32::from(ui_font_size)));
+        }
+        appearance_preferences::set_current(&previous);
+
+        for (frame, expected) in frames {
+            assert!(frame.commands.iter().any(|command| matches!(command,
+                DrawCommand::Text { text, font_size, .. }
+                    if text == "appearance_sample" && *font_size == expected
+            )), "conflict code must paint at {expected} logical pixels");
+        }
+    }
 
     fn native_tree(root: Element) -> (egui::Context, UiTree) {
         let ctx = egui::Context::default();

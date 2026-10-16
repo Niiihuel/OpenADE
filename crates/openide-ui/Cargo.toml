@@ -6,4 +6,4 @@ rust-version.workspace = true
 description = "openADE's own components, built on the limn UI library"
 
 [dependencies]
-limn = { git = "https://github.com/Niiihuel/limn.git", tag = "v0.1.39" }
+limn = { git = "https://github.com/Niiihuel/limn.git", rev = "19743e362e3975261bf57af619ee4e7574d62edf" }

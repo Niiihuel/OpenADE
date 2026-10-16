@@ -280,6 +280,7 @@ impl AutomationFixture {
         ResumeWorkerRequest {
             session_id: self.session.id.clone(),
             native_automation: Some(frozen.clone()),
+            subagent_settings: Default::default(),
             provider: frozen.provider_id().into(),
             endpoint: frozen.endpoint().into(),
             sessions: self.sessions(),

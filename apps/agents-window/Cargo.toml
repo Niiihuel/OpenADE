@@ -16,12 +16,14 @@ openide-cli = { path = "../../crates/openide-cli" }
 openide-bridge = { path = "../../crates/openide-bridge" }
 openide-browser = { path = "../../crates/openide-browser" }
 openide-ui = { path = "../../crates/openide-ui" }
-limn-egui = { git = "https://github.com/Niiihuel/limn.git", tag = "v0.1.39" }
+limn-egui = { git = "https://github.com/Niiihuel/limn.git", rev = "19743e362e3975261bf57af619ee4e7574d62edf" }
 openide-preview = { path = "../../crates/openide-preview" }
 openide-debug = { path = "../../crates/openide-debug" }
-openide-editor = { package = "limn-editor", git = "https://github.com/Niiihuel/limn.git", tag = "v0.1.39" }
-openide-language = { package = "limn-language", git = "https://github.com/Niiihuel/limn.git", tag = "v0.1.39" }
+openide-editor = { package = "limn-editor", git = "https://github.com/Niiihuel/limn.git", rev = "19743e362e3975261bf57af619ee4e7574d62edf" }
+openide-language = { package = "limn-language", git = "https://github.com/Niiihuel/limn.git", rev = "19743e362e3975261bf57af619ee4e7574d62edf" }
 serde_json = "1"
+serde_yaml = "0.9"
+color = "0.3"
 notify-rust = "4.18.2"
 notify = "8"
 base64 = "0.22"
@@ -36,6 +38,7 @@ sha2 = "0.10"
 sha1 = "0.10"
 jsonwebtoken = { version = "9.3", default-features = false }
 fs2 = "0.4"
+fontdb = "0.24"
 ignore = "0.4"
 resvg = { version = "0.48.1", default-features = false }
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
@@ -63,6 +66,6 @@ cpal = "0.17"
 whisper-rs = "0.16"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-ashpd = { version = "0.13.13", default-features = false, features = ["tokio", "file_chooser"] }
+ashpd = { version = "0.13.13", default-features = false, features = ["tokio", "file_chooser", "settings"] }
 # The project browser: Chromium embedded through CEF, which `shell.nix` provides.
 openide-cef = { path = "../../crates/openide-cef" }

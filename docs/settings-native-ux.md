@@ -23,10 +23,22 @@ búsqueda de ajustes en las demás rutas.
 General, Apariencia, Terminal y Datos editan las preferencias existentes.
 Agente, Skills, MCP, Comandos y Hooks conservan las acciones de sus servicios,
 incluidos formularios, permisos y recuperación. Automatizaciones y GitHub
-conducen a sus superficies conectadas. Subagentes muestra el estado durable
-disponible para la sesión seleccionada. Memoria y Uso distinguen datos actuales
-de capacidades todavía no agregadas. Navegador y Equipo presentan
-la disponibilidad real del producto; sus estados no habilitan servicios nuevos.
+conducen a sus superficies conectadas. Subagentes configura la delegación y sus
+límites para próximos turnos, muestra los roles disponibles y conserva el estado
+durable de la sesión seleccionada. Navegador configura automatización, enlaces,
+vistas previas y permisos por sitio. MCP separa Usuario y Este proyecto, con
+importación local e inspección sobre el ámbito elegido. El
+[contrato de integración](settings-module-integration.md) detalla persistencia,
+revocación y recuperación. Memoria y Uso distinguen datos actuales de capacidades
+todavía no agregadas.
+
+Apariencia incorpora temas claros/oscuros y de alto contraste, tinte con preview,
+transparencia, densidad de herramientas, wrap de código, fondos de diff,
+tipografía independiente para interfaz/código, familias instaladas, movimiento
+y máscara de correo. Usa las propiedades nativas de limn propuestas en
+[PR #43](https://github.com/Niiihuel/limn/pull/43), fijadas por revisión en Cargo.
+El [relevamiento de Cursor 3.17.21](research/cursor-settings/README.md) conserva
+fuentes, evidencia REA, defaults y límites de paridad con el producto de referencia.
 Plugins administra paquetes locales, con revisión previa, instalación inactiva,
 activación por proyecto, detalles y desinstalación. El contrato de ejecución y
 sus límites se documentan en [Plugins](plugins.md).
@@ -362,3 +374,39 @@ reconocer un Started/EffectUncertain requiere inspección, nota, revisión y lea
 Los estados en curso no ofrecen reconocimiento de recuperación mientras el actor
 sigue ejecutando. Ver [native-command-operations.md](native-command-operations.md)
 y [persistent-commands.md](persistent-commands.md) para pruebas y límites.
+
+## Apariencia: temas y tipografía
+
+La biblioteca de temas locales usa los controles existentes de limn, incluido ColorPicker. Guardar aplica el tema; cancelar conserva la biblioteca anterior. Se importan YAML y colores JSON de VS Code y se exporta YAML. Los grupos con colores compartidos se identifican en el editor.
+
+El suavizado modifica la colocación subpíxel del renderer; conserva el antialiasing y el hinting.
+
+El alcance y las diferencias frente a Cursor están en [el relevamiento de Apariencia](research/cursor-settings/README.md).
+
+Tema usa un selector compacto con los temas integrados y los temas locales en una
+sola lista. La biblioteca conserva las acciones de edición e intercambio; Importar
+y Exportar tienen etiquetas sin puntos suspensivos. Los tamaños usan NumberInput
+de limn: un solo campo editable entre decremento e incremento, valor centrado, límites y
+restablecimiento. Los selectores de fuentes permiten buscar las familias que
+descubre el sistema; código ofrece las monoespaciadas para conservar las columnas
+del editor y el terminal. Una familia guardada ausente conserva su nombre y señala
+su indisponibilidad, mientras el renderer utiliza su fuente de respaldo.
+
+Tipografía incluye una muestra CodeDiff nativa de tres líneas. Usa la familia,
+tamaño independiente, sintaxis y fondos de diferencias efectivos del editor. La
+búsqueda dentro del selector usa el nuevo slot opcional Select::header de limn,
+compartiendo el foco, el scroll de opciones y Escape del menú existente. El detalle
+observado con REA está en [tipografía y colores de Cursor](research/cursor-settings/typography-colors.md).
+
+
+Los menús de Settings usan una sola regla de ámbito al abrir y al terminar de
+procesar una acción. Así Apariencia y las opciones de imagen conservan el menú
+abierto hasta elegir o descartarlo. La regresión recorre puntero, dispatcher,
+reconstrucción y Escape, además de verificar el dibujo del Select.
+
+La explicación permanente de aislamiento usa una fila de la tarjeta. «Permitir
+todo» sigue siendo un preset que exige ejecución sin aislamiento; al elegir
+«Proyecto, sin red» se revoca. Aprobación y aislamiento son comprobaciones
+independientes del harness, pero no se ofrece una combinación contradictoria con
+ese preset. El diseño de un permiso sin aprobación limitado al sandbox requeriría
+una preferencia y un contrato propios.

@@ -7,7 +7,7 @@ use openide_ui::{Element, Size};
 
 use crate::{
     automation_view::{
-        build_automations, AutomationEditorStep, AutomationFrequency, AutomationScreen,
+        build_automations, editor_overlay, AutomationEditorStep, AutomationFrequency, AutomationScreen,
         AutomationViewState,
     },
     marketplace::SourceKind,
@@ -66,7 +66,7 @@ fn automation(step: AutomationEditorStep, frequency: AutomationFrequency) -> Aut
     state.calendar_month = 3;
     state.form.title = "Resumen diario".into();
     state.form.frequency = frequency;
-    state.form.once_at = "2026-03-14T09:30".into();
+    state.form.once_at = "2026-03-14 09:30".into();
     state.form.weekdays = 1 << 2;
     state
 }
@@ -204,7 +204,9 @@ fn scenes() -> Vec<Scene> {
         ("automation-agent", AutomationEditorStep::Agent, AutomationFrequency::Daily),
     ] {
         let state = automation(step, frequency);
-        scenes.push((name.to_owned(), Box::new(move |width| build_automations(&state, width))));
+        scenes.push((name.to_owned(), Box::new(move |width| {
+            editor_overlay(&state, build_automations(&state, width), width)
+        })));
     }
     for (name, kind, status) in [
         ("marketplace-source-local", SourceKind::Local, None),

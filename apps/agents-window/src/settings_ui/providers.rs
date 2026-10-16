@@ -66,7 +66,7 @@ fn status(state: &ViewState, id: &str) -> String {
         return "Sin conectar".into();
     }
     if let Some(account) = &c.account {
-        return account.clone();
+        return crate::fonts::account_label(account);
     }
     if c.from_environment {
         return "Conexión configurada en el equipo".into();

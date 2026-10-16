@@ -32,7 +32,9 @@ pub const MCP_PROTOCOL_VERSION: &str = "2025-11-25";
 pub const MAX_MCP_MESSAGE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_MCP_TOOLS: usize = 512;
 pub const MAX_MCP_TOOL_PAGES: usize = 64;
-const MAX_MCP_TOOL_BYTES: usize = 64 * 1024;
+// Discovery retains complete metadata, including outputSchema and annotations.
+// The aggregate bound also bounds each definition. Model input-schema limits
+// belong to ToolCatalog and are deliberately independent of this metadata.
 const MAX_MCP_CATALOG_BYTES: usize = 2 * 1024 * 1024;
 const MAX_PENDING_CANCELLED_IDS: usize = 256;
 const STDIO_NOTIFICATION_CAPACITY: usize = 64;
@@ -501,9 +503,6 @@ where
             let tool_bytes = serde_json::to_vec(raw)
                 .expect("serde_json::Value always serializes")
                 .len();
-            if tool_bytes > MAX_MCP_TOOL_BYTES {
-                return Err(McpError::CatalogLimit("tool definition too large"));
-            }
             catalog_bytes = catalog_bytes.saturating_add(tool_bytes);
             if catalog_bytes > MAX_MCP_CATALOG_BYTES {
                 return Err(McpError::CatalogLimit("tool catalog too large"));
@@ -1359,6 +1358,75 @@ mod tests {
             .unwrap_err();
         assert!(matches!(error, McpError::Timeout));
         assert!(client.poisoned);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn discovery_preserves_large_output_metadata_within_the_catalog_budget() {
+        let (mut client, server) = connected_pair(MAX_MCP_MESSAGE_BYTES);
+        let metadata = "output-metadata-".repeat(5_000);
+        let raw = json!({"name":"large_metadata","description":"Small model description","inputSchema":{"type":"object"},"outputSchema":{"type":"object","description":metadata},"annotations":{"readOnlyHint":true}});
+        assert!(serde_json::to_vec(&raw).unwrap().len() > 64 * 1024);
+        let expected: McpTool = serde_json::from_value(raw.clone()).unwrap();
+        let server = tokio::spawn(async move {
+            let mut server = BufReader::new(server);
+            let request = server_read(&mut server).await;
+            assert_eq!(request["method"], "tools/list");
+            server_write(
+                &mut server,
+                json!({"jsonrpc":"2.0","id":request["id"],"result":{"tools":[raw]}}),
+            )
+            .await;
+        });
+        let tools = fetch_tools(
+            &mut client,
+            Instant::now() + Duration::from_secs(5),
+            &CancellationToken::new(),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(tools, vec![expected]);
+        assert_eq!(
+            client.advertised,
+            BTreeSet::from(["large_metadata".to_owned()])
+        );
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn discovered_metadata_still_obeys_the_aggregate_budget_across_pages() {
+        let (mut client, server) = connected_pair(MAX_MCP_MESSAGE_BYTES);
+        client.advertised.insert("previous".into());
+        let server = tokio::spawn(async move {
+            let mut server = BufReader::new(server);
+            for (name, next) in [("first", Some("next")), ("second", None)] {
+                let request = server_read(&mut server).await;
+                assert_eq!(request["method"], "tools/list");
+                let mut result = json!({"tools":[{"name":name,"inputSchema":{"type":"object"},"outputSchema":{"description":"x".repeat(MAX_MCP_CATALOG_BYTES / 2)}}]});
+                if let Some(next) = next {
+                    result["nextCursor"] = json!(next);
+                }
+                server_write(
+                    &mut server,
+                    json!({"jsonrpc":"2.0","id":request["id"],"result":result}),
+                )
+                .await;
+            }
+        });
+        let error = fetch_tools(
+            &mut client,
+            Instant::now() + Duration::from_secs(5),
+            &CancellationToken::new(),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            McpError::CatalogLimit("tool catalog too large")
+        ));
+        assert_eq!(client.advertised, BTreeSet::from(["previous".to_owned()]));
         server.await.unwrap();
     }
 

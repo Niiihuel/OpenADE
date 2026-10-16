@@ -276,10 +276,9 @@ fn composer_plugins_entry_opens_management_without_installing_or_activating_anyt
         },
         &egui::Context::default(),
     );
-    // The plugins' tab of the add-ons section, not a screen of Settings.
-    assert!(!app.view.show_settings);
-    assert_eq!(app.view.main_page, crate::view::MainPage::Marketplace);
-    assert_eq!(app.view.marketplace.tab, crate::marketplace_view::MarketplaceTab::Plugins);
+    assert!(app.view.show_settings);
+    assert_eq!(app.view.settings_page, SettingsPage::Plugins);
+    assert!(!app.view.marketplace.sources_open);
     assert!(app.view.shows(SettingsPage::Plugins));
     assert!(!app.view.composer_add_menu_open);
     assert!(app.plugin_response.is_none());

@@ -28,6 +28,7 @@ pub(crate) struct ExecPolicyUiState {
     pub load_error: Option<String>,
     pub editor_open: bool,
     pub reset_confirm_open: bool,
+    pub allow_confirm_open: bool,
     pub selected_index: Option<usize>,
     pub draft_pattern: String,
     pub draft_decision: ExecDecision,
@@ -49,7 +50,7 @@ impl ExecPolicyPreview {
         let decision = match self.evaluation.decision {
             Some(ExecDecision::Ask) => "Pedir aprobación",
             Some(ExecDecision::Deny) => "Bloquear",
-            Some(ExecDecision::Allow) => "Permitir según reglas",
+            Some(ExecDecision::Allow) => "Permitir",
             None => "Sin coincidencias",
         };
         let mut description = format!(
@@ -67,7 +68,7 @@ impl ExecPolicyPreview {
             let decision = match rule.decision() {
                 ExecDecision::Ask => "Pedir aprobación",
                 ExecDecision::Deny => "Bloquear",
-                ExecDecision::Allow => "Permitir según reglas",
+                ExecDecision::Allow => "Permitir",
             };
             description.push_str(&format!(
                 "\nRegla {} · {decision}\nPrefijo: {}\n",
@@ -91,6 +92,7 @@ impl Default for ExecPolicyUiState {
             load_error: None,
             editor_open: false,
             reset_confirm_open: false,
+            allow_confirm_open: false,
             selected_index: None,
             draft_pattern: "[]".into(),
             draft_decision: ExecDecision::Ask,
@@ -112,6 +114,7 @@ impl ExecPolicyUiState {
     pub fn clear_draft(&mut self) {
         self.editor_open = false;
         self.reset_confirm_open = false;
+        self.allow_confirm_open = false;
         self.selected_index = None;
         self.draft_pattern = "[]".into();
         self.draft_decision = ExecDecision::Ask;
@@ -170,9 +173,6 @@ impl ExecPolicyUiState {
     pub fn build_draft_rule(&self) -> Result<ExecRule, String> {
         if self.load_error.is_some() {
             return Err("Corregí el archivo de reglas antes de editarlo".into());
-        }
-        if self.draft_decision == ExecDecision::Allow {
-            return Err("La interfaz sólo permite solicitar aprobación o bloquear".into());
         }
         if self.draft_pattern.len() as u64 > MAX_BYTES {
             return Err("El prefijo excede el límite de tamaño".into());
@@ -273,15 +273,6 @@ impl ExecPolicySettings {
     }
 
     pub fn policy(&self) -> Result<ExecPolicy, String> {
-        if self
-            .rules
-            .iter()
-            .any(|rule| rule.decision() == ExecDecision::Allow)
-        {
-            return Err(
-                "Las reglas de Settings sólo admiten solicitar aprobación o bloquear".into(),
-            );
-        }
         ExecPolicy::new(self.rules.clone())
             .map_err(|error| format!("Reglas de comandos no válidas: {error}"))
     }
@@ -490,7 +481,7 @@ mod tests {
     }
 
     #[test]
-    fn corrupt_oversized_unknown_and_allow_files_fail_closed() {
+    fn corrupt_oversized_and_unknown_files_fail_closed_and_allow_loads() {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join(FILE_NAME);
         fs::write(&path, b"{broken").unwrap();
@@ -516,7 +507,16 @@ mod tests {
             rules: vec![allow],
         };
         fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
-        assert!(ExecPolicySettings::load(root.path()).is_err());
+        let loaded = ExecPolicySettings::load(root.path()).unwrap();
+        assert_eq!(loaded.rules, document.rules);
+        let mut ui = ExecPolicyUiState::from_settings(&loaded);
+        ui.select(0).unwrap();
+        assert_eq!(ui.draft_decision, ExecDecision::Allow);
+        ui.set_preview_argv(r#"["git","status"]"#.into());
+        ui.preview_saved(Ok(loaded));
+        let said = ui.preview.unwrap().unwrap().description();
+        assert!(said.contains("Resultado: Permitir\n"), "{said}");
+        assert!(said.contains("· Permitir\n"), "{said}");
     }
 
     #[test]

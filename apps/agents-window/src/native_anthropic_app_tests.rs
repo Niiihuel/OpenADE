@@ -7,7 +7,7 @@ use crate::native_provider::{
 };
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use openide_core::{AgentMessage, ModelRouteSnapshot, TurnMode, UserImage, UserImageMime};
-use openide_ui::{Color, Component, DrawCommand, Frame, HitKind, Point, ScrollArea, Size, UiTree};
+use openide_ui::{Component, DrawCommand, Frame, HitKind, Point, ScrollArea, Size, UiTree};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -604,14 +604,19 @@ fn messages_components_present_real_factory_journal_and_save_exact_policy_at_bot
     app.view.composer_model = MODEL.into();
     app.model_discoveries = discoveries.clone();
     app.refresh_composer_routes();
-    // The public connection UX intentionally offers four providers. Project
-    // the open engine registry directly to test these reusable native leaf
-    // components without claiming arbitrary-provider account navigation.
-    assert!(!app
+    // User-defined providers participate in the same exact composer route as
+    // the engine registry; their persisted adapter remains unchanged.
+    assert_eq!(
+        app.view.user_providers.iter().find(|provider| provider.id == PROVIDER),
+        Some(&adapter)
+    );
+    let projected_route = app
         .view
         .composer_routes
         .iter()
-        .any(|route| route.provider_id == PROVIDER));
+        .find(|route| route.provider_id == PROVIDER && route.model_id == MODEL)
+        .expect("the user-defined Messages provider has its exact model route")
+        .clone();
     let registry_routes = composer_selection::model_route_options_with_discovery_at(
         app.view.catalog.as_deref(),
         &app.native_settings(),
@@ -619,9 +624,10 @@ fn messages_components_present_real_factory_journal_and_save_exact_policy_at_bot
         &data,
     )
     .unwrap();
-    assert!(registry_routes
-        .iter()
-        .any(|route| route.provider_id == PROVIDER && route.model_id == MODEL));
+    assert_eq!(
+        registry_routes.iter().find(|route| route.provider_id == PROVIDER && route.model_id == MODEL),
+        Some(&projected_route)
+    );
     let registry_metadata = crate::model_metadata::for_routes(
         &registry_routes,
         app.view.catalog.as_deref(),
@@ -723,41 +729,32 @@ fn messages_components_present_real_factory_journal_and_save_exact_policy_at_bot
         let frame = tree.layout(Size::new(width, 720.0));
         let text = frame_text(&frame);
         assert!(text.contains("Uso de entrada"), "{text}");
-        assert!(text.contains("10% usado"), "{text}");
-        assert!(!text.contains("13% usado"));
-        // Output remains a reported row; it receives no segment in the input
-        // limit meter. The two colors are the renderer's public visual result.
-        let input_segment = frame
+        for label in ["10%", "de 100K tokens", "90K libres"] {
+            assert!(frame.commands.iter().any(|command| matches!(command,
+                DrawCommand::Text { text, .. } if text == label
+            )), "{label}: {text}");
+        }
+        assert!(!frame.commands.iter().any(|command| matches!(command,
+            DrawCommand::Text { text, .. } if text == "13%"
+        )));
+        // The input-only grid counts the journal's 10K input, never its 3K
+        // output. Each nonempty category occupies at least one whole cell.
+        let cells: Vec<_> = frame
             .commands
             .iter()
-            .find_map(|command| match command {
+            .filter_map(|command| match command {
                 DrawCommand::FillRect { rect, color, .. }
-                    if *color == Color::rgb(153, 129, 245) && rect.height == 6.0 =>
+                    if rect.width == rect.height && rect.width < 8.0 =>
                 {
-                    Some(*rect)
+                    Some(*color)
                 }
                 _ => None,
             })
-            .unwrap();
-        let unused_segment = frame
-            .commands
-            .iter()
-            .find_map(|command| match command {
-                DrawCommand::FillRect { rect, color, .. }
-                    if *color == crate::theme::TREE_GUIDE
-                        && rect.height == 6.0
-                        && rect.y == input_segment.y =>
-                {
-                    Some(*rect)
-                }
-                _ => None,
-            })
-            .unwrap();
-        assert!(
-            (input_segment.width / (input_segment.width + unused_segment.width) - 0.10).abs()
-                < 0.001
-        );
-        assert!(!frame.commands.iter().any(|command|matches!(command,DrawCommand::FillRect {rect,color,..} if *color == Color::rgb(219,129,119) && rect.height == 6.0)));
+            .collect();
+        assert_eq!(cells.len(), 216);
+        assert_eq!(cells.iter().filter(|color| **color == crate::theme::context_category_ink("system")).count(), 1);
+        assert_eq!(cells.iter().filter(|color| **color == crate::theme::context_category_ink("conversation")).count(), 22);
+        assert_eq!(cells.iter().filter(|color| **color == crate::theme::menu_palette().hover).count(), 193);
 
         let mut tooltip_state = crate::view::tests::empty_state();
         tooltip_state.workspace = app.view.workspace.clone();
@@ -814,7 +811,7 @@ fn messages_components_present_real_factory_journal_and_save_exact_policy_at_bot
         tree.layout_at(viewport, start + Duration::from_millis(1));
         let shown = tree.layout_at(viewport, start + Duration::from_millis(700));
         let text = frame_text(&shown);
-        for shown in ["Entrada máx.", "100K", "Salida máx.", "8K"] {
+        for shown in [MODEL, "Entrada máx.", "100K", "Salida máx.", "8.2K"] {
             assert!(text.contains(shown), "{shown}: {text}");
         }
     }
@@ -839,7 +836,7 @@ fn messages_components_present_real_factory_journal_and_save_exact_policy_at_bot
         );
         // Render the output editor directly; App still handles the actual
         // action and saves the exact engine route's policy. This exercises no
-        // account login or four-provider connection-page navigation.
+        // account login or connection-page navigation.
         let mut tree = UiTree::new(
             ScrollArea::new(
                 "test_native_messages_output",

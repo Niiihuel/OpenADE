@@ -1,0 +1,5990 @@
+{
+  "target": "/nix/store/ij7hsdlff78ksdqx68gl2i4rnff57x8x-cursor-3.17.21/lib/cursor/resources/app/out/vs/workbench/workbench.glass.main.js",
+  "settings_catalog": [
+    {
+      "module": "general",
+      "id": "sign-in",
+      "offset_chars": 30005637,
+      "label": "Sign In",
+      "description": "Sign in to get started with Cursor's AI features",
+      "condition": "signed-out",
+      "offset_bytes": 30005646
+    },
+    {
+      "module": "general",
+      "id": "cursor-account",
+      "offset_chars": 30005765,
+      "label": "Cursor Account",
+      "description": "Manage your account and billing",
+      "condition": "signed-in",
+      "offset_bytes": 30005774
+    },
+    {
+      "module": "general",
+      "id": "preferences",
+      "offset_chars": 30005889,
+      "label": "Preferences",
+      "surface": "ide",
+      "offset_bytes": 30005898
+    },
+    {
+      "module": "general",
+      "id": "editor-settings",
+      "offset_chars": 30005953,
+      "label": "Editor Settings",
+      "description": "Configure font, formatting, minimap and more",
+      "surface": "ide",
+      "offset_bytes": 30005962
+    },
+    {
+      "module": "general",
+      "id": "keyboard-shortcuts",
+      "offset_chars": 30006084,
+      "label": "Keyboard Shortcuts",
+      "description": "Configure keyboard shortcuts",
+      "surface": "ide",
+      "offset_bytes": 30006093
+    },
+    {
+      "module": "general",
+      "id": "import-vscode",
+      "offset_chars": 30006205,
+      "label": "Import Settings from VS Code",
+      "description": "Import settings, extensions, and keybindings from VS Code",
+      "surface": "ide",
+      "offset_bytes": 30006214
+    },
+    {
+      "module": "general",
+      "id": "reset-dialogs",
+      "offset_chars": 30006360,
+      "label": {
+        "binding": "'Reset \"Don\\u2019t Ask Again\" Dialogs'"
+      },
+      "description": "See warnings and tips that you’ve hidden",
+      "surface": "ide",
+      "offset_bytes": 30006369
+    },
+    {
+      "module": "general",
+      "id": "layout",
+      "offset_chars": 30006511,
+      "label": "Layout",
+      "surface": "ide",
+      "offset_bytes": 30006520
+    },
+    {
+      "module": "general",
+      "id": "conversation-density",
+      "offset_chars": 30006565,
+      "label": "Conversation Density",
+      "description": "Choose how much detail Agent tool calls show in the conversation",
+      "surface": "ide",
+      "offset_bytes": 30006574
+    },
+    {
+      "module": "general",
+      "id": "status-bar",
+      "offset_chars": 30006813,
+      "label": "Status Bar",
+      "surface": "ide",
+      "offset_bytes": 30006822
+    },
+    {
+      "module": "general",
+      "id": "review-controls",
+      "offset_chars": 30006875,
+      "label": "Review Control Location",
+      "surface": "ide",
+      "offset_bytes": 30006884
+    },
+    {
+      "module": "general",
+      "id": "auto-hide-editor",
+      "offset_chars": 30006955,
+      "label": "Auto-Hide Editor When Empty",
+      "surface": "ide",
+      "offset_bytes": 30006964
+    },
+    {
+      "module": "general",
+      "id": "chat-editor-tabs",
+      "offset_chars": 30007040,
+      "label": "Open Chat as Editor Tabs",
+      "surface": "ide",
+      "offset_bytes": 30007049
+    },
+    {
+      "module": "general",
+      "id": "startup",
+      "offset_chars": 30007122,
+      "label": "Startup",
+      "offset_bytes": 30007131
+    },
+    {
+      "module": "general",
+      "id": "tips",
+      "offset_chars": 30007164,
+      "label": "Tips",
+      "description": "Show rotating tips on the empty screen",
+      "surface": "glass",
+      "offset_bytes": 30007173
+    },
+    {
+      "module": "general",
+      "id": "open-agents-on-startup",
+      "offset_chars": 30007328,
+      "label": "Window Restoration",
+      "description": "Controls which windows Cursor restores on startup",
+      "offset_bytes": 30007337
+    },
+    {
+      "module": "general",
+      "id": "auto-continue-interrupted-agents",
+      "offset_chars": 30007537,
+      "label": "Continue Interrupted Agents",
+      "description": "Automatically resume working on agents and their subagents after a reload or restart",
+      "surface": "glass",
+      "condition": "glass-auto-continue-interrupted-agents",
+      "elementId": {
+        "binding": "a8a"
+      },
+      "offset_bytes": 30007546
+    },
+    {
+      "module": "general",
+      "id": "notifications",
+      "offset_chars": 30007958,
+      "label": "Notifications",
+      "offset_bytes": 30007967
+    },
+    {
+      "module": "general",
+      "id": "system-notifications",
+      "offset_chars": 30008012,
+      "label": "System Notifications",
+      "description": "Show system notifications when Agent completes or needs attention",
+      "offset_bytes": 30008021
+    },
+    {
+      "module": "general",
+      "id": "warning-notifications",
+      "offset_chars": 30008160,
+      "label": "Warning Notifications",
+      "description": "Show notifications for less urgent issues",
+      "surface": "glass",
+      "offset_bytes": 30008169
+    },
+    {
+      "module": "general",
+      "id": "menu-bar-icon",
+      "offset_chars": 30008302,
+      "label": "Menu Bar Icon",
+      "description": "Show Cursor in the menu bar",
+      "condition": "macos",
+      "offset_bytes": 30008311
+    },
+    {
+      "module": "general",
+      "id": "system-tray-icon",
+      "offset_chars": 30008416,
+      "label": "System Tray Icon",
+      "description": "Show Cursor in the system tray",
+      "condition": "not-macos",
+      "offset_bytes": 30008425
+    },
+    {
+      "module": "general",
+      "id": "completion-sound",
+      "offset_chars": 30008543,
+      "label": "Completion Sound",
+      "description": "Play a sound when Agent finishes responding",
+      "offset_bytes": 30008552
+    },
+    {
+      "module": "general",
+      "id": "verify-extension-signatures",
+      "offset_chars": 30008661,
+      "label": "Verify Extension Signatures",
+      "condition": "extension-signature-verification",
+      "offset_bytes": 30008670
+    },
+    {
+      "module": "profile",
+      "id": "email",
+      "offset_chars": 30008788,
+      "label": "Email",
+      "description": "Account email shown on the profile page",
+      "surface": "glass",
+      "offset_bytes": 30008797
+    },
+    {
+      "module": "profile",
+      "id": "profile-image",
+      "offset_chars": 30008930,
+      "label": "Profile Image",
+      "description": "Upload or remove the profile photo",
+      "surface": "glass",
+      "offset_bytes": 30008939
+    },
+    {
+      "module": "profile",
+      "id": "first-name",
+      "offset_chars": 30009104,
+      "label": "First Name",
+      "description": "Name shown on the public profile page",
+      "surface": "glass",
+      "offset_bytes": 30009113
+    },
+    {
+      "module": "profile",
+      "id": "last-name",
+      "offset_chars": 30009252,
+      "label": "Last Name",
+      "description": "Name shown on the public profile page",
+      "surface": "glass",
+      "offset_bytes": 30009261
+    },
+    {
+      "module": "profile",
+      "id": "handle",
+      "offset_chars": 30009408,
+      "label": "Handle",
+      "description": "Claim a handle for your public profile page",
+      "surface": "glass",
+      "offset_bytes": 30009417
+    },
+    {
+      "module": "profile",
+      "id": "links",
+      "offset_chars": 30009597,
+      "label": "Links",
+      "description": "Social and website links on the public profile page",
+      "surface": "glass",
+      "offset_bytes": 30009606
+    },
+    {
+      "module": "profile",
+      "id": "public-profile",
+      "offset_chars": 30009782,
+      "label": "Public Profile",
+      "description": "Make the cursor.com profile page visible to anyone with the link",
+      "surface": "glass",
+      "offset_bytes": 30009791
+    },
+    {
+      "module": "appearance",
+      "id": "follow-system",
+      "offset_chars": 30009983,
+      "label": "Follow System Color Scheme",
+      "description": "Match the active theme to your OS dark/light setting",
+      "surface": "glass",
+      "condition": "custom-theme",
+      "offset_bytes": 30009992
+    },
+    {
+      "module": "appearance",
+      "id": "theme",
+      "offset_chars": 30010213,
+      "label": "Theme",
+      "description": "Choose which theme to use",
+      "surface": "glass",
+      "condition": "single-theme",
+      "offset_bytes": 30010222
+    },
+    {
+      "module": "appearance",
+      "id": "light-theme",
+      "offset_chars": 30010424,
+      "label": "Light Theme",
+      "description": "Choose the theme used when your system is in light mode",
+      "surface": "glass",
+      "condition": "follow-system-theme",
+      "offset_bytes": 30010433
+    },
+    {
+      "module": "appearance",
+      "id": "dark-theme",
+      "offset_chars": 30010649,
+      "label": "Dark Theme",
+      "description": "Choose the theme used when your system is in dark mode",
+      "surface": "glass",
+      "condition": "follow-system-theme",
+      "offset_bytes": 30010658
+    },
+    {
+      "module": "appearance",
+      "id": "follow-system-high-contrast",
+      "offset_chars": 30010870,
+      "label": "Follow System High Contrast",
+      "description": "Switch to a high contrast theme when your OS is in a high contrast mode",
+      "surface": "glass",
+      "condition": "theme-sync-with-ide",
+      "offset_bytes": 30010879
+    },
+    {
+      "module": "appearance",
+      "id": "high-contrast-light-theme",
+      "offset_chars": 30011159,
+      "label": "High Contrast Light Theme",
+      "description": "Choose the theme used when your system is in light high contrast mode",
+      "surface": "glass",
+      "condition": "follow-system-high-contrast",
+      "offset_bytes": 30011168
+    },
+    {
+      "module": "appearance",
+      "id": "high-contrast-dark-theme",
+      "offset_chars": 30011454,
+      "label": "High Contrast Dark Theme",
+      "description": "Choose the theme used when your system is in dark high contrast mode",
+      "surface": "glass",
+      "condition": "follow-system-high-contrast",
+      "offset_bytes": 30011463
+    },
+    {
+      "module": "appearance",
+      "id": "manage-themes",
+      "offset_chars": 30011745,
+      "label": "Manage Themes",
+      "description": "Create your own themes, tweak the vibe, and import your favorites",
+      "surface": "glass",
+      "condition": "custom-theme",
+      "offset_bytes": 30011754
+    },
+    {
+      "module": "appearance",
+      "id": "colors",
+      "offset_chars": 30011971,
+      "label": "Colors",
+      "surface": "glass",
+      "offset_bytes": 30011980
+    },
+    {
+      "module": "appearance",
+      "id": "hue",
+      "offset_chars": 30012030,
+      "label": "Hue",
+      "description": "Choose a tint color",
+      "surface": "glass",
+      "offset_bytes": 30012039
+    },
+    {
+      "module": "appearance",
+      "id": "intensity",
+      "offset_chars": 30012157,
+      "label": "Intensity",
+      "description": "Control how strongly the tint is applied",
+      "surface": "glass",
+      "offset_bytes": 30012166
+    },
+    {
+      "module": "appearance",
+      "id": "reduce-transparency",
+      "offset_chars": 30012315,
+      "label": "Reduce Transparency",
+      "description": "Replace translucent surfaces with opaque backgrounds",
+      "surface": "glass",
+      "offset_bytes": 30012324
+    },
+    {
+      "module": "appearance",
+      "id": "agent-conversations",
+      "offset_chars": 30012528,
+      "label": "Agent Conversations",
+      "surface": "glass",
+      "offset_bytes": 30012537
+    },
+    {
+      "module": "appearance",
+      "id": "tool-call-density",
+      "offset_chars": 30012613,
+      "label": "Tool Call Density",
+      "description": "Adjust how much detail is shown for tool calls",
+      "surface": "glass",
+      "offset_bytes": 30012622
+    },
+    {
+      "module": "appearance",
+      "id": "code-word-wrap",
+      "offset_chars": 30012852,
+      "label": {
+        "binding": "lX.label"
+      },
+      "description": {
+        "binding": "lX.description"
+      },
+      "surface": "glass",
+      "offset_bytes": 30012861
+    },
+    {
+      "module": "appearance",
+      "id": "themed-diff-backgrounds",
+      "offset_chars": 30012971,
+      "label": {
+        "binding": "cX.label"
+      },
+      "description": {
+        "binding": "cX.description"
+      },
+      "surface": "glass",
+      "offset_bytes": 30012980
+    },
+    {
+      "module": "appearance",
+      "id": "typography",
+      "offset_chars": 30013099,
+      "label": "Typography",
+      "surface": "glass",
+      "offset_bytes": 30013108
+    },
+    {
+      "module": "appearance",
+      "id": "ui-font-size",
+      "offset_chars": 30013166,
+      "label": "UI Font Size",
+      "description": "Font size for the Cursor user interface",
+      "surface": "glass",
+      "offset_bytes": 30013175
+    },
+    {
+      "module": "appearance",
+      "id": "code-font-size",
+      "offset_chars": 30013346,
+      "label": "Code Font Size",
+      "description": "Font size for code editors and diffs",
+      "surface": "glass",
+      "offset_bytes": 30013355
+    },
+    {
+      "module": "appearance",
+      "id": "ui-font-family",
+      "offset_chars": 30013533,
+      "label": "UI Font Family",
+      "description": "Override the Cursor user interface typeface",
+      "surface": "glass",
+      "offset_bytes": 30013542
+    },
+    {
+      "module": "appearance",
+      "id": "code-font-family",
+      "offset_chars": 30013724,
+      "label": "Code Font Family",
+      "description": "Override the font for code editors and diffs",
+      "surface": "glass",
+      "offset_bytes": 30013733
+    },
+    {
+      "module": "appearance",
+      "id": "font-smoothing",
+      "offset_chars": 30013924,
+      "label": "Font Smoothing",
+      "description": "Use native macOS font anti-aliasing",
+      "surface": "glass",
+      "condition": "macos",
+      "offset_bytes": 30013933
+    },
+    {
+      "module": "appearance",
+      "id": "motion",
+      "offset_chars": 30014135,
+      "label": "Motion",
+      "surface": "glass",
+      "offset_bytes": 30014144
+    },
+    {
+      "module": "appearance",
+      "id": "reduce-motion",
+      "offset_chars": 30014194,
+      "label": "Reduce Motion",
+      "description": "Minimize interface animations",
+      "surface": "glass",
+      "offset_bytes": 30014203
+    },
+    {
+      "module": "appearance",
+      "id": "fun",
+      "offset_chars": 30014374,
+      "label": "Fun",
+      "surface": "glass",
+      "condition": "confetti",
+      "offset_bytes": 30014383
+    },
+    {
+      "module": "appearance",
+      "id": "confetti",
+      "offset_chars": 30014448,
+      "label": "Give the Agent a Confetti Cannon",
+      "description": "Allow the agent to celebrate with a shower of confetti",
+      "surface": "glass",
+      "condition": "confetti",
+      "offset_bytes": 30014457
+    },
+    {
+      "module": "appearance",
+      "id": "privacy",
+      "offset_chars": 30014698,
+      "label": "Privacy",
+      "surface": "glass",
+      "offset_bytes": 30014707
+    },
+    {
+      "module": "appearance",
+      "id": "hide-email",
+      "offset_chars": 30014759,
+      "label": "Hide Email Address",
+      "description": "Partially mask your email address in the Cursor user interface",
+      "surface": "glass",
+      "offset_bytes": 30014768
+    },
+    {
+      "module": "plan-usage",
+      "id": "monthly-limit",
+      "offset_chars": 30014911,
+      "label": "Monthly Limit",
+      "description": "Set a fixed amount or make on-demand usage unlimited",
+      "offset_bytes": 30014920
+    },
+    {
+      "module": "tab",
+      "id": "cursor-tab",
+      "offset_chars": 30015141,
+      "label": "Cursor Tab",
+      "description": "Context-aware, multi-line suggestions around your cursor based on recent edits",
+      "offset_bytes": 30015150
+    },
+    {
+      "module": "chat",
+      "id": "conversation",
+      "offset_chars": 30015278,
+      "label": "Conversation",
+      "offset_bytes": 30015287
+    },
+    {
+      "module": "chat",
+      "id": "usage-summary",
+      "offset_chars": 30015327,
+      "label": "Usage Summary",
+      "description": "When to show the usage summary at the bottom of the chat pane",
+      "condition": "usage-summary",
+      "offset_bytes": 30015336
+    },
+    {
+      "module": "chat",
+      "id": "text-size",
+      "offset_chars": 30015480,
+      "label": "Text Size",
+      "description": "Adjust the conversation text size",
+      "surface": "ide",
+      "offset_bytes": 30015489
+    },
+    {
+      "module": "chat",
+      "id": "default-environment",
+      "offset_chars": 30015585,
+      "label": "Default Environment",
+      "description": "Where new agents start by default",
+      "surface": "glass",
+      "condition": "new-agent-default-environment",
+      "offset_bytes": 30015594
+    },
+    {
+      "module": "chat",
+      "id": "queue-messages",
+      "offset_chars": 30015843,
+      "label": "Queue Messages",
+      "description": "Adjust the default behavior of sending a message while Agent is running",
+      "condition": "not-agent-steering",
+      "offset_bytes": 30015852
+    },
+    {
+      "module": "chat",
+      "id": "new-messages",
+      "offset_chars": 30016013,
+      "label": "New Messages",
+      "description": "What sending a message while Agent is running does",
+      "condition": "agent-steering",
+      "offset_bytes": 30016022
+    },
+    {
+      "module": "chat",
+      "id": "queue-manual-send",
+      "offset_chars": 30016189,
+      "label": "Manually Sent Messages from Queue",
+      "description": "What the queued-message Send Now action does",
+      "condition": "agent-steering",
+      "offset_bytes": 30016198
+    },
+    {
+      "module": "chat",
+      "id": "code-word-wrap",
+      "offset_chars": 30016401,
+      "label": {
+        "binding": "lX.label"
+      },
+      "description": {
+        "binding": "lX.description"
+      },
+      "surface": "ide",
+      "offset_bytes": 30016410
+    },
+    {
+      "module": "chat",
+      "id": "agent-autocomplete",
+      "offset_chars": 30016512,
+      "label": "Agent Autocomplete",
+      "description": "Contextual suggestions while prompting Agent",
+      "offset_bytes": 30016521
+    },
+    {
+      "module": "chat",
+      "id": "follow-up-prompt-suggestions",
+      "offset_chars": 30016632,
+      "label": "Follow-Up Prompt Suggestions",
+      "description": "Suggest a follow-up for the Agent",
+      "condition": "prompt-suggestions",
+      "offset_bytes": 30016641
+    },
+    {
+      "module": "chat",
+      "id": "auto-approve-transitions",
+      "offset_chars": 30016792,
+      "label": "Auto-Approve Mode Transitions",
+      "description": "Allow agent to switch to modes without asking. When off, skips if unanswered within 15 seconds.",
+      "offset_bytes": 30016801
+    },
+    {
+      "module": "chat",
+      "id": "voice-submit-keywords",
+      "offset_chars": 30016980,
+      "label": "Voice Submit Keywords",
+      "offset_bytes": 30016989
+    },
+    {
+      "module": "chat",
+      "id": "context-tools",
+      "offset_chars": 30017047,
+      "label": "Context and Tools",
+      "offset_bytes": 30017056
+    },
+    {
+      "module": "chat",
+      "id": "web-search",
+      "offset_chars": 30017102,
+      "label": "Web Search Tool",
+      "description": "Allow Agent to search the web for relevant information",
+      "offset_bytes": 30017111
+    },
+    {
+      "module": "chat",
+      "id": "web-fetch",
+      "offset_chars": 30017283,
+      "label": "Web Fetch Tool",
+      "description": "Allow Agent to fetch content from URLs",
+      "offset_bytes": 30017292
+    },
+    {
+      "module": "chat",
+      "id": "wait-auth",
+      "offset_chars": 30017384,
+      "label": "Wait for MCP Authentication",
+      "description": "Wait indefinitely; otherwise skip prompts after 30 seconds",
+      "condition": "customize-migration-full",
+      "elementId": {
+        "binding": "Tbi"
+      },
+      "offset_bytes": 30017393
+    },
+    {
+      "module": "chat",
+      "id": "execution-approvals",
+      "offset_chars": 30017634,
+      "label": "Execution and Approvals",
+      "offset_bytes": 30017643
+    },
+    {
+      "module": "chat",
+      "id": "run-mode",
+      "offset_chars": 30017906,
+      "label": "Run Mode",
+      "elementId": {
+        "binding": "o8a"
+      },
+      "offset_bytes": 30017915
+    },
+    {
+      "module": "chat",
+      "id": "file-read-access",
+      "offset_chars": 30017981,
+      "label": "Read Access",
+      "description": "Control whether agents can read files outside the workspace without approval.",
+      "condition": "sandbox-read-control-portal",
+      "elementId": {
+        "binding": "c8a"
+      },
+      "offset_bytes": 30017990
+    },
+    {
+      "module": "chat",
+      "id": "read-allowlist",
+      "offset_chars": 30018282,
+      "label": "Read Allowlist",
+      "description": "File paths and glob patterns agents can read without approval.",
+      "condition": "sandbox-read-control-portal",
+      "elementId": {
+        "binding": "u8a"
+      },
+      "offset_bytes": 30018291
+    },
+    {
+      "module": "chat",
+      "id": "terminal-editing",
+      "offset_chars": 30018545,
+      "label": "Terminal and Editing",
+      "offset_bytes": 30018554
+    },
+    {
+      "module": "chat",
+      "id": "legacy-terminal",
+      "offset_chars": 30018606,
+      "label": "Legacy Terminal Tool",
+      "description": "Use legacy terminal tool on unsupported shells",
+      "offset_bytes": 30018615
+    },
+    {
+      "module": "chat",
+      "id": "auto-parse-links",
+      "offset_chars": 30018727,
+      "label": "Auto-Parse Links",
+      "description": "Automatically parse links pasted into Quick Edit",
+      "offset_bytes": 30018736
+    },
+    {
+      "module": "indexing",
+      "id": "lsp",
+      "offset_chars": 30018847,
+      "label": "LSP",
+      "surface": "glass",
+      "elementId": {
+        "binding": "g8a"
+      },
+      "offset_bytes": 30018856
+    },
+    {
+      "module": "indexing",
+      "id": "lsp-enabled",
+      "offset_chars": 30018960,
+      "label": "Enable LSPs",
+      "description": "Enable language server by default to provide code intelligence in workspaces",
+      "surface": "glass",
+      "offset_bytes": 30018969
+    },
+    {
+      "module": "indexing",
+      "id": "lsp-worktrees-enabled",
+      "offset_chars": 30019166,
+      "label": "Enable LSPs for Worktrees",
+      "description": "Enable language server by default to provide code intelligence in agent worktree workspaces",
+      "surface": "glass",
+      "offset_bytes": 30019175
+    },
+    {
+      "module": "indexing",
+      "id": "lsp-max-local-workspaces",
+      "offset_chars": 30019402,
+      "label": "Maximum Local LSP Workspaces",
+      "description": "Maximum local workspaces that can run language servers at the same time",
+      "surface": "glass",
+      "offset_bytes": 30019411
+    },
+    {
+      "module": "indexing",
+      "id": "lsp-max-remote-workspaces",
+      "offset_chars": 30019629,
+      "label": "Maximum Remote LSP Workspaces",
+      "description": "Maximum remote workspaces that can run language servers at the same time",
+      "surface": "glass",
+      "offset_bytes": 30019638
+    },
+    {
+      "module": "chat",
+      "id": "themed-diff-backgrounds",
+      "offset_chars": 30019866,
+      "label": {
+        "binding": "cX.label"
+      },
+      "description": {
+        "binding": "cX.description"
+      },
+      "surface": "ide",
+      "offset_bytes": 30019875
+    },
+    {
+      "module": "chat",
+      "id": "inline-diffs",
+      "offset_chars": 30019986,
+      "label": "Inline Diffs",
+      "description": "Show inline diff decorations in the editor",
+      "surface": "ide",
+      "offset_bytes": 30019995
+    },
+    {
+      "module": "chat",
+      "id": "auto-format",
+      "offset_chars": 30020146,
+      "label": "Auto Format on Agent Finish",
+      "description": "Automatically format files when Agent finishes",
+      "surface": "ide",
+      "offset_bytes": 30020155
+    },
+    {
+      "module": "chat",
+      "id": "toolbar-selection",
+      "offset_chars": 30020284,
+      "label": "Toolbar on Selection",
+      "description": "Show Add to Chat and Quick Edit buttons",
+      "surface": "ide",
+      "offset_bytes": 30020293
+    },
+    {
+      "module": "chat",
+      "id": "terminal-hint",
+      "offset_chars": 30020414,
+      "label": "Terminal Hint",
+      "description": "Show the Cmd/Ctrl+K hint in Terminal",
+      "surface": "ide",
+      "offset_bytes": 30020423
+    },
+    {
+      "module": "chat",
+      "id": "terminal-preview-box",
+      "offset_chars": 30020530,
+      "label": "Preview Box for Terminal Cmd/Ctrl+K",
+      "description": "Use the preview box instead of shell streaming",
+      "surface": "ide",
+      "elementId": {
+        "binding": "h8a"
+      },
+      "offset_bytes": 30020539
+    },
+    {
+      "module": "models",
+      "id": "task-models",
+      "offset_chars": 30020699,
+      "label": "Task Models",
+      "offset_bytes": 30020708
+    },
+    {
+      "module": "models",
+      "id": "explore-subagent-model",
+      "offset_chars": 30020748,
+      "label": "Explore Subagent Model",
+      "description": "Choose the model used by Explore subagent for initial research",
+      "offset_bytes": 30020757
+    },
+    {
+      "module": "models",
+      "id": "gateway",
+      "offset_chars": 30020896,
+      "label": "Gateway",
+      "description": "Configure the local agent LLM gateway",
+      "condition": "local-mode",
+      "offset_bytes": 30020905
+    },
+    {
+      "module": "git-prs",
+      "id": "pull-requests",
+      "offset_chars": 30021067,
+      "label": "Pull Requests",
+      "condition": "signed-in",
+      "offset_bytes": 30021076
+    },
+    {
+      "module": "git-prs",
+      "id": "review-provider",
+      "offset_chars": 30021143,
+      "label": "Review Provider",
+      "condition": "signed-in",
+      "offset_bytes": 30021152
+    },
+    {
+      "module": "git-prs",
+      "id": "pr-link-destination",
+      "offset_chars": 30021298,
+      "label": "PR Link Destination",
+      "description": "Open pull request links inside Cursor or the default browser",
+      "condition": "signed-in-desktop",
+      "offset_bytes": 30021307
+    },
+    {
+      "module": "git-prs",
+      "id": "attribution",
+      "offset_chars": 30021517,
+      "label": "Attribution",
+      "offset_bytes": 30021526
+    },
+    {
+      "module": "git-prs",
+      "id": "commit-attribution",
+      "offset_chars": 30021567,
+      "label": "Commit Attribution",
+      "offset_bytes": 30021576
+    },
+    {
+      "module": "git-prs",
+      "id": "pr-attribution",
+      "offset_chars": 30021631,
+      "label": "PR Attribution",
+      "offset_bytes": 30021640
+    },
+    {
+      "module": "git-prs",
+      "id": "branches",
+      "offset_chars": 30021687,
+      "label": "Branches",
+      "offset_bytes": 30021696
+    },
+    {
+      "module": "git-prs",
+      "id": "branch-prefix",
+      "offset_chars": 30021731,
+      "label": "Branch Prefix",
+      "description": "Prefix for new Agent branches",
+      "offset_bytes": 30021740
+    },
+    {
+      "module": "rules",
+      "id": "third-party-configs",
+      "offset_chars": 30021829,
+      "label": "Include Third-Party Plugins, Skills, and Other Configs",
+      "description": "Automatically import agent configs from other tools",
+      "offset_bytes": 30021838
+    },
+    {
+      "module": "chat",
+      "id": "import-claude-agents",
+      "offset_chars": 30021994,
+      "label": "Import Claude Code Conversations",
+      "description": "Sync chats and continue them in Cursor",
+      "surface": "glass",
+      "condition": "import-cc-conversation",
+      "elementId": {
+        "binding": "m8a"
+      },
+      "offset_bytes": 30022003
+    },
+    {
+      "module": "rules",
+      "id": "rules",
+      "offset_chars": 30022189,
+      "label": "Rules",
+      "offset_bytes": 30022198
+    },
+    {
+      "module": "rules",
+      "id": "skills",
+      "offset_chars": 30022225,
+      "label": "Skills",
+      "surface": "ide",
+      "offset_bytes": 30022234
+    },
+    {
+      "module": "rules",
+      "id": "subagents",
+      "offset_chars": 30022277,
+      "label": "Subagents",
+      "surface": "ide",
+      "offset_bytes": 30022286
+    },
+    {
+      "module": "rules",
+      "id": "commands",
+      "offset_chars": 30022335,
+      "label": "Commands",
+      "offset_bytes": 30022344
+    },
+    {
+      "module": "mcp",
+      "id": "authentication",
+      "offset_chars": 30022377,
+      "label": "Authentication",
+      "offset_bytes": 30022386
+    },
+    {
+      "module": "mcp",
+      "id": "wait-auth",
+      "offset_chars": 30022429,
+      "label": "Wait for MCP Authentication",
+      "description": "Wait indefinitely; otherwise skip prompts after 30 seconds",
+      "elementId": {
+        "binding": "Tbi"
+      },
+      "offset_bytes": 30022438
+    },
+    {
+      "module": "mcp",
+      "id": "new-server",
+      "offset_chars": 30022641,
+      "label": "New MCP Server",
+      "offset_bytes": 30022650
+    },
+    {
+      "module": "hooks",
+      "id": "configured-hooks",
+      "offset_chars": 30022689,
+      "label": "Configured Hooks",
+      "elementId": {
+        "binding": "p8a"
+      },
+      "offset_bytes": 30022698
+    },
+    {
+      "module": "hooks",
+      "id": "execution-log",
+      "offset_chars": 30022761,
+      "label": "Execution Log",
+      "offset_bytes": 30022770
+    },
+    {
+      "module": "indexing",
+      "id": "codebase",
+      "offset_chars": 30022813,
+      "label": "Codebase",
+      "offset_bytes": 30022822
+    },
+    {
+      "module": "indexing",
+      "id": "codebase-indexing",
+      "offset_chars": 30022858,
+      "label": "Codebase Indexing",
+      "description": "Embed the codebase for contextual understanding",
+      "surface": "ide",
+      "condition": "codebase-indexing",
+      "offset_bytes": 30022867
+    },
+    {
+      "module": "indexing",
+      "id": "index-new-folders",
+      "offset_chars": 30023027,
+      "label": "Index New Folders",
+      "description": "Automatically index small new folders",
+      "condition": "codebase-indexing",
+      "offset_bytes": 30023036
+    },
+    {
+      "module": "indexing",
+      "id": "cursorignore-files",
+      "offset_chars": 30023172,
+      "label": "Ignore Files in .cursorignore",
+      "description": "Files to exclude from indexing in addition to .gitignore",
+      "surface": "ide",
+      "offset_bytes": 30023181
+    },
+    {
+      "module": "indexing",
+      "id": "ignore-files",
+      "offset_chars": 30023333,
+      "label": "Ignore Files",
+      "offset_bytes": 30023342
+    },
+    {
+      "module": "indexing",
+      "id": "hierarchical-ignore",
+      "offset_chars": 30023386,
+      "label": "Hierarchical Cursor Ignore",
+      "description": "Apply .cursorignore files to subdirectories",
+      "offset_bytes": 30023395
+    },
+    {
+      "module": "indexing",
+      "id": "ignore-symlinks",
+      "offset_chars": 30023518,
+      "label": "Ignore Symlinks in Cursor Ignore Search",
+      "description": "Skip symlinks during discovery",
+      "offset_bytes": 30023527
+    },
+    {
+      "module": "indexing",
+      "id": "docs",
+      "offset_chars": 30023646,
+      "label": "Docs",
+      "surface": "ide",
+      "condition": "docs-usage",
+      "offset_bytes": 30023655
+    },
+    {
+      "module": "browser",
+      "id": "http-compatibility",
+      "offset_chars": 30023720,
+      "label": "HTTP Compatibility Mode",
+      "description": "Configure HTTP compatibility for proxies and VPNs",
+      "offset_bytes": 30023729
+    },
+    {
+      "module": "browser",
+      "id": "required-domains",
+      "offset_chars": 30023853,
+      "label": "Required Domains",
+      "description": "Domains required for Cursor",
+      "offset_bytes": 30023862
+    },
+    {
+      "module": "browser",
+      "id": "diagnostics",
+      "offset_chars": 30023955,
+      "label": "Network Diagnostics",
+      "description": "Check connectivity to all Cursor services",
+      "offset_bytes": 30023964
+    },
+    {
+      "module": "beta",
+      "id": "update-access",
+      "offset_chars": 30024069,
+      "label": "Update Access",
+      "offset_bytes": 30024078
+    },
+    {
+      "module": "beta",
+      "id": "projects-tasks-quick-pill",
+      "offset_chars": 30024120,
+      "label": "Projects",
+      "description": "Show Tasks, Agents, and pull request pills on Projects",
+      "surface": "glass",
+      "condition": "glass-projects",
+      "elementId": {
+        "binding": "_8a"
+      },
+      "offset_bytes": 30024129
+    },
+    {
+      "module": "beta",
+      "id": "projects-wake-on-thread-finish",
+      "offset_chars": 30024398,
+      "label": "Wake Project when threads finish",
+      "description": "Automatically resume the Project coordinator when a thread completes",
+      "surface": "glass",
+      "condition": "glass-projects",
+      "elementId": {
+        "binding": "b8a"
+      },
+      "offset_bytes": 30024407
+    },
+    {
+      "module": "beta",
+      "id": "supplemental-sidebar-open-highlight",
+      "offset_chars": 30024687,
+      "label": "Highlight open sections",
+      "description": "Show a colored card behind expanded sections in the supplemental sidebar",
+      "surface": "glass",
+      "condition": "glass-supplemental-sidebar",
+      "elementId": {
+        "binding": "y8a"
+      },
+      "offset_bytes": 30024696
+    },
+    {
+      "module": "beta",
+      "id": "persistent-supplemental-sidebar",
+      "offset_chars": 30025000,
+      "label": "Persistent sidebar",
+      "description": "Keep the supplemental sidebar visible as an icon rail when collapsed",
+      "surface": "glass",
+      "condition": "glass-supplemental-sidebar",
+      "elementId": {
+        "binding": "S8a"
+      },
+      "offset_bytes": 30025009
+    },
+    {
+      "module": "beta",
+      "id": "supplemental-sidebar-collapse-on-navigate",
+      "offset_chars": 30025285,
+      "label": "Collapse sidebar to icon rail when opening a tab",
+      "description": "Collapse the supplemental sidebar to its icon rail after a sidebar item opens or focuses a tab",
+      "surface": "glass",
+      "condition": "glass-supplemental-sidebar",
+      "elementId": {
+        "binding": "w8a"
+      },
+      "offset_bytes": 30025294
+    },
+    {
+      "module": "beta",
+      "id": "supplemental-sidebar-share-sections",
+      "offset_chars": 30025656,
+      "label": "Share open sections across agents",
+      "description": "Use one set of open sidebar sections for every agent. When off, each agent remembers its own open sections until the window closes",
+      "surface": "glass",
+      "condition": "glass-supplemental-sidebar",
+      "elementId": {
+        "binding": "k8a"
+      },
+      "offset_bytes": 30025665
+    },
+    {
+      "module": "beta",
+      "id": "supplemental-sidebar-pr-status-groups",
+      "offset_chars": 30026037,
+      "label": "Group PRs by status",
+      "description": "Group pull requests into Open, Draft, Merged, and Closed sections in the supplemental sidebar",
+      "surface": "glass",
+      "condition": "glass-supplemental-sidebar",
+      "elementId": {
+        "binding": "C8a"
+      },
+      "offset_bytes": 30026046
+    },
+    {
+      "module": "beta",
+      "id": "supplemental-sidebar-pr-project-status-groups",
+      "offset_chars": 30026379,
+      "label": "Group PRs like Projects",
+      "description": "Use the same pull request status groups as Projects in the supplemental sidebar, overriding Group PRs by status",
+      "surface": "glass",
+      "condition": "glass-supplemental-sidebar",
+      "elementId": {
+        "binding": "E8a"
+      },
+      "offset_bytes": 30026388
+    },
+    {
+      "module": "beta",
+      "id": "dedicated-local-agent-runtime",
+      "offset_chars": 30026780,
+      "label": "Dedicated Agent Runtime",
+      "description": "Run Private Inference in a separate local process to isolate it from remote workspace activity. Reload Cursor after changing this setting.",
+      "surface": "ide",
+      "offset_bytes": 30026789
+    },
+    {
+      "module": "self-driving",
+      "id": "allow-agents",
+      "offset_chars": 30027024,
+      "label": "Allow Agents on My PRs",
+      "description": "Enable or disable Self-driving for PRs owned by this account",
+      "surface": "glass",
+      "offset_bytes": 30027033
+    },
+    {
+      "module": "self-driving",
+      "id": "auto-start",
+      "offset_chars": 30027236,
+      "label": "Start When I Open a PR",
+      "description": "Start Self-driving automatically for enabled repositories",
+      "surface": "glass",
+      "offset_bytes": 30027245
+    },
+    {
+      "module": "self-driving",
+      "id": "default-mode",
+      "offset_chars": 30027432,
+      "label": "Default Mode",
+      "description": "Choose whether automatically started agents suggest or apply changes",
+      "surface": "glass",
+      "offset_bytes": 30027441
+    },
+    {
+      "module": "self-driving",
+      "id": "post-slack",
+      "offset_chars": 30027627,
+      "label": "Post to Slack",
+      "description": "Post Self-driving updates to Slack",
+      "surface": "glass",
+      "offset_bytes": 30027636
+    },
+    {
+      "module": "worktrees",
+      "id": "cleanup",
+      "offset_chars": 30027802,
+      "label": "Cleanup",
+      "surface": "glass",
+      "offset_bytes": 30027811
+    },
+    {
+      "module": "worktrees",
+      "id": "max-count",
+      "offset_chars": 30027862,
+      "label": "Max Worktrees",
+      "description": "Maximum retained Cursor-managed worktrees",
+      "surface": "glass",
+      "offset_bytes": 30027871
+    },
+    {
+      "module": "worktrees",
+      "id": "max-size",
+      "offset_chars": 30028041,
+      "label": "Max Total Size (GB)",
+      "description": "Maximum aggregate worktree size",
+      "surface": "glass",
+      "offset_bytes": 30028050
+    },
+    {
+      "module": "worktrees",
+      "id": "managed",
+      "offset_chars": 30028219,
+      "label": "Cursor-Managed Worktrees",
+      "surface": "glass",
+      "offset_bytes": 30028228
+    },
+    {
+      "module": "developer",
+      "id": "tracing",
+      "offset_chars": 30028296,
+      "label": "Tracing",
+      "offset_bytes": 30028305
+    },
+    {
+      "module": "developer",
+      "id": "local-trace",
+      "offset_chars": 30028340,
+      "label": "Local Trace Mode",
+      "offset_bytes": 30028349
+    },
+    {
+      "module": "developer",
+      "id": "continuous-rpc",
+      "offset_chars": 30028466,
+      "label": "Continuous RPC File Recording",
+      "offset_bytes": 30028475
+    }
+  ],
+  "sha256": "b6f06229dc965619ab318e3bbc9f102865101a3bc0f346630532e2558f6fc398",
+  "evidence_kind": "Static shipped-JavaScript inspection; complementary to root REA; no runtime execution",
+  "offset_unit": "UTF-8 byte offsets and Unicode character offsets are explicitly distinguished",
+  "rendered_controls": {
+    "general": {
+      "boundary_chars": [
+        29528856,
+        29583181
+      ],
+      "extraction": "Literal metadata in bounded render region; dynamic text excluded, shared helper text may be included",
+      "fields": [
+        {
+          "field": "title",
+          "text": "Select Custom Chime Sound",
+          "offset_chars": 29535166,
+          "offset_bytes": 29535175
+        },
+        {
+          "field": "description",
+          "text": "Play a sound when agents finish or need attention",
+          "offset_chars": 29535468,
+          "offset_bytes": 29535477
+        },
+        {
+          "field": "label",
+          "text": "Completion Sound",
+          "offset_chars": 29535532,
+          "offset_bytes": 29535541
+        },
+        {
+          "field": "title",
+          "text": "Extension Security",
+          "offset_chars": 29537641,
+          "offset_bytes": 29537650
+        },
+        {
+          "field": "label",
+          "text": "Verify Extension Signatures",
+          "offset_chars": 29537923,
+          "offset_bytes": 29537932
+        },
+        {
+          "field": "label",
+          "text": "Open Customize",
+          "offset_chars": 29541369,
+          "offset_bytes": 29541378
+        },
+        {
+          "field": "description",
+          "text": "We've introduced a new home for all the ways to customize Cursor.",
+          "offset_chars": 29541547,
+          "offset_bytes": 29541556
+        },
+        {
+          "field": "title",
+          "text": "Plugins, MCPs, Skills, and Rules have moved to Customize",
+          "offset_chars": 29541639,
+          "offset_bytes": 29541648
+        },
+        {
+          "field": "label",
+          "text": "Agent",
+          "offset_chars": 29549553,
+          "offset_bytes": 29549562
+        },
+        {
+          "field": "label",
+          "text": "Editor",
+          "offset_chars": 29549584,
+          "offset_bytes": 29549593
+        },
+        {
+          "field": "title",
+          "text": "Layout",
+          "offset_chars": 29550574,
+          "offset_bytes": 29550583
+        },
+        {
+          "field": "description",
+          "text": "Switch between Agent and Editor default layouts",
+          "offset_chars": 29551580,
+          "offset_bytes": 29551589
+        },
+        {
+          "field": "label",
+          "text": "Window Layout",
+          "offset_chars": 29551642,
+          "offset_bytes": 29551651
+        },
+        {
+          "field": "description",
+          "text": "Choose how much detail Agent tool calls show in the conversation",
+          "offset_chars": 29552150,
+          "offset_bytes": 29552159
+        },
+        {
+          "field": "label",
+          "text": "Conversation Density",
+          "offset_chars": 29552229,
+          "offset_bytes": 29552238
+        },
+        {
+          "field": "description",
+          "text": "Show title bar in agent layout",
+          "offset_chars": 29552946,
+          "offset_bytes": 29552955
+        },
+        {
+          "field": "label",
+          "text": "Title Bar",
+          "offset_chars": 29552991,
+          "offset_bytes": 29553000
+        },
+        {
+          "field": "description",
+          "text": "Show status bar at the bottom of the window",
+          "offset_chars": 29553827,
+          "offset_bytes": 29553836
+        },
+        {
+          "field": "label",
+          "text": "Status Bar",
+          "offset_chars": 29553885,
+          "offset_bytes": 29553894
+        },
+        {
+          "field": "description",
+          "text": "Show inline diff review controls in top level breadcrumbs or floating island",
+          "offset_chars": 29554328,
+          "offset_bytes": 29554337
+        },
+        {
+          "field": "label",
+          "text": "Review Control Location",
+          "offset_chars": 29554419,
+          "offset_bytes": 29554428
+        },
+        {
+          "field": "description",
+          "text": "When all editors are closed, hide the editor area and maximize chat",
+          "offset_chars": 29554867,
+          "offset_bytes": 29554876
+        },
+        {
+          "field": "label",
+          "text": "Auto-Hide Editor When Empty",
+          "offset_chars": 29554949,
+          "offset_bytes": 29554958
+        },
+        {
+          "field": "description",
+          "text": "Show chats as editor tabs inside the chat area instead of the legacy stacked view",
+          "offset_chars": 29555987,
+          "offset_bytes": 29555996
+        },
+        {
+          "field": "label",
+          "text": "Open Chat as Editor Tabs",
+          "offset_chars": 29556094,
+          "offset_bytes": 29556103
+        },
+        {
+          "field": "label",
+          "text": "Compact",
+          "offset_chars": 29556564,
+          "offset_bytes": 29556573
+        },
+        {
+          "field": "label",
+          "text": "Balanced",
+          "offset_chars": 29556592,
+          "offset_bytes": 29556601
+        },
+        {
+          "field": "label",
+          "text": "Detailed",
+          "offset_chars": 29556621,
+          "offset_bytes": 29556630
+        },
+        {
+          "field": "label",
+          "text": "Breadcrumb",
+          "offset_chars": 29556691,
+          "offset_bytes": 29556700
+        },
+        {
+          "field": "label",
+          "text": "Island",
+          "offset_chars": 29556727,
+          "offset_bytes": 29556736
+        },
+        {
+          "field": "description",
+          "text": "Configure font, formatting, minimap and more",
+          "offset_chars": 29557244,
+          "offset_bytes": 29557253
+        },
+        {
+          "field": "label",
+          "text": "Editor Settings",
+          "offset_chars": 29557303,
+          "offset_bytes": 29557312
+        },
+        {
+          "field": "description",
+          "text": "Configure keyboard shortcuts",
+          "offset_chars": 29557638,
+          "offset_bytes": 29557647
+        },
+        {
+          "field": "label",
+          "text": "Keyboard Shortcuts",
+          "offset_chars": 29557681,
+          "offset_bytes": 29557690
+        },
+        {
+          "field": "title",
+          "text": "Preferences",
+          "offset_chars": 29558204,
+          "offset_bytes": 29558213
+        },
+        {
+          "field": "description",
+          "text": "Import settings, extensions, and keybindings from VS Code",
+          "offset_chars": 29559956,
+          "offset_bytes": 29559965
+        },
+        {
+          "field": "label",
+          "text": "Import Settings from VS Code",
+          "offset_chars": 29560028,
+          "offset_bytes": 29560037
+        },
+        {
+          "field": "description",
+          "text": "See warnings and tips that you’ve hidden",
+          "offset_chars": 29561187,
+          "offset_bytes": 29561196
+        },
+        {
+          "field": "label",
+          "text": "About Allowlist",
+          "offset_chars": 29564125,
+          "offset_bytes": 29564134
+        },
+        {
+          "field": "label",
+          "text": "Run Everything Mode Warning",
+          "offset_chars": 29564191,
+          "offset_bytes": 29564200
+        },
+        {
+          "field": "title",
+          "text": "Switch Privacy Mode?",
+          "offset_chars": 29567694,
+          "offset_bytes": 29567703
+        },
+        {
+          "field": "label",
+          "text": "Switch",
+          "offset_chars": 29567964,
+          "offset_bytes": 29567973
+        },
+        {
+          "field": "label",
+          "text": "Cancel",
+          "offset_chars": 29568006,
+          "offset_bytes": 29568015
+        },
+        {
+          "field": "title",
+          "text": "Failed to update privacy settings",
+          "offset_chars": 29568134,
+          "offset_bytes": 29568143
+        },
+        {
+          "field": "label",
+          "text": "OK",
+          "offset_chars": 29568236,
+          "offset_bytes": 29568245
+        },
+        {
+          "field": "title",
+          "text": "Privacy",
+          "offset_chars": 29570337,
+          "offset_bytes": 29570346
+        },
+        {
+          "field": "placeholder",
+          "text": "Configure",
+          "offset_chars": 29570815,
+          "offset_bytes": 29570824
+        },
+        {
+          "field": "title",
+          "text": "General",
+          "offset_chars": 29575195,
+          "offset_bytes": 29575204
+        },
+        {
+          "field": "description",
+          "text": "Sign in to get started with Cursor's AI features",
+          "offset_chars": 29576036,
+          "offset_bytes": 29576045
+        },
+        {
+          "field": "label",
+          "text": "Sign In",
+          "offset_chars": 29576099,
+          "offset_bytes": 29576108
+        },
+        {
+          "field": "description",
+          "text": "Manage your account and billing",
+          "offset_chars": 29577160,
+          "offset_bytes": 29577169
+        },
+        {
+          "field": "label",
+          "text": "Cursor Account",
+          "offset_chars": 29577206,
+          "offset_bytes": 29577215
+        },
+        {
+          "field": "description",
+          "text": "Entry-level plan with access to premium models, unlimited Tab completions, and more.",
+          "offset_chars": 29577466,
+          "offset_bytes": 29577475
+        },
+        {
+          "field": "label",
+          "text": "Upgrade to Pro",
+          "offset_chars": 29577565,
+          "offset_bytes": 29577574
+        },
+        {
+          "field": "description",
+          "text": "Accelerate development, shared knowledge, and context across your team",
+          "offset_chars": 29577818,
+          "offset_bytes": 29577827
+        },
+        {
+          "field": "label",
+          "text": "Invite Team Members",
+          "offset_chars": 29577903,
+          "offset_bytes": 29577912
+        },
+        {
+          "field": "description",
+          "text": "Show rotating tips on the empty screen",
+          "offset_chars": 29578507,
+          "offset_bytes": 29578516
+        },
+        {
+          "field": "label",
+          "text": "Tips",
+          "offset_chars": 29578560,
+          "offset_bytes": 29578569
+        },
+        {
+          "field": "description",
+          "text": "Controls which windows Cursor restores on startup",
+          "offset_chars": 29579236,
+          "offset_bytes": 29579245
+        },
+        {
+          "field": "label",
+          "text": "Window Restoration",
+          "offset_chars": 29579300,
+          "offset_bytes": 29579309
+        },
+        {
+          "field": "description",
+          "text": "Automatically resume working on agents and their subagents after a reload or restart",
+          "offset_chars": 29579558,
+          "offset_bytes": 29579567
+        },
+        {
+          "field": "label",
+          "text": "Continue Interrupted Agents",
+          "offset_chars": 29579664,
+          "offset_bytes": 29579673
+        },
+        {
+          "field": "title",
+          "text": "Startup",
+          "offset_chars": 29580065,
+          "offset_bytes": 29580074
+        },
+        {
+          "field": "description",
+          "text": "Show system notifications when Agent completes or needs attention",
+          "offset_chars": 29580691,
+          "offset_bytes": 29580700
+        },
+        {
+          "field": "label",
+          "text": "System Notifications",
+          "offset_chars": 29580771,
+          "offset_bytes": 29580780
+        },
+        {
+          "field": "description",
+          "text": "Show notifications for less urgent issues",
+          "offset_chars": 29580946,
+          "offset_bytes": 29580955
+        },
+        {
+          "field": "label",
+          "text": "Warning Notifications",
+          "offset_chars": 29581002,
+          "offset_bytes": 29581011
+        },
+        {
+          "field": "title",
+          "text": "Notifications",
+          "offset_chars": 29581815,
+          "offset_bytes": 29581824
+        },
+        {
+          "field": "label",
+          "text": "Default",
+          "offset_chars": 29582430,
+          "offset_bytes": 29582439
+        },
+        {
+          "field": "label",
+          "text": "Agent Window",
+          "offset_chars": 29582468,
+          "offset_bytes": 29582477
+        },
+        {
+          "field": "label",
+          "text": "Last Used Windows",
+          "offset_chars": 29582515,
+          "offset_bytes": 29582524
+        }
+      ]
+    },
+    "chat-execution": {
+      "boundary_chars": [
+        29456831,
+        29483035
+      ],
+      "extraction": "Literal metadata in bounded render region; dynamic text excluded, shared helper text may be included",
+      "fields": [
+        {
+          "field": "label",
+          "text": "Auto-Run Network Access",
+          "offset_chars": 29458570,
+          "offset_bytes": 29458579
+        },
+        {
+          "field": "description",
+          "text": "Control which network requests are allowed when commands run in the sandbox. Edit allowed/denied domains in sandbox.json in your workspace.",
+          "offset_chars": 29458783,
+          "offset_bytes": 29458792
+        },
+        {
+          "field": "description",
+          "text": "Use AI-powered command classification to intelligently match commands against allowlist patterns and suggest sandbox modes",
+          "offset_chars": 29459424,
+          "offset_bytes": 29459433
+        },
+        {
+          "field": "label",
+          "text": "Smart Allowlist",
+          "offset_chars": 29459589,
+          "offset_bytes": 29459598
+        },
+        {
+          "field": "placeholder",
+          "text": "Add commands...",
+          "offset_chars": 29460668,
+          "offset_bytes": 29460677
+        },
+        {
+          "field": "label",
+          "text": "Command Allowlist",
+          "offset_chars": 29461917,
+          "offset_bytes": 29461926
+        },
+        {
+          "field": "placeholder",
+          "text": "Add MCP tools...",
+          "offset_chars": 29464668,
+          "offset_bytes": 29464677
+        },
+        {
+          "field": "label",
+          "text": "MCP Allowlist",
+          "offset_chars": 29464892,
+          "offset_bytes": 29464901
+        },
+        {
+          "field": "description",
+          "text": "Domains that Agent can fetch from automatically. Use '*' for all domains, '*.example.com' for wildcard subdomains.",
+          "offset_chars": 29465434,
+          "offset_bytes": 29465443
+        },
+        {
+          "field": "label",
+          "text": "Fetch Domain Allowlist",
+          "offset_chars": 29465563,
+          "offset_bytes": 29465572
+        },
+        {
+          "field": "placeholder",
+          "text": "Add paths or globs (for example, /tmp/*)",
+          "offset_chars": 29466855,
+          "offset_bytes": 29466864
+        },
+        {
+          "field": "label",
+          "text": "Read Allowlist",
+          "offset_chars": 29467068,
+          "offset_bytes": 29467077
+        },
+        {
+          "field": "label",
+          "text": "MCP Tools Protection",
+          "offset_chars": 29467767,
+          "offset_bytes": 29467776
+        },
+        {
+          "field": "label",
+          "text": "Allowlist Options",
+          "offset_chars": 29472181,
+          "offset_bytes": 29472190
+        },
+        {
+          "field": "title",
+          "text": "Execution and Approvals",
+          "offset_chars": 29472680,
+          "offset_bytes": 29472689
+        },
+        {
+          "field": "description",
+          "text": "Allow Agent to search the web for relevant information",
+          "offset_chars": 29480577,
+          "offset_bytes": 29480586
+        },
+        {
+          "field": "label",
+          "text": "Web Search Tool",
+          "offset_chars": 29480646,
+          "offset_bytes": 29480655
+        },
+        {
+          "field": "label",
+          "text": "Auto-Accept Web Search",
+          "offset_chars": 29481072,
+          "offset_bytes": 29481081
+        },
+        {
+          "field": "description",
+          "text": "Allow Agent to fetch content from URLs",
+          "offset_chars": 29481706,
+          "offset_bytes": 29481715
+        },
+        {
+          "field": "label",
+          "text": "Web Fetch Tool",
+          "offset_chars": 29481759,
+          "offset_bytes": 29481768
+        },
+        {
+          "field": "description",
+          "text": "Wait indefinitely to authenticate when prompted. When off, skip authentication prompts after 30 seconds.",
+          "offset_chars": 29481932,
+          "offset_bytes": 29481941
+        },
+        {
+          "field": "label",
+          "text": "Wait for MCP Authentication",
+          "offset_chars": 29482058,
+          "offset_bytes": 29482067
+        },
+        {
+          "field": "title",
+          "text": "Context and Tools",
+          "offset_chars": 29482458,
+          "offset_bytes": 29482467
+        }
+      ]
+    },
+    "chat": {
+      "boundary_chars": [
+        29483035,
+        29528856
+      ],
+      "extraction": "Literal metadata in bounded render region; dynamic text excluded, shared helper text may be included",
+      "fields": [
+        {
+          "field": "label",
+          "text": "Code Block Word Wrap",
+          "offset_chars": 29483091,
+          "offset_bytes": 29483100
+        },
+        {
+          "field": "description",
+          "text": "Wrap long lines in Agent conversation code blocks",
+          "offset_chars": 29483120,
+          "offset_bytes": 29483129
+        },
+        {
+          "field": "label",
+          "text": "Themed Diff Backgrounds",
+          "offset_chars": 29483263,
+          "offset_bytes": 29483272
+        },
+        {
+          "field": "description",
+          "text": "Use themed background colors for inline code diffs",
+          "offset_chars": 29483295,
+          "offset_bytes": 29483304
+        },
+        {
+          "field": "description",
+          "text": "Adjust the conversation text size",
+          "offset_chars": 29498891,
+          "offset_bytes": 29498900
+        },
+        {
+          "field": "label",
+          "text": "Text Size",
+          "offset_chars": 29498939,
+          "offset_bytes": 29498948
+        },
+        {
+          "field": "description",
+          "text": "Where new agents start by default",
+          "offset_chars": 29499738,
+          "offset_bytes": 29499747
+        },
+        {
+          "field": "label",
+          "text": "Default Environment",
+          "offset_chars": 29499786,
+          "offset_bytes": 29499795
+        },
+        {
+          "field": "description",
+          "text": "What model new agents use by default",
+          "offset_chars": 29500279,
+          "offset_bytes": 29500288
+        },
+        {
+          "field": "label",
+          "text": "Default Model",
+          "offset_chars": 29500330,
+          "offset_bytes": 29500339
+        },
+        {
+          "field": "label",
+          "text": "Cursor Default",
+          "offset_chars": 29500657,
+          "offset_bytes": 29500666
+        },
+        {
+          "field": "label",
+          "text": "Last Used",
+          "offset_chars": 29500706,
+          "offset_bytes": 29500715
+        },
+        {
+          "field": "description",
+          "text": "Choose the default behavior of messages sent while Agent is working",
+          "offset_chars": 29500959,
+          "offset_bytes": 29500968
+        },
+        {
+          "field": "label",
+          "text": "New Messages",
+          "offset_chars": 29501041,
+          "offset_bytes": 29501050
+        },
+        {
+          "field": "description",
+          "text": "Choose the default behavior of messages sent from the queue",
+          "offset_chars": 29501468,
+          "offset_bytes": 29501477
+        },
+        {
+          "field": "label",
+          "text": "Manually Sent Messages from Queue",
+          "offset_chars": 29501542,
+          "offset_bytes": 29501551
+        },
+        {
+          "field": "description",
+          "text": "Adjust the default behavior of sending a message while Agent is running",
+          "offset_chars": 29502001,
+          "offset_bytes": 29502010
+        },
+        {
+          "field": "label",
+          "text": "Queue Messages",
+          "offset_chars": 29502087,
+          "offset_bytes": 29502096
+        },
+        {
+          "field": "description",
+          "text": "When to show the usage summary at the bottom of the chat pane",
+          "offset_chars": 29502766,
+          "offset_bytes": 29502775
+        },
+        {
+          "field": "label",
+          "text": "Usage Summary",
+          "offset_chars": 29502842,
+          "offset_bytes": 29502851
+        },
+        {
+          "field": "description",
+          "text": "Contextual suggestions while prompting Agent",
+          "offset_chars": 29503204,
+          "offset_bytes": 29503213
+        },
+        {
+          "field": "label",
+          "text": "Agent Autocomplete",
+          "offset_chars": 29503263,
+          "offset_bytes": 29503272
+        },
+        {
+          "field": "description",
+          "text": "Suggest a follow-up for the Agent",
+          "offset_chars": 29503446,
+          "offset_bytes": 29503455
+        },
+        {
+          "field": "label",
+          "text": "Follow-Up Prompt Suggestions",
+          "offset_chars": 29503494,
+          "offset_bytes": 29503503
+        },
+        {
+          "field": "description",
+          "text": "Allow agent to switch to modes like Plan or Debug without asking. When off, Cursor asks first, but skips if unanswered within 15 seconds.",
+          "offset_chars": 29504048,
+          "offset_bytes": 29504057
+        },
+        {
+          "field": "label",
+          "text": "Auto-Approve Mode Transitions",
+          "offset_chars": 29504200,
+          "offset_bytes": 29504209
+        },
+        {
+          "field": "description",
+          "text": "Custom words that submit a voice prompt. Spaces and punctuation are ignored.",
+          "offset_chars": 29504798,
+          "offset_bytes": 29504807
+        },
+        {
+          "field": "label",
+          "text": "Voice Submit Keywords",
+          "offset_chars": 29504889,
+          "offset_bytes": 29504898
+        },
+        {
+          "field": "placeholder",
+          "text": "e.g., send, submit, cursor",
+          "offset_chars": 29505017,
+          "offset_bytes": 29505026
+        },
+        {
+          "field": "title",
+          "text": "Conversation",
+          "offset_chars": 29505250,
+          "offset_bytes": 29505259
+        },
+        {
+          "field": "description",
+          "text": "Show inline diff decorations in the editor instead of only showing changes in the review panel",
+          "offset_chars": 29507286,
+          "offset_bytes": 29507295
+        },
+        {
+          "field": "label",
+          "text": "Inline Diffs",
+          "offset_chars": 29507395,
+          "offset_bytes": 29507404
+        },
+        {
+          "field": "label",
+          "text": "Jump to Next Diff on Accept",
+          "offset_chars": 29507666,
+          "offset_bytes": 29507675
+        },
+        {
+          "field": "description",
+          "text": "Automatically format files when the agent finishes",
+          "offset_chars": 29508092,
+          "offset_bytes": 29508101
+        },
+        {
+          "field": "label",
+          "text": "Auto Format on Agent Finish",
+          "offset_chars": 29508157,
+          "offset_bytes": 29508166
+        },
+        {
+          "field": "title",
+          "text": "Applying Changes",
+          "offset_chars": 29508329,
+          "offset_bytes": 29508338
+        },
+        {
+          "field": "description",
+          "text": "Use the legacy terminal tool in agent mode, for use on systems with unsupported shell configurations",
+          "offset_chars": 29508898,
+          "offset_bytes": 29508907
+        },
+        {
+          "field": "label",
+          "text": "Legacy Terminal Tool",
+          "offset_chars": 29509013,
+          "offset_bytes": 29509022
+        },
+        {
+          "field": "description",
+          "text": "Show Add to Chat & Quick Edit buttons when selecting code",
+          "offset_chars": 29509187,
+          "offset_bytes": 29509196
+        },
+        {
+          "field": "label",
+          "text": "Toolbar on Selection",
+          "offset_chars": 29509259,
+          "offset_bytes": 29509268
+        },
+        {
+          "field": "label",
+          "text": "Auto-Parse Links",
+          "offset_chars": 29509815,
+          "offset_bytes": 29509824
+        },
+        {
+          "field": "label",
+          "text": "Terminal Hint",
+          "offset_chars": 29510361,
+          "offset_bytes": 29510370
+        },
+        {
+          "field": "description",
+          "text": "Use a preview box instead of streaming responses directly into the shell",
+          "offset_chars": 29510658,
+          "offset_bytes": 29510667
+        },
+        {
+          "field": "title",
+          "text": "Terminal and Editing",
+          "offset_chars": 29511048,
+          "offset_bytes": 29511057
+        },
+        {
+          "field": "description",
+          "text": "Automatically import agent configs from other tools",
+          "offset_chars": 29512347,
+          "offset_bytes": 29512356
+        },
+        {
+          "field": "label",
+          "text": "Include Third-Party Plugins, Skills, and Other Configs",
+          "offset_chars": 29512420,
+          "offset_bytes": 29512429
+        },
+        {
+          "field": "description",
+          "text": "Sync chats and continue them in Cursor",
+          "offset_chars": 29512673,
+          "offset_bytes": 29512682
+        },
+        {
+          "field": "label",
+          "text": "Import Claude Code Conversations",
+          "offset_chars": 29512733,
+          "offset_bytes": 29512742
+        },
+        {
+          "field": "title",
+          "text": "Third-Party Imports",
+          "offset_chars": 29512955,
+          "offset_bytes": 29512964
+        },
+        {
+          "field": "description",
+          "text": "Allow agents on this machine to be controlled remotely from mobile and web",
+          "offset_chars": 29513559,
+          "offset_bytes": 29513568
+        },
+        {
+          "field": "label",
+          "text": "Remote Control",
+          "offset_chars": 29513648,
+          "offset_bytes": 29513657
+        },
+        {
+          "field": "description",
+          "text": "Prevent sleep when this computer is plugged in and Remote Control is enabled",
+          "offset_chars": 29514241,
+          "offset_bytes": 29514250
+        },
+        {
+          "field": "label",
+          "text": "Keep This Computer Awake",
+          "offset_chars": 29514332,
+          "offset_bytes": 29514341
+        },
+        {
+          "field": "title",
+          "text": "Remote Control",
+          "offset_chars": 29514552,
+          "offset_bytes": 29514561
+        },
+        {
+          "field": "label",
+          "text": "Continue",
+          "offset_chars": 29522201,
+          "offset_bytes": 29522210
+        },
+        {
+          "field": "label",
+          "text": "Cancel",
+          "offset_chars": 29522245,
+          "offset_bytes": 29522254
+        },
+        {
+          "field": "title",
+          "text": "Agents",
+          "offset_chars": 29527858,
+          "offset_bytes": 29527867
+        }
+      ]
+    },
+    "browser": {
+      "boundary_chars": [
+        29400042,
+        29424389
+      ],
+      "extraction": "Literal metadata in bounded render region; dynamic text excluded, shared helper text may be included",
+      "fields": [
+        {
+          "field": "description",
+          "text": "Configure browser automation",
+          "offset_chars": 29400233,
+          "offset_bytes": 29400242
+        },
+        {
+          "field": "description",
+          "text": "Automatically open localhost links in the Browser Tab",
+          "offset_chars": 29400569,
+          "offset_bytes": 29400578
+        },
+        {
+          "field": "description",
+          "text": "Automatically open http and https links in the Browser Tab",
+          "offset_chars": 29400788,
+          "offset_bytes": 29400797
+        },
+        {
+          "field": "label",
+          "text": "Off",
+          "offset_chars": 29404960,
+          "offset_bytes": 29404969
+        },
+        {
+          "field": "label",
+          "text": "Browser Tab",
+          "offset_chars": 29404989,
+          "offset_bytes": 29404998
+        },
+        {
+          "field": "description",
+          "text": "HTTP/2 is recommended for low-latency streaming. In some corporate proxy and VPN environments, the compatibility mode may need to be lowered.",
+          "offset_chars": 29418932,
+          "offset_bytes": 29418941
+        },
+        {
+          "field": "label",
+          "text": "HTTP Compatibility Mode",
+          "offset_chars": 29419088,
+          "offset_bytes": 29419097
+        },
+        {
+          "field": "description",
+          "text": "These domains must be accessible for Cursor to function. Add them to your firewall or proxy allowlist.",
+          "offset_chars": 29419706,
+          "offset_bytes": 29419715
+        },
+        {
+          "field": "label",
+          "text": "Required Domains",
+          "offset_chars": 29419823,
+          "offset_bytes": 29419832
+        },
+        {
+          "field": "description",
+          "text": "Check network connectivity to all Cursor services",
+          "offset_chars": 29420487,
+          "offset_bytes": 29420496
+        },
+        {
+          "field": "label",
+          "text": "Network Diagnostics",
+          "offset_chars": 29420551,
+          "offset_bytes": 29420560
+        },
+        {
+          "field": "title",
+          "text": "Network",
+          "offset_chars": 29421798,
+          "offset_bytes": 29421807
+        },
+        {
+          "field": "label",
+          "text": "HTTP/2",
+          "offset_chars": 29422652,
+          "offset_bytes": 29422661
+        },
+        {
+          "field": "label",
+          "text": "HTTP/1.1",
+          "offset_chars": 29422685,
+          "offset_bytes": 29422694
+        },
+        {
+          "field": "label",
+          "text": "HTTP/1.0",
+          "offset_chars": 29422720,
+          "offset_bytes": 29422729
+        }
+      ]
+    },
+    "git-prs": {
+      "boundary_chars": [
+        29583181,
+        29604303
+      ],
+      "extraction": "Literal metadata in bounded render region; dynamic text excluded, shared helper text may be included",
+      "fields": [
+        {
+          "field": "label",
+          "text": "Team Default",
+          "offset_chars": 29583586,
+          "offset_bytes": 29583595
+        },
+        {
+          "field": "label",
+          "text": "Origin",
+          "offset_chars": 29583638,
+          "offset_bytes": 29583647
+        },
+        {
+          "field": "label",
+          "text": "GitHub",
+          "offset_chars": 29583675,
+          "offset_bytes": 29583684
+        },
+        {
+          "field": "label",
+          "text": "Graphite",
+          "offset_chars": 29583717,
+          "offset_bytes": 29583726
+        },
+        {
+          "field": "label",
+          "text": "PR Link Destination",
+          "offset_chars": 29596414,
+          "offset_bytes": 29596423
+        },
+        {
+          "field": "label",
+          "text": "Inside Cursor",
+          "offset_chars": 29597644,
+          "offset_bytes": 29597653
+        },
+        {
+          "field": "label",
+          "text": "Default Browser",
+          "offset_chars": 29597692,
+          "offset_bytes": 29597701
+        },
+        {
+          "field": "title",
+          "text": "Git & PRs",
+          "offset_chars": 29599225,
+          "offset_bytes": 29599234
+        },
+        {
+          "field": "description",
+          "text": "Automatically review your changes for issues after each commit",
+          "offset_chars": 29599796,
+          "offset_bytes": 29599805
+        },
+        {
+          "field": "label",
+          "text": "Start Agent Review on Commit",
+          "offset_chars": 29599873,
+          "offset_bytes": 29599882
+        },
+        {
+          "field": "description",
+          "text": "Automatically run Review when Agent finishes and has made file changes",
+          "offset_chars": 29600040,
+          "offset_bytes": 29600049
+        },
+        {
+          "field": "label",
+          "text": "Auto-Run on Agent Finish",
+          "offset_chars": 29600125,
+          "offset_bytes": 29600134
+        },
+        {
+          "field": "description",
+          "text": "Include changes from Git submodules in the review",
+          "offset_chars": 29600288,
+          "offset_bytes": 29600297
+        },
+        {
+          "field": "label",
+          "text": "Include Submodules in Agent Review",
+          "offset_chars": 29600352,
+          "offset_bytes": 29600361
+        },
+        {
+          "field": "description",
+          "text": "Include untracked files (new files not yet added to Git) in the review",
+          "offset_chars": 29600515,
+          "offset_bytes": 29600524
+        },
+        {
+          "field": "label",
+          "text": "Include Untracked Files in Agent Review",
+          "offset_chars": 29600600,
+          "offset_bytes": 29600609
+        },
+        {
+          "field": "description",
+          "text": "Choose between quick or more thorough, higher-cost analysis",
+          "offset_chars": 29600870,
+          "offset_bytes": 29600879
+        },
+        {
+          "field": "label",
+          "text": "Default Approach",
+          "offset_chars": 29600944,
+          "offset_bytes": 29600953
+        },
+        {
+          "field": "title",
+          "text": "Agent Review",
+          "offset_chars": 29601190,
+          "offset_bytes": 29601199
+        },
+        {
+          "field": "label",
+          "text": "Commit Attribution",
+          "offset_chars": 29601881,
+          "offset_bytes": 29601890
+        },
+        {
+          "field": "label",
+          "text": "PR Attribution",
+          "offset_chars": 29602316,
+          "offset_bytes": 29602325
+        },
+        {
+          "field": "title",
+          "text": "Attribution",
+          "offset_chars": 29602429,
+          "offset_bytes": 29602438
+        },
+        {
+          "field": "title",
+          "text": "Branches",
+          "offset_chars": 29603148,
+          "offset_bytes": 29603157
+        },
+        {
+          "field": "description",
+          "text": "Prefix for new branches created by Agent (e.g., cursor/, username/)",
+          "offset_chars": 29603235,
+          "offset_bytes": 29603244
+        },
+        {
+          "field": "label",
+          "text": "Branch Prefix",
+          "offset_chars": 29603317,
+          "offset_bytes": 29603326
+        },
+        {
+          "field": "placeholder",
+          "text": "cursor/",
+          "offset_chars": 29603410,
+          "offset_bytes": 29603419
+        },
+        {
+          "field": "label",
+          "text": "Quick",
+          "offset_chars": 29603610,
+          "offset_bytes": 29603619
+        },
+        {
+          "field": "label",
+          "text": "Deep",
+          "offset_chars": 29603639,
+          "offset_bytes": 29603648
+        }
+      ]
+    },
+    "indexing": {
+      "boundary_chars": [
+        29618019,
+        29653309
+      ],
+      "extraction": "Literal metadata in bounded render region; dynamic text excluded, shared helper text may be included",
+      "fields": [
+        {
+          "field": "label",
+          "text": "Codebase Indexing",
+          "offset_chars": 29622899,
+          "offset_bytes": 29622908
+        },
+        {
+          "field": "title",
+          "text": "Delete Codebase Index?",
+          "offset_chars": 29630309,
+          "offset_bytes": 29630318
+        },
+        {
+          "field": "label",
+          "text": "Delete",
+          "offset_chars": 29630517,
+          "offset_bytes": 29630526
+        },
+        {
+          "field": "label",
+          "text": "Cancel",
+          "offset_chars": 29630559,
+          "offset_bytes": 29630568
+        },
+        {
+          "field": "title",
+          "text": "Codebase",
+          "offset_chars": 29640488,
+          "offset_bytes": 29640497
+        },
+        {
+          "field": "title",
+          "text": "Ignore Files",
+          "offset_chars": 29640620,
+          "offset_bytes": 29640629
+        },
+        {
+          "field": "label",
+          "text": "Persist Instant Grep setting",
+          "offset_chars": 29642898,
+          "offset_bytes": 29642907
+        },
+        {
+          "field": "label",
+          "text": "Index New Folders",
+          "offset_chars": 29643292,
+          "offset_bytes": 29643301
+        },
+        {
+          "field": "label",
+          "text": "Ignore Files in .cursorignore",
+          "offset_chars": 29643831,
+          "offset_bytes": 29643840
+        },
+        {
+          "field": "description",
+          "text": "Disable AI features in specific repositories based on file pattern",
+          "offset_chars": 29644006,
+          "offset_bytes": 29644015
+        },
+        {
+          "field": "label",
+          "text": "Team-Level Repository Control",
+          "offset_chars": 29644087,
+          "offset_bytes": 29644096
+        },
+        {
+          "field": "description",
+          "text": "Automatically index repositories to speed up Grep searches. All data is stored locally.",
+          "offset_chars": 29644277,
+          "offset_bytes": 29644286
+        },
+        {
+          "field": "label",
+          "text": "Index Repositories for Instant Grep",
+          "offset_chars": 29644379,
+          "offset_bytes": 29644388
+        },
+        {
+          "field": "label",
+          "text": "Hierarchical Cursor Ignore",
+          "offset_chars": 29645443,
+          "offset_bytes": 29645452
+        },
+        {
+          "field": "label",
+          "text": "Ignore Symlinks in Cursor Ignore Search",
+          "offset_chars": 29646224,
+          "offset_bytes": 29646233
+        },
+        {
+          "field": "description",
+          "text": "Crawl and index custom resources and developer docs",
+          "offset_chars": 29647267,
+          "offset_bytes": 29647276
+        },
+        {
+          "field": "title",
+          "text": "Docs",
+          "offset_chars": 29647333,
+          "offset_bytes": 29647342
+        },
+        {
+          "field": "description",
+          "text": "Enable language server by default to provide code intelligence in workspaces",
+          "offset_chars": 29650057,
+          "offset_bytes": 29650066
+        },
+        {
+          "field": "label",
+          "text": "Enable LSPs",
+          "offset_chars": 29650148,
+          "offset_bytes": 29650157
+        },
+        {
+          "field": "description",
+          "text": "Enable language server by default to provide code intelligence in agent worktree workspaces",
+          "offset_chars": 29650665,
+          "offset_bytes": 29650674
+        },
+        {
+          "field": "label",
+          "text": "Enable LSPs for Worktrees",
+          "offset_chars": 29650782,
+          "offset_bytes": 29650791
+        },
+        {
+          "field": "description",
+          "text": "Maximum local workspaces that can run language servers at the same time",
+          "offset_chars": 29651332,
+          "offset_bytes": 29651341
+        },
+        {
+          "field": "label",
+          "text": "Maximum Local LSP Workspaces",
+          "offset_chars": 29651429,
+          "offset_bytes": 29651438
+        },
+        {
+          "field": "description",
+          "text": "Maximum remote workspaces that can run language servers at the same time",
+          "offset_chars": 29651991,
+          "offset_bytes": 29652000
+        },
+        {
+          "field": "label",
+          "text": "Maximum Remote LSP Workspaces",
+          "offset_chars": 29652089,
+          "offset_bytes": 29652098
+        },
+        {
+          "field": "title",
+          "text": "LSP",
+          "offset_chars": 29652281,
+          "offset_bytes": 29652290
+        }
+      ]
+    },
+    "models": {
+      "boundary_chars": [
+        29782438,
+        29837669
+      ],
+      "extraction": "Literal metadata in bounded render region; dynamic text excluded, shared helper text may be included",
+      "fields": [
+        {
+          "field": "placeholder",
+          "text": "Add or search model",
+          "offset_chars": 29791100,
+          "offset_bytes": 29791109
+        },
+        {
+          "field": "label",
+          "text": "",
+          "offset_chars": 29792508,
+          "offset_bytes": 29792517
+        },
+        {
+          "field": "placeholder",
+          "text": "Enter model name",
+          "offset_chars": 29796616,
+          "offset_bytes": 29796625
+        },
+        {
+          "field": "title",
+          "text": "Choose Explore subagent model",
+          "offset_chars": 29806564,
+          "offset_bytes": 29806573
+        },
+        {
+          "field": "label",
+          "text": "Use OpenAI API key",
+          "offset_chars": 29815607,
+          "offset_bytes": 29815616
+        },
+        {
+          "field": "description",
+          "text": "Change the base URL for OpenAI API requests.",
+          "offset_chars": 29816493,
+          "offset_bytes": 29816502
+        },
+        {
+          "field": "label",
+          "text": "Override OpenAI Base URL",
+          "offset_chars": 29816552,
+          "offset_bytes": 29816561
+        },
+        {
+          "field": "title",
+          "text": "OpenAI API Key",
+          "offset_chars": 29817410,
+          "offset_bytes": 29817419
+        },
+        {
+          "field": "placeholder",
+          "text": "https://api.openai.com/v1",
+          "offset_chars": 29818328,
+          "offset_bytes": 29818337
+        },
+        {
+          "field": "placeholder",
+          "text": "Enter your Anthropic API Key",
+          "offset_chars": 29821528,
+          "offset_bytes": 29821537
+        },
+        {
+          "field": "placeholder",
+          "text": "Enter your Google AI Studio API Key",
+          "offset_chars": 29822311,
+          "offset_bytes": 29822320
+        },
+        {
+          "field": "label",
+          "text": "Use Azure OpenAI",
+          "offset_chars": 29822974,
+          "offset_bytes": 29822983
+        },
+        {
+          "field": "label",
+          "text": "Base URL",
+          "offset_chars": 29823224,
+          "offset_bytes": 29823233
+        },
+        {
+          "field": "placeholder",
+          "text": "e.g. my-resource.openai.azure.com",
+          "offset_chars": 29823355,
+          "offset_bytes": 29823364
+        },
+        {
+          "field": "label",
+          "text": "Deployment Name",
+          "offset_chars": 29823638,
+          "offset_bytes": 29823647
+        },
+        {
+          "field": "placeholder",
+          "text": "e.g. gpt-35-turbo",
+          "offset_chars": 29823783,
+          "offset_bytes": 29823792
+        },
+        {
+          "field": "label",
+          "text": "API Key",
+          "offset_chars": 29824042,
+          "offset_bytes": 29824051
+        },
+        {
+          "field": "placeholder",
+          "text": "Enter your Azure OpenAI API Key",
+          "offset_chars": 29824171,
+          "offset_bytes": 29824180
+        },
+        {
+          "field": "description",
+          "text": "Configure Azure OpenAI to use OpenAI models through your Azure account.",
+          "offset_chars": 29824780,
+          "offset_bytes": 29824789
+        },
+        {
+          "field": "title",
+          "text": "Azure OpenAI",
+          "offset_chars": 29824866,
+          "offset_bytes": 29824875
+        },
+        {
+          "field": "label",
+          "text": "Use team AWS Bedrock",
+          "offset_chars": 29826376,
+          "offset_bytes": 29826385
+        },
+        {
+          "field": "description",
+          "text": "AWS region used by your team's Bedrock configuration.",
+          "offset_chars": 29826688,
+          "offset_bytes": 29826697
+        },
+        {
+          "field": "label",
+          "text": "Region",
+          "offset_chars": 29826756,
+          "offset_bytes": 29826765
+        },
+        {
+          "field": "placeholder",
+          "text": "e.g. us-east-1",
+          "offset_chars": 29826863,
+          "offset_bytes": 29826872
+        },
+        {
+          "field": "description",
+          "text": "Your team has configured AWS Bedrock access. You can use your teams Bedrock instance without any additional configuration.",
+          "offset_chars": 29826992,
+          "offset_bytes": 29827001
+        },
+        {
+          "field": "title",
+          "text": "AWS Bedrock",
+          "offset_chars": 29827129,
+          "offset_bytes": 29827138
+        },
+        {
+          "field": "label",
+          "text": "Use AWS Bedrock",
+          "offset_chars": 29827646,
+          "offset_bytes": 29827655
+        },
+        {
+          "field": "label",
+          "text": "Access Key ID",
+          "offset_chars": 29827910,
+          "offset_bytes": 29827919
+        },
+        {
+          "field": "placeholder",
+          "text": "AWS Access Key ID",
+          "offset_chars": 29828052,
+          "offset_bytes": 29828061
+        },
+        {
+          "field": "label",
+          "text": "Secret Access Key",
+          "offset_chars": 29828351,
+          "offset_bytes": 29828360
+        },
+        {
+          "field": "placeholder",
+          "text": "AWS Secret Access Key",
+          "offset_chars": 29828501,
+          "offset_bytes": 29828510
+        },
+        {
+          "field": "label",
+          "text": "Test Model",
+          "offset_chars": 29829193,
+          "offset_bytes": 29829202
+        },
+        {
+          "field": "placeholder",
+          "text": "e.g. anthropic.claude-3-sonnet-20240229-v1:0",
+          "offset_chars": 29829329,
+          "offset_bytes": 29829338
+        },
+        {
+          "field": "description",
+          "text": "OpenAI-compatible API base URL for the local agent.",
+          "offset_chars": 29830379,
+          "offset_bytes": 29830388
+        },
+        {
+          "field": "description",
+          "text": "API key used for requests to your gateway.",
+          "offset_chars": 29830655,
+          "offset_bytes": 29830664
+        },
+        {
+          "field": "title",
+          "text": "Gateway",
+          "offset_chars": 29831243,
+          "offset_bytes": 29831252
+        },
+        {
+          "field": "description",
+          "text": "Choose which models appear in the model picker",
+          "offset_chars": 29834342,
+          "offset_bytes": 29834351
+        },
+        {
+          "field": "title",
+          "text": "Models",
+          "offset_chars": 29834403,
+          "offset_bytes": 29834412
+        },
+        {
+          "field": "label",
+          "text": "Remove",
+          "offset_chars": 29835054,
+          "offset_bytes": 29835063
+        },
+        {
+          "field": "label",
+          "text": "Cancel",
+          "offset_chars": 29835109,
+          "offset_bytes": 29835118
+        },
+        {
+          "field": "title",
+          "text": "Remove model",
+          "offset_chars": 29835125,
+          "offset_bytes": 29835134
+        }
+      ]
+    },
+    "tab": {
+      "boundary_chars": [
+        29438735,
+        29445402
+      ],
+      "extraction": "Literal metadata in bounded render region; dynamic text excluded, shared helper text may be included",
+      "fields": [
+        {
+          "field": "description",
+          "text": "Context-aware, multi-line suggestions around your cursor based on recent edits",
+          "offset_chars": 29441325,
+          "offset_bytes": 29441334
+        },
+        {
+          "field": "label",
+          "text": "Cursor Tab",
+          "offset_chars": 29441418,
+          "offset_bytes": 29441427
+        },
+        {
+          "field": "label",
+          "text": "Partial Accepts",
+          "offset_chars": 29441859,
+          "offset_bytes": 29441868
+        },
+        {
+          "field": "description",
+          "text": "Allow Tab to trigger while in a comment region",
+          "offset_chars": 29442340,
+          "offset_bytes": 29442349
+        },
+        {
+          "field": "label",
+          "text": "Suggestions While Commenting",
+          "offset_chars": 29442401,
+          "offset_bytes": 29442410
+        },
+        {
+          "field": "description",
+          "text": "Suggest edits like new lines and indentation that modify whitespace only",
+          "offset_chars": 29442592,
+          "offset_bytes": 29442601
+        },
+        {
+          "field": "label",
+          "text": "Whitespace-Only Suggestions",
+          "offset_chars": 29442679,
+          "offset_bytes": 29442688
+        },
+        {
+          "field": "label",
+          "text": "Imports",
+          "offset_chars": 29442949,
+          "offset_bytes": 29442958
+        },
+        {
+          "field": "description",
+          "text": "Enable auto import for Python. This is a beta feature.",
+          "offset_chars": 29443127,
+          "offset_bytes": 29443136
+        },
+        {
+          "field": "label",
+          "text": "Auto Import for Python",
+          "offset_chars": 29443196,
+          "offset_bytes": 29443205
+        },
+        {
+          "field": "description",
+          "text": "Glob patterns for files where Cursor Tab will not suggest",
+          "offset_chars": 29443485,
+          "offset_bytes": 29443494
+        },
+        {
+          "field": "label",
+          "text": "Ignored Files",
+          "offset_chars": 29443557,
+          "offset_bytes": 29443566
+        },
+        {
+          "field": "placeholder",
+          "text": "e.g., *.md, **/generated/**",
+          "offset_chars": 29443761,
+          "offset_bytes": 29443770
+        },
+        {
+          "field": "title",
+          "text": "Tab",
+          "offset_chars": 29444413,
+          "offset_bytes": 29444422
+        }
+      ]
+    },
+    "beta": {
+      "boundary_chars": [
+        29387805,
+        29399957
+      ],
+      "extraction": "Literal metadata in bounded render region; dynamic text excluded, shared helper text may be included",
+      "fields": [
+        {
+          "field": "label",
+          "text": "Update Access",
+          "offset_chars": 29393125,
+          "offset_bytes": 29393134
+        },
+        {
+          "field": "label",
+          "text": "Default",
+          "offset_chars": 29394080,
+          "offset_bytes": 29394089
+        },
+        {
+          "field": "label",
+          "text": "Early Access",
+          "offset_chars": 29394144,
+          "offset_bytes": 29394153
+        },
+        {
+          "field": "label",
+          "text": "Nightly",
+          "offset_chars": 29394204,
+          "offset_bytes": 29394213
+        },
+        {
+          "field": "label",
+          "text": "Dogfood",
+          "offset_chars": 29394252,
+          "offset_bytes": 29394261
+        },
+        {
+          "field": "label",
+          "text": "Candidate",
+          "offset_chars": 29394292,
+          "offset_bytes": 29394301
+        },
+        {
+          "field": "description",
+          "text": "Show an expandable Project pill for Tasks, Working, and pull requests",
+          "offset_chars": 29395505,
+          "offset_bytes": 29395514
+        },
+        {
+          "field": "label",
+          "text": "Projects",
+          "offset_chars": 29395596,
+          "offset_bytes": 29395605
+        },
+        {
+          "field": "description",
+          "text": "Automatically resume the Project coordinator when a thread completes",
+          "offset_chars": 29395739,
+          "offset_bytes": 29395748
+        },
+        {
+          "field": "label",
+          "text": "Wake Project when threads finish",
+          "offset_chars": 29395829,
+          "offset_bytes": 29395838
+        },
+        {
+          "field": "title",
+          "text": "Projects",
+          "offset_chars": 29396027,
+          "offset_bytes": 29396036
+        },
+        {
+          "field": "title",
+          "text": "Supplemental sidebar",
+          "offset_chars": 29396243,
+          "offset_bytes": 29396252
+        },
+        {
+          "field": "description",
+          "text": "Show a colored card behind expanded sections in the supplemental sidebar",
+          "offset_chars": 29396351,
+          "offset_bytes": 29396360
+        },
+        {
+          "field": "label",
+          "text": "Highlight open sections",
+          "offset_chars": 29396445,
+          "offset_bytes": 29396454
+        },
+        {
+          "field": "description",
+          "text": "Keep the supplemental sidebar visible as an icon rail when collapsed",
+          "offset_chars": 29396546,
+          "offset_bytes": 29396555
+        },
+        {
+          "field": "label",
+          "text": "Persistent sidebar",
+          "offset_chars": 29396636,
+          "offset_bytes": 29396645
+        },
+        {
+          "field": "description",
+          "text": "Collapse the supplemental sidebar to its icon rail after a sidebar item opens or focuses a tab",
+          "offset_chars": 29396721,
+          "offset_bytes": 29396730
+        },
+        {
+          "field": "label",
+          "text": "Collapse sidebar to icon rail when opening a tab",
+          "offset_chars": 29396837,
+          "offset_bytes": 29396846
+        },
+        {
+          "field": "description",
+          "text": "Use one set of open sidebar sections and their heights for every agent. When off, each agent remembers its own open sections and heights until the window closes",
+          "offset_chars": 29396960,
+          "offset_bytes": 29396969
+        },
+        {
+          "field": "label",
+          "text": "Share open sections across agents",
+          "offset_chars": 29397142,
+          "offset_bytes": 29397151
+        },
+        {
+          "field": "description",
+          "text": "Group pull requests into Open, Draft, Merged, and Closed sections in the supplemental sidebar",
+          "offset_chars": 29397257,
+          "offset_bytes": 29397266
+        },
+        {
+          "field": "label",
+          "text": "Group PRs by status",
+          "offset_chars": 29397372,
+          "offset_bytes": 29397381
+        },
+        {
+          "field": "description",
+          "text": "Use the same pull request status groups as Projects in the supplemental sidebar, overriding Group PRs by status",
+          "offset_chars": 29397464,
+          "offset_bytes": 29397473
+        },
+        {
+          "field": "label",
+          "text": "Group PRs like Projects",
+          "offset_chars": 29397597,
+          "offset_bytes": 29397606
+        },
+        {
+          "field": "description",
+          "text": "Run Private Inference in a separate local process to isolate it from remote workspace activity. Reload Cursor after changing this setting.",
+          "offset_chars": 29398072,
+          "offset_bytes": 29398081
+        },
+        {
+          "field": "label",
+          "text": "Dedicated Agent Runtime",
+          "offset_chars": 29398260,
+          "offset_bytes": 29398269
+        },
+        {
+          "field": "title",
+          "text": "Desktop Bridge",
+          "offset_chars": 29398393,
+          "offset_bytes": 29398402
+        },
+        {
+          "field": "label",
+          "text": "Allow CLI to access desktop agents",
+          "offset_chars": 29398736,
+          "offset_bytes": 29398745
+        },
+        {
+          "field": "title",
+          "text": "Beta",
+          "offset_chars": 29399104,
+          "offset_bytes": 29399113
+        }
+      ]
+    },
+    "developer": {
+      "boundary_chars": [
+        29428158,
+        29436216
+      ],
+      "extraction": "Literal metadata in bounded render region; dynamic text excluded, shared helper text may be included",
+      "fields": [
+        {
+          "field": "description",
+          "text": "Mirror VS Code RPCs into the DevTools Network tab and record local performance marks. Adds overhead, so leave it off unless you're debugging.",
+          "offset_chars": 29430807,
+          "offset_bytes": 29430816
+        },
+        {
+          "field": "label",
+          "text": "Local Trace Mode",
+          "offset_chars": 29430963,
+          "offset_bytes": 29430972
+        },
+        {
+          "field": "description",
+          "text": "Log extension host RPC messages to JSON files viewable in Perfetto for performance analysis. Requires a restart to take effect.",
+          "offset_chars": 29431328,
+          "offset_bytes": 29431337
+        },
+        {
+          "field": "label",
+          "text": "Continuous RPC File Recording",
+          "offset_chars": 29431470,
+          "offset_bytes": 29431479
+        },
+        {
+          "field": "description",
+          "text": "Optional folder for RPC logs (defaults to logs/exthost).",
+          "offset_chars": 29431661,
+          "offset_bytes": 29431670
+        },
+        {
+          "field": "label",
+          "text": "RPC Log Folder",
+          "offset_chars": 29431732,
+          "offset_bytes": 29431741
+        },
+        {
+          "field": "placeholder",
+          "text": "Optional folder for RPC logs (defaults to logs/exthost)",
+          "offset_chars": 29431876,
+          "offset_bytes": 29431885
+        },
+        {
+          "field": "title",
+          "text": "Tracing",
+          "offset_chars": 29432044,
+          "offset_bytes": 29432053
+        },
+        {
+          "field": "title",
+          "text": "Development",
+          "offset_chars": 29432449,
+          "offset_bytes": 29432458
+        },
+        {
+          "field": "description",
+          "text": "Show a view zone when the preview box is clipped",
+          "offset_chars": 29432585,
+          "offset_bytes": 29432594
+        },
+        {
+          "field": "label",
+          "text": "Show View Zone When Preview Box Is Clipped",
+          "offset_chars": 29432648,
+          "offset_bytes": 29432657
+        },
+        {
+          "field": "description",
+          "text": "Make escape focus editor instead of closing the prompt bar",
+          "offset_chars": 29432944,
+          "offset_bytes": 29432953
+        },
+        {
+          "field": "label",
+          "text": "Cmd+K: Escape Focuses the Editor When You Have a Diff",
+          "offset_chars": 29433017,
+          "offset_bytes": 29433026
+        },
+        {
+          "field": "description",
+          "text": "Enable Disposable Tracking",
+          "offset_chars": 29433299,
+          "offset_bytes": 29433308
+        },
+        {
+          "field": "label",
+          "text": "Disposable Tracking",
+          "offset_chars": 29433340,
+          "offset_bytes": 29433349
+        },
+        {
+          "field": "description",
+          "text": "Enable Solid Dev Tools",
+          "offset_chars": 29433508,
+          "offset_bytes": 29433517
+        },
+        {
+          "field": "label",
+          "text": "Solid Dev Tools",
+          "offset_chars": 29433545,
+          "offset_bytes": 29433554
+        },
+        {
+          "field": "description",
+          "text": "Enable leak detection console output",
+          "offset_chars": 29433678,
+          "offset_bytes": 29433687
+        },
+        {
+          "field": "label",
+          "text": "Leak Detection",
+          "offset_chars": 29433729,
+          "offset_bytes": 29433738
+        },
+        {
+          "field": "description",
+          "text": "Force the display of view zones in the editor",
+          "offset_chars": 29433860,
+          "offset_bytes": 29433869
+        },
+        {
+          "field": "label",
+          "text": "Force View Zones",
+          "offset_chars": 29433920,
+          "offset_bytes": 29433929
+        },
+        {
+          "field": "description",
+          "text": "Select your preferred embedding model. Delete your index and reload to use it.",
+          "offset_chars": 29434176,
+          "offset_bytes": 29434185
+        },
+        {
+          "field": "label",
+          "text": "Embedding Model",
+          "offset_chars": 29434269,
+          "offset_bytes": 29434278
+        },
+        {
+          "field": "description",
+          "text": "Control tokens control how likely the model is to produce no-ops. Will be replaced with auto-selection",
+          "offset_chars": 29434625,
+          "offset_bytes": 29434634
+        },
+        {
+          "field": "label",
+          "text": "Cpp Control Token",
+          "offset_chars": 29434742,
+          "offset_bytes": 29434751
+        }
+      ]
+    },
+    "hooks": {
+      "boundary_chars": [
+        29604303,
+        29618019
+      ],
+      "extraction": "Literal metadata in bounded render region; dynamic text excluded, shared helper text may be included",
+      "fields": [
+        {
+          "field": "title",
+          "text": "Hooks",
+          "offset_chars": 29615411,
+          "offset_bytes": 29615420
+        },
+        {
+          "field": "description",
+          "text": "Hooks let you run custom scripts at specific points during the agent's execution to modify behavior, enforce policies, or add custom logging.",
+          "offset_chars": 29615425,
+          "offset_bytes": 29615434
+        },
+        {
+          "field": "title",
+          "text": "Configuration Errors",
+          "offset_chars": 29615746,
+          "offset_bytes": 29615755
+        },
+        {
+          "field": "title",
+          "text": "No hooks configured",
+          "offset_chars": 29616375,
+          "offset_bytes": 29616384
+        },
+        {
+          "field": "description",
+          "text": "Add a hooks.json file to your user, project, or enterprise config to start running custom scripts.",
+          "offset_chars": 29616403,
+          "offset_bytes": 29616412
+        },
+        {
+          "field": "title",
+          "text": "Execution Log",
+          "offset_chars": 29617474,
+          "offset_bytes": 29617483
+        },
+        {
+          "field": "title",
+          "text": "No hook executions yet",
+          "offset_chars": 29617816,
+          "offset_bytes": 29617825
+        }
+      ]
+    },
+    "mcp": {
+      "boundary_chars": [
+        29729373,
+        29781579
+      ],
+      "extraction": "Literal metadata in bounded render region; dynamic text excluded, shared helper text may be included",
+      "fields": [
+        {
+          "field": "label",
+          "text": "Home",
+          "offset_chars": 29750801,
+          "offset_bytes": 29750810
+        },
+        {
+          "field": "label",
+          "text": "Name",
+          "offset_chars": 29752434,
+          "offset_bytes": 29752443
+        },
+        {
+          "field": "label",
+          "text": "Most Used",
+          "offset_chars": 29752466,
+          "offset_bytes": 29752475
+        },
+        {
+          "field": "title",
+          "text": "Tools",
+          "offset_chars": 29768266,
+          "offset_bytes": 29768275
+        },
+        {
+          "field": "title",
+          "text": "Authentication",
+          "offset_chars": 29768716,
+          "offset_bytes": 29768725
+        },
+        {
+          "field": "label",
+          "text": "Wait for MCP Authentication",
+          "offset_chars": 29768805,
+          "offset_bytes": 29768814
+        },
+        {
+          "field": "description",
+          "text": "Wait indefinitely to authenticate when prompted. When off, skip authentication prompts after 30 seconds.",
+          "offset_chars": 29768841,
+          "offset_bytes": 29768850
+        },
+        {
+          "field": "title",
+          "text": "No MCP Tools",
+          "offset_chars": 29769792,
+          "offset_bytes": 29769801
+        },
+        {
+          "field": "title",
+          "text": "Installed",
+          "offset_chars": 29770365,
+          "offset_bytes": 29770374
+        },
+        {
+          "field": "title",
+          "text": "Installed MCP Servers",
+          "offset_chars": 29770636,
+          "offset_bytes": 29770645
+        },
+        {
+          "field": "title",
+          "text": "Cloud MCP Servers",
+          "offset_chars": 29772327,
+          "offset_bytes": 29772336
+        },
+        {
+          "field": "description",
+          "text": "Servers available to cloud agents.",
+          "offset_chars": 29772353,
+          "offset_bytes": 29772362
+        },
+        {
+          "field": "title",
+          "text": "Sign In to View Cloud MCP Servers",
+          "offset_chars": 29772593,
+          "offset_bytes": 29772602
+        },
+        {
+          "field": "description",
+          "text": "Sign in to load cloud user and team MCP servers from the dashboard and manage which servers are enabled for cloud agents.",
+          "offset_chars": 29772635,
+          "offset_bytes": 29772644
+        },
+        {
+          "field": "title",
+          "text": "Could Not Load Cloud MCP Servers",
+          "offset_chars": 29773118,
+          "offset_bytes": 29773127
+        },
+        {
+          "field": "title",
+          "text": "User MCP Servers",
+          "offset_chars": 29773271,
+          "offset_bytes": 29773280
+        },
+        {
+          "field": "description",
+          "text": "Your personal cloud MCP servers.",
+          "offset_chars": 29773296,
+          "offset_bytes": 29773305
+        },
+        {
+          "field": "title",
+          "text": "No User MCP Servers",
+          "offset_chars": 29773737,
+          "offset_bytes": 29773746
+        },
+        {
+          "field": "description",
+          "text": "Add a personal cloud MCP server to make it available to your cloud agents.",
+          "offset_chars": 29773765,
+          "offset_bytes": 29773774
+        },
+        {
+          "field": "title",
+          "text": "Team MCP Servers",
+          "offset_chars": 29774439,
+          "offset_bytes": 29774448
+        },
+        {
+          "field": "description",
+          "text": "Cloud MCP servers shared by your team.",
+          "offset_chars": 29774464,
+          "offset_bytes": 29774473
+        },
+        {
+          "field": "title",
+          "text": "No Team MCP Servers",
+          "offset_chars": 29774808,
+          "offset_bytes": 29774817
+        },
+        {
+          "field": "description",
+          "text": "Team admins can configure shared MCP servers in the dashboard.",
+          "offset_chars": 29774836,
+          "offset_bytes": 29774845
+        },
+        {
+          "field": "description",
+          "text": "Servers available in this workspace.",
+          "offset_chars": 29775757,
+          "offset_bytes": 29775766
+        },
+        {
+          "field": "title",
+          "text": "Could Not Load Workspace MCP Servers",
+          "offset_chars": 29775866,
+          "offset_bytes": 29775875
+        },
+        {
+          "field": "description",
+          "text": "Add a custom MCP tool in your user MCP config or configure workspace-specific tools in <project-root>/.cursor/mcp.json.",
+          "offset_chars": 29776598,
+          "offset_bytes": 29776607
+        },
+        {
+          "field": "title",
+          "text": "Home MCP Servers",
+          "offset_chars": 29777776,
+          "offset_bytes": 29777785
+        },
+        {
+          "field": "description",
+          "text": "Servers available from Home.",
+          "offset_chars": 29777801,
+          "offset_bytes": 29777810
+        },
+        {
+          "field": "title",
+          "text": "No Home MCP Tools",
+          "offset_chars": 29778245,
+          "offset_bytes": 29778254
+        },
+        {
+          "field": "description",
+          "text": "Add a custom MCP tool in your Home MCP config.",
+          "offset_chars": 29778271,
+          "offset_bytes": 29778280
+        },
+        {
+          "field": "title",
+          "text": "Workspace MCP Servers",
+          "offset_chars": 29778638,
+          "offset_bytes": 29778647
+        },
+        {
+          "field": "description",
+          "text": "Add MCP tools to <project-root>/.cursor/mcp.json in this workspace.",
+          "offset_chars": 29778979,
+          "offset_bytes": 29778988
+        },
+        {
+          "field": "description",
+          "text": "Configured in the dashboard",
+          "offset_chars": 29779209,
+          "offset_bytes": 29779218
+        },
+        {
+          "field": "description",
+          "text": "Configure MCP servers in the dashboard to make them available in Cursor on desktop and in the cloud.",
+          "offset_chars": 29779652,
+          "offset_bytes": 29779661
+        },
+        {
+          "field": "title",
+          "text": "Plugin MCP Servers",
+          "offset_chars": 29780048,
+          "offset_bytes": 29780057
+        }
+      ]
+    },
+    "plan-usage": {
+      "boundary_chars": [
+        29837669,
+        29892653
+      ],
+      "extraction": "Literal metadata in bounded render region; dynamic text excluded, shared helper text may be included",
+      "fields": [
+        {
+          "field": "title",
+          "text": "Personal Usage",
+          "offset_chars": 29856693,
+          "offset_bytes": 29856702
+        },
+        {
+          "field": "title",
+          "text": "Cumulative Spend",
+          "offset_chars": 29861985,
+          "offset_bytes": 29861994
+        },
+        {
+          "field": "label",
+          "text": "Total",
+          "offset_chars": 29866823,
+          "offset_bytes": 29866832
+        },
+        {
+          "field": "description",
+          "text": "Enable on-demand usage to go beyond your plan's included usage. Requires a paid plan.",
+          "offset_chars": 29870196,
+          "offset_bytes": 29870205
+        },
+        {
+          "field": "label",
+          "text": "On-Demand Usage",
+          "offset_chars": 29870296,
+          "offset_bytes": 29870305
+        },
+        {
+          "field": "description",
+          "text": "On-demand spending is currently disabled",
+          "offset_chars": 29870493,
+          "offset_bytes": 29870502
+        },
+        {
+          "field": "label",
+          "text": "On-Demand Spending",
+          "offset_chars": 29870548,
+          "offset_bytes": 29870557
+        },
+        {
+          "field": "label",
+          "text": "On-Demand",
+          "offset_chars": 29870760,
+          "offset_bytes": 29870769
+        },
+        {
+          "field": "description",
+          "text": "Spend limits for team plans are managed by team admins in the dashboard",
+          "offset_chars": 29871293,
+          "offset_bytes": 29871302
+        },
+        {
+          "field": "label",
+          "text": "Monthly Limit",
+          "offset_chars": 29871379,
+          "offset_bytes": 29871388
+        },
+        {
+          "field": "description",
+          "text": "Set a fixed amount or make it unlimited.",
+          "offset_chars": 29871416,
+          "offset_bytes": 29871425
+        },
+        {
+          "field": "title",
+          "text": "On-Demand Usage",
+          "offset_chars": 29872512,
+          "offset_bytes": 29872521
+        },
+        {
+          "field": "label",
+          "text": "Fixed",
+          "offset_chars": 29872714,
+          "offset_bytes": 29872723
+        },
+        {
+          "field": "label",
+          "text": "Unlimited",
+          "offset_chars": 29872748,
+          "offset_bytes": 29872757
+        },
+        {
+          "field": "label",
+          "text": "Disabled",
+          "offset_chars": 29872785,
+          "offset_bytes": 29872794
+        },
+        {
+          "field": "title",
+          "text": "Plan & Usage",
+          "offset_chars": 29891640,
+          "offset_bytes": 29891649
+        }
+      ]
+    },
+    "plugins": {
+      "boundary_chars": [
+        29892653,
+        29939326
+      ],
+      "extraction": "Literal metadata in bounded render region; dynamic text excluded, shared helper text may be included",
+      "fields": [
+        {
+          "field": "label",
+          "text": "MCPs",
+          "offset_chars": 29907256,
+          "offset_bytes": 29907265
+        },
+        {
+          "field": "label",
+          "text": "Skills",
+          "offset_chars": 29907301,
+          "offset_bytes": 29907310
+        },
+        {
+          "field": "label",
+          "text": "Subagents",
+          "offset_chars": 29907344,
+          "offset_bytes": 29907353
+        },
+        {
+          "field": "label",
+          "text": "Rules",
+          "offset_chars": 29907393,
+          "offset_bytes": 29907402
+        },
+        {
+          "field": "label",
+          "text": "Commands",
+          "offset_chars": 29907434,
+          "offset_bytes": 29907443
+        },
+        {
+          "field": "label",
+          "text": "Hooks",
+          "offset_chars": 29907481,
+          "offset_bytes": 29907490
+        },
+        {
+          "field": "label",
+          "text": "Remove",
+          "offset_chars": 29934353,
+          "offset_bytes": 29934362
+        },
+        {
+          "field": "label",
+          "text": "Cancel",
+          "offset_chars": 29934415,
+          "offset_bytes": 29934424
+        },
+        {
+          "field": "title",
+          "text": "Remove local plugin",
+          "offset_chars": 29934431,
+          "offset_bytes": 29934440
+        }
+      ]
+    },
+    "self-driving": {
+      "boundary_chars": [
+        31630000,
+        31642000
+      ],
+      "extraction": "Literal metadata in bounded render region; dynamic text excluded, shared helper text may be included",
+      "fields": [
+        {
+          "field": "title",
+          "text": "Self-Driving PRs",
+          "offset_chars": 31635445,
+          "offset_bytes": 31635457
+        },
+        {
+          "field": "description",
+          "text": "Off disables Self-driving for PRs owned by this account.",
+          "offset_chars": 31637446,
+          "offset_bytes": 31637458
+        },
+        {
+          "field": "label",
+          "text": "Allow Agents on My PRs",
+          "offset_chars": 31637517,
+          "offset_bytes": 31637529
+        },
+        {
+          "field": "description",
+          "text": "Starts Self-driving when a PR opens on an enabled repository.",
+          "offset_chars": 31637872,
+          "offset_bytes": 31637884
+        },
+        {
+          "field": "label",
+          "text": "Start When I Open a PR",
+          "offset_chars": 31637948,
+          "offset_bytes": 31637960
+        },
+        {
+          "field": "description",
+          "text": "Used when Self-driving starts automatically from account defaults.",
+          "offset_chars": 31638318,
+          "offset_bytes": 31638330
+        },
+        {
+          "field": "label",
+          "text": "Default Mode",
+          "offset_chars": 31638399,
+          "offset_bytes": 31638411
+        },
+        {
+          "field": "title",
+          "text": "Defaults",
+          "offset_chars": 31638655,
+          "offset_bytes": 31638667
+        },
+        {
+          "field": "description",
+          "text": "Posts Self-driving updates to Slack when there are suggestions for PRs.",
+          "offset_chars": 31638983,
+          "offset_bytes": 31638995
+        },
+        {
+          "field": "label",
+          "text": "Post to Slack",
+          "offset_chars": 31639069,
+          "offset_bytes": 31639081
+        },
+        {
+          "field": "description",
+          "text": "Pick a Slack channel or use DMs.",
+          "offset_chars": 31639396,
+          "offset_bytes": 31639408
+        },
+        {
+          "field": "label",
+          "text": "Slack Channel",
+          "offset_chars": 31639443,
+          "offset_bytes": 31639455
+        },
+        {
+          "field": "title",
+          "text": "Slack",
+          "offset_chars": 31639760,
+          "offset_bytes": 31639772
+        },
+        {
+          "field": "placeholder",
+          "text": "Select channel",
+          "offset_chars": 31640516,
+          "offset_bytes": 31640528
+        },
+        {
+          "field": "label",
+          "text": "Suggest Changes",
+          "offset_chars": 31641112,
+          "offset_bytes": 31641124
+        },
+        {
+          "field": "label",
+          "text": "Apply Changes",
+          "offset_chars": 31641152,
+          "offset_bytes": 31641164
+        }
+      ]
+    },
+    "worktrees": {
+      "boundary_chars": [
+        31642426,
+        31653700
+      ],
+      "extraction": "Literal metadata in bounded render region; dynamic text excluded, shared helper text may be included",
+      "fields": [
+        {
+          "field": "title",
+          "text": "Worktrees",
+          "offset_chars": 31644310,
+          "offset_bytes": 31644322
+        },
+        {
+          "field": "description",
+          "text": "Cursor periodically removes old worktrees to free disk space. Tune how aggressively cleanup runs.",
+          "offset_chars": 31644345,
+          "offset_bytes": 31644357
+        },
+        {
+          "field": "title",
+          "text": "Cleanup",
+          "offset_chars": 31644457,
+          "offset_bytes": 31644469
+        },
+        {
+          "field": "description",
+          "text": "Maximum number of Cursor-managed worktrees to retain across all workspaces. Older worktrees are removed first.",
+          "offset_chars": 31644544,
+          "offset_bytes": 31644556
+        },
+        {
+          "field": "label",
+          "text": "Max Worktrees",
+          "offset_chars": 31644669,
+          "offset_bytes": 31644681
+        },
+        {
+          "field": "description",
+          "text": "Maximum total size in GB across all Cursor-managed worktrees. Set to 0 to disable the size limit.",
+          "offset_chars": 31645006,
+          "offset_bytes": 31645018
+        },
+        {
+          "field": "label",
+          "text": "Max Total Size (GB)",
+          "offset_chars": 31645118,
+          "offset_bytes": 31645130
+        },
+        {
+          "field": "title",
+          "text": "Cursor-Managed Worktrees",
+          "offset_chars": 31645561,
+          "offset_bytes": 31645573
+        }
+      ]
+    },
+    "profile": {
+      "boundary_chars": [
+        31520000,
+        31534000
+      ],
+      "extraction": "Literal metadata in bounded render region; dynamic text excluded, shared helper text may be included",
+      "fields": [
+        {
+          "field": "title",
+          "text": "Profile",
+          "offset_chars": 31522345,
+          "offset_bytes": 31522357
+        },
+        {
+          "field": "placeholder",
+          "text": "First name",
+          "offset_chars": 31528760,
+          "offset_bytes": 31528772
+        },
+        {
+          "field": "placeholder",
+          "text": "Last name",
+          "offset_chars": 31529368,
+          "offset_bytes": 31529380
+        },
+        {
+          "field": "title",
+          "text": "Your handle can't be changed.",
+          "offset_chars": 31529942,
+          "offset_bytes": 31529954
+        }
+      ]
+    },
+    "rules": {
+      "boundary_chars": [
+        29941610,
+        30004411
+      ],
+      "extraction": "Literal metadata in bounded render region; dynamic text excluded, shared helper text may be included",
+      "fields": [
+        {
+          "field": "label",
+          "text": "All",
+          "offset_chars": 29946056,
+          "offset_bytes": 29946065
+        },
+        {
+          "field": "label",
+          "text": "User",
+          "offset_chars": 29946077,
+          "offset_bytes": 29946086
+        },
+        {
+          "field": "title",
+          "text": "Delete Command",
+          "offset_chars": 29961138,
+          "offset_bytes": 29961147
+        },
+        {
+          "field": "label",
+          "text": "Delete",
+          "offset_chars": 29961268,
+          "offset_bytes": 29961277
+        },
+        {
+          "field": "label",
+          "text": "Cancel",
+          "offset_chars": 29961310,
+          "offset_bytes": 29961319
+        },
+        {
+          "field": "title",
+          "text": "Delete Rule",
+          "offset_chars": 29964296,
+          "offset_bytes": 29964305
+        },
+        {
+          "field": "label",
+          "text": "Always Applied",
+          "offset_chars": 29967096,
+          "offset_bytes": 29967105
+        },
+        {
+          "field": "label",
+          "text": "Agent Decides When to Apply",
+          "offset_chars": 29967132,
+          "offset_bytes": 29967141
+        },
+        {
+          "field": "label",
+          "text": "Apply to Specific Files & Folders",
+          "offset_chars": 29967180,
+          "offset_bytes": 29967189
+        },
+        {
+          "field": "title",
+          "text": "Delete Skill",
+          "offset_chars": 29969070,
+          "offset_bytes": 29969079
+        },
+        {
+          "field": "title",
+          "text": "Delete Subagent",
+          "offset_chars": 29970769,
+          "offset_bytes": 29970778
+        },
+        {
+          "field": "title",
+          "text": "Rules",
+          "offset_chars": 29973884,
+          "offset_bytes": 29973893
+        },
+        {
+          "field": "description",
+          "text": "Use Rules to guide agent behavior, like enforcing best practices or coding standards. Rules can be applied always, by file path, or manually.",
+          "offset_chars": 29973984,
+          "offset_bytes": 29973993
+        },
+        {
+          "field": "title",
+          "text": "Could Not Load Rules",
+          "offset_chars": 29975104,
+          "offset_bytes": 29975113
+        },
+        {
+          "field": "title",
+          "text": "No Rules Yet",
+          "offset_chars": 29975251,
+          "offset_bytes": 29975260
+        },
+        {
+          "field": "description",
+          "text": "Create rules to guide Agent behavior",
+          "offset_chars": 29975272,
+          "offset_bytes": 29975281
+        },
+        {
+          "field": "title",
+          "text": "Skills",
+          "offset_chars": 29981043,
+          "offset_bytes": 29981052
+        },
+        {
+          "field": "description",
+          "text": "Skills are specialized capabilities that help the agent accomplish specific tasks. Skills will be invoked by the agent when relevant or can be triggered manually with / in chat.",
+          "offset_chars": 29981146,
+          "offset_bytes": 29981155
+        },
+        {
+          "field": "title",
+          "text": "Could Not Load Skills",
+          "offset_chars": 29981953,
+          "offset_bytes": 29981962
+        },
+        {
+          "field": "title",
+          "text": "No Skills Yet",
+          "offset_chars": 29982102,
+          "offset_bytes": 29982111
+        },
+        {
+          "field": "description",
+          "text": "Skills help the agent accomplish specific tasks",
+          "offset_chars": 29982124,
+          "offset_bytes": 29982133
+        },
+        {
+          "field": "title",
+          "text": "Subagents",
+          "offset_chars": 29983597,
+          "offset_bytes": 29983606
+        },
+        {
+          "field": "description",
+          "text": "Create specialized agents for complex tasks. Subagents can be invoked by the agent to handle focused work in parallel.",
+          "offset_chars": 29983707,
+          "offset_bytes": 29983716
+        },
+        {
+          "field": "title",
+          "text": "Could Not Load Subagents",
+          "offset_chars": 29984461,
+          "offset_bytes": 29984470
+        },
+        {
+          "field": "title",
+          "text": "No Subagents Yet",
+          "offset_chars": 29984616,
+          "offset_bytes": 29984625
+        },
+        {
+          "field": "description",
+          "text": "Create specialized agents to handle focused tasks",
+          "offset_chars": 29984641,
+          "offset_bytes": 29984650
+        },
+        {
+          "field": "title",
+          "text": "Commands",
+          "offset_chars": 29985889,
+          "offset_bytes": 29985898
+        },
+        {
+          "field": "description",
+          "text": "Create reusable workflows triggered with / prefix in chat. Use commands to standardize processes and make common tasks more efficient.",
+          "offset_chars": 29986001,
+          "offset_bytes": 29986010
+        },
+        {
+          "field": "title",
+          "text": "Could Not Load Commands",
+          "offset_chars": 29987072,
+          "offset_bytes": 29987081
+        },
+        {
+          "field": "title",
+          "text": "No Commands Yet",
+          "offset_chars": 29987225,
+          "offset_bytes": 29987234
+        },
+        {
+          "field": "description",
+          "text": "Create commands to build reusable workflows",
+          "offset_chars": 29987249,
+          "offset_bytes": 29987258
+        },
+        {
+          "field": "description",
+          "text": "",
+          "offset_chars": 29997194,
+          "offset_bytes": 29997203
+        },
+        {
+          "field": "label",
+          "text": "User Rule",
+          "offset_chars": 29998936,
+          "offset_bytes": 29998945
+        },
+        {
+          "field": "label",
+          "text": "Project Rule",
+          "offset_chars": 29998970,
+          "offset_bytes": 29998979
+        },
+        {
+          "field": "label",
+          "text": "Import from GitHub/GitLab",
+          "offset_chars": 29999040,
+          "offset_bytes": 29999049
+        },
+        {
+          "field": "label",
+          "text": "User Command",
+          "offset_chars": 29999517,
+          "offset_bytes": 29999526
+        },
+        {
+          "field": "label",
+          "text": "Project Command",
+          "offset_chars": 29999555,
+          "offset_bytes": 29999564
+        },
+        {
+          "field": "description",
+          "text": "Provide domain-specific knowledge and workflows for the agent",
+          "offset_chars": 30000627,
+          "offset_bytes": 30000636
+        },
+        {
+          "field": "label",
+          "text": "Include Third-Party Plugins, Skills, and Other Configs",
+          "offset_chars": 30000950,
+          "offset_bytes": 30000959
+        },
+        {
+          "field": "description",
+          "text": "Automatically import agent configs from other tools",
+          "offset_chars": 30001013,
+          "offset_bytes": 30001022
+        }
+      ]
+    }
+  },
+  "typed_storage_defaults": [
+    {
+      "property": "lastUpdateHiddenTimeInUnixSeconds",
+      "storage_key": "cursor/lastUpdateHiddenTimeInUnixSeconds",
+      "default": 0,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19312857,
+      "offset_bytes": 19312863
+    },
+    {
+      "property": "lastUpdateHiddenVersion",
+      "storage_key": "cursor/lastUpdateHiddenVersion",
+      "default": "",
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19312898,
+      "offset_bytes": 19312904
+    },
+    {
+      "property": "updatePromptLastPromptTime",
+      "storage_key": "cursor/updatePromptLastPromptTime",
+      "default": 0,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19312930,
+      "offset_bytes": 19312936
+    },
+    {
+      "property": "updatePromptPromptsShownForVersion",
+      "storage_key": "cursor/updatePromptPromptsShownForVersion",
+      "default": {},
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19312964,
+      "offset_bytes": 19312970
+    },
+    {
+      "property": "updatePromptPromptsShownToday",
+      "storage_key": "cursor/updatePromptPromptsShownToday",
+      "default": 0,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313007,
+      "offset_bytes": 19313013
+    },
+    {
+      "property": "updatePromptPromptsShownTodayDate",
+      "storage_key": "cursor/updatePromptPromptsShownTodayDate",
+      "default": "",
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313044,
+      "offset_bytes": 19313050
+    },
+    {
+      "property": "updatePromptSnoozedUntilTime",
+      "storage_key": "cursor/updatePromptSnoozedUntilTime",
+      "default": 0,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313086,
+      "offset_bytes": 19313092
+    },
+    {
+      "property": "updatePromptForceUpdate",
+      "storage_key": "cursor/updatePromptForceUpdate",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313122,
+      "offset_bytes": 19313128
+    },
+    {
+      "property": "settingsDismissedOpenAIKeyWarning",
+      "storage_key": "cursor/settingsDismissedOpenAIKeyWarning",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313153,
+      "offset_bytes": 19313159
+    },
+    {
+      "property": "settingsDismissedClaudeKeyWarning",
+      "storage_key": "cursor/settingsDismissedClaudeKeyWarning",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313194,
+      "offset_bytes": 19313200
+    },
+    {
+      "property": "settingsDismissedGoogleKeyWarning",
+      "storage_key": "cursor/settingsDismissedGoogleKeyWarning",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313235,
+      "offset_bytes": 19313241
+    },
+    {
+      "property": "settingsDismissedBedrockKeyWarning",
+      "storage_key": "cursor/settingsDismissedBedrockKeyWarning",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313276,
+      "offset_bytes": 19313282
+    },
+    {
+      "property": "dismissedGlassSettingsBanner",
+      "storage_key": "cursor/dismissedGlassSettingsBanner",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313318,
+      "offset_bytes": 19313324
+    },
+    {
+      "property": "dismissedGeneralCustomizeBanner",
+      "storage_key": "cursor/dismissedGeneralCustomizeBanner",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313354,
+      "offset_bytes": 19313360
+    },
+    {
+      "property": "dismissedP2PReferralCta",
+      "storage_key": "cursor/dismissedP2PReferralCta",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313393,
+      "offset_bytes": 19313399
+    },
+    {
+      "property": "dismissedClaudeCodeImportCta",
+      "storage_key": "cursor/dismissedClaudeCodeImportCta",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313424,
+      "offset_bytes": 19313430
+    },
+    {
+      "property": "bestOfNCountPreference",
+      "storage_key": "cursor/bestOfNCountPreference",
+      "default": 1,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313460,
+      "offset_bytes": 19313466
+    },
+    {
+      "property": "bestOfNEnsemblePreferences",
+      "storage_key": "cursor/bestOfNEnsemblePreferences",
+      "default": "{}",
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313490,
+      "offset_bytes": 19313496
+    },
+    {
+      "property": "lastSingleModelPreference",
+      "storage_key": "cursor/lastSingleModelPreference",
+      "default": "{}",
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313527,
+      "offset_bytes": 19313533
+    },
+    {
+      "property": "lastTimeClosedPaymentFailed",
+      "storage_key": "cursor/lastTimeClosedPaymentFailed",
+      "default": 0,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313563,
+      "offset_bytes": 19313569
+    },
+    {
+      "property": "lastPaymentFailed",
+      "storage_key": "cursor/lastPaymentFailed",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313598,
+      "offset_bytes": 19313604
+    },
+    {
+      "property": "paymentRecoveryAction",
+      "storage_key": "cursor/paymentRecoveryAction",
+      "default": "",
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313623,
+      "offset_bytes": 19313629
+    },
+    {
+      "property": "pendingCancellationDate",
+      "storage_key": "cursor/pendingCancellationDate",
+      "default": "",
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313653,
+      "offset_bytes": 19313659
+    },
+    {
+      "property": "hasClickedSlackConnect",
+      "storage_key": "cursor/hasClickedSlackConnect",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313685,
+      "offset_bytes": 19313691
+    },
+    {
+      "property": "claudeMdEnabled",
+      "storage_key": "cursor/claudeMdEnabled",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313715,
+      "offset_bytes": 19313721
+    },
+    {
+      "property": "thirdPartyExtensibilityEnabled",
+      "storage_key": "cursor/thirdPartyExtensibilityEnabled",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313738,
+      "offset_bytes": 19313744
+    },
+    {
+      "property": "importPluginsFromClaudeOnBoot",
+      "storage_key": "cursor/importPluginsFromClaudeOnBoot",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313776,
+      "offset_bytes": 19313782
+    },
+    {
+      "property": "importClaudeCodeAgents",
+      "storage_key": "cursor/importClaudeCodeAgents",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313813,
+      "offset_bytes": 19313819
+    },
+    {
+      "property": "useDedicatedLocalAgentRuntimeHost",
+      "storage_key": "cursor/useDedicatedLocalAgentRuntimeHost",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313843,
+      "offset_bytes": 19313849
+    },
+    {
+      "property": "composerAutocompleteHeuristicsEnabled",
+      "storage_key": "cursor/composerAutocompleteHeuristicsEnabled",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313884,
+      "offset_bytes": 19313890
+    },
+    {
+      "property": "composerAutocompleteHeuristicsAutoApplied",
+      "storage_key": "cursor/composerAutocompleteHeuristicsAutoApplied",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19313929,
+      "offset_bytes": 19313935
+    },
+    {
+      "property": "agentAutorunBrandNewDefaultAttempted",
+      "storage_key": "cursor/agentAutorunBrandNewDefaultAttempted",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19314124,
+      "offset_bytes": 19314130
+    },
+    {
+      "property": "localAgentTeamDefaultRunModeApplied",
+      "storage_key": "cursor/localAgentTeamDefaultRunModeApplied",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19314168,
+      "offset_bytes": 19314174
+    },
+    {
+      "property": "steerQueuedMessagesNuxDismissed",
+      "storage_key": "cursor/steerQueuedMessagesNuxDismissed",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19314211,
+      "offset_bytes": 19314217
+    },
+    {
+      "property": "jumpOnDiffAccept",
+      "storage_key": "cursor/jumpOnDiffAccept",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19314250,
+      "offset_bytes": 19314256
+    },
+    {
+      "property": "chatSubmitOnCmdEnter",
+      "storage_key": "cursor/chatSubmitOnCmdEnter",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19314274,
+      "offset_bytes": 19314280
+    },
+    {
+      "property": "collapseAutoRunCommands",
+      "storage_key": "cursor/collapseAutoRunCommands",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19314302,
+      "offset_bytes": 19314308
+    },
+    {
+      "property": "allowModelFallbacks",
+      "storage_key": "cursor/allowModelFallbacks",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19314333,
+      "offset_bytes": 19314339
+    },
+    {
+      "property": "modelNudgesEnabled",
+      "storage_key": "cursor/modelNudgesEnabled",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19314360,
+      "offset_bytes": 19314366
+    },
+    {
+      "property": "numberOfTimesShownFallbackModelWarning",
+      "storage_key": "cursor/numberOfTimesShownFallbackModelWarning",
+      "default": 0,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19314391,
+      "offset_bytes": 19314397
+    },
+    {
+      "property": "isCursorDevToolsEnabled",
+      "storage_key": "cursor/isCursorDevToolsEnabled",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19314437,
+      "offset_bytes": 19314443
+    },
+    {
+      "property": "glassDevSimulatePrScmRateLimitPct",
+      "storage_key": "cursor/glassDevSimulatePrScmRateLimitPct",
+      "default": 0,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19314468,
+      "offset_bytes": 19314474
+    },
+    {
+      "property": "shouldUseZeroAgentExecStreamStartTimeout",
+      "storage_key": "cursor/shouldUseZeroAgentExecStreamStartTimeout",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19314509,
+      "offset_bytes": 19314515
+    },
+    {
+      "property": "shouldShowComposerVirtualizationMap",
+      "storage_key": "cursor/shouldShowComposerVirtualizationMap",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19314557,
+      "offset_bytes": 19314563
+    },
+    {
+      "property": "needsComposerInitialOpening",
+      "storage_key": "cursor/needsComposerInitialOpening",
+      "default": true,
+      "scope": 1,
+      "target": 0,
+      "offset_chars": 19314600,
+      "offset_bytes": 19314606
+    },
+    {
+      "property": "shouldMockCursorPrediction",
+      "storage_key": "cursor/shouldMockCursorPrediction",
+      "default": false,
+      "scope": 1,
+      "target": 0,
+      "offset_chars": 19314639,
+      "offset_bytes": 19314645
+    },
+    {
+      "property": "isRcpInternalExtensionEnabled",
+      "storage_key": "cursor/isRcpInternalExtensionEnabled",
+      "default": false,
+      "scope": 1,
+      "target": 0,
+      "offset_chars": 19314677,
+      "offset_bytes": 19314683
+    },
+    {
+      "property": "uniqueCppWorkspaceId",
+      "storage_key": "cursor/uniqueCppWorkspaceId",
+      "default": "",
+      "scope": 1,
+      "target": 0,
+      "offset_chars": 19314781,
+      "offset_bytes": 19314787
+    },
+    {
+      "property": "isComposerBarChatCollapsed",
+      "storage_key": "cursor/isComposerBarChatCollapsed",
+      "default": false,
+      "scope": 1,
+      "target": 0,
+      "offset_chars": 19314814,
+      "offset_bytes": 19314820
+    },
+    {
+      "property": "shouldShowAgentWindowTitleHelperText",
+      "storage_key": "cursor/shouldShowAgentWindowTitleHelperText",
+      "default": true,
+      "scope": 0,
+      "target": 0,
+      "offset_chars": 19314852,
+      "offset_bytes": 19314858
+    },
+    {
+      "property": "composerBarPosition",
+      "storage_key": "cursor/composerBarPosition",
+      "default": null,
+      "scope": 1,
+      "target": 0,
+      "offset_chars": 19314900,
+      "offset_bytes": 19314906
+    },
+    {
+      "property": "shouldExplicitlyShowFgComposerInBg",
+      "storage_key": "cursor/shouldExplicitlyShowFgComposerInBg",
+      "default": false,
+      "scope": 1,
+      "target": 0,
+      "offset_chars": 19314970,
+      "offset_bytes": 19314976
+    },
+    {
+      "property": "enableDataHandleDebugging",
+      "storage_key": "cursor/enableDataHandleDebugging",
+      "default": false,
+      "scope": 1,
+      "target": 0,
+      "offset_chars": 19315016,
+      "offset_bytes": 19315022
+    },
+    {
+      "property": "visualizeLoadedHandles",
+      "storage_key": "cursor/visualizeLoadedHandles",
+      "default": false,
+      "scope": 1,
+      "target": 0,
+      "offset_chars": 19315053,
+      "offset_bytes": 19315059
+    },
+    {
+      "property": "approvedProjectMcpServers",
+      "storage_key": "cursor/approvedProjectMcpServers",
+      "default": [],
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19315087,
+      "offset_bytes": 19315093
+    },
+    {
+      "property": "disabledMcpServers",
+      "storage_key": "cursor/disabledMcpServers",
+      "default": [],
+      "scope": 1,
+      "target": 0,
+      "offset_chars": 19315126,
+      "offset_bytes": 19315132
+    },
+    {
+      "property": "disabledGlobalMcpServers",
+      "storage_key": "cursor/disabledGlobalMcpServers",
+      "default": [],
+      "scope": 0,
+      "target": 0,
+      "offset_chars": 19315157,
+      "offset_bytes": 19315163
+    },
+    {
+      "property": "workspaceEligibleForSnippetLearning",
+      "storage_key": "cursor/workspaceEligibleForSnippetLearning",
+      "default": false,
+      "scope": 1,
+      "target": 0,
+      "offset_chars": 19315194,
+      "offset_bytes": 19315200
+    },
+    {
+      "property": "releaseTrackAppliedAt",
+      "storage_key": "cursor/releaseTrackAppliedAt",
+      "default": 0,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19315241,
+      "offset_bytes": 19315247
+    },
+    {
+      "property": "copyPasteMentions",
+      "storage_key": "cursor/copyPasteMentions",
+      "default": [],
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19315275,
+      "offset_bytes": 19315281
+    },
+    {
+      "property": "disposableTrackingEnabled",
+      "storage_key": "cursor/disposableTrackingEnabled",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19315306,
+      "offset_bytes": 19315312
+    },
+    {
+      "property": "autoRunBugbotOnCommit",
+      "storage_key": "cursor/autoRunBugbotOnCommit",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19315344,
+      "offset_bytes": 19315350
+    },
+    {
+      "property": "autoRunBugbotOnComposerFinish",
+      "storage_key": "cursor/autoRunBugbotOnComposerFinish",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19315378,
+      "offset_bytes": 19315384
+    },
+    {
+      "property": "allowPromotionalAgentReviewRuns",
+      "storage_key": "cursor/allowPromotionalAgentReviewRuns",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19315420,
+      "offset_bytes": 19315426
+    },
+    {
+      "property": "lastCloudHandoffUpsellAtUnixMs",
+      "storage_key": "cursor/lastCloudHandoffUpsellAtUnixMs",
+      "default": 0,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19315464,
+      "offset_bytes": 19315470
+    },
+    {
+      "property": "worktreeCleanupIntervalHours",
+      "storage_key": "cursor/worktreeCleanupIntervalHours",
+      "default": 6,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19315507,
+      "offset_bytes": 19315513
+    },
+    {
+      "property": "worktreeMaxCount",
+      "storage_key": "cursor/worktreeMaxCount",
+      "default": 25,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19315548,
+      "offset_bytes": 19315554
+    },
+    {
+      "property": "worktreesGlobalMaxSizeGb",
+      "storage_key": "cursor/worktreesGlobalMaxSizeGb",
+      "default": 50,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19315578,
+      "offset_bytes": 19315584
+    },
+    {
+      "property": "voiceInputLanguage",
+      "storage_key": "cursor/voiceInputLanguage",
+      "default": "en-US",
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19315616,
+      "offset_bytes": 19315622
+    },
+    {
+      "property": "hideAllBugbotFeatures",
+      "storage_key": "cursor/hideAllBugbotFeatures",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19315653,
+      "offset_bytes": 19315659
+    },
+    {
+      "property": "bugbotIncludeSubmodules",
+      "storage_key": "cursor/bugbotIncludeSubmodules",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19315687,
+      "offset_bytes": 19315693
+    },
+    {
+      "property": "bugbotIncludeUntrackedFiles",
+      "storage_key": "cursor/bugbotIncludeUntrackedFiles",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19315723,
+      "offset_bytes": 19315729
+    },
+    {
+      "property": "bugbotDeepReviewDefault",
+      "storage_key": "cursor/bugbotDeepReviewDefault",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19315763,
+      "offset_bytes": 19315769
+    },
+    {
+      "property": "attributeCommitsToAgent",
+      "storage_key": "cursor/attributeCommitsToAgent",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19315799,
+      "offset_bytes": 19315805
+    },
+    {
+      "property": "attributePRsToAgent",
+      "storage_key": "cursor/attributePRsToAgent",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19315835,
+      "offset_bytes": 19315841
+    },
+    {
+      "property": "agentBranchPrefix",
+      "storage_key": "cursor/agentBranchPrefix",
+      "default": "",
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19315867,
+      "offset_bytes": 19315873
+    },
+    {
+      "property": "disabledTeamRules",
+      "storage_key": "cursor/disabledTeamRules",
+      "default": [],
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19315898,
+      "offset_bytes": 19315904
+    },
+    {
+      "property": "extensionSigningVerificationEnabled",
+      "storage_key": "cursor/extensionSigningVerificationEnabled",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19316012,
+      "offset_bytes": 19316018
+    },
+    {
+      "property": "extensionSigningEnabledAt",
+      "storage_key": "cursor/extensionSigningEnabledAt",
+      "default": 0,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19316060,
+      "offset_bytes": 19316066
+    },
+    {
+      "property": "grandfatheredExtensionHashes",
+      "storage_key": "cursor/grandfatheredExtensionHashes",
+      "default": {},
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19316098,
+      "offset_bytes": 19316104
+    },
+    {
+      "property": "autoHideEditorWhenEmpty",
+      "storage_key": "cursor/autoHideEditorWhenEmpty",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19316140,
+      "offset_bytes": 19316146
+    },
+    {
+      "property": "chatEditorGroupEnabled",
+      "storage_key": "cursor/chatEditorGroupEnabled",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19316176,
+      "offset_bytes": 19316182
+    },
+    {
+      "property": "reviewControlLocation",
+      "storage_key": "cursor/reviewControlLocation",
+      "default": "breadcrumb",
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19316211,
+      "offset_bytes": 19316217
+    },
+    {
+      "property": "globalLayoutState",
+      "storage_key": "cursor/globalLayoutState",
+      "default": null,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19316256,
+      "offset_bytes": 19316262
+    },
+    {
+      "property": "sandboxSupported",
+      "storage_key": "cursor/sandboxSupported",
+      "default": false,
+      "scope": 1,
+      "target": 0,
+      "offset_chars": 19316289,
+      "offset_bytes": 19316295
+    },
+    {
+      "property": "sandboxAutoRunSettingEnabled",
+      "storage_key": "cursor/sandboxAutoRunSettingEnabled",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19316611,
+      "offset_bytes": 19316617
+    },
+    {
+      "property": "agentReadAllowlist",
+      "storage_key": "cursor/agentReadAllowlist",
+      "default": [],
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19316793,
+      "offset_bytes": 19316799
+    },
+    {
+      "property": "sandboxingSeen",
+      "storage_key": "cursor/sandboxingSeen",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19316825,
+      "offset_bytes": 19316831
+    },
+    {
+      "property": "sandboxPromoVersionSeen",
+      "storage_key": "cursor/sandboxPromoVersionSeen",
+      "default": 0,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19316852,
+      "offset_bytes": 19316858
+    },
+    {
+      "property": "sandboxDebugOutputDir",
+      "storage_key": "cursor/sandboxDebugOutputDir",
+      "default": "",
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19316888,
+      "offset_bytes": 19316894
+    },
+    {
+      "property": "devSimulateTerminalSandboxDisabled",
+      "storage_key": "cursor/devSimulateTerminalSandboxDisabled",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19316923,
+      "offset_bytes": 19316929
+    },
+    {
+      "property": "terminalExecutionServiceV3HealthCheckResult",
+      "storage_key": "cursor/terminalExecutionServiceV3HealthCheckResult",
+      "default": "untested",
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19316970,
+      "offset_bytes": 19316976
+    },
+    {
+      "property": "planExecUseChatModel",
+      "storage_key": "cursor/planExecUseChatModel",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19317035,
+      "offset_bytes": 19317041
+    },
+    {
+      "property": "planExecMode",
+      "storage_key": "cursor/planExecMode",
+      "default": "agent",
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19317068,
+      "offset_bytes": 19317074
+    },
+    {
+      "property": "indexingGrepEnabled",
+      "storage_key": "cursor/indexingGrepEnabled",
+      "default": true,
+      "scope": 1,
+      "target": 0,
+      "offset_chars": 19317099,
+      "offset_bytes": 19317105
+    },
+    {
+      "property": "debugGlassNavEntries",
+      "storage_key": "cursor/debugGlassNavEntries",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19317130,
+      "offset_bytes": 19317136
+    },
+    {
+      "property": "debugGlassCornerClipping",
+      "storage_key": "cursor/debugGlassCornerClipping",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19317163,
+      "offset_bytes": 19317169
+    },
+    {
+      "property": "showFpsMeter",
+      "storage_key": "cursor/showFpsMeter",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19317200,
+      "offset_bytes": 19317206
+    },
+    {
+      "property": "showWorkbenchLifecycleMetric",
+      "storage_key": "cursor/showWorkbenchLifecycleMetric",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19317225,
+      "offset_bytes": 19317231
+    },
+    {
+      "property": "diffMeterPanelOpen",
+      "storage_key": "cursor/diffMeterPanelOpen",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19317266,
+      "offset_bytes": 19317272
+    },
+    {
+      "property": "showLeakedDisposables",
+      "storage_key": "cursor/showLeakedDisposables",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19317430,
+      "offset_bytes": 19317436
+    },
+    {
+      "property": "autoOpenLocalhostUrls",
+      "storage_key": "cursor/autoOpenLocalhostUrls",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19317464,
+      "offset_bytes": 19317470
+    },
+    {
+      "property": "glassOpenWebLinksInBrowser",
+      "storage_key": "cursor/glassOpenWebLinksInBrowser",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19317498,
+      "offset_bytes": 19317504
+    },
+    {
+      "property": "glassWorkspaceLspEnabled",
+      "storage_key": "cursor/glassWorkspaceLspEnabled",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19317537,
+      "offset_bytes": 19317543
+    },
+    {
+      "property": "glassWorkspaceLspWorktreesEnabled",
+      "storage_key": "cursor/glassWorkspaceLspWorktreesEnabled",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19317574,
+      "offset_bytes": 19317580
+    },
+    {
+      "property": "glassRemoteControlKeepAwakeWhilePluggedIn",
+      "storage_key": "cursor/glassRemoteControlKeepAwakeWhilePluggedIn",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19317620,
+      "offset_bytes": 19317626
+    },
+    {
+      "property": "glassShowChatStatusBar",
+      "storage_key": "cursor/glassShowChatStatusBar",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19317674,
+      "offset_bytes": 19317680
+    },
+    {
+      "property": "glassAutoContinueInterruptedAgents",
+      "storage_key": "cursor/glassAutoContinueInterruptedAgents",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19317709,
+      "offset_bytes": 19317715
+    },
+    {
+      "property": "glassUseSendMessageTool",
+      "storage_key": "cursor/glassUseSendMessageTool",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19317756,
+      "offset_bytes": 19317762
+    },
+    {
+      "property": "glassWakeProjectWhenThreadsFinish",
+      "storage_key": "cursor/glassWakeProjectWhenThreadsFinish",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19317792,
+      "offset_bytes": 19317798
+    },
+    {
+      "property": "glassShowTasksQuickPill",
+      "storage_key": "cursor/glassShowTasksQuickPill",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19317838,
+      "offset_bytes": 19317844
+    },
+    {
+      "property": "glassUnifiedProjectPillLastTabByProject",
+      "storage_key": "cursor/glassUnifiedProjectPillLastTabByProject",
+      "default": {},
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19317874,
+      "offset_bytes": 19317880
+    },
+    {
+      "property": "glassHighlightOpenSupplementalSidebarSections",
+      "storage_key": "cursor/glassHighlightOpenSupplementalSidebarSections",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19317927,
+      "offset_bytes": 19317933
+    },
+    {
+      "property": "glassPersistentSupplementalSidebar",
+      "storage_key": "cursor/glassPersistentSupplementalSidebar",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19317985,
+      "offset_bytes": 19317991
+    },
+    {
+      "property": "glassCollapseSupplementalSidebarOnNavigate",
+      "storage_key": "cursor/glassCollapseSupplementalSidebarOnNavigate",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19318032,
+      "offset_bytes": 19318038
+    },
+    {
+      "property": "glassShareSupplementalSidebarSectionsAcrossAgents",
+      "storage_key": "cursor/glassShareSupplementalSidebarSectionsAcrossAgents",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19318087,
+      "offset_bytes": 19318093
+    },
+    {
+      "property": "glassGroupSupplementalSidebarPrsByStatus",
+      "storage_key": "cursor/glassGroupSupplementalSidebarPrsByStatus",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19318149,
+      "offset_bytes": 19318155
+    },
+    {
+      "property": "glassGroupSupplementalSidebarPrsByProjectStatus",
+      "storage_key": "cursor/glassGroupSupplementalSidebarPrsByProjectStatus",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19318202,
+      "offset_bytes": 19318208
+    },
+    {
+      "property": "agentConfettiCannonEnabled",
+      "storage_key": "cursor/agentConfettiCannonEnabled",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19318262,
+      "offset_bytes": 19318268
+    },
+    {
+      "property": "desktopBridgeUserEnabled",
+      "storage_key": "cursor/desktopBridgeUserEnabled",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19318301,
+      "offset_bytes": 19318307
+    },
+    {
+      "property": "glassShowConversationMinimap",
+      "storage_key": "cursor/glassShowConversationMinimap",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19318338,
+      "offset_bytes": 19318344
+    },
+    {
+      "property": "glassStatusBarShowRepo",
+      "storage_key": "cursor/glassStatusBarShowRepo",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19318379,
+      "offset_bytes": 19318385
+    },
+    {
+      "property": "glassStatusBarShowBranch",
+      "storage_key": "cursor/glassStatusBarShowBranch",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19318414,
+      "offset_bytes": 19318420
+    },
+    {
+      "property": "glassStatusBarShowEnvironment",
+      "storage_key": "cursor/glassStatusBarShowEnvironment",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19318451,
+      "offset_bytes": 19318457
+    },
+    {
+      "property": "glassStatusBarShowContext",
+      "storage_key": "cursor/glassStatusBarShowContext",
+      "default": true,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19318493,
+      "offset_bytes": 19318499
+    },
+    {
+      "property": "mcpSettingsViewGroupBy",
+      "storage_key": "cursor/mcpSettingsViewGroupBy",
+      "default": "scope",
+      "scope": 0,
+      "target": 0,
+      "offset_chars": 19318531,
+      "offset_bytes": 19318537
+    },
+    {
+      "property": "mcpSettingsViewSortBy",
+      "storage_key": "cursor/mcpSettingsViewSortBy",
+      "default": "name",
+      "scope": 0,
+      "target": 0,
+      "offset_chars": 19318571,
+      "offset_bytes": 19318577
+    },
+    {
+      "property": "composerFileListExpanded",
+      "storage_key": "cursor/composerFileListExpanded",
+      "default": true,
+      "scope": 1,
+      "target": 0,
+      "offset_chars": 19318609,
+      "offset_bytes": 19318615
+    },
+    {
+      "property": "browserUrlPopupDismissed",
+      "storage_key": "cursor/browserUrlPopupDismissed",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19318645,
+      "offset_bytes": 19318651
+    },
+    {
+      "property": "pinnedComposers",
+      "storage_key": "cursor/pinnedComposers",
+      "default": [],
+      "scope": 1,
+      "target": 0,
+      "offset_chars": 19318682,
+      "offset_bytes": 19318688
+    },
+    {
+      "property": "dismissedAutoOpenDialog",
+      "storage_key": "cursor/dismissedAutoOpenDialog",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19318710,
+      "offset_bytes": 19318716
+    },
+    {
+      "property": "markdownEditorModePreferences",
+      "storage_key": "cursor/markdownEditorModePreferences",
+      "default": {},
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19318746,
+      "offset_bytes": 19318752
+    },
+    {
+      "property": "csvTableModePreferences",
+      "storage_key": "cursor/csvTableModePreferences",
+      "default": {},
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19318789,
+      "offset_bytes": 19318795
+    },
+    {
+      "property": "noInlineDiffs",
+      "storage_key": "cursor/noInlineDiffs",
+      "default": null,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19318962,
+      "offset_bytes": 19318968
+    },
+    {
+      "property": "autoFormatOnAgentFinish",
+      "storage_key": "cursor/autoFormatOnAgentFinish",
+      "default": null,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19318991,
+      "offset_bytes": 19318997
+    },
+    {
+      "property": "isPostOnboardingFirstLanding",
+      "storage_key": "cursor/isPostOnboardingFirstLanding",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19319030,
+      "offset_bytes": 19319036
+    },
+    {
+      "property": "newChatAutoSwitchApplied",
+      "storage_key": "cursor/newChatAutoSwitchApplied",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19319071,
+      "offset_bytes": 19319077
+    },
+    {
+      "property": "steerFromCloudModalOpened",
+      "storage_key": "cursor/steerFromCloudModalOpened",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19319108,
+      "offset_bytes": 19319114
+    },
+    {
+      "property": "initialModelState",
+      "storage_key": "cursor/initialModelState",
+      "default": "applied",
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19319146,
+      "offset_bytes": 19319152
+    },
+    {
+      "property": "initialModelAppliedConfig",
+      "storage_key": "cursor/initialModelAppliedConfig",
+      "default": null,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19319184,
+      "offset_bytes": 19319190
+    },
+    {
+      "property": "initialModelNeedsGlassDraftSync",
+      "storage_key": "cursor/initialModelNeedsGlassDraftSync",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19319225,
+      "offset_bytes": 19319231
+    },
+    {
+      "property": "applicationOpenModelAppliedConfig",
+      "storage_key": "cursor/applicationOpenModelAppliedConfig",
+      "default": null,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19319269,
+      "offset_bytes": 19319275
+    },
+    {
+      "property": "applicationOpenModelNeedsGlassDraftSync",
+      "storage_key": "cursor/applicationOpenModelNeedsGlassDraftSync",
+      "default": false,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19319318,
+      "offset_bytes": 19319324
+    },
+    {
+      "property": "confirmedModelDialogueKeys",
+      "storage_key": "cursor/confirmedModelDialogueKeys",
+      "default": [],
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19319370,
+      "offset_bytes": 19319376
+    },
+    {
+      "property": "shownPostPickerModelWarningKeysByConversation",
+      "storage_key": "cursor/shownPostPickerModelWarningKeysByConversation",
+      "default": {},
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19319410,
+      "offset_bytes": 19319416
+    },
+    {
+      "property": "seenNewModelBadgeModelNames",
+      "storage_key": "cursor/seenNewModelBadgeModelNames",
+      "default": [],
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19319469,
+      "offset_bytes": 19319475
+    },
+    {
+      "property": "seenNewParameterValueKeys",
+      "storage_key": "cursor/seenNewParameterValueKeys",
+      "default": [],
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19319510,
+      "offset_bytes": 19319516
+    },
+    {
+      "property": "selectedDismissibleModelBadgeKeys",
+      "storage_key": "cursor/selectedDismissibleModelBadgeKeys",
+      "default": [],
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19319549,
+      "offset_bytes": 19319555
+    },
+    {
+      "property": "pendingModelConfirmation",
+      "storage_key": "cursor/pendingModelConfirmation",
+      "default": null,
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19319596,
+      "offset_bytes": 19319602
+    },
+    {
+      "property": "subagentModelOverrides",
+      "storage_key": "cursor/subagentModelOverrides",
+      "default": {},
+      "scope": -1,
+      "target": 0,
+      "offset_chars": 19319636,
+      "offset_bytes": 19319642
+    },
+    {
+      "property": "newAgentDefaultEnvironment",
+      "storage_key": "cursor/newAgentDefaultEnvironment",
+      "default": "last-used",
+      "values": [
+        "last-used",
+        "cloud",
+        "local",
+        "new-worktree",
+        "shared-pool",
+        "remote-control"
+      ],
+      "offset_chars": 19313978
+    },
+    {
+      "property": "sandboxNetworkDefault",
+      "storage_key": "cursor/sandboxNetworkDefault",
+      "default": "user_config_with_defaults",
+      "values": [
+        "user_config_only",
+        "user_config_with_defaults",
+        "allow_all"
+      ],
+      "offset_chars": 19316317
+    },
+    {
+      "property": "agentReadBoundary",
+      "storage_key": "cursor/agentReadBoundary",
+      "default": "system",
+      "values": [
+        "system",
+        "workspace"
+      ],
+      "offset_chars": 19316652
+    }
+  ],
+  "storage_architecture": [
+    {
+      "observation": "Typed settings use cursor/ + property. Central schema defines serialization, defaults, scope and target. Default scope -1, target 0.",
+      "offset_chars": 19310254
+    },
+    {
+      "observation": "Legacy applicationUserPersistentStorage holds composerState, cursorIgnore, model/provider settings and notifications.",
+      "offset_chars": 19322059
+    },
+    {
+      "observation": "Some controls read VS Code configuration. Inspection precedence: userRemoteValue, userLocalValue, applicationValue, defaultValue.",
+      "offset_chars": 24471100
+    },
+    {
+      "observation": "Remote policies, team settings and experiments override values/availability; registered defaults do not prove effective runtime values.",
+      "offset_chars": 22533515
+    }
+  ],
+  "enums": {
+    "window_restoration": [
+      "default",
+      "agentWindow",
+      "lastUsedWindows"
+    ],
+    "new_messages": [
+      "queue",
+      "steer",
+      "stop-and-send"
+    ],
+    "queue_manual_send": [
+      "steer",
+      "interrupt"
+    ],
+    "legacy_queue_messages": [
+      "queue",
+      "stop-and-send"
+    ],
+    "usage_summary": [
+      "auto",
+      "always",
+      "never"
+    ],
+    "review_location": [
+      "breadcrumb",
+      "island"
+    ],
+    "review_approach": [
+      "Quick",
+      "Deep"
+    ],
+    "browser_mode": [
+      "none",
+      "editor"
+    ],
+    "http_compatibility": [
+      "HTTP/2",
+      "HTTP/1.1",
+      "HTTP/1.0"
+    ],
+    "self_driving_mode": [
+      "suggest",
+      "apply"
+    ],
+    "run_modes": [
+      "ask_every_time",
+      "yolo",
+      "yolo_with_sandbox",
+      "smart_auto",
+      "smart_auto_with_sandbox",
+      "full_yolo"
+    ],
+    "update_channel": [
+      "Default",
+      "Early Access",
+      "Nightly",
+      "Dogfood",
+      "Candidate"
+    ],
+    "text_size_scale": [
+      0.85,
+      1,
+      1.15,
+      1.3
+    ]
+  },
+  "ranges": {
+    "worktreeMaxCount": {
+      "key": "cursor.worktreeMaxCount",
+      "default": 25,
+      "min": 1,
+      "max": 500,
+      "step": 1,
+      "offset_chars": 31653603
+    },
+    "worktreesGlobalMaxSizeGb": {
+      "key": "cursor.worktreesGlobalMaxSizeGb",
+      "default": 50,
+      "min": 0,
+      "max": 1000,
+      "step": 1,
+      "zero_meaning": "disable aggregate size limit",
+      "offset_chars": 31653603
+    },
+    "worktreeCleanupIntervalHours": {
+      "storage_key": "cursor/worktreeCleanupIntervalHours",
+      "default": 6,
+      "note": "Registered setting without visible control observed in Worktrees pane",
+      "offset_chars": 19315548
+    },
+    "lsp_workspaces": {
+      "keys": [
+        "cursor.glassWorkspaceLspMaxLocalWorkspaces",
+        "cursor.glassWorkspaceLspMaxRemoteWorkspaces"
+      ],
+      "default_each": 3,
+      "min": 0,
+      "max": "not observed",
+      "offset_chars": 29649000
+    },
+    "monthly_spend_limit": {
+      "min": 1,
+      "max": "not observed; unlimited mode separate",
+      "storage": "remote billing state",
+      "offset_chars": 29837669
+    }
+  },
+  "legacy_effective_defaults": {
+    "composerState.isWebSearchToolEnabled3": true,
+    "composerState.isWebFetchToolEnabled": true,
+    "composerState.autoAcceptWebSearchTool": false,
+    "composerState.mcpAuthBlocking": true,
+    "composerState.autoApproveModeTransitions": false,
+    "composerState.useLegacyTerminalTool": false,
+    "voiceModeSubmitKeywords": [
+      "submit"
+    ],
+    "cursorIgnore.hierarchicalEnabled": false,
+    "cursorIgnore.ignoreSymlinks": false,
+    "indexRepository": true,
+    "cppEnabled": true,
+    "cppTriggerInComments": true,
+    "cppShowWhitespaceOnlyChanges": false,
+    "systemNotificationsEnabled": {
+      "initial_state_default": true,
+      "missing_property_UI_fallback": false
+    },
+    "systemTrayEnabled": {
+      "missing_property_UI_fallback": true
+    }
+  },
+  "navigation": {
+    "ordered_destinations": [
+      "general",
+      "profile",
+      "vscode-settings",
+      "appearance",
+      "plan-usage",
+      "chat",
+      "background-composer",
+      "models",
+      "git-prs",
+      "worktrees",
+      "self-driving",
+      "customize",
+      "plugins",
+      "rules",
+      "mcp",
+      "hooks",
+      "browser",
+      "tab",
+      "indexing",
+      "beta",
+      "developer"
+    ],
+    "footer": [
+      "docs"
+    ],
+    "aliases": {
+      "fun": "appearance",
+      "network": "browser"
+    },
+    "glass_only": [
+      "appearance",
+      "worktrees",
+      "profile",
+      "self-driving"
+    ],
+    "ide_settings_command": "workbench.action.openSettings",
+    "conditional": [
+      "profile requires signed-in and profileTabEnabled",
+      "self-driving requires signed-in and selfDrivingSettingsEnabled",
+      "plan-usage requires signed-in plus paid/spillover/enterprise conditions",
+      "developer requires build/development/dev-user eligibility",
+      "customize migration can hide primitive plugins, rules, mcp, hooks tabs"
+    ],
+    "offset_chars": 29351847
+  },
+  "review_notes": [
+    {
+      "module": "general",
+      "observed": "Account; IDE preferences/import/reset confirmations/layout; startup restoration/resume; tips; OS notifications/tray; completion chime with custom sound; privacy; extension signature verification.",
+      "limits": "Privacy may be team-controlled. IDE-specific editor/layout options; macOS menu-bar vs system tray."
+    },
+    {
+      "module": "profile",
+      "observed": "Email, photo upload/removal, first/last name, handle, social/website links, public visibility, validation, save/cancel.",
+      "limits": "Team may disable public profile. Remote profile APIs."
+    },
+    {
+      "module": "chat",
+      "observed": "Conversation text/submit/default environment/model recommendation, queue/steer/interrupt, usage, autocomplete, transitions, voice keywords, web tools/auth, run modes/network/command/MCP/read allowlists, diff/formatting, terminal/editing, imports, remote control/keep-awake.",
+      "limits": "Execution permission policy, admin constraints and sandbox capabilities need actual runtime implementation."
+    },
+    {
+      "module": "background-composer",
+      "observed": "Manage Settings dashboard; Slack connect/reconnect.",
+      "limits": "Requires Git repository and privacy allowing storage; loading/unavailable/open-folder states."
+    },
+    {
+      "module": "models",
+      "observed": "Search/add/remove/enable models; Explore model; OpenAI/Anthropic/Google; OpenAI base URL; Azure deployment/endpoint/key; AWS Bedrock/team Bedrock; local gateway.",
+      "limits": "Models/entitlements remote. Gateway local-mode gated. Credentials need secure native handling."
+    },
+    {
+      "module": "git-prs",
+      "observed": "Provider/team default/Origin/GitHub/Graphite; PR in-app/browser; review on commit/finish; submodules/untracked; Quick/Deep; attribution; branch prefix.",
+      "limits": "Provider choices gated by account/team and persisted by remote service."
+    },
+    {
+      "module": "worktrees",
+      "observed": "Max count and total GB with reset defaults; repository grouping; linked agents; open/remove.",
+      "limits": "Cleanup destructive semantics not fully traced. 0 GB disables size limit."
+    },
+    {
+      "module": "self-driving",
+      "observed": "Allow agents on own PRs, auto-start, suggest/apply, Slack updates/channel/DM.",
+      "limits": "Remote service; signed-in feature gate."
+    },
+    {
+      "module": "customize",
+      "observed": "Unified destination; migration CTAs; search commands.",
+      "limits": "Migration stage hides/shows legacy primitive pages."
+    },
+    {
+      "module": "plugins",
+      "observed": "Installed/local/marketplace metadata; constituent MCPs/skills/subagents/rules/commands/hooks; local plugin removal confirmation.",
+      "limits": "Installation/execution lifecycle separate from preference UI."
+    },
+    {
+      "module": "rules",
+      "observed": "User/project/workspace/team scopes; rules/skills/subagents/commands; third-party config imports; GitHub/GitLab import.",
+      "limits": "Availability depends on scope/workspace capabilities/migration."
+    },
+    {
+      "module": "mcp",
+      "observed": "Home/workspace/user/cloud/team/plugin servers; tools/status/enable/auth; search/sort/add/edit/remove. Project .cursor/mcp.json.",
+      "limits": "Remote cloud inventory separate from local config; team cloud config admin-managed."
+    },
+    {
+      "module": "hooks",
+      "observed": "Configured hooks, config errors, execution log; hooks.json in user/project/enterprise scope.",
+      "limits": "Hook execution not exercised."
+    },
+    {
+      "module": "browser",
+      "observed": "Automation off/tab; protection; local/web link behavior; HTTP compatibility; required domains; DNS/HTTP2/TLS/API/stream/auth/marketplace diagnostics and log export.",
+      "limits": "Browser may be team-disabled. No live diagnostics run."
+    },
+    {
+      "module": "tab",
+      "observed": "Suggestions, partial accepts, comment/whitespace/imports, Python import beta, ignored globs.",
+      "limits": "Requires editor/completion backend."
+    },
+    {
+      "module": "indexing",
+      "observed": "LSP defaults/concurrency; codebase status/delete; new folders; instant Grep; ignore/symlink/hierarchy; team repo controls; IDE docs index.",
+      "limits": "Workspace/backend-sensitive operations. Defaults differ for worktree LSP."
+    },
+    {
+      "module": "beta",
+      "observed": "Update channel; project pill/wake; supplemental sidebar highlight/persistent/collapse/sharing/PR grouping; dedicated runtime; desktop bridge.",
+      "limits": "Experiment/dev gates; dedicated runtime reload."
+    },
+    {
+      "module": "developer",
+      "observed": "Local trace, continuous RPC recording, log folder; disposable/leak/Solid/preview development controls.",
+      "limits": "Development eligibility, tracing overhead, recording restart."
+    },
+    {
+      "module": "plan-usage",
+      "observed": "Personal/enterprise usage; cumulative/included spend; on-demand; fixed/unlimited/disabled monthly limit.",
+      "limits": "Billing backend, team admin constraints."
+    }
+  ],
+  "unknowns": [
+    "No Cursor runtime options were exercised.",
+    "Static metadata does not establish current account/experiment visibility.",
+    "Server enforcement, secret storage and all execution semantics not exhaustively traced.",
+    "All navigation modules inventoried; not every VS Code preference enumerated.",
+    "Appearance detail is separately investigated by root."
+  ]
+}

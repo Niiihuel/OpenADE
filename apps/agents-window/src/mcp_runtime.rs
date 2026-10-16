@@ -5,12 +5,14 @@
 
 use crate::mcp_oauth_controller::discover_oauth_session;
 use crate::mcp_settings::{McpServerSettings, McpSettings};
+use crate::mcp_tool_selection::McpToolSelections;
 use async_trait::async_trait;
 use openide_harness::{
     inspect_mcp_stdio_launch, mcp_runtime_digest, AgentError, McpCompositeTools, McpError,
     McpHttpClient, McpServerBinding, McpServerRuntimeIdentity, McpStdioClient,
     McpStdioServerIdentity, McpToolClient, PreparedToolSession, ToolExecutor, ToolPreparation,
 };
+use sha2::{Digest, Sha256};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
@@ -34,6 +36,7 @@ enum McpClient {
     Http(Arc<McpHttpClient>),
 }
 
+#[derive(Debug)]
 enum McpStartupError {
     Cancelled,
     Failed(String),
@@ -74,11 +77,20 @@ impl McpClient {
 /// has entered the Tokio runtime that will execute the entire turn.
 pub(crate) struct McpToolPreparation {
     servers: Vec<McpServerSettings>,
+    tool_selections: McpToolSelections,
 }
 
 impl McpToolPreparation {
     pub fn new(servers: Vec<McpServerSettings>) -> Self {
-        Self { servers }
+        Self {
+            servers,
+            tool_selections: McpToolSelections::default(),
+        }
+    }
+
+    pub fn with_tool_selections(mut self, selections: McpToolSelections) -> Self {
+        self.tool_selections = selections;
+        self
     }
 }
 
@@ -90,13 +102,18 @@ impl ToolPreparation for McpToolPreparation {
         base_tools: Arc<dyn ToolExecutor>,
         cancellation: &CancellationToken,
     ) -> Result<Box<dyn PreparedToolSession>, AgentError> {
-        let runtime =
-            discover_mcp_runtime_inner(&self.servers, workspace, base_tools, cancellation)
-                .await
-                .map_err(|error| match error {
-                    McpStartupError::Cancelled => AgentError::Cancelled,
-                    McpStartupError::Failed(message) => AgentError::Runtime(message),
-                })?;
+        let runtime = discover_mcp_runtime_inner(
+            &self.servers,
+            &self.tool_selections,
+            workspace,
+            base_tools,
+            cancellation,
+        )
+        .await
+        .map_err(|error| match error {
+            McpStartupError::Cancelled => AgentError::Cancelled,
+            McpStartupError::Failed(message) => AgentError::Runtime(message),
+        })?;
         Ok(Box::new(runtime))
     }
 }
@@ -118,7 +135,12 @@ impl PreparedToolSession for McpRuntime {
     fn notices(&self) -> Vec<(String, String)> {
         self.skipped
             .iter()
-            .map(|(id, why)| (openide_core::NOTICE_MCP_UNAVAILABLE.to_owned(), format!("{id}\n{why}")))
+            .map(|(id, why)| {
+                (
+                    openide_core::NOTICE_MCP_UNAVAILABLE.to_owned(),
+                    format!("{id}\n{why}"),
+                )
+            })
             .collect()
     }
 
@@ -180,13 +202,20 @@ pub(crate) async fn discover_mcp_runtime(
     local_tools: Arc<dyn ToolExecutor>,
     cancellation: &CancellationToken,
 ) -> Result<McpRuntime, String> {
-    discover_mcp_runtime_inner(servers, workspace, local_tools, cancellation)
-        .await
-        .map_err(|error| error.to_string())
+    discover_mcp_runtime_inner(
+        servers,
+        &McpToolSelections::default(),
+        workspace,
+        local_tools,
+        cancellation,
+    )
+    .await
+    .map_err(|error| error.to_string())
 }
 
 async fn discover_mcp_runtime_inner(
     servers: &[McpServerSettings],
+    tool_selections: &McpToolSelections,
     workspace: &Path,
     local_tools: Arc<dyn ToolExecutor>,
     cancellation: &CancellationToken,
@@ -202,7 +231,11 @@ async fn discover_mcp_runtime_inner(
     McpSettings {
         servers: enabled.clone(),
     }
-    .validate(workspace)?;
+    .validate_structure()?;
+    // Invalid local definitions remain a host error. A remote server that
+    // cannot fit alongside this base is isolated later as one whole unit.
+    McpCompositeTools::new(local_tools.clone(), Vec::new())
+        .map_err(|error| McpStartupError::Failed(format!("Catálogo local no válido: {error}")))?;
 
     let mut clients = Vec::new();
     let mut bindings = Vec::new();
@@ -213,6 +246,14 @@ async fn discover_mcp_runtime_inner(
         if cancellation.is_cancelled() {
             return Err(failed_startup(McpStartupError::Cancelled, &clients).await);
         }
+        let selected = match tool_selections.selected_for(server) {
+            Ok(selected) => selected,
+            Err(why) => {
+                all_resume_safe = false;
+                skipped.push((server.id.clone(), why));
+                continue;
+            }
+        };
         let mut launch_recheck = None;
         let connected = if server.url.is_some() {
             match server.runtime_http_config() {
@@ -282,35 +323,55 @@ async fn discover_mcp_runtime_inner(
         };
         let tool_client = client.tool_client();
         clients.push((server.id.clone(), client));
-        let binding =
-            match McpServerBinding::discover(server.id.clone(), tool_client, cancellation).await {
+        let binding = match McpServerBinding::discover(server.id.clone(), tool_client, cancellation)
+            .await
+        {
+            Ok(binding) => match binding.select_tools(selected) {
                 Ok(binding) => binding,
                 Err(error) => {
-                    let error = if matches!(
-                        error,
-                        openide_harness::McpToolAdapterError::Discovery {
-                            source: McpError::Cancelled,
-                            ..
-                        }
-                    ) {
-                        McpStartupError::Cancelled
-                    } else {
-                        McpStartupError::Failed(format!(
-                            "No se pudo descubrir MCP {}: {error}",
-                            server.id
-                        ))
-                    };
-                    if let (McpStartupError::Failed(why), false) = (&error, cancellation.is_cancelled()) {
-                        let why = why.clone();
-                        let _ = shutdown_all(&clients[clients.len() - 1..]).await;
-                        clients.pop();
-                        all_resume_safe = false;
-                        skipped.push((server.id.clone(), why));
-                        continue;
-                    }
-                    return Err(failed_startup(error, &clients).await);
+                    let _ = shutdown_all(&clients[clients.len() - 1..]).await;
+                    clients.pop();
+                    all_resume_safe = false;
+                    skipped.push((server.id.clone(), format!("Selección MCP no disponible: {error}. Inspeccioná y revisá las herramientas elegidas.")));
+                    continue;
                 }
-            };
+            },
+            Err(error) => {
+                let error = if matches!(
+                    error,
+                    openide_harness::McpToolAdapterError::Discovery {
+                        source: McpError::Cancelled,
+                        ..
+                    }
+                ) {
+                    McpStartupError::Cancelled
+                } else {
+                    McpStartupError::Failed(format!(
+                        "No se pudo descubrir MCP {}: {error}",
+                        server.id
+                    ))
+                };
+                if let (McpStartupError::Failed(why), false) = (&error, cancellation.is_cancelled())
+                {
+                    let why = why.clone();
+                    let _ = shutdown_all(&clients[clients.len() - 1..]).await;
+                    clients.pop();
+                    all_resume_safe = false;
+                    skipped.push((server.id.clone(), why));
+                    continue;
+                }
+                return Err(failed_startup(error, &clients).await);
+            }
+        };
+        let mut candidate = bindings.clone();
+        candidate.push(binding.clone());
+        if let Err(error) = McpCompositeTools::new(local_tools.clone(), candidate) {
+            let _ = shutdown_all(&clients[clients.len() - 1..]).await;
+            clients.pop();
+            all_resume_safe = false;
+            skipped.push((server.id.clone(), format!("No se puede anunciar MCP {} al modelo: {error}. El presupuesto es de {} herramientas entre locales y MCP; inspeccioná el servidor y guardá una selección explícita compatible.",server.id,openide_harness::MAX_ADVERTISED_TOOLS)));
+            continue;
+        }
         let verified_identity = match &clients.last().expect("connected MCP client").1 {
             McpClient::Stdio(_) => verified_stdio_identity.map(McpServerRuntimeIdentity::Stdio),
             McpClient::Http(client) => client
@@ -327,6 +388,13 @@ async fn discover_mcp_runtime_inner(
     if cancellation.is_cancelled() {
         return Err(failed_startup(McpStartupError::Cancelled, &clients).await);
     }
+    let mut discovery_digest = Sha256::new();
+    discovery_digest.update(b"openade-mcp-runtime-discovery-selection-v1\0");
+    for binding in &bindings {
+        discovery_digest.update(binding.name().as_bytes());
+        discovery_digest.update([0]);
+        discovery_digest.update(binding.discovery_selection_digest().as_bytes());
+    }
     let tools = match McpCompositeTools::new(local_tools, bindings) {
         Ok(tools) => Arc::new(tools),
         Err(error) => {
@@ -338,8 +406,10 @@ async fn discover_mcp_runtime_inner(
         }
     };
     let mcp_tool_names = tools.mcp_tool_names().map(str::to_owned).collect();
+    discovery_digest.update(tools.catalog().digest_hex().as_bytes());
+    let frozen_discovery_digest = format!("{:x}", discovery_digest.finalize());
     let resume_identity_digest = all_resume_safe
-        .then(|| mcp_runtime_digest(&server_identities, &tools.catalog().digest_hex()))
+        .then(|| mcp_runtime_digest(&server_identities, &frozen_discovery_digest))
         .flatten();
     let notification_cancel = cancellation.child_token();
     let notification_errors = Arc::new(Mutex::new(Vec::new()));
@@ -1136,15 +1206,166 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
             http_oauth: None,
             http_env_headers: Vec::new(),
         };
-        let runtime = discover_mcp_runtime(&[missing], workspace.path(), Arc::new(LocalTools::new()), &CancellationToken::new())
-            .await
-            .unwrap();
+        let runtime = discover_mcp_runtime(
+            &[missing],
+            workspace.path(),
+            Arc::new(LocalTools::new()),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
         assert!(runtime.mcp_tool_names().is_empty());
         assert!(runtime.mcp_resume_identity_digest().is_none());
         let notices = PreparedToolSession::notices(&runtime);
         assert_eq!(notices.len(), 1);
         assert_eq!(notices[0].0, openide_core::NOTICE_MCP_UNAVAILABLE);
-        assert!(notices[0].1.starts_with("missing\nNo se pudo iniciar MCP missing"), "{:?}", notices[0].1);
+        assert!(
+            notices[0]
+                .1
+                .starts_with("missing\nNo se pudo iniciar MCP missing"),
+            "{:?}",
+            notices[0].1
+        );
+        runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_large_server_is_isolated_until_an_explicit_selection_fits_the_model_catalog() {
+        let workspace = tempfile::tempdir().unwrap();
+        let tools: Vec<serde_json::Value> = (0..170).map(|index| json!({"name":format!("tool_{index}"),"description":"Fixture","inputSchema":{"type":"object"}})).collect();
+        let fixture = crate::mcp_inspection::tests::HttpFixture::with_tools(false, tools);
+        let all = discover_mcp_runtime(
+            &[fixture.server.clone()],
+            workspace.path(),
+            Arc::new(LocalTools::new()),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert!(all.mcp_tool_names().is_empty());
+        assert_eq!(
+            all.tools().definitions().len(),
+            3,
+            "local tools survive a server that cannot be advertised"
+        );
+        assert!(PreparedToolSession::notices(&all)[0].1.contains("128"));
+        assert!(all.mcp_resume_identity_digest().is_none());
+        all.shutdown().await.unwrap();
+
+        let mut selections = McpToolSelections::default();
+        selections
+            .set_for(&fixture.server, Some(vec!["tool_169".into()]))
+            .unwrap();
+        let selected = discover_mcp_runtime_inner(
+            &[fixture.server.clone()],
+            &selections,
+            workspace.path(),
+            Arc::new(LocalTools::new()),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(selected.mcp_tool_names().len(), 1);
+        assert!(selected.mcp_tool_names()[0].ends_with("__tool_169"));
+        assert!(PreparedToolSession::notices(&selected).is_empty());
+        let denied = selected
+            .tools()
+            .execute(
+                &ToolCall {
+                    id: "not-selected".into(),
+                    name: "mcp__inspection-local__tool_0".into(),
+                    arguments: json!({}),
+                },
+                &ToolContext {
+                    workspace: workspace.path().into(),
+                    cancel: CancellationToken::new(),
+                },
+            )
+            .await
+            .unwrap();
+        assert!(denied.is_error);
+        selected.shutdown().await.unwrap();
+        assert!(!fixture
+            .methods()
+            .iter()
+            .any(|method| method == "tools/call"));
+
+        selections
+            .set_for(&fixture.server, Some(vec!["absent_tool".into()]))
+            .unwrap();
+        let missing = discover_mcp_runtime_inner(
+            &[fixture.server.clone()],
+            &selections,
+            workspace.path(),
+            Arc::new(LocalTools::new()),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert!(missing.mcp_tool_names().is_empty());
+        assert!(PreparedToolSession::notices(&missing)[0]
+            .1
+            .contains("absent_tool"));
+        missing.shutdown().await.unwrap();
+
+        let before = fixture.methods();
+        let mut stale = fixture.server.clone();
+        stale.url = Some("https://must-not-connect.example.test/mcp".into());
+        let stale = discover_mcp_runtime_inner(
+            &[stale],
+            &selections,
+            workspace.path(),
+            Arc::new(LocalTools::new()),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert!(stale.mcp_tool_names().is_empty());
+        assert!(PreparedToolSession::notices(&stale)[0].1.contains("cambió"));
+        stale.shutdown().await.unwrap();
+        assert_eq!(
+            fixture.methods(),
+            before,
+            "a stale selection is refused before starting any connection"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_missing_server_cwd_does_not_block_another_servers_tools() {
+        let workspace = tempfile::tempdir().unwrap();
+        let fixture = crate::mcp_inspection::tests::HttpFixture::new(false, false);
+        let missing = McpServerSettings {
+            id: "missing-cwd".into(),
+            enabled: true,
+            program: "this-program-must-not-be-started".into(),
+            args: vec![],
+            cwd: Some("removed-directory".into()),
+            credential_env_names: vec![],
+            env: Default::default(),
+            url: None,
+            http_bearer_token_env_name: None,
+            http_oauth: None,
+            http_env_headers: vec![],
+        };
+        let runtime = discover_mcp_runtime(
+            &[missing, fixture.server.clone()],
+            workspace.path(),
+            Arc::new(LocalTools::new()),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(runtime.mcp_tool_names().len(), 2);
+        assert!(runtime
+            .mcp_tool_names()
+            .iter()
+            .all(|name| name.starts_with(&format!("mcp__{}__", fixture.server.id))));
+        let notices = PreparedToolSession::notices(&runtime);
+        assert_eq!(notices.len(), 1);
+        assert_eq!(notices[0].0, openide_core::NOTICE_MCP_UNAVAILABLE);
+        assert!(notices[0].1.starts_with("missing-cwd\n"));
+        assert!(notices[0].1.contains("Cwd MCP no disponible"));
+        assert!(runtime.mcp_resume_identity_digest().is_none());
         runtime.shutdown().await.unwrap();
     }
 
@@ -1179,7 +1400,10 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
         .await
         .unwrap();
         assert_eq!(runtime.skipped.len(), 1);
-        assert!(runtime.mcp_tool_names().iter().any(|name| name.starts_with("mcp__first__")));
+        assert!(runtime
+            .mcp_tool_names()
+            .iter()
+            .any(|name| name.starts_with("mcp__first__")));
         assert!(runtime.mcp_resume_identity_digest().is_none());
         runtime.shutdown().await.unwrap();
         assert_eq!(fs::read_to_string(stopped).unwrap(), "stopped");
@@ -1259,7 +1483,8 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
                 event.kind,
                 AgentEventKind::TurnCompleted { .. }
                     | AgentEventKind::TurnFailed { .. }
-                    | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. }
+                    | AgentEventKind::TurnCancelled
+                    | AgentEventKind::TurnSuperseded { .. }
             );
             if let AgentEventKind::PermissionRequested { request_id, .. } = &event.kind {
                 assert!(handle.resolve_permission(request_id, PermissionChoice::Allow));

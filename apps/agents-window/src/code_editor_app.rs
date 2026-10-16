@@ -80,6 +80,8 @@ pub(super) struct CodeEditorHost {
     opened_documents: Vec<(DocumentKey, Option<u64>, Option<DockScope>)>,
     discard_and_close: bool,
     keep_and_close: bool,
+    /// Remove trailing spaces and tabs, as an undoable edit, before each save.
+    pub(in crate::app) trim_on_save: bool,
 }
 
 impl Default for CodeEditorHost {
@@ -104,6 +106,7 @@ impl Default for CodeEditorHost {
             opened_documents: Vec::new(),
             discard_and_close: false,
             keep_and_close: false,
+            trim_on_save: false,
         }
     }
 }
@@ -252,6 +255,7 @@ impl CodeEditorHost {
     }
 
     fn save_document(&mut self, key: (PathBuf, PathBuf), storage_root: Option<PathBuf>) {
+        let trim = self.trim_on_save;
         let Some(d) = self.documents.get_mut(&key) else {
             return;
         };
@@ -261,6 +265,17 @@ impl CodeEditorHost {
         let Some(controller) = &d.controller else {
             return;
         };
+        if trim {
+            // A failed trim is reported and the text is still saved as it is.
+            let trimmed = match controller.shared_buffer().lock() {
+                Ok(mut buffer) if buffer.snapshot().is_dirty() => buffer.trim_trailing_whitespace(0).map_err(|e| e.to_string()),
+                Ok(_) => Ok(false),
+                Err(_) => Err("Editor buffer lock is unavailable".to_owned()),
+            };
+            if let Err(error) = trimmed {
+                d.error = Some(error);
+            }
+        }
         let snapshot = match controller.snapshot() {
             Ok(s) => s,
             Err(error) => {

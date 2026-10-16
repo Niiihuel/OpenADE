@@ -668,6 +668,8 @@ impl BrowserCommand {
 
 struct PendingCommand {
     command: BrowserCommand,
+    /// Restriction copied from tool arguments, never an authorization grant.
+    expected_origin: Option<String>,
     reply: SyncSender<Result<BrowserSnapshot, String>>,
     lifecycle: Arc<AtomicU8>,
     dispatched: Arc<AtomicBool>,
@@ -737,26 +739,104 @@ struct BrowserHandle {
     /// `open_preview` asked for this context's tab to be shown.
     reveal: Arc<AtomicBool>,
     /// The sites the user blocked for the agent, as origins.
-    blocked: Arc<Mutex<Vec<String>>>,
+    agent_policy: Arc<Mutex<BrowserAgentPolicy>>,
 }
 
+#[derive(Clone)]
+struct BrowserAgentPolicy {
+    enabled: bool,
+    blocked: Vec<String>,
+    error: Option<String>,
+}
+
+impl Default for BrowserAgentPolicy {
+    fn default() -> Self {
+        Self { enabled: true, blocked: Vec::new(), error: None }
+    }
+}
+
+impl BrowserAgentPolicy {
+    fn unavailable(&self) -> Option<String> {
+        if !self.enabled {
+            Some("La automatización del navegador está desactivada en Ajustes → Navegador. El navegador manual sigue disponible.".into())
+        } else if self.error.is_some() {
+            Some("Los permisos por sitio no son válidos. Recargá o recuperá el archivo en Ajustes → Navegador antes de usar la automatización.".into())
+        } else { None }
+    }
+
+    fn blocks(&self, url: &str) -> bool {
+        crate::browser_sites::origin_of(url).is_some_and(|origin| self.blocked.contains(&origin))
+    }
+}
+
+const BLOCKED_SITE: &str = "El sitio está bloqueado para el agente (Ajustes → Navegador → Permisos por sitio). Su contenido no se comparte con la automatización.";
+
 impl BrowserHandle {
+    fn check_expected_origin(&self, command: &BrowserCommand, expected: Option<&str>) -> Result<(), String> {
+        let Some(expected) = expected else { return Ok(()); };
+        let snapshot = self.snapshot();
+        let url = match command {
+            BrowserCommand::Navigate { url } | BrowserCommand::TabNew { url: Some(url) } => url.as_str(),
+            _ => snapshot.url.as_str(),
+        };
+        let actual = document_origin(url);
+        if actual.as_deref() == Some(expected) { Ok(()) } else {
+            Err("El origen del navegador cambió. Tomá una nueva captura con browser_snapshot y volvé a enviar la acción con expected_origin.".into())
+        }
+    }
     /// Why the agent may not run `command` here, when the user blocked the
     /// site it goes to or the one the page is on.
     fn blocked_for_agent(&self, command: &BrowserCommand) -> Option<String> {
-        let blocked = self.blocked.lock().unwrap_or_else(|poison| poison.into_inner());
-        let is_blocked = |url: &str| crate::browser_sites::origin_of(url).is_some_and(|origin| blocked.contains(&origin));
+        let policy = self.agent_policy.lock().unwrap_or_else(|poison| poison.into_inner());
+        if let Some(reason) = policy.unavailable() { return Some(reason); }
+        if matches!(command, BrowserCommand::Downloads {} | BrowserCommand::ClipboardRead {}) && !policy.blocked.is_empty() {
+            return Some("Las descargas y el portapapeles abarcan todas las pestañas y no tienen un origen verificable. El agente no puede leerlos mientras haya sitios bloqueados; su uso manual sigue disponible.".into());
+        }
+        let is_blocked = |url: &str| policy.blocks(url);
         let refused = match command {
             BrowserCommand::Navigate { url } | BrowserCommand::TabNew { url: Some(url) } => is_blocked(url),
             BrowserCommand::TabNew { url: None }
             | BrowserCommand::TabList {}
             | BrowserCommand::TabSelect { .. }
             | BrowserCommand::TabClose { .. }
-            | BrowserCommand::Downloads {}
             | BrowserCommand::Back => false,
             _ => is_blocked(&self.state.lock().unwrap_or_else(|poison| poison.into_inner()).url),
         };
-        refused.then(|| "El usuario bloqueó este sitio para el agente (Ajustes → Navegador → Permisos por sitio). No se leyó ni se hizo nada en él.".to_owned())
+        refused.then(|| BLOCKED_SITE.to_owned())
+    }
+
+    /// Check the current policy again at return time. A queued call, a redirect
+    /// or selecting another tab must not return data after access was revoked.
+    fn agent_result(&self, mut snapshot: BrowserSnapshot) -> Result<BrowserSnapshot, String> {
+        let policy = self.agent_policy.lock().unwrap_or_else(|poison| poison.into_inner());
+        if let Some(reason) = policy.unavailable() { return Err(reason); }
+        if !policy.blocked.is_empty() && snapshot.output.as_ref().is_some_and(|output|
+            output.data.contains_key("downloads") || output.data.contains_key("clipboard")) {
+            return Err("Los datos de descargas y portapapeles no se comparten con el agente mientras haya sitios bloqueados.".into());
+        }
+        for tab in &mut snapshot.tabs {
+            if policy.blocks(&tab.url) {
+                tab.url = crate::browser_sites::origin_of(&tab.url).unwrap_or_default();
+                tab.title = "Sitio bloqueado".into();
+            }
+        }
+        let listing = snapshot.output.as_mut().is_some_and(|output| {
+            if output.data.contains_key("tabs") {
+                output.data.insert("tabs".into(), json!(snapshot.tabs));
+                true
+            } else { false }
+        });
+        if policy.blocks(&snapshot.url) {
+            if !listing { return Err(BLOCKED_SITE.into()); }
+            snapshot.url = crate::browser_sites::origin_of(&snapshot.url).unwrap_or_default();
+            snapshot.title = "Sitio bloqueado".into();
+            snapshot.aria_snapshot = Arc::from("");
+            snapshot.screenshot = None;
+            snapshot.clipboard = None;
+            snapshot.copied = None;
+            snapshot.downloads.clear();
+        }
+        Ok(snapshot)
     }
 
     fn submit(&self, command: BrowserCommand) -> Result<BrowserRequest, String> {
@@ -768,6 +848,12 @@ impl BrowserHandle {
         include_aria: bool,
         include_image: bool,
     ) -> Result<BrowserRequest, String> {
+        self.submit_bound(command, include_aria, include_image, None)
+    }
+    fn submit_bound(
+        &self, command: BrowserCommand, include_aria: bool, include_image: bool,
+        expected_origin: Option<String>,
+    ) -> Result<BrowserRequest, String> {
         command.validate()?;
         // A site the user blocked is closed to the agent whole: it does not
         // go there, and it neither reads nor acts on a page of it. Leaving,
@@ -776,6 +862,7 @@ impl BrowserHandle {
             if let Some(refusal) = self.blocked_for_agent(&command) {
                 return Err(refusal);
             }
+            self.check_expected_origin(&command, expected_origin.as_deref())?;
         }
         let clipboard_operation = match &command {
             BrowserCommand::CopySelection => Some(BrowserClipboardOperation::Copy),
@@ -823,6 +910,7 @@ impl BrowserHandle {
         self.queue
             .try_send(PendingCommand {
                 command,
+                expected_origin,
                 reply,
                 lifecycle: lifecycle.clone(),
                 dispatched: dispatched.clone(),
@@ -959,7 +1047,7 @@ impl BrowserRuntime {
             scope,
             preview: Arc::default(),
             reveal: Arc::default(),
-            blocked: Arc::default(),
+            agent_policy: Arc::default(),
         };
         let worker = Worker {
             handle: handle.clone(),
@@ -1012,7 +1100,32 @@ impl BrowserRuntime {
 
     /// The origins the agent may not go to, read or act on from now on.
     pub(crate) fn set_blocked_sites(&self, origins: Vec<String>) {
-        *self.handle.blocked.lock().unwrap_or_else(|poison| poison.into_inner()) = origins;
+        self.handle.agent_policy.lock().unwrap_or_else(|poison| poison.into_inner()).blocked = origins;
+    }
+
+    pub(crate) fn set_agent_policy(&self, enabled: bool, sites: &crate::browser_sites::BrowserSites, error: Option<&str>) {
+        *self.handle.agent_policy.lock().unwrap_or_else(|poison| poison.into_inner()) = BrowserAgentPolicy {
+            enabled,
+            blocked: sites.sites.iter().filter(|site| site.access == crate::browser_sites::SiteAccess::Block)
+                .map(|site| site.origin.clone()).collect(),
+            error: error.map(str::to_owned),
+        };
+    }
+
+    /// Resolve the destination used by the executor, including a preview URL
+    /// omitted by the model and the actual tab selected by its ID.
+    pub(crate) fn agent_site_for_call(&self, name: &str, arguments: &Value) -> Option<String> {
+        let name = name.strip_prefix(NATIVE_TOOL_PREFIX).unwrap_or(name);
+        let command = if name == OPEN_PREVIEW {
+            self.mcp_client().preview_command(arguments).ok()?
+        } else { browser_tool_command(name, arguments.clone()).ok()? };
+        let snapshot = self.snapshot();
+        let url = match &command {
+            BrowserCommand::Navigate { url } | BrowserCommand::TabNew { url: Some(url) } => url,
+            BrowserCommand::TabSelect { id } => &snapshot.tabs.iter().find(|tab| tab.id == *id)?.url,
+            _ => &snapshot.url,
+        };
+        crate::browser_sites::origin_of(url)
     }
 
     pub(crate) fn submit_ui(&self, command: BrowserCommand) -> Result<BrowserRequest, String> {
@@ -1144,6 +1257,7 @@ impl BrowserRuntime {
         let (reply, _) = mpsc::sync_channel(1);
         let _ = self.handle.queue.try_send(PendingCommand {
             command: BrowserCommand::Back,
+            expected_origin: None,
             reply,
             lifecycle: Arc::new(AtomicU8::new(CANCELLED)),
             dispatched: Arc::default(),
@@ -1341,6 +1455,18 @@ impl Worker {
                 let _ = pending.reply.try_send(Err("Se perdió el contexto del navegador. Usá Reintentar; esta solicitud no se ejecutó.".into()));
                 continue;
             }
+            if pending.include_aria {
+                if let Some(reason) = self.handle.blocked_for_agent(&pending.command) {
+                    pending.lifecycle.store(FINISHED, Ordering::Release);
+                    let _ = pending.reply.try_send(Err(reason));
+                    continue;
+                }
+                if let Err(reason) = self.handle.check_expected_origin(&pending.command, pending.expected_origin.as_deref()) {
+                    pending.lifecycle.store(FINISHED, Ordering::Release);
+                    let _ = pending.reply.try_send(Err(reason));
+                    continue;
+                }
+            }
             if self.driver.is_none() {
                 // A context that never started retries only through an
                 // explicit Snapshot. Never replay queued modifying actions
@@ -1400,6 +1526,9 @@ impl Worker {
                     .error
                     .unwrap_or_else(|| "Navegador no disponible".into()))
             };
+            let result = if pending.include_aria {
+                result.and_then(|snapshot| self.handle.agent_result(snapshot))
+            } else { result };
             pending.lifecycle.store(FINISHED, Ordering::Release);
             let _ = pending.reply.try_send(result);
         }
@@ -1666,7 +1795,8 @@ impl Worker {
 
     fn poll_state(&mut self) {
         if let Some(BrowserCommand::Navigate { url }) = self.follow_window_request() {
-            if let Some(driver) = self.driver.as_mut() {
+            let allowed = !self.agent_acted || self.handle.blocked_for_agent(&BrowserCommand::Navigate { url: url.clone() }).is_none();
+            if let Some(driver) = self.driver.as_mut().filter(|_| allowed) {
                 let _ = driver.navigate(&url);
             }
         }
@@ -1695,10 +1825,10 @@ impl Worker {
             Ok(command) => command,
             Err(answer) => return answer,
         };
-        let mut result = self.perform_on_page(&command, pending);
+        let mut result = self.perform_on_page(&command, pending, true);
         // What the action asked to open in another tab is what it led to.
         if let Some(opened) = self.follow_window_request() {
-            result = self.perform_on_page(&opened, pending);
+            result = self.perform_on_page(&opened, pending, false);
         }
         self.publish_tabs();
         result.map(|mut snapshot| {
@@ -1707,11 +1837,27 @@ impl Worker {
         })
     }
 
-    fn perform_on_page(&mut self, command: &BrowserCommand, pending: &PendingCommand) -> Result<BrowserSnapshot, String> {
+    fn perform_on_page(&mut self, command: &BrowserCommand, pending: &PendingCommand, check_origin: bool) -> Result<BrowserSnapshot, String> {
         let Some(driver) = self.driver.as_mut() else {
             return Err("Navegador no disponible".into());
         };
         let agent = pending.include_aria;
+        if agent {
+            // Page scripts and tab selection may have changed the current
+            // origin since the host queued this action. Inspect browser-owned
+            // metadata before an effect or a snapshot, never page text.
+            match driver.info() {
+                Ok(info) => { let _ = apply_refresh(&self.handle, PageReply { info: Some(info), ..Default::default() }); }
+                Err(error) if check_origin && pending.expected_origin.is_some() => {
+                    return Err(format!("No se pudo verificar el origen actual antes de la acción: {}", error.message));
+                }
+                Err(_) => {}
+            }
+            if let Some(reason) = self.handle.blocked_for_agent(command) { return Err(reason); }
+            if check_origin {
+                self.handle.check_expected_origin(command, pending.expected_origin.as_deref())?;
+            }
+        }
         // Passing over the page and reading it are nobody's action.
         if command.mutating() && !command.quiet() {
             self.agent_acted = agent;
@@ -1729,7 +1875,7 @@ impl Worker {
                 view.point(cue, point, visible.load(Ordering::Acquire))
             })));
         }
-        let outcome = execute(driver, command, pending, view);
+        let outcome = execute(driver, command, pending, view, &self.handle);
         driver.watch_actions(None);
         view.embedded.busy(false);
         match outcome {
@@ -1812,6 +1958,7 @@ fn execute(
     command: &BrowserCommand,
     pending: &PendingCommand,
     view: &LiveView,
+    handle: &BrowserHandle,
 ) -> Result<PageReply, DriverError> {
     use BrowserCommand::*;
     fn target<'a>(
@@ -2082,6 +2229,15 @@ fn execute(
         }
     }
     reply.info = Some(driver.info()?);
+    if agent {
+        let policy = handle.agent_policy.lock().unwrap_or_else(|poison| poison.into_inner());
+        let refusal = policy.unavailable().or_else(|| {
+            reply.info.as_ref().is_some_and(|info| policy.blocks(&info.url)).then(|| BLOCKED_SITE.to_owned())
+        });
+        if let Some(message) = refusal {
+            return Err(DriverError { kind: ErrorKind::Tool, message });
+        }
+    }
     let reading = matches!(command, Snapshot { .. });
     // What the user did in the window is on its frames. The agent reads the
     // tree an action left, with the refs to act on next; a tool that returns
@@ -2329,21 +2485,18 @@ fn broker_connection(
         return Err("Broker de navegador no autorizado".into());
     }
     let result = if request.get("op").and_then(Value::as_str) == Some("list_tools") {
-        json!({ "tools": browser_mcp_tools() })
+        let available = handle.agent_policy.lock().unwrap_or_else(|poison| poison.into_inner()).unavailable().is_none();
+        json!({ "tools": if available { browser_mcp_tools() } else { Vec::new() } })
     } else if request.get("op").and_then(Value::as_str) == Some("call_tool") {
         let name = request
             .get("name")
             .and_then(Value::as_str)
             .ok_or("Herramienta de navegador ausente")?;
-        let command = browser_tool_command(
-            name,
-            request
-                .get("arguments")
-                .cloned()
-                .unwrap_or_else(|| json!({})),
-        )?;
+        let arguments = request.get("arguments").cloned().unwrap_or_else(|| json!({}));
+        let expected = expected_origin(&arguments)?;
+        let command = browser_tool_command(name, arguments)?;
         let reading = matches!(command, BrowserCommand::Snapshot { .. });
-        let mut pending = handle.submit_as(command.clone(), true, reading)?;
+        let mut pending = handle.submit_bound(command.clone(), true, reading, expected)?;
         // EOF from the stdio proxy is its cancellation signal. Checking it
         // before dispatch completes prevents queued actions from executing
         // after their MCP client has gone away.
@@ -2380,7 +2533,7 @@ fn broker_connection(
         socket
             .set_nonblocking(false)
             .map_err(|error| error.to_string())?;
-        match outcome {
+        match outcome.and_then(|snapshot| handle.agent_result(snapshot)) {
             Ok(snapshot) => serde_json::to_value(mcp_snapshot_result(snapshot))
                 .map_err(|error| error.to_string())?,
             Err(error) => {
@@ -2429,6 +2582,43 @@ pub(crate) const OPEN_PREVIEW: &str = "open_preview";
 /// What the native agent calls each tool of this browser by.
 pub(crate) const NATIVE_TOOL_PREFIX: &str = "mcp__openide_browser__";
 
+fn page_mutation_tool(name: &str) -> bool {
+    matches!(name, "browser_back" | "browser_forward" | "browser_reload" | "browser_click"
+        | "browser_fill" | "browser_type" | "browser_press" | "browser_scroll" | "browser_hover"
+        | "browser_select_option" | "browser_check" | "browser_drag" | "browser_evaluate"
+        | "browser_handle_dialog" | "browser_file_upload")
+}
+
+fn document_origin(url: &str) -> Option<String> {
+    if url == "about:blank" { Some(url.into()) } else { crate::browser_sites::origin_of(url) }
+}
+
+fn expected_origin(arguments: &Value) -> Result<Option<String>, String> {
+    let Some(value) = arguments.get("expected_origin") else { return Ok(None); };
+    let origin = value.as_str().filter(|origin| origin.len() <= 4096)
+        .filter(|origin| document_origin(origin).as_deref() == Some(*origin))
+        .ok_or("expected_origin debe ser un origen HTTP/HTTPS canónico, sin ruta, o about:blank")?;
+    Ok(Some(origin.to_owned()))
+}
+
+/// This is a restriction check only. The caller still decides SiteAccess and
+/// must preserve Block even when an argument is missing or does not match.
+pub(crate) fn browser_site_auto_allow_is_bound(name: &str, arguments: &Value, actual_origin: Option<&str>) -> bool {
+    let Some(actual) = actual_origin else { return false; };
+    if crate::browser_sites::origin_of(actual).as_deref() != Some(actual) { return false; }
+    let name = name.strip_prefix(NATIVE_TOOL_PREFIX).unwrap_or(name);
+    if matches!(name, "browser_navigate" | "browser_tab_new" | OPEN_PREVIEW) {
+        if let Some(url) = arguments.get("url").and_then(Value::as_str) {
+            return crate::browser_sites::origin_of(url).as_deref() == Some(actual);
+        }
+        if name == OPEN_PREVIEW {
+            return expected_origin(arguments).ok().flatten().as_deref() == Some(actual);
+        }
+        return false;
+    }
+    page_mutation_tool(name) && expected_origin(arguments).ok().flatten().as_deref() == Some(actual)
+}
+
 pub(crate) fn native_tool_names() -> Vec<String> {
     browser_mcp_tools()
         .into_iter()
@@ -2462,7 +2652,7 @@ pub(crate) fn native_tool_allowed(name: &str, full_access: bool) -> bool {
 
 /// Told to an agent that is given this browser: without it a model reaches
 /// for the system's browser, which a conversation has no use for.
-const AGENT_NOTE: &str = "OpenIDE has a browser built in, in a tab beside this conversation, and the user watches it. The tab opens by itself with your first call. Use its tools, the ones named mcp__openide_browser__*, whenever a page has to be opened, read, checked or acted on: open_preview shows a local server you started, browser_navigate opens any other address, browser_snapshot reads the page, and the other browser_* tools act on it. Do not launch a system browser (xdg-open, open, start) and do not ask the user to open a page for you.";
+const AGENT_NOTE: &str = "OpenIDE has a browser built in, in a tab beside this conversation, and the user watches it. The tab opens by itself with your first call. Use its tools, the ones named mcp__openide_browser__*, whenever a page has to be opened, read, checked or acted on: open_preview shows a local server you started, browser_navigate opens any other address, browser_snapshot reads the page, and the other browser_* tools act on it. Before an action on the current page, take browser_snapshot and include expected_origin with its canonical HTTP(S) origin (scheme, host and port, no path), or about:blank for the empty page. If the origin changed, snapshot again; never repeat an uncertain action automatically. Do not launch a system browser (xdg-open, open, start) and do not ask the user to open a page for you.";
 
 /// `instructions` followed by the note about this browser, for a turn that
 /// is given its tools.
@@ -2558,8 +2748,8 @@ impl McpToolClient for ConversationBrowser {
 fn open_preview_tool() -> McpTool {
     McpTool {
         name: OPEN_PREVIEW.into(),
-        description: Some("Show the user the preview of a local server in the shared openADE browser. Opens `url`, or without it the address the server started in this conversation printed once it answered (for example http://localhost:5173). Only addresses of this machine are accepted: localhost, 127.0.0.1 and [::1], and 0.0.0.0 is opened as localhost. For any other site use browser_navigate.".into()),
-        input_schema: json!({"type":"object","properties":{"url":{"type":"string","minLength":1,"maxLength":4096}},"required":[],"additionalProperties":false}),
+        description: Some("Show the user the preview of a local server in the shared openADE browser. Opens `url`, or without it the address the server started in this conversation printed once it answered (for example http://localhost:5173). When omitting url, include expected_origin for that server so a changed preview target is refused. Only addresses of this machine are accepted: localhost, 127.0.0.1 and [::1], and 0.0.0.0 is opened as localhost. For any other site use browser_navigate.".into()),
+        input_schema: json!({"type":"object","properties":{"url":{"type":"string","minLength":1,"maxLength":4096},"expected_origin":{"type":"string","minLength":1,"maxLength":4096,"description":"Required when url is omitted: canonical origin of the local server intended to open, with no path."}},"required":[],"additionalProperties":false}),
         extra: BTreeMap::new(),
     }
 }
@@ -2571,14 +2761,16 @@ impl BrowserMcpClient {
         let arguments = arguments
             .as_object()
             .ok_or("Los argumentos de navegador deben ser un objeto")?;
-        if arguments.keys().any(|key| key != "url") {
-            return Err("open_preview sólo acepta el argumento url".into());
+        if arguments.keys().any(|key| !matches!(key.as_str(), "url" | "expected_origin")) {
+            return Err("open_preview sólo acepta url y expected_origin".into());
         }
+        let expected = expected_origin(&Value::Object(arguments.clone()))?;
         let url = match arguments.get("url") {
             Some(Value::String(url)) => crate::preview::loopback_url(url).ok_or(
                 "open_preview sólo abre direcciones de este equipo (localhost, 127.0.0.1 o [::1]). Para otro sitio usá browser_navigate.",
             )?,
             Some(_) => return Err("url debe ser un texto".into()),
+            None if expected.is_none() => return Err("Indicá url o expected_origin del servidor local que querés abrir.".into()),
             None => self
                 .handle
                 .preview
@@ -2589,6 +2781,9 @@ impl BrowserMcpClient {
                     "Ningún comando de esta conversación publicó todavía una dirección local que responda. Indicá url, por ejemplo http://localhost:5173.",
                 )?,
         };
+        if expected.as_deref().is_some_and(|expected| document_origin(&url).as_deref() != Some(expected)) {
+            return Err("El origen de la vista previa cambió. Indicá la URL del servidor que querés abrir.".into());
+        }
         let command = BrowserCommand::Navigate { url };
         command.validate()?;
         Ok(command)
@@ -2637,6 +2832,9 @@ impl BrowserMcpClient {
     }
     /// The accessible tree the agent last read: what its refs name.
     pub(crate) fn last_snapshot(&self) -> Arc<str> {
+        if self.handle.blocked_for_agent(&BrowserCommand::Snapshot { interactive_only: false, max_depth: None, selector: None }).is_some() {
+            return Arc::from("");
+        }
         self.handle
             .state
             .lock()
@@ -2659,6 +2857,9 @@ impl McpToolClient for BrowserMcpClient {
         if self.catalog_changed() {
             return Err(McpError::Closed);
         }
+        if self.handle.agent_policy.lock().unwrap_or_else(|poison| poison.into_inner()).unavailable().is_some() {
+            return Ok(Vec::new());
+        }
         let mut tools = browser_mcp_tools();
         tools.push(open_preview_tool());
         Ok(tools)
@@ -2675,6 +2876,7 @@ impl McpToolClient for BrowserMcpClient {
         if self.catalog_changed() {
             return Err(McpError::Closed);
         }
+        let expected_origin = expected_origin(&arguments).map_err(McpError::Protocol)?;
         let command = if name == OPEN_PREVIEW {
             match self.preview_command(&arguments) {
                 Ok(command) => command,
@@ -2701,7 +2903,7 @@ impl McpToolClient for BrowserMcpClient {
                 extra: BTreeMap::new(),
             });
         }
-        let mut request = self.handle.submit(command).map_err(McpError::Protocol)?;
+        let mut request = self.handle.submit_bound(command, true, false, expected_origin).map_err(McpError::Protocol)?;
         if name == OPEN_PREVIEW {
             // Opening is also showing: the window brings the tab forward.
             self.handle.reveal.store(true, Ordering::Release);
@@ -2710,7 +2912,18 @@ impl McpToolClient for BrowserMcpClient {
         loop {
             if let Some(result) = request.poll() {
                 return match result {
-                    Ok(snapshot) => Ok(mcp_snapshot_result(snapshot)),
+                    Ok(snapshot) => match self.handle.agent_result(snapshot) {
+                        Ok(snapshot) => Ok(mcp_snapshot_result(snapshot)),
+                        Err(error) if mutating && request.dispatched.load(Ordering::Acquire) => {
+                            Err(McpError::EffectUncertain(error))
+                        }
+                        Err(error) => Ok(McpCallResult {
+                            content: vec![json!({"type":"text","text":error})],
+                            is_error: true,
+                            structured_content: None,
+                            extra: BTreeMap::new(),
+                        }),
+                    },
                     Err(error) if mutating && request.dispatched.load(Ordering::Acquire) => {
                         Err(McpError::EffectUncertain(error))
                     }
@@ -2984,14 +3197,33 @@ pub(crate) fn browser_mcp_tools() -> Vec<McpTool> {
         json!({"paths":{"type":"array","minItems":1,"maxItems":16,"items":{"type":"string","minLength":1,"maxLength":4096}}}),
         vec!["paths"],
     );
+    for tool in &mut tools {
+        if page_mutation_tool(&tool.name) {
+            tool.input_schema["properties"]["expected_origin"] = json!({
+                "type":"string", "minLength":1, "maxLength":4096,
+                "description":"Canonical HTTP(S) origin of the current page from the last browser_snapshot (scheme, host and port, no path), or about:blank. The action is refused if the origin changed. This only restricts the action; it grants no permission."
+            });
+            tool.input_schema["required"].as_array_mut().unwrap().push(json!("expected_origin"));
+            if let Some(description) = &mut tool.description {
+                description.push_str(" Include expected_origin from the last browser_snapshot; if it changed, snapshot again before acting.");
+            }
+        }
+    }
     tools
 }
 
 pub(crate) fn browser_tool_command(name: &str, arguments: Value) -> Result<BrowserCommand, String> {
+    let expected = expected_origin(&arguments)?;
+    if page_mutation_tool(name) && expected.is_none() {
+        return Err("Falta expected_origin. Tomá una captura con browser_snapshot y volvé a enviar la acción con el origen de esa página.".into());
+    }
     let mut object = arguments
         .as_object()
         .cloned()
         .ok_or("Los argumentos de navegador deben ser un objeto")?;
+    if page_mutation_tool(name) {
+        object.remove("expected_origin");
+    }
     let kind = match name {
         "browser_snapshot" => "snapshot",
         "browser_navigate" => "navigate",

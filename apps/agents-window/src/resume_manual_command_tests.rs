@@ -236,6 +236,7 @@ impl ManualGateFixture {
     fn request(&self) -> ResumeWorkerRequest {
         ResumeWorkerRequest {
             native_automation: None,
+            subagent_settings: Default::default(),
             session_id: self.owner.clone(),
             sessions: self.sessions.clone(),
             checkpoints: self.checkpoints.clone(),

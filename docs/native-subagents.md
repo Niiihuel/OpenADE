@@ -9,6 +9,24 @@ Build turns. `SubagentWorker::with_nested_subagents` opts a child into a new
 wrapper bound to its **own** native lease. Plan mode does not advertise or
 execute coordination tools.
 
+The desktop's Subagents settings persist `subagent-settings.json` in the local
+profile. They control delegation and the five existing limits for future parent
+turns; running workers retain their admitted configuration. Disabling delegation
+hides and rejects `spawn_agent` and `send_input` on new parent wrappers, while
+`wait_agent`, `cancel_agent`, saved state and explicit recovery remain available.
+It does not revoke the recursive authority of an already admitted child.
+Limits retain the coordinator's hard ceilings: depth 8, active direct children
+32, running children 32, total root descendants 128 and total direct tasks 32.
+Changing limits changes child identity; restore the original profile to recover
+existing interrupted work, or use the existing explicit authority-review flow.
+Malformed settings block new admission. Reset requires explicit confirmation and
+preserves the original document as a backup.
+
+The role catalog comes from the exact table used by `spawn_agent`: `explorer`
+and `reviewer` run read-only in Plan, and `worker` runs in Build. Approved plugin
+personas are listed separately with their source; they are instruction resources,
+not additional built-in permissions or model configurations.
+
 ## Durable identity and lifecycle
 
 `spawn_agent` accepts a prompt and returns `agent_id`, the child session ID.
@@ -81,9 +99,13 @@ reload permissions, rules and hooks; model execution retains its admitted
 snapshot. Disabling command access, changing isolation or dropping the host
 registry revokes managers and fences old profiles so they cannot start another
 process. A new host configuration must explicitly issue a new profile.
-The mailbox accepts follow-up Build only; it does not expose a Build-to-Plan
-transition. The Plan control acceptance seeds a real command through the
-trusted host before starting the initial Plan worker.
+The mailbox stores the requested Plan or Build mode. Model-facing `send_input`
+preserves the child's first admitted mode, so read-only roles stay read-only on
+every follow-up, including after reopening. A Ready child's mode comes only from
+the matching committed parent response and started spawn, then its reservation
+digest is checked. Prompt text never grants authority. Trusted host APIs retain
+their explicit generic Plan-to-Build transition. The Plan control acceptance
+seeds a real command through the trusted host before starting the initial Plan worker.
 
 Coordinator cancellation now returns the exact affected child/descendant IDs
 only after its durable commit. Model, bridge and no-bridge UI paths revoke
@@ -156,7 +178,7 @@ The registry keeps at most 16 inputs per child, each with at most 16 KiB of
 UTF-8 prompt bytes, and caps the whole registry at 2 MiB.
 
 An input sent while the child is Ready or Running waits for its current turn.
-An input sent after Completed starts a new Build turn in the same child
+An input sent after Completed starts a new turn in the stored mode in the same child
 session. Claiming the next input changes the registry to `Running` while the
 child OS lease is held; the new `TurnAdmitted` event uses the input ID and
 prompt. The model receives the prior child conversation rebuilt from replay.

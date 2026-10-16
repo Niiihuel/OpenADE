@@ -242,8 +242,10 @@ fn assert_selection(frame: &Frame, scroll: f32) {
         .fold(f32::NEG_INFINITY, f32::max);
     let expected_top = code.y + 4.0 + ROW_HEIGHT - scroll;
     let expected_bottom = expected_top + 4.0 * ROW_HEIGHT;
-    assert!((top - expected_top - 0.75).abs() < 0.05);
-    assert!((bottom - expected_bottom + 0.75).abs() < 0.05);
+    assert!((top - expected_top).abs() < 0.05,
+        "selection top follows the row boundary at scroll={scroll}: {top}, expected {expected_top}");
+    assert!((bottom - expected_bottom).abs() < 0.05,
+        "selection bottom follows the row boundary at scroll={scroll}: {bottom}, expected {expected_bottom}");
     // Rounded decoration does not change which row centers are selected.
     for row in 0..6 {
         let y = code.y + 4.0 + (row as f32 + 0.5) * ROW_HEIGHT - scroll;

@@ -517,6 +517,17 @@ impl AgentsWindow {
         }
         match id {
             "marketplace_menu_dismiss" => {}
+            "marketplace_sources_open" | "marketplace_tab:sources" => {
+                state.sources_open = true;
+                state.filter_menu_open = false;
+                state.add_menu_open = false;
+            }
+            "marketplace_sources_close" | "marketplace_tab:skills" => {
+                if state.add_source_kind.is_none() {
+                    state.sources_open = false;
+                    state.add_menu_open = false;
+                }
+            }
             "marketplace_details_close" => state.selected_item_id = None,
             "marketplace_filter_toggle" => state.filter_menu_open = !state.filter_menu_open,
             "marketplace_filter_dismiss" => state.filter_menu_open = false,
@@ -590,8 +601,6 @@ impl AgentsWindow {
                     if state.updates.contains_key(item) {
                         self.marketplace_operation(MarketplaceOperation::Update(item.to_owned()));
                     }
-                } else if let Some(tab) = id.strip_prefix("marketplace_tab:").and_then(crate::marketplace_view::MarketplaceTab::from_key) {
-                    state.tab = tab;
                 } else if let Some(group) = id.strip_prefix("marketplace_more:") {
                     // Only the group that was asked grows.
                     *state.visible_by.entry(group.to_owned()).or_insert(state.visible) += GROUP_STEP;
@@ -602,7 +611,7 @@ impl AgentsWindow {
                             state.status = None;
                         }
                         state.selected_item_id = Some(item.to_owned());
-                        state.tab = crate::marketplace_view::MarketplaceTab::Skills;
+                        state.sources_open = false;
                     }
                 } else if let Some(item) = id.strip_prefix("marketplace_install_user:") {
                     self.install_marketplace_item(item, InstallScope::User);

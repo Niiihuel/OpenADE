@@ -53,7 +53,7 @@ pub(crate) fn fixture(
         scope,
         preview: Arc::default(),
         reveal: Arc::default(),
-        blocked: Arc::default(),
+        agent_policy: Arc::default(),
     };
     (
         BrowserRuntime {
@@ -83,7 +83,7 @@ fn handle() -> BrowserHandle {
         },
         preview: Arc::default(),
         reveal: Arc::default(),
-        blocked: Arc::default(),
+        agent_policy: Arc::default(),
     }
 }
 
@@ -311,6 +311,215 @@ fn encoded(image: &[u8]) -> Value {
 /// The text block of a tool result, which is JSON.
 fn text(result: &McpCallResult) -> Value {
     serde_json::from_str(result.content[0]["text"].as_str().unwrap()).unwrap()
+}
+
+#[test]
+fn site_auto_approval_requires_a_fixed_destination_or_an_exact_canonical_origin() {
+    let bound = |name: &str, args: Value, actual| browser_site_auto_allow_is_bound(
+        &format!("{NATIVE_TOOL_PREFIX}{name}"), &args, actual);
+    assert!(bound("browser_navigate", json!({"url":"https://a.example/path"}), Some("https://a.example")));
+    assert!(bound("browser_tab_new", json!({"url":"https://a.example/"}), Some("https://a.example")));
+    assert!(bound("browser_click", json!({"expected_origin":"https://a.example"}), Some("https://a.example")));
+    assert!(!bound("browser_click", json!({}), Some("https://a.example")));
+    assert!(!bound("browser_click", json!({"expected_origin":"https://a.example/"}), Some("https://a.example")));
+    assert!(!bound("browser_click", json!({"expected_origin":"https://a.example"}), Some("https://b.example")));
+    assert!(!bound("browser_click", json!({"expected_origin":"about:blank"}), None));
+    assert!(!bound("browser_tab_close", json!({"id":1}), Some("https://a.example")));
+}
+
+#[tokio::test]
+async fn page_actions_require_an_origin_and_reject_a_changed_origin_before_enqueue() {
+    let (runtime, commands) = fixture(
+        BrowserScope { workspace: PathBuf::from("/fixture"), session_id: "bound".into() },
+        BrowserSnapshot { started: true, url: "https://b.example/".into(), ..Default::default() },
+    );
+    let client = runtime.mcp_client();
+    let missing = client.call_tool("browser_type", json!({"text":"must not type"}), &CancellationToken::new()).await;
+    assert!(matches!(missing, Err(McpError::Protocol(ref message)) if message.contains("expected_origin")));
+    let stale = client.call_tool("browser_type", json!({"text":"must not type", "expected_origin":"https://a.example"}), &CancellationToken::new()).await;
+    assert!(matches!(stale, Err(McpError::Protocol(ref message)) if message.contains("origen")));
+    assert!(commands.finish_next().is_none());
+    let manual = runtime.submit_ui(BrowserCommand::Type { text: "manual is independent".into() }).unwrap();
+    assert!(matches!(commands.finish_next(), Some(BrowserCommand::Type { text }) if text == "manual is independent"));
+    finish(manual).unwrap();
+    let mut sites = crate::browser_sites::BrowserSites::default();
+    sites.set("https://b.example", crate::browser_sites::SiteAccess::Block).unwrap();
+    runtime.set_agent_policy(true, &sites, None);
+    let blocked = client.call_tool("browser_type", json!({"text":"must not type", "expected_origin":"https://b.example"}), &CancellationToken::new()).await.unwrap();
+    assert!(blocked.is_error);
+    assert!(commands.finish_next().is_none());
+    for tool in browser_mcp_tools().into_iter().filter(|tool| page_mutation_tool(&tool.name)) {
+        assert!(tool.input_schema["required"].as_array().unwrap().contains(&json!("expected_origin")), "{}", tool.name);
+    }
+}
+
+#[test]
+fn an_origin_change_while_queued_prevents_the_action_from_reaching_the_new_page() {
+    let release = Arc::new(AtomicBool::new(false));
+    let held = release.clone();
+    let (runtime, endpoint, _workspace) = scripted((640, 480), 1.0, move |method, params, _| {
+        if method == "Runtime.evaluate" && params["expression"] == "hold_origin_test()" {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while !held.load(Ordering::Acquire) && Instant::now() < deadline { thread::sleep(Duration::from_millis(2)); }
+            return Some(Ok(json!({"result":{"type":"number","value":1}})));
+        }
+        None
+    });
+    endpoint.event("Page.frameNavigated", json!({"frame":{"id":"MAIN","loaderId":"A","url":"https://a.example/"}}));
+    until("origin A", || runtime.snapshot().url == "https://a.example/");
+    let first = runtime.handle.submit(BrowserCommand::Evaluate {
+        expression: "hold_origin_test()".into(), selector: None, role: None, name: None, reference: None,
+    }).unwrap();
+    until("the first request to hold the queue", || endpoint.asked("Runtime.evaluate").iter().any(|params| params["expression"] == "hold_origin_test()"));
+    let queued = runtime.handle.submit_bound(BrowserCommand::Type { text: "must not type on B".into() }, true, false, Some("https://a.example".into())).unwrap();
+    endpoint.event("Page.frameNavigated", json!({"frame":{"id":"MAIN","loaderId":"B","url":"https://b.example/"}}));
+    release.store(true, Ordering::Release);
+    finish(first).unwrap();
+    assert!(finish(queued).is_err());
+    assert!(endpoint.asked("Input.insertText").is_empty());
+}
+
+#[test]
+fn automation_is_revocable_and_policy_errors_fail_closed_without_blocking_manual_input() {
+    let (runtime, commands) = fixture(
+        BrowserScope { workspace: PathBuf::from("/fixture"), session_id: "policy".into() },
+        BrowserSnapshot { url: "https://blocked.example/private".into(), ..Default::default() },
+    );
+    let mut sites = crate::browser_sites::BrowserSites::default();
+    sites.set("https://blocked.example", crate::browser_sites::SiteAccess::Block).unwrap();
+    runtime.set_agent_policy(false, &sites, None);
+    assert!(runtime.handle.submit(BrowserCommand::TabList {}).is_err());
+    let manual = runtime.submit_ui(BrowserCommand::TabList {}).unwrap();
+    assert!(matches!(commands.finish_next(), Some(BrowserCommand::TabList {})));
+    finish(manual).unwrap();
+    runtime.set_agent_policy(true, &sites, Some("invalid policy"));
+    assert!(runtime.handle.submit(BrowserCommand::TabList {}).is_err());
+    runtime.set_agent_policy(true, &sites, None);
+    assert!(runtime.handle.submit(BrowserCommand::Snapshot { interactive_only: false, max_depth: None, selector: None }).is_err());
+    assert!(runtime.handle.submit(BrowserCommand::Navigate { url: "https://allowed.example/".into() }).is_ok());
+    assert_eq!(runtime.agent_site_for_call("open_preview", &json!({})), None);
+    runtime.set_preview_url(Some("http://localhost:5173/".into()));
+    assert_eq!(runtime.agent_site_for_call("open_preview", &json!({"expected_origin":"http://localhost:5173"})).as_deref(), Some("http://localhost:5173"));
+}
+
+#[test]
+fn revoking_automation_cancels_queued_effects_before_the_page_receives_them() {
+    let release = Arc::new(AtomicBool::new(false));
+    let held = release.clone();
+    let (runtime, endpoint, _workspace) = scripted((640, 480), 1.0, move |method, params, _| {
+        if method == "Runtime.evaluate" && params["expression"] == "hold_policy_test()" {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while !held.load(Ordering::Acquire) && Instant::now() < deadline {
+                thread::sleep(Duration::from_millis(2));
+            }
+            return Some(Ok(json!({"result":{"type":"number","value":1}})));
+        }
+        None
+    });
+    let first = runtime.handle.submit(BrowserCommand::Evaluate {
+        expression: "hold_policy_test()".into(), selector: None, role: None, name: None, reference: None,
+    }).unwrap();
+    until("the first request to enter the page", || endpoint.asked("Runtime.evaluate").iter().any(|params| params["expression"] == "hold_policy_test()"));
+    let queued = runtime.handle.submit(BrowserCommand::Type { text: "must not be typed".into() }).unwrap();
+    runtime.set_agent_policy(false, &Default::default(), None);
+    release.store(true, Ordering::Release);
+    let _ = finish(first);
+    assert!(finish(queued).is_err());
+    assert!(endpoint.asked("Input.insertText").is_empty());
+}
+
+#[test]
+fn a_navigation_to_a_blocked_origin_never_reads_or_returns_its_tree() {
+    let (runtime, endpoint, _workspace) = scripted((640, 480), 1.0, |method, params, endpoint| {
+        if method == "Page.navigate" {
+            endpoint.event("Page.frameNavigated", json!({"frame":{"id":"MAIN","loaderId":"L2","url":"https://blocked.example/private"}}));
+            endpoint.event("Page.lifecycleEvent", json!({"frameId":"MAIN","loaderId":"L2","name":"DOMContentLoaded"}));
+            return Some(Ok(json!({"frameId":"MAIN","loaderId":"L2"})));
+        }
+        if method == "Accessibility.getFullAXTree" { return tree(); }
+        if method == "Runtime.callFunctionOn" && library(params, "ready") { return value(json!(true)); }
+        None
+    });
+    let mut sites = crate::browser_sites::BrowserSites::default();
+    sites.set("https://blocked.example", crate::browser_sites::SiteAccess::Block).unwrap();
+    runtime.set_agent_policy(true, &sites, None);
+    let reply = finish(runtime.handle.submit(BrowserCommand::Navigate { url: "https://allowed.example/redirect".into() }).unwrap());
+    assert!(reply.is_err());
+    assert!(endpoint.asked("Accessibility.getFullAXTree").is_empty());
+    assert!(endpoint.asked("Page.captureScreenshot").is_empty());
+    assert!(runtime.snapshot().aria_snapshot.is_empty());
+}
+
+#[test]
+fn blocked_tabs_keep_only_safe_metadata_and_page_results_are_refused() {
+    let handle = handle();
+    handle.agent_policy.lock().unwrap().blocked = vec!["https://blocked.example".into()];
+    let tabs = vec![
+        BrowserTabView { id: 1, title: "PRIVATE TITLE".into(), url: "https://blocked.example/private-path".into(), ..Default::default() },
+        BrowserTabView { id: 2, title: "Allowed tab".into(), url: "https://allowed.example/".into(), ..Default::default() },
+    ];
+    let page = BrowserSnapshot {
+        url: "https://blocked.example/private-path".into(), title: "PRIVATE TITLE".into(),
+        aria_snapshot: Arc::from("PRIVATE TREE"), screenshot: Some(Arc::from("PRIVATE IMAGE")),
+        tabs: tabs.clone(), ..Default::default()
+    };
+    assert!(handle.agent_result(page.clone()).is_err());
+    let listing = BrowserSnapshot { output: Some(BrowserToolOutput {
+        data: data("tabs", json!(tabs)), ..Default::default()
+    }), ..page };
+    let safe = mcp_snapshot_result(handle.agent_result(listing).unwrap());
+    let serialized = serde_json::to_string(&safe).unwrap();
+    assert!(!serialized.contains("PRIVATE") && !serialized.contains("private-path"), "{serialized}");
+    assert!(serialized.contains("Allowed tab") && serialized.contains("Sitio bloqueado"));
+}
+
+#[test]
+fn contextual_downloads_and_clipboard_without_origin_are_denied_even_on_an_allowed_tab() {
+    let (runtime, commands) = fixture(
+        BrowserScope { workspace: PathBuf::from("/fixture"), session_id: "policy".into() },
+        BrowserSnapshot { url: "https://allowed.example/".into(), ..Default::default() },
+    );
+    let mut sites = crate::browser_sites::BrowserSites::default();
+    sites.set("https://blocked.example", crate::browser_sites::SiteAccess::Block).unwrap();
+    runtime.set_agent_policy(true, &sites, None);
+    for command in [BrowserCommand::Downloads {}, BrowserCommand::ClipboardRead {}] {
+        assert!(runtime.handle.submit(command.clone()).is_err());
+        let manual = runtime.submit_ui(command.clone()).unwrap();
+        assert_eq!(serde_json::to_value(commands.finish_next().unwrap()).unwrap(), serde_json::to_value(command).unwrap());
+        finish(manual).unwrap();
+    }
+    for field in ["downloads", "clipboard"] {
+        let snapshot = BrowserSnapshot {
+            url: "https://allowed.example/".into(),
+            output: Some(BrowserToolOutput { data: data(field, json!("PRIVATE DATA")), ..Default::default() }),
+            ..Default::default()
+        };
+        assert!(runtime.handle.agent_result(snapshot).is_err(), "a reply in flight must also be guarded");
+    }
+    assert!(commands.finish_next().is_none());
+}
+
+#[tokio::test]
+async fn a_revocation_after_a_dispatched_effect_keeps_the_effect_uncertain() {
+    let (runtime, commands) = fixture(
+        BrowserScope { workspace: PathBuf::from("/fixture"), session_id: "policy".into() },
+        BrowserSnapshot { started: true, viewport_width: 640, viewport_height: 480, ..Default::default() },
+    );
+    let client = runtime.mcp_client();
+    let request = tokio::spawn(async move {
+        client.call_tool("browser_type", json!({"text":"one effect","expected_origin":"about:blank"}), &CancellationToken::new()).await
+    });
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let pending = loop {
+        if let Ok(pending) = commands.pending.try_recv() { break pending; }
+        assert!(Instant::now() < deadline);
+        tokio::task::yield_now().await;
+    };
+    pending.dispatched.store(true, Ordering::Release);
+    pending.lifecycle.store(FINISHED, Ordering::Release);
+    pending.reply.try_send(Ok(runtime.snapshot())).unwrap();
+    runtime.set_agent_policy(false, &Default::default(), None);
+    assert!(matches!(request.await.unwrap(), Err(McpError::EffectUncertain(_))));
 }
 
 #[test]
@@ -558,6 +767,15 @@ fn what_one_request_asked_for_reaches_only_it_and_is_never_retained_in_shared_st
     assert_eq!(unread.aria_snapshot.as_ref(), "");
 }
 
+fn bound_arguments(name: &str, mut arguments: Value, origin: &str) -> Value {
+    if page_mutation_tool(name) {
+        if let Some(object) = arguments.as_object_mut() {
+            object.entry("expected_origin").or_insert_with(|| json!(origin));
+        }
+    }
+    arguments
+}
+
 /// The complete catalog in the order it is advertised, with the smallest
 /// valid arguments of each tool and whether it may change the page.
 fn catalog() -> Vec<(&'static str, Value, bool)> {
@@ -590,7 +808,7 @@ fn catalog() -> Vec<(&'static str, Value, bool)> {
         ("browser_tab_select", json!({"id":2}), true),
         ("browser_tab_close", json!({"id":2}), true),
         ("browser_file_upload", json!({"paths":["/tmp/informe.pdf"]}), true),
-    ]
+    ].into_iter().map(|(name, arguments, mutating)| (name, bound_arguments(name, arguments, "http://localhost:3000"), mutating)).collect()
 }
 
 /// One request through the real broker socket, as the external stdio proxy
@@ -717,14 +935,14 @@ fn every_tool_maps_to_a_command_classified_as_reading_or_changing_the_page() {
     }
     // The arguments reach the command as the tool named them.
     let wire = |name: &str, arguments: Value| {
-        serde_json::to_value(browser_tool_command(name, arguments).unwrap()).unwrap()
+        serde_json::to_value(browser_tool_command(name, bound_arguments(name, arguments, "http://localhost:3000")).unwrap()).unwrap()
     };
     assert_eq!(wire("browser_click", json!({"ref":"f1e3"}))["ref"], "f1e3");
     assert_eq!(wire("browser_click", json!({"ref":"f1e3"}))["type"], "click_locator");
     let right = wire("browser_click", json!({"ref":"e3","button":"right","doubleClick":true,"modifiers":["Shift","Control"]}));
     assert_eq!((&right["button"], &right["doubleClick"], &right["modifiers"]), (&json!("right"), &json!(true), &json!(["Shift","Control"])));
     assert_eq!(wire("browser_click", json!({"x":4,"y":5,"button":"middle"}))["type"], "click");
-    assert!(browser_tool_command("browser_click", json!({"ref":"e3","modifiers":["Hyper"]})).is_err());
+    assert!(browser_tool_command("browser_click", json!({"ref":"e3","modifiers":["Hyper"],"expected_origin":"http://localhost:3000"})).is_err());
     assert_eq!(wire("browser_select_option", json!({"ref":"e9","values":["g"]}))["type"], "select_option");
     assert_eq!(wire("browser_drag", json!({"from":{"ref":"e2"},"to":{"ref":"e3"}}))["to"]["ref"], "e3");
     assert_eq!(wire("browser_take_screenshot", json!({"full_page":true}))["full_page"], true);
@@ -744,12 +962,12 @@ fn every_tool_maps_to_a_command_classified_as_reading_or_changing_the_page() {
 fn new_tools_reject_arguments_outside_their_bounds() {
     let rejected = |name: &str, arguments: Value| {
         assert!(
-            browser_tool_command(name, arguments.clone()).is_err(),
+            browser_tool_command(name, bound_arguments(name, arguments.clone(), "http://localhost:3000")).is_err(),
             "{name} accepted {arguments}"
         );
     };
     let accepted = |name: &str, arguments: Value| {
-        browser_tool_command(name, arguments.clone())
+        browser_tool_command(name, bound_arguments(name, arguments.clone(), "http://localhost:3000"))
             .unwrap_or_else(|error| panic!("{name} rejected {arguments}: {error}"));
     };
     // One way to name an element, and a ref has the shape a snapshot prints.
@@ -983,7 +1201,7 @@ fn external_proxy_broker_lists_and_runs_the_same_catalog() {
     let mut received = None;
     let result = broker(
         &runtime.handle,
-        json!({"op":"call_tool","token":"token","name":"browser_evaluate","arguments":{"expression":"document.title","ref":"e2"}}),
+        json!({"op":"call_tool","token":"token","name":"browser_evaluate","arguments":{"expression":"document.title","ref":"e2","expected_origin":"http://localhost:3000"}}),
         || {
             received = Some(answer_with(
                 &commands,
@@ -1047,7 +1265,7 @@ async fn native_client_returns_a_stale_ref_as_a_readable_tool_error() {
     // A click is mutating, yet this failure touched nothing: the model reads
     // it and snapshots again instead of the turn ending as an unknown effect.
     let result = client
-        .call_tool("browser_click", json!({"ref":"e9"}), &CancellationToken::new())
+        .call_tool("browser_click", json!({"ref":"e9","expected_origin":"about:blank"}), &CancellationToken::new())
         .await
         .unwrap();
     assert!(result.is_error);
@@ -1058,7 +1276,7 @@ async fn native_client_returns_a_stale_ref_as_a_readable_tool_error() {
     ));
     assert!(matches!(
         client
-            .call_tool("browser_click", json!({"ref":"e9","selector":"#a"}), &CancellationToken::new())
+            .call_tool("browser_click", json!({"ref":"e9","selector":"#a","expected_origin":"about:blank"}), &CancellationToken::new())
             .await,
         Err(McpError::Protocol(_))
     ));
@@ -1087,7 +1305,7 @@ async fn the_agent_reads_refs_acts_on_them_and_gets_each_tools_own_answer() {
     let client = runtime.mcp_client();
     let call = |name: &'static str, arguments: Value| {
         let client = client.clone();
-        async move { client.call_tool(name, arguments, &CancellationToken::new()).await }
+        async move { client.call_tool(name, bound_arguments(name, arguments, "about:blank"), &CancellationToken::new()).await }
     };
 
     let read = call("browser_snapshot", json!({})).await.unwrap();
@@ -1189,7 +1407,7 @@ async fn a_watched_click_waits_for_the_pointer_and_looks_again_at_where_the_elem
         let client = client.clone();
         async move {
             let clicked = client
-                .call_tool("browser_click", json!({"ref":"e4"}), &CancellationToken::new())
+                .call_tool("browser_click", json!({"ref":"e4","expected_origin":"about:blank"}), &CancellationToken::new())
                 .await
                 .unwrap();
             assert!(!clicked.is_error);
@@ -1404,7 +1622,7 @@ fn modifier_keys_reach_the_page_with_the_window_s_pointer_and_wheel_and_with_not
         ]
     );
     // Only the window says them: a tool call cannot.
-    let refused = browser_tool_command("browser_scroll", json!({"dx": 0, "dy": 120, "modifiers": 2})).unwrap_err();
+    let refused = browser_tool_command("browser_scroll", json!({"dx": 0, "dy": 120, "modifiers": 2, "expected_origin":"about:blank"})).unwrap_err();
     assert!(refused.contains("modifiers"), "{refused}");
 }
 
@@ -1437,7 +1655,7 @@ fn an_external_snapshot_also_gets_a_picture_of_the_viewport_and_can_be_narrowed(
     let captures = endpoint.asked("Page.captureScreenshot").len();
     let typed = broker(
         &runtime.handle,
-        json!({"op":"call_tool","token":"token","name":"browser_type","arguments":{"text":"x"}}),
+        json!({"op":"call_tool","token":"token","name":"browser_type","arguments":{"text":"x","expected_origin":"about:blank"}}),
         || {},
     );
     assert_eq!(typed["content"].as_array().unwrap().len(), 1);
@@ -1646,7 +1864,7 @@ async fn open_preview_opens_only_this_machines_addresses_and_defaults_to_the_con
     assert!(!runtime.take_reveal());
 
     runtime.set_preview_url(Some("http://localhost:5173/".into()));
-    let opened = client.call_tool(OPEN_PREVIEW, json!({}), &cancel).await.unwrap();
+    let opened = client.call_tool(OPEN_PREVIEW, json!({"expected_origin":"http://localhost:5173"}), &cancel).await.unwrap();
     assert!(!opened.is_error);
     assert_eq!(navigated().as_deref(), Some("http://localhost:5173/"));
     // Opening is also showing the tab, once.
@@ -1712,7 +1930,7 @@ async fn a_conversations_browser_is_opened_by_its_first_call_and_again_once_it_c
     assert_eq!(listed.len(), catalog().len() + 1);
     // A call that is refused opens none.
     assert!(matches!(
-        browser.call_tool("browser_click", json!({"ref":"e9","selector":"#a"}), &cancel).await,
+        browser.call_tool("browser_click", json!({"ref":"e9","selector":"#a","expected_origin":"about:blank"}), &cancel).await,
         Err(McpError::Protocol(_))
     ));
     assert_eq!(opens.load(Ordering::SeqCst), 0);

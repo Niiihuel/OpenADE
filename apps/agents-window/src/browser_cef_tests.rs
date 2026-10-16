@@ -198,7 +198,10 @@ impl Session {
     }
 
     /// One tool call as the application's own agent makes it.
-    fn agent(&self, name: &str, arguments: Value) -> McpCallResult {
+    fn agent(&self, name: &str, mut arguments: Value) -> McpCallResult {
+        if page_mutation_tool(name) {
+            arguments["expected_origin"] = json!(document_origin(&self.runtime.snapshot().url).unwrap());
+        }
         let client = self.runtime.mcp_client();
         tokio::runtime::Builder::new_current_thread()
             .enable_time()
@@ -428,11 +431,11 @@ fn serves_the_agent_and_an_external_client(session: Session, origin: &str) -> Se
     let picture = image::load_from_memory_with_format(&picture, image::ImageFormat::Png).unwrap();
     assert_eq!((picture.width(), picture.height()), (900, 700));
     let paint = ref_of(state["aria_snapshot"].as_str().unwrap(), "button \"Pintar\"");
-    let painted = request(4, "tools/call", json!({"name": "browser_click", "arguments": {"ref": paint}}));
+    let painted = request(4, "tools/call", json!({"name": "browser_click", "arguments": {"ref": paint, "expected_origin": document_origin(&session.runtime.snapshot().url).unwrap()}}));
     assert_eq!(painted["result"]["isError"], false);
     let colour = session.agent("browser_evaluate", json!({"expression": "document.body.style.background"}));
     assert_eq!(colour.content[1]["text"], "\"rgb(255, 221, 238)\"", "the external click reached the shared page");
-    let missed = request(5, "tools/call", json!({"name": "browser_click", "arguments": {"ref": "e99999"}}));
+    let missed = request(5, "tools/call", json!({"name": "browser_click", "arguments": {"ref": "e99999", "expected_origin": document_origin(&session.runtime.snapshot().url).unwrap()}}));
     assert_eq!(missed["result"]["isError"], true);
     assert!(request(6, "tools/call", json!({"name": "browser_pdf_save", "arguments": {}})).get("error").is_some());
     drop(input);

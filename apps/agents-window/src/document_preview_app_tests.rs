@@ -707,6 +707,86 @@ fn ctrl_s_in_markdown_preview_saves_draft_without_revealing_or_focusing_source()
 }
 
 #[test]
+fn editor_settings_save_while_markdown_preview_keeps_the_source_hidden() {
+    let (root, mut app) = fixture("# Documento\n");
+    app.view.ide.mode = crate::ide_workspace::WindowMode::Ide;
+    let tab = open(&mut app, "README.md");
+    app.apply_action(
+        UiAction::Clicked {
+            id: format!("document_preview_view:{}:preview", tab.get()),
+        },
+        &egui::Context::default(),
+    );
+    wait_preview(&mut app);
+    let before = snapshot(&app);
+    let ctx = egui::Context::default();
+    app.apply_action(
+        UiAction::Clicked {
+            id: "toggle_settings".into(),
+        },
+        &ctx,
+    );
+    app.apply_action(
+        UiAction::Clicked {
+            id: "settings_page:editor".into(),
+        },
+        &ctx,
+    );
+    assert!(app.view.shows(SettingsPage::Editor));
+    let original_wrap = app.view.editor_workbench.soft_wrap;
+    let original_pairs = app.view.editor_workbench.auto_pairs;
+    // Exercise the same painted switches a user can operate over a preview.
+    for id in ["editor_wrap", "editor_pairs"] {
+        let painted = window_frame(&mut app);
+        let control = painted.regions.iter().find(|r| r.id == id).unwrap();
+        let point = Point::new(
+            control.rect.x + control.rect.width / 2.0,
+            control.rect.y + control.rect.height / 2.0,
+        );
+        for event in [UiEvent::PointerDown(point), UiEvent::PointerUp(point)] {
+            for action in app.tree.handle_event(event) {
+                app.apply_action(action, &ctx);
+            }
+        }
+    }
+    assert_eq!(app.view.editor_workbench.soft_wrap, !original_wrap);
+    assert_eq!(app.view.editor_workbench.auto_pairs, !original_pairs);
+    assert!(!app
+        .view
+        .document_preview
+        .as_ref()
+        .unwrap()
+        .is_source_visible());
+    let after = snapshot(&app);
+    assert_eq!(
+        (after.document_id(), after.revision(), after.selection()),
+        (before.document_id(), before.revision(), before.selection())
+    );
+    let path = root.path().join("data/editor-preferences.json");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        app.poll_editor_workbench(&ctx);
+        let stored = crate::editor_preferences::Prefs::load(&path);
+        if stored.soft_wrap == !original_wrap && stored.auto_pairs == !original_pairs {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Settings preferences were not saved"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    // Stale editing controls still cannot edit the absent source.
+    app.apply_action(
+        UiAction::Clicked {
+            id: "editor_duplicate".into(),
+        },
+        &ctx,
+    );
+    assert_eq!(snapshot(&app).revision(), before.revision());
+}
+
+#[test]
 fn ide_switch_previews_the_same_tab_and_returns_to_the_untouched_source() {
     let disk = (0..200).map(|line| format!("Línea {line}\n")).collect::<String>();
     let (_root, mut app) = fixture(&disk);

@@ -53,7 +53,7 @@ fn clicked(id: &str) -> UiAction {
 }
 
 fn started() -> BrowserSnapshot {
-    BrowserSnapshot { started: true, ..Default::default() }
+    BrowserSnapshot { started: true, url: "about:blank".into(), ..Default::default() }
 }
 
 /// One request over the bridge's loopback socket, as a CLI sends it.
@@ -81,6 +81,25 @@ fn call(url: &str, token: &str, name: &str, arguments: Value) -> (Vec<Value>, bo
 }
 
 impl Fixture {
+    /// Bind a legitimate current-page action to the document this caller's
+    /// fixture actually shows. A context not opened yet starts at about:blank.
+    fn page_arguments(&self, token: &str, mut arguments: Value) -> Value {
+        let terminal = self.app.external_bridge.grants.iter()
+            .find(|(_, (grant_token, _, _))| grant_token == token)
+            .map(|(terminal, _)| *terminal);
+        let url = terminal.and_then(|terminal| self.cli_tabs().into_iter()
+            .find(|(owner, _)| *owner == terminal)
+            .and_then(|(_, tab)| self.app.browsers.get(&tab)))
+            .map(|runtime| runtime.snapshot().url)
+            .unwrap_or_else(|| "about:blank".into());
+        let origin = if url == "about:blank" { url } else {
+            crate::browser_sites::origin_of(&url).expect("fixture page has a canonical document origin")
+        };
+        arguments.as_object_mut().expect("legitimate page arguments are an object")
+            .insert("expected_origin".into(), json!(origin));
+        arguments
+    }
+
     /// A terminal tab of the conversation with the grant its CLI starts
     /// with. The panel stays hidden, so the script is never run.
     fn open_cli(&mut self, profile: &str) -> (u64, String) {
@@ -230,14 +249,14 @@ fn the_bridge_offers_the_native_browser_tools_and_refuses_what_their_validation_
         ("browser_navigate", json!({ "url": "file:///etc/passwd" })),
         ("browser_navigate", json!({ "url": "javascript:alert(1)" })),
         ("browser_navigate", json!({ "url": "http://user:secret@localhost/" })),
-        ("browser_click", json!({ "x": 5000, "y": 1 })),
-        ("browser_click", json!({ "ref": "e1", "selector": "#a" })),
-        ("browser_evaluate", json!({ "expression": "" })),
-        ("browser_type", json!({ "text": "x".repeat(17 * 1024) })),
+        ("browser_click", json!({ "x": 5000, "y": 1, "expected_origin": "about:blank" })),
+        ("browser_click", json!({ "ref": "e1", "selector": "#a", "expected_origin": "about:blank" })),
+        ("browser_evaluate", json!({ "expression": "", "expected_origin": "about:blank" })),
+        ("browser_type", json!({ "text": "x".repeat(17 * 1024), "expected_origin": "about:blank" })),
         ("browser_wait_for", json!({ "seconds": 60 })),
         ("browser_snapshot", json!({ "type": "navigate", "url": "http://localhost/" })),
         ("browser_snapshot", json!({ "session": "terminal:1:another" })),
-        ("browser_reload", json!([])),
+        ("browser_snapshot", json!([])),
     ] {
         let refusal = browser_tool_command(name, arguments.clone()).unwrap_err();
         let (content, error) = fixture.run(&token, name, arguments);
@@ -251,9 +270,10 @@ fn the_bridge_offers_the_native_browser_tools_and_refuses_what_their_validation_
         .json()
         .unwrap();
     assert_eq!(reply["error"]["code"], -32602);
-    // A tool that takes no arguments may be called without them.
-    assert!(!fixture.run(&token, "browser_reload", Value::Null).1);
-    assert!(matches!(fixture.ran.as_slice(), [(_, BrowserCommand::Reload)]));
+    // A reading tool that takes no arguments may be called without them.
+    // Current-page mutations now require an explicit expected_origin.
+    assert!(!fixture.run(&token, "browser_snapshot", Value::Null).1);
+    assert!(matches!(fixture.ran.as_slice(), [(_, BrowserCommand::Snapshot { .. })]));
 }
 
 #[test]
@@ -299,6 +319,27 @@ fn with_the_browser_switch_off_its_tools_are_refused_and_no_browser_starts() {
     assert_eq!(content[0]["text"], SWITCHED_OFF);
     assert!(fixture.cli_tabs().is_empty() && fixture.app.browsers.is_empty());
     assert!(fixture.app.browser_starts.is_empty() && fixture.ran.is_empty());
+}
+
+#[test]
+fn the_bridge_requires_and_rechecks_current_page_origin_before_a_mutation() {
+    let mut fixture = fixture();
+    let (_, token) = fixture.open_cli("claude_accept_all");
+    let (content, error) = fixture.run(&token, "browser_reload", json!({}));
+    assert!(error);
+    assert!(content[0]["text"].as_str().unwrap().contains("expected_origin"));
+    assert!(fixture.cli_tabs().is_empty() && fixture.ran.is_empty());
+
+    assert!(!fixture.run(&token, "browser_snapshot", json!({})).1);
+    let ran = fixture.ran.len();
+    let (content, error) = fixture.run(&token, "browser_reload", json!({"expected_origin":"https://other.example.test"}));
+    assert!(error);
+    assert!(content[0]["text"].as_str().unwrap().contains("origen"));
+    assert_eq!(fixture.ran.len(), ran, "an origin mismatch never reaches the page");
+    let arguments = fixture.page_arguments(&token, json!({}));
+    assert!(!fixture.run(&token, "browser_reload", arguments).1);
+    assert_eq!(fixture.ran.len(), ran + 1);
+    assert!(matches!(fixture.ran.last(), Some((_, BrowserCommand::Reload))));
 }
 
 #[test]
@@ -369,7 +410,8 @@ fn each_terminal_gets_one_browser_of_its_own_and_reaches_no_other() {
     assert_eq!(fixture.app.browsers[&first_tab].scope().workspace, PathBuf::from(&fixture.app.view.workspace));
     assert!(session != "conversation" && Some(session.as_str()) != fixture.app.external_session(second));
 
-    assert!(!fixture.run(&second_token, "browser_reload", json!({})).1);
+    let arguments = fixture.page_arguments(&second_token, json!({}));
+    assert!(!fixture.run(&second_token, "browser_reload", arguments).1);
     let second_tab = fixture.cli_tab(second);
     assert_eq!(
         fixture.app.browsers[&second_tab].scope().session_id,
@@ -391,7 +433,8 @@ fn each_terminal_gets_one_browser_of_its_own_and_reaches_no_other() {
     );
     fixture.app.browsers.insert(first_tab, other);
     fixture.app.browsers.insert(second_tab, one);
-    let (content, error) = fixture.run(&first_token, "browser_reload", json!({}));
+    let arguments = fixture.page_arguments(&first_token, json!({}));
+    let (content, error) = fixture.run(&first_token, "browser_reload", arguments);
     assert!(error);
     assert_eq!(content[0]["text"], "Ese navegador pertenece a otra sesión.");
     assert_eq!(fixture.ran.len(), 3);

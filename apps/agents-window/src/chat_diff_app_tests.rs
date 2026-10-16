@@ -387,6 +387,22 @@ fn confirmation_without_a_new_row_invalidates_the_expansion_cache_but_idle_frame
 }
 
 #[test]
+fn density_change_reconciles_diff_loading_without_a_new_transcript_event() {
+    use crate::appearance_preferences::ToolCallDensity;
+    let (_temp, mut app) = fixture();
+    reset_card_choices(&mut app);
+    app.view.transcript = vec![tool("edit-first", ActivityStatus::Completed, false)];
+    app.view.appearance.tool_call_density = ToolCallDensity::Compact;
+    app.poll_chat_diffs(&egui::Context::default());
+    assert!(app.view.chat_diffs.open.is_empty());
+    app.view.appearance.tool_call_density = ToolCallDensity::Detailed;
+    app.poll_chat_diffs(&egui::Context::default());
+    assert!(app.view.chat_diffs.open.contains("edit-first"));
+    wait(&mut app);
+    assert!(app.view.chat_diffs.entries.contains_key("edit-first"));
+}
+
+#[test]
 fn confirmed_diff_file_actions_validate_owner_index_workspace_and_current_file_boundary() {
     let (temp, mut app) = fixture();
     toggle(&mut app, OWNER, "edit-first");

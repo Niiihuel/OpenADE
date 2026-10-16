@@ -659,11 +659,13 @@ async fn the_agents_open_preview_defaults_to_the_conversations_server_and_shows_
     let server = fixture.serve();
     fixture.answered(&server);
     fixture.app.follow_agent_terminals();
+    let expected_origin = crate::browser_sites::origin_of(&server.url)
+        .expect("the conversation's server has an HTTP origin");
     let call = tokio::spawn(async move {
         client
             .call_tool(
                 crate::browser_runtime::OPEN_PREVIEW,
-                serde_json::json!({}),
+                serde_json::json!({ "expected_origin": expected_origin }),
                 &CancellationToken::new(),
             )
             .await

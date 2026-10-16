@@ -105,6 +105,8 @@ fn configured<R>(source: &str, build: impl FnOnce(Markdown<'_>) -> R) -> R {
             Markdown::new(source, theme::panel_card_palette())
                 .colors(COLORS)
                 .labels(LABELS)
+                .code_font_size(crate::appearance_preferences::code_font_size())
+                .code_word_wrap(crate::appearance_preferences::code_word_wrap())
                 .link_action_prefix(LINK_ACTION_PREFIX)
                 .diagram_action_prefix(DIAGRAM_ACTION_PREFIX)
                 .diagram_sources(shown),
@@ -285,11 +287,42 @@ pub fn render_streaming_markdown_preview_at_width(source: &str, width: f32) -> M
     rendered(source, |markdown| markdown.width(width).streaming(true))
 }
 
+/// Keep each message's code viewports distinct and stable as its text grows.
+pub(crate) fn render_scoped_markdown_preview(
+    source: &str,
+    width: f32,
+    scope: &str,
+    streaming: bool,
+) -> MarkdownPreview {
+    rendered(source, |markdown| markdown.id(scope).width(width).streaming(streaming))
+}
+
 #[cfg(test)]
 mod tests {
     use openide_ui::{DrawCommand, Size, UiTree};
 
     use super::*;
+
+    #[test]
+    fn scoped_code_viewports_are_distinct_and_stable_while_streaming() {
+        use openide_ui::HitKind;
+        let source = format!("```rust\nlet value = \"{}\";", "long_value".repeat(30));
+        let ids = |source: &str, scope: &str, streaming| {
+            UiTree::new(render_scoped_markdown_preview(source, 360.0, scope, streaming).element)
+                .layout(Size::new(360.0, 600.0))
+                .regions
+                .into_iter()
+                .filter(|region| region.kind == HitKind::Scroll)
+                .map(|region| region.id)
+                .collect::<Vec<_>>()
+        };
+        let first = ids(&source, "assistant:session:1", true);
+        let second = ids(&source, "assistant:session:2", true);
+        assert_eq!(first.len(), 1);
+        assert_eq!(second.len(), 1);
+        assert_ne!(first, second);
+        assert_eq!(first, ids(&format!("{source}\nlet next = 2;\n```"), "assistant:session:1", false));
+    }
 
     #[test]
     fn bounded_unicode_response_lays_out_without_markup_delimiters() {

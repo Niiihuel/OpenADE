@@ -1,94 +1,52 @@
-//! The last explicit, temporary MCP review. Received schemas stay complete in
-//! a bounded scroll area; no action dispatches an advertised MCP tool.
+//! Read-only metadata from the last explicit, temporary MCP review.
+//! Received schemas stay complete in a bounded scroll area; no action invokes
+//! an advertised MCP tool. Inspection actions and errors belong to its parent.
 
-use super::{outline, page_note};
-use crate::mcp_inspection::{McpInspectionPhase, McpInspectionUiState};
+use crate::mcp_inspection::McpInspectionUiState;
 use crate::{settings_parts, theme};
-use openide_ui::{Component, Element, Icon, ScrollArea, SkeletonGroup, Text, TextRole};
+use openide_ui::{
+    Component, ControlSize, DescriptionItem, DescriptionList, Element, ScrollArea, Text, TextRole,
+};
 
-pub(super) fn render(state: &McpInspectionUiState, compact: bool) -> Element {
-    let mut rows = vec![page_note(
-        "Consulta explícita",
-        "Inspeccionar conecta el servidor guardado, consulta sus herramientas y cierra la conexión. El listado observado puede cambiar; los turnos Build comprueban su propio catálogo al iniciar.",
-        super::SettingsPage::Mcp.icon(),
-    )];
-    if let Some(scope) = &state.scope {
-        rows.push(
-            Text::new(
-                format!("Servidor {}", scope.server.id),
-                theme::component_palette(),
-            )
-            .render(),
-        );
-        rows.push(
-            Text::new(
-                format!("Proyecto de esta consulta: {}", scope.workspace.display()),
-                theme::component_palette(),
-            )
+fn fact(label: &str, value: impl Into<String>) -> DescriptionItem {
+    DescriptionItem::with(
+        label,
+        Text::new(value, theme::component_palette())
             .role(TextRole::Small)
-            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
-            .render(),
-        );
-    }
-    let status = match state.phase {
-        McpInspectionPhase::Idle => "Sin inspección en esta ventana",
-        McpInspectionPhase::Running => "Conectando y consultando herramientas",
-        McpInspectionPhase::Cancelling => "Cancelando y cerrando la conexión",
-        McpInspectionPhase::Completed => "Inspección terminada · conexión cerrada",
-        McpInspectionPhase::Failed => "La inspección o su cierre falló",
-        McpInspectionPhase::Cancelled => "Inspección cancelada",
-        McpInspectionPhase::Discarded => "Resultado descartado por cambio del alcance guardado",
-    };
-    rows.push(
-        Text::new(status, theme::component_palette())
-            .role(TextRole::Small)
-            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .mono()
             .render()
-            .padding(settings_parts::ROW_PADDING),
-    );
-    if state.phase == McpInspectionPhase::Running {
-        rows.push(
-            SkeletonGroup::rows("mcp_inspection_progress", theme::component_palette(), 3)
-                .row_height(26.0)
-                .icon(true)
-                .render()
-                .padding(settings_parts::ROW_PADDING),
-        );
-    }
-    if state.is_busy() {
-        rows.push(
-            outline("mcp_inspection_cancel", "Cancelar inspección")
-                .icon(Icon::Close)
-                .enabled(state.phase == McpInspectionPhase::Running)
-                .loading(state.phase == McpInspectionPhase::Cancelling)
-                .render(),
-        );
+            .flex(1.0),
+    )
+}
+
+fn note(value: &str) -> Element {
+    Text::new(value, theme::component_palette())
+        .role(TextRole::Small)
+        .muted()
+        .render()
+}
+
+/// The technical disclosure owns its heading. This body adds no inspection
+/// controls or errors already presented beside the server's tools.
+pub(super) fn metadata(state: &McpInspectionUiState, compact: bool) -> Element {
+    let mut facts = Vec::new();
+    if let Some(scope) = &state.scope {
+        facts.push(fact("Servidor guardado", &scope.server.id));
+        facts.push(fact(
+            "Proyecto de esta consulta",
+            scope.workspace.display().to_string(),
+        ));
     }
     if let Some(snapshot) = &state.snapshot {
-        rows.push(
-            Text::new(
-                format!(
-                    "Protocolo negociado: {}",
-                    snapshot.server_info.protocol_version
-                ),
-                theme::component_palette(),
-            )
-            .render(),
-        );
-        rows.push(
-            Text::new(
-                format!(
-                    "Servidor: {} · versión {} · {} herramientas recibidas",
-                    snapshot.server_info.name,
-                    snapshot.server_info.version,
-                    snapshot.tools.len()
-                ),
-                theme::component_palette(),
-            )
-            .role(TextRole::Small)
-            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
-            .render(),
-        );
+        facts.extend([
+            fact(
+                "Protocolo negociado",
+                &snapshot.server_info.protocol_version,
+            ),
+            fact("Servidor anunciado", &snapshot.server_info.name),
+            fact("Versión anunciada", &snapshot.server_info.version),
+            fact("Herramientas recibidas", snapshot.tools.len().to_string()),
+        ]);
         let observed = i64::try_from(snapshot.observed_at_unix_ms)
             .ok()
             .and_then(chrono::DateTime::<chrono::Utc>::from_timestamp_millis)
@@ -98,82 +56,113 @@ pub(super) fn render(state: &McpInspectionUiState, compact: bool) -> Element {
                     .to_string()
             })
             .unwrap_or_else(|| "Fecha no disponible".to_owned());
-        rows.push(
-            Text::new(format!("Observado: {observed}"), theme::component_palette())
-                .role(TextRole::Small)
-                .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
-                .render(),
-        );
-        rows.push(
-            Text::new(
-                format!(
-                    "Huella SHA-256 de estos metadatos: {}",
-                    snapshot.metadata_digest
-                ),
-                theme::component_palette(),
-            )
-            .role(TextRole::Small)
-            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
-            .render(),
-        );
-        rows.push(Text::new("Esta huella identifica la inspección temporal. Los catálogos congelados de turnos anteriores conservan sus propias identidades.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
+        facts.push(fact("Observado", observed));
+        facts.push(fact("Huella SHA-256", &snapshot.metadata_digest));
+    }
+    let mut list = DescriptionList::new(facts, theme::component_palette())
+        .size(ControlSize::Compact)
+        .label_width(146.0)
+        .dividers(false);
+    if compact {
+        list = list.stacked();
+    }
+    let mut rows = vec![list.render()];
+    if let Some(snapshot) = &state.snapshot {
+        rows.push(note("Esta huella identifica la inspección temporal. Los catálogos congelados de turnos anteriores conservan sus propias identidades."));
         if snapshot.catalog_changed {
-            rows.push(Text::new("El servidor notificó un cambio de catálogo durante esta conexión. Repetí la inspección para obtener otro listado.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
+            rows.push(note("El servidor notificó un cambio de catálogo durante esta conexión. Repetí la inspección para obtener otro listado."));
         }
         rows.push(
             ScrollArea::new(
                 "mcp_inspection_metadata",
                 Text::new(&snapshot.details_json, theme::component_palette())
+                    .role(TextRole::Small)
                     .mono()
                     .render()
-                    .padding(10.0),
+                    .padding(8.0),
             )
             .render()
             .max_height(if compact { 260.0 } else { 340.0 }),
         );
     }
-    if let Some(error) = &state.error {
-        rows.push(
-            ScrollArea::new(
-                "mcp_inspection_error",
-                Text::new(error, theme::component_palette())
-                    .render()
-                    .padding(10.0),
-            )
-            .render()
-            .max_height(110.0),
-        );
-    }
-    if let Some(error) = &state.shutdown_error {
-        rows.push(
-            Text::new(
-                "No se pudo confirmar un cierre completo:",
-                theme::component_palette(),
-            )
-            .role(TextRole::Small)
-            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
-            .render(),
-        );
-        rows.push(
-            ScrollArea::new(
-                "mcp_inspection_shutdown_error",
-                Text::new(error, theme::component_palette())
-                    .render()
-                    .padding(10.0),
-            )
-            .render()
-            .max_height(110.0),
-        );
-    }
-    settings_parts::settings_group("Última inspección temporal", rows)
+    Element::column(rows)
+        .gap(10.0)
+        .padding(settings_parts::ROW_PADDING)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mcp_inspection::McpInspectionScope;
+    use crate::mcp_inspection::{McpInspectionPhase, McpInspectionScope};
     use crate::mcp_settings::McpServerSettings;
     use openide_ui::{Point, Size, UiAction, UiEvent, UiTree};
+
+    #[test]
+    fn technical_metadata_wraps_with_native_fonts_keeps_padding_and_adds_no_actions() {
+        let workspace = std::path::PathBuf::from(
+            "/workspace/proyecto-con-un-nombre-extenso/componentes/de-la-integracion-y-sus-herramientas",
+        );
+        let snapshot = crate::mcp_inspection::tests::sample_snapshot();
+        let state = McpInspectionUiState {
+            scope: Some(McpInspectionScope {
+                request_id: 1,
+                workspace: workspace.clone(),
+                server: server(),
+            }),
+            phase: McpInspectionPhase::Completed,
+            snapshot: Some(snapshot.clone()),
+            error: Some("El error pertenece al panel de herramientas".into()),
+            ..Default::default()
+        };
+        let workspace_text = workspace.to_string_lossy().into_owned();
+        for width in [280.0, 360.0, 900.0] {
+            let (context, mut tree) =
+                crate::view::ide_visual_tests::native_tree(metadata(&state, width < 640.0));
+            let frame = tree.layout(Size::new(width, 2000.0));
+            let blocks = frame.text_layouts();
+            for value in [
+                workspace_text.as_str(),
+                snapshot.metadata_digest.as_str(),
+                "2025-06-18",
+            ] {
+                let block = blocks
+                    .iter()
+                    .find(|block| block.source == value)
+                    .expect("complete technical fact");
+                assert!(!block.runs.is_empty());
+                for run in &block.runs {
+                    assert!(run.rect.x >= settings_parts::ROW_PADDING - 0.1);
+                    assert!(
+                        run.rect.x + run.rect.width <= width - settings_parts::ROW_PADDING + 0.1,
+                        "{width}: {:?}",
+                        run.text
+                    );
+                    assert!(
+                        run.visible
+                            .is_some_and(|visible| visible.height >= run.rect.height - 0.1)
+                    );
+                }
+            }
+            assert!(
+                blocks
+                    .iter()
+                    .any(|block| block.source == snapshot.details_json)
+            );
+            assert!(
+                !blocks
+                    .iter()
+                    .any(|block| block.source.contains("El error pertenece"))
+            );
+            assert!(
+                frame
+                    .regions
+                    .iter()
+                    .all(|region| region.kind != openide_ui::HitKind::Button)
+            );
+            assert!(frame.access.iter().all(|node| !node.actionable));
+            context.end_pass().textures_delta.clear();
+        }
+    }
 
     #[test]
     fn inspection_details_preserve_complete_schema_diagnostics_and_negotiated_version() {
@@ -194,23 +183,41 @@ mod tests {
                 shutdown_error: Some("Cierre no confirmado: FIN_CIERRE".into()),
                 ..Default::default()
             };
-            let mut tree = UiTree::new(render(&state, width < 640.0));
-            let frame = tree.layout(Size::new(width, 2400.0));
+            let mut view = crate::view::tests::empty_state();
+            view.show_settings = true;
+            view.settings_page = crate::settings_ui::SettingsPage::Mcp;
+            view.workspace = root.path().to_string_lossy().into_owned();
+            view.mcp_servers = vec![server()];
+            view.mcp_presentation.details = Some(server().id);
+            view.mcp_presentation.technical = true;
+            view.mcp_inspection = state;
+            let mut tree = UiTree::new(crate::view::build_view(&view, width));
+            tree.set_reduced_motion(true);
+            let frame = tree.layout(Size::new(width, 5000.0));
             let sources = frame.text_layouts();
             for full in [&snapshot.details_json, &error] {
                 assert!(sources.iter().any(|layout| &layout.source == full));
             }
-            assert!(sources
-                .iter()
-                .any(|layout| layout.source == "Protocolo negociado: 2025-06-18"));
-            assert!(sources
-                .iter()
-                .any(|layout| layout.source.starts_with("Observado: ")
-                    && !layout.source.contains("Unix")));
+            for label in ["Protocolo negociado", "Observado"] {
+                assert!(
+                    frame.commands.iter().any(|command| matches!(command,
+                    openide_ui::DrawCommand::Text { text, .. } if text == label)),
+                    "complete metadata label must be painted: {label} at {width}"
+                );
+            }
+            assert!(sources.iter().any(|layout| layout.source == "2025-06-18"));
+            assert!(
+                sources
+                    .iter()
+                    .any(|layout| layout.source.as_bytes().get(2) == Some(&b'/')
+                        && layout.source.as_bytes().get(5) == Some(&b'/')
+                        && layout.source.as_bytes().get(10) == Some(&b' ')
+                        && layout.source.contains(':'))
+            );
             for id in [
                 "mcp_inspection_metadata",
-                "mcp_inspection_error",
-                "mcp_inspection_shutdown_error",
+                "mcp_detail_error:0",
+                "mcp_detail_error:1",
             ] {
                 assert!(frame.regions.iter().any(|region| region.id == id));
             }
@@ -235,11 +242,14 @@ mod tests {
 
     #[test]
     fn explicit_inspect_and_cancel_actions_are_reachable_and_busy_states_disable_duplicates() {
+        let workspace = tempfile::tempdir().unwrap();
         for width in [420.0, 900.0] {
             let mut state = crate::view::tests::empty_state();
             state.show_settings = true;
             state.settings_page = crate::settings_ui::SettingsPage::Mcp;
+            state.workspace = workspace.path().to_string_lossy().into_owned();
             state.mcp_servers = vec![server()];
+            state.mcp_presentation.details = Some("inspection-local".into());
             let id = "mcp_inspect:inspection-local";
             let mut tree = UiTree::new(crate::view::build_view(&state, width));
             let viewport = Size::new(width, 700.0);
@@ -253,11 +263,18 @@ mod tests {
                 region.rect.y + region.rect.height / 2.0,
             );
             tree.handle_event(UiEvent::PointerDown(point));
-            assert!(tree
-                .handle_event(UiEvent::PointerUp(point))
-                .contains(&UiAction::Clicked { id: id.into() }));
+            assert!(
+                tree.handle_event(UiEvent::PointerUp(point))
+                    .contains(&UiAction::Clicked { id: id.into() })
+            );
 
             for phase in [McpInspectionPhase::Running, McpInspectionPhase::Cancelling] {
+                state.mcp_presentation.details = Some("inspection-local".into());
+                state.mcp_inspection.scope = Some(McpInspectionScope {
+                    request_id: 1,
+                    workspace: workspace.path().canonicalize().unwrap(),
+                    server: server(),
+                });
                 state.mcp_inspection.phase = phase;
                 let mut tree = UiTree::new(crate::view::build_view(&state, width));
                 tree.layout(viewport);

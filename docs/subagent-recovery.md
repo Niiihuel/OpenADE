@@ -15,6 +15,15 @@ catálogo, permisos, límites, presupuesto y hooks. El lease del hijo permanece
 tomado durante la recuperación. Nunca se admite otro turno para continuar el
 anterior.
 
+La configuración de Settings se aplica a los próximos turnos. Deshabilitar
+delegación conserva la observación, cancelación y recuperación de hijos ya
+guardados; los workers activos mantienen su snapshot. Cambiar cualquiera de
+los cinco límites cambia la identidad que debe verificarse: no amplía permisos
+de un hijo existente. Para recuperar hace falta restaurar el perfil original o
+seguir el flujo explícito de revisión de autoridad. Las entradas del modelo
+conservan el primer modo admitido del hijo; explorer y reviewer siguen en Plan
+también después de reabrir la aplicación.
+
 El catálogo que verifica la recuperación es el que ofrece su propio ejecutor,
 en el orden del ejecutor: el mismo que confirmó el turno en vivo. La identidad
 de la reserva (`request_digest`) conserva el orden de `catalog_for_mode`. Los

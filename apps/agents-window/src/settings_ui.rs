@@ -11,6 +11,7 @@ mod external_agents;
 mod agent_tests;
 mod instructions_inspection;
 mod mcp_inspection;
+mod mcp;
 mod memory;
 mod providers;
 mod rules_preview;
@@ -40,7 +41,7 @@ use crate::{
     settings_preferences::TerminalShell,
     theme,
     ui_sizing::{GROUP_FIELD, NOTE_ROW},
-    view::{self, McpOAuthViewPhase, SessionOrganization, ViewState},
+    view::{self, SessionOrganization, ViewState},
 };
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -220,18 +221,18 @@ impl SettingsPage {
     const fn keywords(self) -> &'static str {
         match self {
             Self::General => "notificaciones notifications avisos recorrido tour proyecto project carpeta folder inicio startup no molestar do not disturb",
-            Self::Appearance => "tema theme claro light oscuro dark sistema system idioma language english español inglés movimiento motion animaciones",
-            Self::Editor => "ajuste de línea wrap minimapa minimap sangría indent tabulaciones tabs espacios spaces pares pairs código code",
+            Self::Appearance => "fuente font tipografía typography densidad density tinte tint tono hue intensidad intensity transparencia transparency contraste contrast código code wrap diferencias diff privacidad privacy correo email tema theme claro light oscuro dark sistema system idioma language english español inglés movimiento motion animaciones",
+            Self::Editor => "ajuste de línea wrap minimapa minimap sangría indent tabulaciones tabs espacios spaces pares pairs código code números de línea line numbers guías guides línea actual current line espacios en blanco whitespace regla ruler cursor caret parpadeo blink fuente font guardar save vim",
             Self::Providers => "modelo model api key clave cuenta account catálogo catalog salida output límite openai anthropic proveedor propio custom provider endpoint url base protocolo protocol variable de entorno environment agregar add",
-            Self::Browser => "sitios sites permisos permissions enlaces links vista previa preview localhost chromium bloquear block",
+            Self::Browser => "sitios sites permisos permissions enlaces links vista previa preview localhost chromium bloquear block automatización automation navegador browser",
             Self::Terminal => "shell bash zsh fish powershell consola",
             Self::Shortcuts => "teclado keyboard keymap vim atajos shortcuts perfil profile",
             Self::Agent => "permisos permissions aprobación approval aislamiento isolation sandbox red network búsqueda web search imágenes images respaldo fallback límite limit chequeo check review revisión herramientas tools escritura write comandos",
             Self::Memory => "contexto context compactar compact instrucciones instructions agents.md objetivo goal meta",
-            Self::Subagents => "subagente delegar delegate hijos children",
+            Self::Subagents => "subagente delegar delegate hijos children límites limits concurrencia concurrent profundidad depth roles explorer reviewer worker perfiles personas plugins",
             Self::ExternalAgents => "claude code codex cli puente bridge externo external perfil propio own profile ejecutable executable argumentos arguments variables de entorno environment agregar add",
             Self::Plugins => "plugin extensión extension instalar install carpeta",
-            Self::Mcp => "servidor server oauth stdio http herramientas tools importar import variables entorno env",
+            Self::Mcp => "servidor server oauth stdio http herramientas tools importar import variables entorno env ámbito scope usuario user proyecto project cursor configuración configuration",
             Self::Skills => "skill habilidad marketplace skill.md",
             Self::Commands => "reglas rules ejecución exec permitir allow denegar deny preguntar ask paleta palette",
             Self::Automations => "tareas programadas scheduled tasks horario schedule recurrente cron",
@@ -247,7 +248,7 @@ impl SettingsPage {
     const fn description(self) -> &'static str {
         match self {
             Self::General => "Proyecto, inicio y preferencias generales.",
-            Self::Appearance => "Tema, idioma y movimiento de la interfaz.",
+            Self::Appearance => "Tema, conversaciones, colores, tipografía, movimiento y privacidad.",
             Self::Editor => "Cómo se muestra y se escribe el código.",
             Self::Providers => "Conecta tus cuentas y elige modelos para trabajar en openADE.",
             Self::Browser => "El navegador que comparten el agente y vos.",
@@ -347,7 +348,7 @@ pub(crate) fn outline(id: impl Into<String>, label: impl Into<String>) -> Button
 
 /// Ordinary settings choices use the same short rows and bounded surface as
 /// mode selectors. Selection and open state remain owned by the application.
-fn settings_choice_selector(
+pub(crate) fn settings_choice_selector(
     state: &ViewState,
     key: &str,
     label: &str,
@@ -586,18 +587,7 @@ fn page_note(title: &str, description: &str, icon: Icon) -> Element {
         .render()
 }
 
-fn agent_page(state: &ViewState, compact: bool) -> Vec<Element> {
-    let write_description = match (
-        state.native_tool_permissions.write_file,
-        state.native_tool_permissions.run_command,
-    ) {
-        // Chosen in the composer: nothing is asked while it holds.
-        _ if state.native_full_access => "«Permitir todo» está elegido en el compositor: escribe y ejecuta sin pedir aprobación. Se cambia desde el selector de permisos del compositor.",
-        (true, true) => "Escritura y comandos activos. Las operaciones requieren aprobación o una autorización vigente de la sesión.",
-        (false, false) => "Escritura y comandos desactivados. Los permisos de lectura se configuran por separado.",
-        (true, false) => "Personalizado: modificar archivos con aprobación está activo; ejecutar comandos está desactivado.",
-        (false, true) => "Personalizado: ejecutar comandos con aprobación está activo; modificar archivos está desactivado.",
-    };
+fn command_execution_group(state: &ViewState, compact: bool) -> Element {
     let isolated = state.native_command_isolation == CommandIsolation::WorkspaceWriteOffline;
     let offline_available = CommandIsolation::WorkspaceWriteOffline.is_available_on_host();
     let platform = if cfg!(target_os = "windows") {
@@ -617,9 +607,13 @@ fn agent_page(state: &ViewState, compact: bool) -> Vec<Element> {
     } else if offline_available && cfg!(target_os = "linux") {
         "Linux: Proyecto, sin red limita la escritura al proyecto y bloquea sockets de red. Requiere Bubblewrap y espacios de nombres de usuario habilitados; si no se pueden preparar, el comando se bloquea. Sin aislamiento usa los permisos de tu cuenta.".to_owned()
     } else if offline_available {
-        format!("{platform}: Proyecto, sin red restringe la escritura y la red de los comandos. Sin aislamiento usa los permisos de tu cuenta.")
+        format!(
+            "{platform}: Proyecto, sin red restringe la escritura y la red de los comandos. Sin aislamiento usa los permisos de tu cuenta."
+        )
     } else {
-        format!("{platform}: los comandos sin aislamiento tienen los permisos de tu cuenta y acceso a red. Proyecto, sin red aún no está implementado en esta plataforma.")
+        format!(
+            "{platform}: los comandos sin aislamiento tienen los permisos de tu cuenta y acceso a red. Proyecto, sin red aún no está implementado en esta plataforma."
+        )
     };
     let offline_option = DropdownOption::new(
         "command_isolation:workspace_write_offline",
@@ -652,9 +646,13 @@ fn agent_page(state: &ViewState, compact: bool) -> Vec<Element> {
         compact,
     )];
     if state.native_full_access {
-        isolation_rows.push(settings_parts::feedback_banner(
-            "Elegir «Proyecto, sin red» quita «Permitir todo»: los comandos vuelven a pedir aprobación.",
-            FeedbackTone::Info, None, compact,
+        // Containment and approval are separate harness checks. The current
+        // full-access choice additionally opts into host commands, so selecting
+        // containment revokes that confirmed choice rather than retaining it.
+        isolation_rows.push(page_note(
+            "Permisos y aislamiento",
+            "«Permitir todo» habilita comandos sin aislamiento. Elegir «Proyecto, sin red» desactiva ese permiso y vuelve a pedir aprobación antes de ejecutar comandos.",
+            Icon::InfoCircle,
         ));
     }
     if !state.native_command_isolation.is_available_on_host() {
@@ -672,6 +670,21 @@ fn agent_page(state: &ViewState, compact: bool) -> Vec<Element> {
         ),
         page_note("Aplicación de los cambios", "Se guardan para los próximos turnos nativos. Cambiar el aislamiento o desactivar comandos revoca los procesos persistentes existentes.", Icon::Check),
     ]);
+    settings_parts::settings_group("Ejecución de comandos", isolation_rows)
+}
+
+fn agent_page(state: &ViewState, compact: bool) -> Vec<Element> {
+    let write_description = match (
+        state.native_tool_permissions.write_file,
+        state.native_tool_permissions.run_command,
+    ) {
+        // Chosen in the composer: nothing is asked while it holds.
+        _ if state.native_full_access => "«Permitir todo» está elegido en el compositor: escribe y ejecuta sin pedir aprobación. Se cambia desde el selector de permisos del compositor.",
+        (true, true) => "Escritura y comandos activos. Las operaciones requieren aprobación o una autorización vigente de la sesión.",
+        (false, false) => "Escritura y comandos desactivados. Los permisos de lectura se configuran por separado.",
+        (true, false) => "Personalizado: modificar archivos con aprobación está activo; ejecutar comandos está desactivado.",
+        (false, true) => "Personalizado: ejecutar comandos con aprobación está activo; modificar archivos está desactivado.",
+    };
     let model_description = if selected_native_route(state).is_some() {
         format!(
             "Proveedor: {}\nModelo: {}\n{}",
@@ -780,7 +793,7 @@ fn agent_page(state: &ViewState, compact: bool) -> Vec<Element> {
             ],
         ),
         provider_limits_group(state, compact),
-        settings_parts::settings_group("Ejecución de comandos", isolation_rows),
+        command_execution_group(state, compact),
         external_agents::review_model_group(state, compact),
         settings_parts::settings_group(
             "Chequeo al terminar",
@@ -1444,243 +1457,8 @@ fn shortcuts_page(state: &ViewState, compact: bool) -> Vec<Element> {
     cards
 }
 
-fn capability_page(
-    title: &str,
-    current: &str,
-    needed: &str,
-    related: Option<(&str, &str, Icon)>,
-) -> Vec<Element> {
-    let related = related.map(|(id, label, icon)| outline(id, label).icon(icon).render());
-    vec![
-        settings_parts::empty_state(title, current, related),
-        settings_parts::settings_group(
-            "Cómo funciona",
-            vec![page_note("Disponibilidad", needed, Icon::InfoCircle)],
-        ),
-    ]
-}
-
-fn reason_is_empty(status: Option<&crate::mcp_inspection::McpServerStatus>) -> bool {
-    matches!(status, Some(crate::mcp_inspection::McpServerStatus::Failed(reason)) if reason.trim().is_empty())
-}
-
-pub(crate) fn mcp_page(state: &ViewState, compact: bool) -> Vec<Element> {
-    let editable = state.mcp_load_error.is_none();
-    let mut content = Vec::new();
-    if let Some(error) = &state.mcp_load_error {
-        content.push(settings_parts::feedback_banner(
-            format!("No se pudo cargar la configuración MCP: {error}"),
-            FeedbackTone::Error,
-            None,
-            compact,
-        ));
-    }
-
-    let mut servers = vec![settings_parts::settings_row(
-        "Servidores guardados",
-        format!("{} configurados en este equipo", state.mcp_servers.len()),
-        Element::row(vec![
-            outline("mcp_import", "Importar de otros agentes")
-                .icon(Icon::ArrowRight)
-                .enabled(editable)
-                .tooltip("Trae los servidores MCP que Codex y Claude Code tienen configurados en este equipo y en este proyecto. Entran deshabilitados, para revisarlos. No se copian valores de variables ni de encabezados: sólo sus nombres.")
-                .render(),
-            outline("mcp_new", "Nuevo servidor")
-                .icon(Icon::Add)
-                .enabled(editable)
-                .render(),
-        ])
-        .gap(8.0),
-        compact,
-    )];
-    if state.mcp_servers.is_empty() {
-        servers.push(page_note(
-            "Sin servidores",
-            "Agrega un proceso local o un endpoint HTTP para conectar herramientas al agente nativo.",
-            SettingsPage::Mcp.icon(),
-        ));
-    }
-    for server in &state.mcp_servers {
-        use crate::mcp_inspection::McpServerStatus;
-        let last = state.mcp_inspection.last.get(&server.id).filter(|_| server.enabled);
-        let status = match (server.enabled, last) {
-            (false, _) => "Deshabilitado".to_owned(),
-            (true, Some(McpServerStatus::Connected { tools: 1 })) => "Conectado · 1 herramienta".to_owned(),
-            (true, Some(McpServerStatus::Connected { tools })) => format!("Conectado · {tools} herramientas"),
-            (true, Some(McpServerStatus::Failed(_))) => "No se pudo conectar".to_owned(),
-            (true, None) => "Habilitado · sin probar".to_owned(),
-        };
-        let failed = matches!(last, Some(McpServerStatus::Failed(_)));
-        let toggle_label = if server.enabled {
-            "Desactivar"
-        } else {
-            "Activar"
-        };
-        let inspection_busy = state.mcp_inspection.is_busy()
-            && state
-                .mcp_inspection
-                .scope
-                .as_ref()
-                .is_some_and(|scope| scope.server.id == server.id);
-        // After a failure the same check is the way to try again.
-        let inspection = outline(
-            &format!("mcp_inspect:{}", server.id),
-            if failed { "Reconectar" } else { "Inspeccionar herramientas" },
-        )
-        .icon(SettingsPage::Mcp.icon())
-        .enabled(editable && server.enabled && !state.running && !state.mcp_inspection.is_busy())
-        .loading(inspection_busy)
-        .render();
-        let controls = vec![
-            outline(format!("mcp_select:{}", server.id), "Editar")
-                .icon(Icon::Settings)
-                .enabled(editable)
-                .render(),
-            outline(format!("mcp_toggle:{}", server.id), toggle_label)
-                .icon(Icon::Check)
-                .enabled(editable)
-                .render(),
-            outline(format!("mcp_delete:{}", server.id), "Eliminar")
-                .icon(Icon::Trash)
-                .enabled(editable)
-                .render(),
-        ];
-        let mut oauth_controls = Vec::new();
-        let mut server_content = vec![
-            Element::row(vec![
-                Text::new(&server.id, theme::component_palette())
-                    .render()
-                    .flex(1.0),
-                if failed {
-                    Text::new(status, theme::card_palette()).ink(theme::DESTRUCTIVE).render()
-                } else {
-                    Text::new(status, theme::card_palette()).muted().render()
-                },
-            ])
-            .gap(10.0),
-            Text::new(
-                match &server.url {
-                    Some(url) => format!("Streamable HTTP: {url}"),
-                    None => format!("Programa: {}", server.program),
-                },
-                theme::component_palette(),
-            )
-            .role(TextRole::Small)
-            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
-            .render(),
-        ];
-        if let Some(McpServerStatus::Failed(reason)) = last.filter(|_| !reason_is_empty(last)) {
-            let reason: String = reason.lines().next().unwrap_or("").chars().take(240).collect();
-            server_content.push(
-                Text::new(reason, theme::component_palette())
-                    .role(TextRole::Small)
-                    .ink(theme::DESTRUCTIVE)
-                    .render(),
-            );
-        }
-        if let Some(oauth) = &server.http_oauth {
-            server_content.push(
-                Text::new(
-                    format!(
-                        "OAuth 2.1 · issuer: {} · scopes: {}",
-                        oauth.issuer,
-                        if oauth.scopes.is_empty() {
-                            "los solicitados por el servidor".to_owned()
-                        } else {
-                            oauth.scopes.join(", ")
-                        }
-                    ),
-                    theme::component_palette(),
-                )
-                .role(TextRole::Small)
-                .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
-                .render(),
-            );
-            let oauth_busy = state.mcp_oauth_status.as_ref().is_some_and(|status| {
-                status.server_id == server.id
-                    && matches!(
-                        status.phase,
-                        McpOAuthViewPhase::Discovering | McpOAuthViewPhase::AwaitingBrowser { .. }
-                    )
-            });
-            oauth_controls.push(
-                outline(format!("mcp_oauth_authorize:{}", server.id), "Autorizar")
-                    .icon(Icon::ArrowRight)
-                    .enabled(editable && !oauth_busy)
-                    .loading(oauth_busy)
-                    .render(),
-            );
-            if let Some(status) = state
-                .mcp_oauth_status
-                .as_ref()
-                .filter(|status| status.server_id == server.id)
-            {
-                match &status.phase {
-                    McpOAuthViewPhase::Discovering => {
-                        server_content.push(Text::new("Buscando el servidor de autorización", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
-                        oauth_controls.push(
-                            outline("mcp_oauth_cancel", "Cancelar")
-                                .icon(Icon::Close)
-                                .render(),
-                        );
-                    }
-                    McpOAuthViewPhase::AwaitingBrowser { url } => {
-                        server_content.push(Text::new("Esperando autorización en el navegador. La URL es temporal:", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
-                        server_content.push(
-                            Element::panel(
-                                Text::new(url, theme::component_palette()).ink(theme::SETTINGS_FOREGROUND_SUBTLE).mono().render(),
-                            )
-                            .padding(10.0)
-                            .background(theme::INPUT)
-                            .border(theme::BORDER, 1.0)
-                            .radius(6.0),
-                        );
-                        oauth_controls.push(
-                            outline("mcp_oauth_open", "Abrir autorización")
-                                .icon(Icon::ArrowRight)
-                                .render(),
-                        );
-                        oauth_controls.push(
-                            outline("mcp_oauth_cancel", "Cancelar")
-                                .icon(Icon::Close)
-                                .render(),
-                        );
-                    }
-                    McpOAuthViewPhase::Authorized => server_content.push(Text::new("Autorización guardada. El próximo turno usará esta credencial.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render()),
-                    McpOAuthViewPhase::Failed(message) => server_content.push(
-                        settings_parts::feedback_banner(message, FeedbackTone::Error, None, compact),
-                    ),
-                }
-            }
-        }
-        server_content.push(inspection);
-        server_content.push(ButtonGroup::new(controls)
-            .sizing(crate::ui_sizing::ENTITY_ACTIONS)
-            .stacked(compact)
-            .render());
-        if !oauth_controls.is_empty() {
-            server_content.push(ButtonGroup::new(oauth_controls)
-                .sizing(crate::ui_sizing::ENTITY_ACTIONS)
-                .stacked(compact)
-                .render());
-        }
-        servers.push(
-            Element::column(server_content)
-                .gap(10.0)
-                .padding(settings_parts::ROW_PADDING),
-        );
-    }
-    content.push(settings_parts::settings_group("Servidores MCP", servers));
-    content.push(mcp_inspection::render(&state.mcp_inspection, compact));
-
-    content.push(settings_parts::settings_group(
-        "Uso",
-        vec![
-            page_note("Conexión al ejecutar", "Activar un servidor lo incluye en los próximos turnos del agente nativo en modo Build. La conexión, el protocolo y las herramientas se comprueban durante la ejecución.", SettingsPage::Mcp.icon()),
-            page_note("Aprobación de herramientas", "Sus herramientas solicitan aprobación. Los servidores OAuth necesitan autorización explícita antes de usarse.", Icon::Check),
-        ],
-    ));
-    content
+pub(crate) fn mcp_page(state: &ViewState, compact: bool, width: f32) -> Vec<Element> {
+    mcp::render(state, compact, width)
 }
 
 fn hooks_page(state: &ViewState, compact: bool) -> Vec<Element> {
@@ -1691,7 +1469,10 @@ fn hooks_page(state: &ViewState, compact: bool) -> Vec<Element> {
         content.push(settings_parts::feedback_banner(
             format!("No se pudo cargar la configuración de hooks: {error}"),
             FeedbackTone::Error,
-            None,
+            Some(outline("hooks_reload", "Recargar archivo")
+                .icon(Icon::Refresh)
+                .render()
+                .dispatch_as(SettingsPage::Hooks.action_id())),
             compact,
         ));
     }
@@ -1862,6 +1643,10 @@ pub fn hook_editor_modal(state: &ViewState, base: Element, viewport_width: f32) 
     .render()
 }
 
+// The harness never lets an Allow rule lower the host's Ask or Deny, so the
+// editor and the confirmation must not promise unattended execution.
+pub(crate) const EXEC_RULE_ALLOW_MEANING: &str = "«Permitir» no restringe el prefijo ni salta la aprobación: el permiso de comandos del agente sigue decidiendo si se pregunta antes de ejecutarlo.";
+
 fn exec_rules_page(state: &ViewState, compact: bool) -> Vec<Element> {
     let settings = &state.native_exec_rules;
     let editable = settings.load_error.is_none();
@@ -1912,7 +1697,7 @@ fn exec_rules_page(state: &ViewState, compact: bool) -> Vec<Element> {
                     .render(),
             )
             .render()
-            .size(None, Some(80.0))
+            .max_height(80.0)
             .flex(1.0),
             Text::new(decision, theme::card_palette()).muted().render(),
         ])
@@ -1965,6 +1750,8 @@ pub fn exec_rule_editor_modal(state: &ViewState, base: Element, viewport_width: 
     if !state.show_settings
         || state.settings_page != SettingsPage::Commands
         || !state.native_exec_rules.editor_open
+        // The confirmation of an Allow rule stands in for the editor.
+        || state.native_exec_rules.allow_confirm_open
     {
         return base;
     }
@@ -2008,8 +1795,12 @@ pub fn exec_rule_editor_modal(state: &ViewState, base: Element, viewport_width: 
                 outline("exec_rule_decision:deny", "Bloquear")
                     .active(draft.draft_decision == ExecDecision::Deny)
                     .render(),
+                outline("exec_rule_decision:allow", "Permitir")
+                    .active(draft.draft_decision == ExecDecision::Allow)
+                    .render(),
             ]).stacked(width < 420.0).render(),
         )
+        .hint(EXEC_RULE_ALLOW_MEANING)
         .rows(),
         form_field(
             "Motivo (opcional)",
@@ -2340,76 +2131,93 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
     .render()
 }
 
-/// One theme as a card: a small picture of the window in it, its name and
-/// whether it is the one in use. The picture is the same whichever theme
-/// the window itself is in.
-fn theme_card(choice: crate::theme_mode::ThemeChoice, width: f32) -> Element {
-    use crate::theme_mode::{self, ThemeChoice};
-    let light_now = theme_mode::light();
-    // A gray as it must be asked for to be painted as `wanted`.
-    let gray = |wanted: u8| {
-        let value = if light_now { theme_mode::gray_painted_as(wanted) } else { wanted };
-        openide_ui::Color::rgb(value, value, value)
-    };
-    // Canvas, raised surface, border, text and muted text of each theme.
-    let dark = [22, 43, 60, 212, 120];
-    let light = [250, 236, 214, 40, 140];
-    let bar = |ink: openide_ui::Color, width: f32| Element::spacer().size(Some(width), Some(4.0)).background(ink).radius(2.0);
-    let window = |tones: [u8; 5], width: f32| {
-        let [canvas, raised, border, text, muted] = tones.map(gray);
-        Element::row(vec![
-            Element::column(vec![bar(muted, 26.0), bar(muted, 20.0), bar(muted, 23.0)])
-                .gap(5.0)
-                .padding(7.0)
-                .background(raised)
-                .size(Some(42.0), Some(70.0)),
-            Element::column(vec![bar(text, (width - 70.0).max(20.0)), bar(muted, (width - 96.0).max(14.0)), bar(muted, (width - 84.0).max(16.0))])
-                .gap(6.0)
-                .padding(9.0)
-                .flex(1.0),
-        ])
-        .background(canvas)
-        .border(border, 1.0)
-        .radius(6.0)
-        .size(Some(width), Some(70.0))
-    };
-    let inner = width - 24.0;
-    let picture = match choice {
-        ThemeChoice::Dark => window(dark, inner),
-        ThemeChoice::Light => window(light, inner),
-        // Half of each: it follows the desktop.
-        ThemeChoice::System => {
-            Element::row(vec![window(light, (inner - 6.0) / 2.0), window(dark, (inner - 6.0) / 2.0)]).gap(6.0)
+/// Built-in and saved themes share one native choice control. Miniatures cannot
+/// represent every custom palette faithfully and do not belong in a settings row.
+fn theme_selection_group(
+    state: &ViewState,
+    compact: bool,
+    selected: crate::theme_mode::ThemeChoice,
+) -> Element {
+    use crate::theme_mode::ThemeChoice;
+    let builtins = [
+        (ThemeChoice::System, "Sistema"),
+        (ThemeChoice::Light, "Claro"),
+        (ThemeChoice::Dark, "Oscuro"),
+        (ThemeChoice::HighContrastLight, "Claro con contraste"),
+        (ThemeChoice::HighContrastDark, "Oscuro con contraste"),
+    ];
+    let mut label = builtins
+        .iter()
+        .find(|(choice, _)| *choice == selected)
+        .map_or("Oscuro", |(_, label)| *label)
+        .to_owned();
+    let mut options = builtins
+        .into_iter()
+        .map(|(choice, title)| {
+            let option = DropdownOption::new(format!("settings_theme:{}", choice.key()), title)
+                .selected(choice == selected);
+            if choice == ThemeChoice::System {
+                option.icon(Icon::Laptop)
+            } else {
+                option
+            }
+        })
+        .collect::<Vec<_>>();
+    for custom in &state.appearance.custom_themes {
+        let title = format!("{} · Personalizado", custom.name);
+        let active = selected == ThemeChoice::Custom
+            && state.appearance.active_custom_theme.as_deref() == Some(custom.id.as_str());
+        if active {
+            label.clone_from(&title);
         }
-    };
-    let (title, about) = match choice {
-        ThemeChoice::System => ("Sistema", "Sigue el tema del escritorio."),
-        ThemeChoice::Light => ("Claro", "Superficies claras y texto oscuro."),
-        ThemeChoice::Dark => ("Oscuro", "El diseño original de openADE."),
-    };
-    let active = theme_mode::choice() == choice;
-    let mut heading = vec![Text::new(title, theme::card_palette()).render().flex(1.0)];
-    if active {
-        heading.push(openide_ui::Chip::new("Activo", theme::card_palette()).height(18.0).render());
+        options.push(
+            DropdownOption::new(format!("appearance_theme_apply:{}", custom.id), title)
+                .icon(Icon::Palette)
+                .selected(active),
+        );
     }
-    let content = Element::column(vec![
-        picture,
-        Element::row(heading).gap(6.0),
-        Text::new(about, theme::card_palette()).role(TextRole::Small).muted().render(),
-    ])
-    .gap(8.0);
-    let id = format!("settings_theme:{}", choice.key());
-    let card = openide_ui::Card::new(content, theme::card_palette()).width(width).render();
-    Element::clickable(id, if active { card.border(theme::FOREGROUND_SUBTLE, 1.0) } else { card })
-        .radius(openide_ui::tokens().radius.surface)
+    let description =
+        "Selecciona un tema integrado o de tu biblioteca. Sistema sigue el tema del escritorio.";
+    let control = Select::new(
+        "settings_choice_toggle:appearance_theme_selection",
+        label,
+        options,
+        state.settings_choice_menu_open.as_deref() == Some("appearance_theme_selection"),
+        "settings_choice_dismiss",
+        control_palette(),
+    )
+    .variant(openide_ui::SelectVariant::Field)
+    .width(240.0)
+    .menu_width(280.0)
+    .menu_palette(theme::menu_palette())
+    .sizing(SelectorSizing::COMPACT)
+    .accessibility_label("Tema")
+    .enabled(!state.custom_theme_ui.file_busy)
+    .render()
+    .accessible(openide_ui::Access::named("Tema").description(description));
+    settings_parts::settings_group(
+        "Tema",
+        vec![settings_parts::settings_row(
+            "Tema actual",
+            description,
+            control,
+            compact,
+        )],
+    )
 }
 
 /// What the code editor does for every file. They are the same preferences
 /// the IDE's status bar changes, kept in the same place.
 fn editor_page(state: &ViewState, compact: bool) -> Vec<Element> {
+    use crate::editor_preferences::Caret;
     use openide_editor::IndentStyle;
     let editor = &state.editor_workbench;
+    let view = &editor.view;
     let tabs = matches!(editor.indent, IndentStyle::Tabs(_));
+    let switch = |id: &str, title: &str, description: &str, on: bool| {
+        settings_parts::switch_row(format!("editor_view:{id}"), title, description, on, true, compact)
+    };
+    let appearance = &state.appearance;
     vec![
         settings_parts::settings_group(
             "Vista",
@@ -2430,7 +2238,54 @@ fn editor_page(state: &ViewState, compact: bool) -> Vec<Element> {
                     true,
                     compact,
                 ),
+                switch("line_numbers", "Números de línea", "El número de cada línea en el margen izquierdo.", view.line_numbers),
+                switch("indent_guides", "Guías de sangría", "Una línea tenue en cada nivel de sangría.", view.indent_guides),
+                switch("current_line", "Resaltar la línea actual", "Un fondo suave en la línea donde está el cursor.", view.highlight_current_line),
+                switch("whitespace", "Mostrar espacios en blanco", "Un punto por cada espacio y una flecha por cada tabulación.", view.show_whitespace),
+                settings_parts::settings_row(
+                    "Regla",
+                    "Una línea vertical en una columna, para ver el largo de las líneas.",
+                    outline(
+                        "editor_view:ruler",
+                        if view.ruler == 0 { "Ninguna".to_owned() } else { format!("Columna {}", view.ruler) },
+                    )
+                    .render(),
+                    compact,
+                ),
             ],
+        ),
+        settings_parts::settings_group(
+            "Cursor",
+            vec![
+                settings_parts::settings_row(
+                    "Forma",
+                    "Cómo se dibuja el cursor. En el modo Normal de Vim siempre es un bloque.",
+                    outline(
+                        "editor_view:caret",
+                        match view.caret {
+                            Caret::Line => "Línea",
+                            Caret::Block => "Bloque",
+                            Caret::Underline => "Subrayado",
+                        },
+                    )
+                    .render(),
+                    compact,
+                ),
+                switch("caret_blink", "Parpadeo", "Apagado, el cursor queda fijo mientras el editor tiene el foco.", view.caret_blink),
+            ],
+        ),
+        settings_parts::settings_group(
+            "Fuente",
+            vec![settings_parts::settings_row(
+                "Fuente de código",
+                format!(
+                    "{} · {} px. La comparten el editor, los bloques de código y las diferencias.",
+                    if appearance.code_font_family.is_empty() { "Predeterminada" } else { appearance.code_font_family.as_str() },
+                    appearance.code_font_size,
+                ),
+                outline("settings_page:appearance", "Cambiar en Apariencia").render(),
+                compact,
+            )],
         ),
         settings_parts::settings_group(
             "Escritura",
@@ -2453,52 +2308,42 @@ fn editor_page(state: &ViewState, compact: bool) -> Vec<Element> {
                     true,
                     compact,
                 ),
-            ],
-        ),
-    ]
-}
-
-fn appearance_page(state: &ViewState, compact: bool) -> Vec<Element> {
-    let cards: Vec<Element> =
-        crate::theme_mode::ThemeChoice::ALL.into_iter().map(|choice| theme_card(choice, if compact { 260.0 } else { 196.0 })).collect();
-    vec![
-        settings_parts::settings_group(
-            "Tema",
-            vec![if compact { Element::column(cards).gap(8.0).padding(10.0) } else { Element::row(cards).gap(10.0).padding(10.0) }],
-        ),
-        settings_parts::settings_group(
-            "Interfaz",
-            vec![
-                settings_parts::settings_row(
-                    "Idioma",
-                    "El de toda la interfaz, en las dos ventanas. Lo que todavía no tiene traducción se ve en español.",
-                    Element::row(
-                        [("es", "Español", false), ("en", "English", true)]
-                            .into_iter()
-                            .map(|(key, name, english)| {
-                                let chosen = crate::i18n::english() == english;
-                                Button::new(format!("settings_language:{key}"), name, theme::card_palette())
-                                    .variant(if chosen { ButtonVariant::Subtle } else { ButtonVariant::Ghost })
-                                    .size(ControlSize::Compact)
-                                    .active(chosen)
-                                    .render()
-                            })
-                            .collect(),
-                    )
-                    .gap(4.0),
-                    compact,
+                switch(
+                    "trim_on_save",
+                    "Quitar espacios al final al guardar",
+                    "Borra los espacios y tabulaciones que terminan cada línea. Se puede deshacer.",
+                    view.trim_on_save,
                 ),
                 settings_parts::switch_row(
-                    "settings_reduced_motion",
-                    "Reducir movimiento",
-                    "Usa transiciones mínimas al cambiar de panel o abrir superficies.",
-                    state.settings_reduced_motion,
+                    "settings_vim_toggle",
+                    "Modo Vim",
+                    "Edición modal en el editor del IDE y de agentes. También está en Atajos.",
+                    state.vim_mode,
                     true,
                     compact,
                 ),
             ],
         ),
     ]
+}
+
+fn appearance_page(state: &ViewState, compact: bool) -> Vec<Element> {
+    if state.custom_theme_ui.editor.is_some() {
+        return crate::custom_theme_ui::groups(state, compact);
+    }
+    let mut groups = vec![theme_selection_group(state, compact, crate::theme_mode::choice())];
+    groups.extend(crate::custom_theme_ui::groups(state, compact));
+    groups.extend(crate::appearance_ui::groups(state, compact));
+    groups.push(settings_parts::settings_group("Interfaz", vec![
+        settings_parts::settings_row("Idioma", "El de toda la interfaz, en las dos ventanas. Lo que todavía no tiene traducción se ve en español.",
+            Element::row([("es", "Español", false), ("en", "English", true)].into_iter().map(|(key, name, english)| {
+                let chosen = crate::i18n::english() == english;
+                Button::new(format!("settings_language:{key}"), name, theme::card_palette())
+                    .variant(if chosen { ButtonVariant::Subtle } else { ButtonVariant::Ghost })
+                    .size(ControlSize::Compact).active(chosen).render()
+            }).collect()).gap(4.0), compact),
+    ]));
+    groups
 }
 
 fn terminal_page(state: &ViewState, compact: bool) -> Vec<Element> {
@@ -2661,91 +2506,8 @@ fn additional_page(state: &ViewState, page: SettingsPage, compact: bool) -> Vec<
             content.extend(exec_rules_page(state, compact));
             content
         }
-        SettingsPage::Browser => {
-            let mut content = capability_page(
-                "Navegador integrado",
-                "El agente nativo maneja la pestaña Navegador de la tarea, que se abre sola con su primera acción y que vos también ves y usás.",
-                "Las herramientas de navegador se ofrecen en cada turno de ejecución. Lo que puede hacer en cada sitio se decide abajo, en Permisos por sitio.",
-                Some(("settings_page:agent", "Ver permisos del agente", Icon::ArrowRight)),
-            );
-            content.push(settings_parts::settings_group("Enlaces", vec![
-                settings_parts::settings_row(
-                    "Abrir enlaces del chat en",
-                    "Automático abre en el navegador integrado las direcciones de este equipo, como localhost, y el resto en el del sistema. Ctrl+clic usa el otro; el clic derecho ofrece ambos.",
-                    settings_choice_selector(
-                        state,
-                        "chat_links",
-                        state.chat_link_opening.label(),
-                        state.chat_link_opening.options(),
-                    ),
-                    compact,
-                ),
-            ]));
-            // What the agent may do on a site without asking. Only the sites
-            // with a permission of their own are listed.
-            let mut sites = vec![settings_parts::settings_row(
-                "Predeterminado",
-                "En un sitio que no está en la lista, el agente lee la página sin preguntar y pide aprobación para cada acción, según sus permisos.",
-                Text::new("Requiere aprobación", theme::component_palette()).role(TextRole::Small).muted().render(),
-                compact,
-            )];
-            for (index, site) in state.browser_sites.iter().enumerate() {
-                sites.push(settings_parts::settings_row(
-                    &site.origin,
-                    match site.access {
-                        crate::browser_sites::SiteAccess::Allow => "El agente actúa en este sitio sin preguntar.",
-                        crate::browser_sites::SiteAccess::Ask => "Cada acción del agente en este sitio pide aprobación.",
-                        crate::browser_sites::SiteAccess::Block => "Las acciones del agente en este sitio se rechazan sin preguntar.",
-                    },
-                    Element::row(vec![
-                        outline(format!("browser_site_cycle:{index}"), site.access.label()).render(),
-                        UiIconButton::new(format!("browser_site_remove:{index}"), Icon::Close, control_palette())
-                            .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Compact)
-                            .tooltip(format!("Quitar el permiso propio de {}", site.origin))
-                            .render(),
-                    ])
-                    .gap(6.0),
-                    compact,
-                ));
-            }
-            sites.push(settings_parts::settings_row(
-                "Agregar permiso para un sitio",
-                "Un origen como https://example.com. Se agrega con «Permitir siempre»; tocá su valor para cambiarlo.",
-                Element::row(vec![
-                    Element::text_input("browser_site_draft", &state.browser_site_draft, "https://example.com")
-                        .background(theme::INPUT)
-                        .foreground(theme::FOREGROUND)
-                        .border(theme::BORDER, 1.0)
-                        .radius(6.0)
-                        .font_size(12.0)
-                        .padding(4.0)
-                        .size(Some(220.0), Some(28.0)),
-                    outline("browser_site_add", "Agregar").render(),
-                ])
-                .gap(6.0),
-                compact,
-            ));
-            content.push(settings_parts::settings_group("Permisos por sitio", sites));
-            content.push(settings_parts::settings_group("Vista previa", vec![
-                settings_parts::settings_row(
-                    "Abrir la vista previa de los servidores que inicia el agente",
-                    "Cuando un comando del agente publica una dirección de este equipo, como localhost:5173, y ese puerto responde. Preguntar la ofrece en la tarjeta del comando. Nunca se abre sola una dirección de otro equipo.",
-                    settings_choice_selector(
-                        state,
-                        "preview_opening",
-                        state.preview_opening.label(),
-                        state.preview_opening.options(),
-                    ),
-                    compact,
-                ),
-            ]));
-            content
-        }
         SettingsPage::Subagents => subagents::page(state, compact),
         SettingsPage::ExternalAgents => external_agents::page(state, compact),
-        SettingsPage::Plugins => crate::plugins_ui::page(state, compact),
-        SettingsPage::Mcp => mcp_page(state, compact),
         SettingsPage::Hooks => hooks_page(state, compact),
         SettingsPage::Usage => vec![
             settings_parts::settings_group("Conversación activa", vec![
@@ -2862,6 +2624,9 @@ pub fn build_settings_page(
         SettingsPage::General => general_page(state, compact),
         SettingsPage::Agent => agent_page(state, compact),
         SettingsPage::Providers => providers_page(state, compact, content_width),
+        SettingsPage::Browser => crate::browser_settings_ui::page(state, compact, content_width),
+        SettingsPage::Plugins => crate::plugins_ui::page(state, compact, content_width),
+        SettingsPage::Mcp => mcp_page(state, compact, content_width),
         SettingsPage::Skills => skills_page(state, compact),
         SettingsPage::Automations => automations_page(state, compact),
         SettingsPage::Data => data_page(state, compact),
@@ -2903,6 +2668,24 @@ pub(crate) fn native_output_settings_for_test(state: &ViewState, compact: bool) 
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn command_prefixes_use_their_content_height_and_keep_long_patterns_scrollable() {
+        use openide_harness::{ExecDecision, ExecPatternToken, ExecRule};
+        use openide_ui::{Element, HitKind, Size, UiTree};
+        for (argument, short) in [("git".to_owned(), true), ("long-argument-".repeat(60), false)] {
+            let mut state = crate::view::tests::empty_state();
+            state.native_exec_rules.rules = vec![ExecRule::new(
+                vec![ExecPatternToken::Literal(argument)], ExecDecision::Ask, None,
+            ).unwrap()];
+            let mut tree = UiTree::new(Element::column(super::exec_rules_page(&state, true)));
+            let frame = tree.layout(Size::new(360.0, 1600.0));
+            let pattern = frame.regions.iter().find(|region|
+                region.id == "exec_rule_pattern:0" && region.kind == HitKind::Scroll).unwrap();
+            assert!(pattern.rect.height > 0.0 && pattern.rect.height <= 80.0);
+            if short { assert!(pattern.rect.height < 40.0); }
+        }
+    }
+
     use super::*;
     use openide_ui::{DrawCommand, Frame, Key, Point, Size, UiAction, UiEvent, UiTree};
 
@@ -2920,6 +2703,274 @@ mod tests {
                 DrawCommand::Text { text, .. } if text == label
             )
         })
+    }
+
+    #[test]
+    fn command_isolation_explanation_shares_the_card_surface_and_row_insets() {
+        let mut state = crate::view::tests::empty_state();
+        state.native_full_access = true;
+        state.native_command_isolation = CommandIsolation::HostUnrestricted;
+        let title = "Permisos y aislamiento";
+        let description = "«Permitir todo» habilita comandos sin aislamiento. Elegir «Proyecto, sin red» desactiva ese permiso y vuelve a pedir aprobación antes de ejecutar comandos.";
+        for width in [360.0, 900.0] {
+            let mut tree = UiTree::new(command_execution_group(&state, width < 640.0));
+            tree.set_reduced_motion(true);
+            let frame = tree.layout(Size::new(width, 1200.0));
+            assert!(paints_label(&frame, title));
+            let layouts = frame.text_layouts();
+            let heading = layouts.iter().find(|block| block.source == title).unwrap();
+            let copy = layouts
+                .iter()
+                .find(|block| block.source == description)
+                .unwrap();
+            let heading_rect = heading.runs.first().unwrap().rect;
+            let center = Point::new(
+                heading_rect.x + heading_rect.width / 2.0,
+                heading_rect.y + heading_rect.height / 2.0,
+            );
+            let surfaces = frame
+                .commands
+                .iter()
+                .filter_map(|command| {
+                    let (rect, color) = match command {
+                        DrawCommand::FillRect { rect, color, .. }
+                        | DrawCommand::FillCornerRect { rect, color, .. } => (rect, color),
+                        _ => return None,
+                    };
+                    (rect.width > width / 2.0 && rect.contains(center)).then_some(*color)
+                })
+                .collect::<Vec<_>>();
+            assert!(
+                !surfaces.is_empty(),
+                "the note must sit on its settings card"
+            );
+            assert!(
+                surfaces
+                    .iter()
+                    .all(|color| *color == theme::card_palette().surface),
+                "the permanent explanation must not add a contrasting alert strip: {surfaces:?}"
+            );
+            for run in heading.runs.iter().chain(&copy.runs) {
+                assert!(run.rect.x >= settings_parts::ROW_PADDING);
+                assert!(run.rect.x + run.rect.width <= width - settings_parts::ROW_PADDING + 0.01);
+            }
+            let controls = frame
+                .regions
+                .iter()
+                .filter(|region| region.kind == openide_ui::HitKind::Button)
+                .map(|region| region.id.as_str())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                controls,
+                ["settings_choice_toggle:isolation", "settings_link:commands"],
+                "the explanation adds no control: {:?}",
+                frame.regions
+            );
+            let accessible_controls = frame
+                .access
+                .iter()
+                .filter(|node| node.actionable)
+                .map(|node| (node.id.as_str(), node.role))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                accessible_controls,
+                [
+                    (
+                        "settings_choice_toggle:isolation",
+                        openide_ui::Role::ComboBox
+                    ),
+                    ("settings_link:commands", openide_ui::Role::Button),
+                ]
+            );
+            if let Some(directory) = std::env::var_os("OPENIDE_SETTINGS_CHOICE_VISUAL_DIR") {
+                let directory = std::path::PathBuf::from(directory);
+                std::fs::create_dir_all(&directory).unwrap();
+                let path = directory.join(format!("command-execution-{width:.0}.svg"));
+                let height = frame
+                    .commands
+                    .iter()
+                    .filter_map(|command| match command {
+                        DrawCommand::FillRect { rect, .. }
+                        | DrawCommand::FillCornerRect { rect, .. } => Some(rect.y + rect.height),
+                        _ => None,
+                    })
+                    .fold(0.0, f32::max)
+                    .ceil()
+                    + 4.0;
+                visual_qa::write_frame_svg(&frame, &path, width, height).unwrap();
+                let mut options = resvg::usvg::Options::default();
+                options.fontdb_mut().load_system_fonts();
+                let svg = std::fs::read_to_string(&path).unwrap();
+                let image = resvg::usvg::Tree::from_str(&svg, &options).unwrap();
+                let mut pixmap = resvg::tiny_skia::Pixmap::new(width as u32, height as u32).unwrap();
+                resvg::render(
+                    &image,
+                    resvg::tiny_skia::Transform::identity(),
+                    &mut pixmap.as_mut(),
+                );
+                pixmap.save_png(path.with_extension("png")).unwrap();
+            }
+            // The outline link has its own focus identity, while dispatching
+            // the same navigation action as the Settings sidebar.
+            let link = frame
+                .regions
+                .iter()
+                .find(|region| region.id == "settings_link:commands")
+                .unwrap()
+                .rect;
+            let point = Point::new(link.x + link.width / 2.0, link.y + link.height / 2.0);
+            tree.handle_event(UiEvent::PointerDown(point));
+            assert_eq!(
+                tree.handle_event(UiEvent::PointerUp(point)),
+                [UiAction::Clicked {
+                    id: "settings_page:commands".into(),
+                }]
+            );
+        }
+        state.native_full_access = false;
+        let frame = UiTree::new(command_execution_group(&state, true)).layout(Size::new(360.0, 1200.0));
+        assert!(!paints_label(&frame, title));
+    }
+
+    #[test]
+    fn theme_selection_is_one_compact_accessible_field_at_narrow_and_wide_widths() {
+        use crate::theme_mode::ThemeChoice;
+        let state = crate::view::tests::empty_state();
+        for width in [320.0, 360.0, 900.0] {
+            let mut tree = UiTree::new(Element::column(vec![
+                theme_selection_group(&state, width < 640.0, ThemeChoice::HighContrastDark),
+                Element::button("after-theme", "Next setting"),
+            ]));
+            let frame = tree.layout(Size::new(width, 720.0));
+            let trigger = frame
+                .regions
+                .iter()
+                .find(|region| region.id == "settings_choice_toggle:appearance_theme_selection")
+                .unwrap();
+            assert!((trigger.rect.width - 240.0).abs() < 0.01);
+            assert!((trigger.rect.height - ControlSize::Regular.height()).abs() < 0.01);
+            assert!(trigger.rect.x >= 0.0 && trigger.rect.x + trigger.rect.width <= width);
+            let next = frame
+                .regions
+                .iter()
+                .find(|region| region.id == "after-theme")
+                .unwrap();
+            assert!(
+                next.rect.y < 180.0,
+                "one ordinary settings row at {width}: {}",
+                next.rect.y
+            );
+            assert!(
+                !frame
+                    .regions
+                    .iter()
+                    .any(|region| region.id.starts_with("settings_theme:")
+                        || region.id.starts_with("appearance_theme_apply:"))
+            );
+            let node = frame
+                .access
+                .iter()
+                .find(|node| node.id == trigger.id)
+                .unwrap();
+            assert_eq!(node.role, openide_ui::Role::ComboBox);
+            assert_eq!(node.name, "Tema");
+            assert_eq!(node.value_text.as_deref(), Some("Oscuro con contraste"));
+            assert_eq!(node.expanded, Some(false));
+            assert!(tree.focus(&trigger.id));
+            assert_eq!(
+                tree.handle_event(key(Key::Enter)),
+                vec![UiAction::Clicked {
+                    id: trigger.id.clone()
+                }]
+            );
+        }
+    }
+
+    #[test]
+    fn theme_selection_combines_builtins_and_custom_themes_with_native_keyboard_navigation() {
+        use crate::{
+            custom_theme::{CustomTheme, ThemeAppearance},
+            theme_mode::ThemeChoice,
+        };
+        let mut state = crate::view::tests::empty_state();
+        let first = CustomTheme::new("Aurora", ThemeAppearance::Dark);
+        let second = CustomTheme::new("Claro", ThemeAppearance::Light);
+        let first_id = format!("appearance_theme_apply:{}", first.id);
+        let second_id = format!("appearance_theme_apply:{}", second.id);
+        state.appearance.active_custom_theme = Some(first.id.clone());
+        state.appearance.custom_themes = vec![first, second];
+        state.settings_choice_menu_open = Some("appearance_theme_selection".into());
+        for width in [320.0, 900.0] {
+            let mut tree = UiTree::new(theme_selection_group(
+                &state,
+                width < 640.0,
+                ThemeChoice::Custom,
+            ));
+            tree.set_reduced_motion(true);
+            let frame = tree.layout(Size::new(width, 720.0));
+            let node = frame
+                .access
+                .iter()
+                .find(|node| node.id == "settings_choice_toggle:appearance_theme_selection")
+                .unwrap();
+            assert_eq!(node.value_text.as_deref(), Some("Aurora · Personalizado"));
+            assert_eq!(node.expanded, Some(true));
+            let options = frame
+                .access
+                .iter()
+                .filter(|node| {
+                    node.id.starts_with("settings_theme:")
+                        || node.id.starts_with("appearance_theme_apply:")
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(options.len(), 7);
+            assert_eq!(
+                options
+                    .iter()
+                    .filter(|node| node.selected == Some(true))
+                    .map(|node| node.id.as_str())
+                    .collect::<Vec<_>>(),
+                vec![first_id.as_str()]
+            );
+            for choice in ThemeChoice::ALL
+                .into_iter()
+                .filter(|choice| *choice != ThemeChoice::Custom)
+            {
+                assert!(
+                    options
+                        .iter()
+                        .any(|node| node.id == format!("settings_theme:{}", choice.key()))
+                );
+            }
+            assert!(
+                options
+                    .iter()
+                    .any(|node| node.id == second_id && node.name == "Claro · Personalizado")
+            );
+            let surface = frame
+                .regions
+                .iter()
+                .find(|region| region.id == "popover_surface:settings_choice_dismiss")
+                .unwrap()
+                .rect;
+            assert_eq!(surface.width, 280.0);
+            assert!(surface.x >= 0.0 && surface.x + surface.width <= width);
+            assert!(tree.focus("settings_theme:system"));
+            tree.handle_event(key(Key::End));
+            assert_eq!(tree.focused_id(), Some(second_id.as_str()));
+            assert_eq!(
+                tree.handle_event(key(Key::Enter)),
+                vec![UiAction::Clicked {
+                    id: second_id.clone()
+                }]
+            );
+            assert_eq!(
+                tree.handle_event(key(Key::Escape)),
+                vec![UiAction::Clicked {
+                    id: "settings_choice_dismiss".into()
+                }]
+            );
+        }
     }
 
     #[test]

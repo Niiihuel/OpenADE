@@ -540,6 +540,9 @@ impl AgentsWindow {
     /// under, or the tab of the native conversation that made it. Its first
     /// call opens the tab and starts the context; `None` while that starts.
     fn external_browser(&mut self, call: &mut BrowserCall) -> Result<Option<BrowserMcpClient>, String> {
+        if !self.browser_automation_available() {
+            return Err("La automatización del navegador está desactivada o sus permisos requieren atención en Ajustes → Navegador.".into());
+        }
         let (kind, open) = match &call.conversation {
             Some(scope) => (
                 DockTabKind::Browser,

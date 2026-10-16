@@ -651,6 +651,9 @@ pub struct ViewState {
     pub vim_mode: bool,
     pub settings_keymap_menu_open: bool,
     pub settings_reduced_motion: bool,
+    pub(crate) appearance: crate::appearance_preferences::AppearancePreferences,
+    pub(crate) appearance_font_query: [String; 2],
+    pub(crate) custom_theme_ui: crate::custom_theme_ui::ThemeUiState,
     pub settings_reopen_last_workspace: bool,
     pub settings_terminal_shell: TerminalShell,
     pub settings_terminal_shell_draft: String,
@@ -662,6 +665,9 @@ pub struct ViewState {
     pub(crate) chat_link_menu: Option<crate::chat_links::ChatLinkMenu>,
     pub settings_terminal_shell_editing: bool,
     pub(crate) mcp_servers: Vec<crate::mcp_settings::McpServerSettings>,
+    pub(crate) mcp_settings_scope: crate::mcp_settings::McpSettingsScope,
+    pub(crate) mcp_effective_summary: String,
+    pub(crate) mcp_shadowed_user_ids: Vec<String>,
     /// The saved ID being edited; `None` means the form creates a new server.
     pub(crate) mcp_selected_id: Option<String>,
     pub(crate) mcp_editor_open: bool,
@@ -680,6 +686,7 @@ pub struct ViewState {
     pub(crate) mcp_draft_oauth_scopes: String,
     pub(crate) mcp_oauth_status: Option<McpOAuthViewStatus>,
     pub(crate) mcp_inspection: crate::mcp_inspection::McpInspectionUiState,
+    pub(crate) mcp_presentation: crate::mcp_presentation::McpPresentationUi,
     pub(crate) conversation_activity: crate::conversation_activity::ConversationActivityUi,
     pub(crate) conversation_details: crate::conversation_activity::ConversationDetailsUi,
     pub(crate) stream_presentation: crate::stream_presentation::StreamingPresentation,
@@ -763,6 +770,14 @@ pub struct ViewState {
     /// The sites with a permission of their own, and the one being added.
     pub(crate) browser_sites: Vec<crate::browser_sites::Site>,
     pub(crate) browser_site_draft: String,
+    pub(crate) browser_automation_enabled: bool,
+    pub(crate) browser_sites_error: Option<String>,
+    pub(crate) browser_site_draft_access: crate::browser_sites::SiteAccess,
+    pub(crate) browser_sites_reset_confirm: bool,
+    pub(crate) subagent_settings: crate::subagent_settings::SubagentSettings,
+    pub(crate) subagent_settings_error: Option<String>,
+    pub(crate) subagent_settings_reset_pending: bool,
+    pub(crate) subagent_personas: Vec<crate::subagent_settings::SubagentPersona>,
     pub review_detail: Option<ReviewDetailView>,
     pub terminal_tabs: Vec<DockTabView>,
     pub terminal_menu_open: bool,
@@ -1039,37 +1054,7 @@ impl SessionRowContext {
     }
 }
 
-/// The plugins or the MCP servers as a tab of the add-ons section: the page
-/// Settings shows, under its name. None for the section's own tabs.
-pub(crate) fn addons_settings_tab(state: &ViewState, width: f32) -> Option<Element> {
-    use marketplace_view::MarketplaceTab;
-    let compact = width < 460.0;
-    let (id, title, about, rows) = match state.marketplace.tab {
-        MarketplaceTab::Plugins => (
-            "marketplace_plugins",
-            "Plugins",
-            "Programas que le dan herramientas al agente, instalados en este equipo.",
-            crate::plugins_ui::page(state, compact),
-        ),
-        MarketplaceTab::Mcp => (
-            "marketplace_mcp",
-            "Servidores MCP",
-            "Conexiones a herramientas externas, locales o por HTTP.",
-            settings_ui::mcp_page(state, compact),
-        ),
-        _ => return None,
-    };
-    let mut page = vec![
-        Element::truncated_text(title).font_family(FontFamily::Sans).font_size(22.0).foreground(theme::FOREGROUND),
-        UiText::new(about, theme::component_palette()).muted().render(),
-    ];
-    page.extend(rows);
-    Some(openide_ui::PageColumn::new(id, width, theme::component_palette()).min_width(240.0).children(page).render())
-}
-
 impl ViewState {
-    /// Whether one of the pages Settings holds is the one in view: there,
-    /// or as a tab of the add-ons section.
     /// Whether `id` comes from the user's registry file. Such a provider is
     /// offered like a connected one, with its key read from a variable.
     pub(crate) fn own_provider(&self, id: &str) -> bool {
@@ -1077,21 +1062,13 @@ impl ViewState {
     }
 
     pub(crate) fn shows(&self, page: SettingsPage) -> bool {
-        use marketplace_view::MarketplaceTab;
-        if self.show_settings {
-            return self.settings_page == page;
-        }
-        let ide = self.ide.mode == crate::ide_workspace::WindowMode::Ide;
-        let section = if ide {
-            self.ide.activity == crate::ide_workspace::IdeActivity::Extensions && self.ide.extensions_open
-        } else {
-            self.main_page == MainPage::Marketplace
-        };
-        section
-            && matches!(
-                (self.marketplace.tab, page),
-                (MarketplaceTab::Plugins, SettingsPage::Plugins) | (MarketplaceTab::Mcp, SettingsPage::Mcp)
-            )
+        self.show_settings && self.settings_page == page
+    }
+
+    pub(crate) fn marketplace_visible(&self) -> bool {
+        !self.show_settings
+            && (self.main_page == MainPage::Marketplace
+                || (crate::ide_workspace::active(self) && self.ide.extensions_open))
     }
 }
 
@@ -3496,21 +3473,11 @@ pub(crate) fn build_view_sized(state: &ViewState, viewport_width: f32, viewport_
     let center = if !state.show_settings && state.main_page == MainPage::Automations {
         automation_view::build_automations(&state.automations, center_width)
     } else if !state.show_settings && state.main_page == MainPage::Marketplace {
-        use marketplace_view::MarketplaceTab;
-        let tab = state.marketplace.tab;
-        let content = match addons_settings_tab(state, center_width) {
-            Some(page) => page,
-            None if tab == MarketplaceTab::Sources => {
-                // Its header carries the way to add a source.
-                marketplace_view::landing(&state.marketplace, center_width, "marketplace_details:", Some(("Orígenes", None)))
-            }
-            None => marketplace_view::marketplace_page_with_navigation(&state.marketplace, center_width, None),
-        };
-        Element::column(vec![
-            marketplace_view::section_tabs(tab, (!left_visible).then(|| sidebar_reopen_control(theme::BACKGROUND))),
-            content.flex(1.0),
-        ])
-        .gap(0.0)
+        marketplace_view::marketplace_page_with_navigation(
+            &state.marketplace,
+            center_width,
+            (!left_visible).then(|| sidebar_reopen_control(theme::BACKGROUND)),
+        )
     } else if is_home {
         home::build_home_sized(state, center_width, session_height)
     } else if is_session && cli_task_in_center(state) {
@@ -3769,6 +3736,9 @@ pub(crate) fn dialog_open(state: &ViewState, viewport_width: f32) -> bool {
 }
 
 fn dialogs(state: &ViewState, base: Element, viewport_width: f32) -> Element {
+    let base = if !state.show_settings && state.main_page == MainPage::Automations {
+        automation_view::editor_overlay(&state.automations, base, viewport_width)
+    } else { base };
     let base = confirmation_dialog(state, base, viewport_width);
     let base = crate::model_switch::confirm_dialog(base, state, viewport_width);
     let base = crate::github_account_ui::sign_in_alert(state, base, viewport_width);
@@ -3922,7 +3892,7 @@ fn confirmation_dialog(state: &ViewState, base: Element, viewport_width: f32) ->
             "Detener".to_owned(),
             true,
         ))
-    } else if let Some(id) = state.pending_mcp_delete_id.as_deref() {
+    } else if let Some(id) = state.pending_mcp_delete_id.as_deref().filter(|_| state.shows(SettingsPage::Mcp)) {
         state.mcp_servers.iter().find(|server| server.id == id).map(|server| {
             let mut description = "Se quitará de la configuración de este proyecto. Podrás volver a agregarlo más adelante.".to_owned();
             if state.settings_notice_error {
@@ -3976,6 +3946,26 @@ fn confirmation_dialog(state: &ViewState, base: Element, viewport_width: f32) ->
                 true,
             )
         })
+    } else if state.show_settings && state.native_exec_rules.allow_confirm_open {
+        let mut description = format!(
+            "Prefijo: {}\n\n{}",
+            state.native_exec_rules.draft_pattern,
+            settings_ui::EXEC_RULE_ALLOW_MEANING
+        );
+        if state.settings_notice_error {
+            if let Some(error) = &state.settings_notice {
+                description.push_str("\n\n");
+                description.push_str(error);
+            }
+        }
+        Some((
+            "¿Guardar la regla «Permitir»?".to_owned(),
+            description,
+            "exec_rule_allow_confirm".to_owned(),
+            "exec_rule_allow_cancel".to_owned(),
+            "Guardar regla".to_owned(),
+            false,
+        ))
     } else if let Some(id) = state.marketplace.pending_uninstall_id.as_deref() {
         state.marketplace.snapshot.items.iter().find(|item| item.id == id).map(|item| {
             (
@@ -4356,6 +4346,9 @@ pub(crate) mod tests {
             vim_mode: false,
             settings_keymap_menu_open: false,
             settings_reduced_motion: false,
+            appearance: Default::default(),
+            appearance_font_query: Default::default(),
+            custom_theme_ui: Default::default(),
             settings_reopen_last_workspace: false,
             settings_terminal_shell: TerminalShell::System,
             settings_terminal_shell_draft: String::new(),
@@ -4366,6 +4359,9 @@ pub(crate) mod tests {
             chat_link_menu: None,
             settings_terminal_shell_editing: false,
             mcp_servers: Vec::new(),
+            mcp_settings_scope: Default::default(),
+            mcp_effective_summary: String::new(),
+            mcp_shadowed_user_ids: Vec::new(),
             mcp_selected_id: None,
             mcp_editor_open: false,
             pending_mcp_delete_id: None,
@@ -4385,6 +4381,7 @@ pub(crate) mod tests {
             mcp_draft_env_names: String::new(),
             mcp_load_error: None,
             mcp_inspection: Default::default(),
+            mcp_presentation: Default::default(),
             conversation_activity: Default::default(),
             conversation_details: Default::default(),
             stream_presentation: Default::default(),
@@ -4466,6 +4463,14 @@ pub(crate) mod tests {
             queued_messages: Vec::new(),
             queue_paused: false,
             browser_sites: Vec::new(),
+            browser_automation_enabled: true,
+            browser_sites_error: None,
+            browser_site_draft_access: Default::default(),
+            browser_sites_reset_confirm: false,
+            subagent_settings: Default::default(),
+            subagent_settings_error: None,
+            subagent_settings_reset_pending: false,
+            subagent_personas: Vec::new(),
             browser_site_draft: String::new(),
             review_detail: None,
             terminal_tabs: Vec::new(),
@@ -6378,7 +6383,9 @@ pub(crate) mod tests {
         state.show_settings = true;
         for (page, action) in [
             (SettingsPage::General, "workspace_apply"),
-            (SettingsPage::Appearance, "settings_reduced_motion"),
+            (SettingsPage::Appearance, "settings_choice_toggle:appearance_theme_selection"),
+            (SettingsPage::Appearance, "settings_choice_toggle:appearance_motion"),
+            (SettingsPage::Appearance, "settings_theme:dark"),
             (SettingsPage::Agent, "write_mode"),
             (SettingsPage::Agent, "agent_tool:read_file"),
             (SettingsPage::Agent, "command_isolation:host_unrestricted"),
@@ -6396,6 +6403,7 @@ pub(crate) mod tests {
             let menu = match action {
                 "command_isolation:host_unrestricted" => Some("isolation"),
                 "session_organize:recent" => Some("organization"),
+                "settings_theme:dark" => Some("appearance_theme_selection"),
                 _ => None,
             };
             if let Some(menu) = menu {
@@ -6632,6 +6640,7 @@ pub(crate) mod tests {
                 "exec_rule_draft_justification",
                 "exec_rule_decision:ask",
                 "exec_rule_decision:deny",
+                "exec_rule_decision:allow",
                 "exec_rule_save",
                 "exec_rule_cancel",
             ] {
@@ -6640,6 +6649,16 @@ pub(crate) mod tests {
                     "command rule editor missing {id} at {width}px"
                 );
             }
+            state.native_exec_rules.allow_confirm_open = true;
+            let mut tree = UiTree::new(build_view(&state, width));
+            for id in ["exec_rule_allow_confirm", "exec_rule_allow_cancel"] {
+                assert!(
+                    settings_action_reachable(&mut tree, id, width, 720.0),
+                    "allow confirmation missing {id} at {width}px"
+                );
+            }
+            assert!(!settings_action_reachable(&mut tree, "exec_rule_save", width, 720.0));
+            state.native_exec_rules.allow_confirm_open = false;
             state.native_exec_rules.editor_open = false;
         }
     }
@@ -6952,6 +6971,10 @@ pub(crate) mod tests {
     #[test]
     fn mcp_settings_notes_wrap_without_covering_rows_or_clipping_copy() {
         let state = empty_state();
+        let notes = [
+            "Los servidores habilitados se conectan al iniciar un turno Build. La inspección consulta metadatos y cierra la conexión.",
+            "Elegir herramientas no cambia sus permisos. Las llamadas siguen solicitando aprobación; OAuth requiere autorización.",
+        ];
         for width in [360.0, 620.0, 1300.0] {
             let mut tree = UiTree::new(settings_ui::build_settings_page(
                 &state,
@@ -6961,78 +6984,40 @@ pub(crate) mod tests {
             ));
             tree.set_reduced_motion(true);
             tree.set_sans_metrics(openide_ui::FontMetrics::default());
+            tree.layout(Size::new(width, 900.0));
+            tree.scroll_to_end("settings_page:Mcp");
             let frame = tree.layout(Size::new(width, 900.0));
-            let text_runs: Vec<_> = frame
-                .commands
-                .iter()
-                .filter_map(|command| match command {
-                    DrawCommand::Text {
-                        position,
-                        text,
-                        font_size,
-                        ..
-                    } => Some((position, text.as_str(), font_size)),
-                    _ => None,
-                })
-                .collect();
-            let connection_index = text_runs
-                .iter()
-                .position(|(_, text, _)| *text == "Conexión al ejecutar")
-                .unwrap();
-            let approval_index = text_runs
-                .iter()
-                .position(|(_, text, _)| *text == "Aprobación de herramientas")
-                .unwrap();
-            assert!(approval_index > connection_index + 1);
-            for (position, _, font_size) in &text_runs[connection_index + 1..approval_index] {
-                let line_height = openide_ui::FontMetrics::default().line_height * **font_size
-                    / openide_ui::DEFAULT_FONT_SIZE;
-                assert!(
-                    position.y + line_height < text_runs[approval_index].0.y,
-                    "MCP notes overlap at {width}px"
-                );
-            }
-            let mut clips = Vec::new();
-            let mut note_active = false;
-            for command in &frame.commands {
-                match command {
-                    DrawCommand::PushClip(rect) => clips.push(*rect),
-                    DrawCommand::PopClip => {
-                        clips.pop();
-                    }
-                    DrawCommand::Text {
-                        position,
-                        text,
-                        font_size,
-                        ..
-                    } => {
-                        match text.as_str() {
-                            "Sin servidores"
-                            | "Conexión al ejecutar"
-                            | "Aprobación de herramientas" => {
-                                note_active = true;
-                                continue;
-                            }
-                            "Uso" => note_active = false,
-                            _ => {}
-                        }
-                        if !note_active {
-                            continue;
-                        }
-                        let line_height = openide_ui::FontMetrics::default().line_height
-                            * *font_size
-                            / openide_ui::DEFAULT_FONT_SIZE;
-                        for clip in &clips {
-                            assert!(
-                                position.y + line_height <= clip.y + clip.height + 0.01,
-                                "MCP note clipped at {width}px: {}",
-                                text
-                            );
-                        }
-                    }
-                    _ => {}
+            let blocks = frame.text_layouts();
+            let notes = notes.map(|note| {
+                blocks
+                    .iter()
+                    .find(|block| block.source == note)
+                    .expect("complete MCP help paragraph")
+            });
+            for note in notes {
+                assert!(!note.runs.is_empty());
+                for run in &note.runs {
+                    assert!(run.rect.x >= 0.0 && run.rect.x + run.rect.width <= width + 0.1);
+                    assert!(
+                        run.visible
+                            .is_some_and(|visible| visible.height >= run.rect.height - 0.1
+                                && visible.width >= run.rect.width - 0.1),
+                        "MCP note clipped at {width}px: {}",
+                        run.text
+                    );
                 }
             }
+            let first_bottom = notes[0]
+                .runs
+                .iter()
+                .map(|run| run.rect.y + run.rect.height)
+                .fold(f32::NEG_INFINITY, f32::max);
+            let second_top = notes[1]
+                .runs
+                .iter()
+                .map(|run| run.rect.y)
+                .fold(f32::INFINITY, f32::min);
+            assert!(first_bottom < second_top, "MCP notes overlap at {width}px");
         }
     }
 
@@ -7347,9 +7332,31 @@ pub(crate) mod tests {
             .collect();
         for width in [480.0, 1100.0] {
             for (page, name, prefix, observations) in [
-                (SettingsPage::Github, "github", "github-contributions:", 366),
-                (SettingsPage::Usage, "usage", "usage-tasks:", 3),
+                (SettingsPage::Github, "github", "github-contributions", 366),
+                (SettingsPage::Usage, "usage", "usage-tasks", 3),
             ] {
+                // Bars snap their edges to whole pixels; heatmap cells keep
+                // their exact grid geometry.
+                let rounding = if page == SettingsPage::Usage { 0.51 } else { 0.01 };
+                let painted_observations = |frame: &openide_ui::Frame| {
+                    let Some(plot) = frame.regions.iter().find(|region| region.id == prefix) else {
+                        return Vec::new();
+                    };
+                    frame.commands.iter().filter_map(|command| match command {
+                        DrawCommand::FillRect { rect, color, .. }
+                        | DrawCommand::FillCornerRect { rect, color, .. }
+                            if (if page == SettingsPage::Github {
+                                [theme::PANEL, Color::rgb(14, 68, 41), Color::rgb(0, 109, 50),
+                                    Color::rgb(38, 166, 65), Color::rgb(57, 211, 83)].contains(color)
+                            } else {
+                                *color == Color::rgb(107, 147, 218)
+                            }) && rect.width > 0.0 && rect.height > 0.0
+                                && rect.x >= plot.rect.x - rounding && rect.y >= plot.rect.y - rounding
+                                && rect.x + rect.width <= plot.rect.x + plot.rect.width + rounding
+                                && rect.y + rect.height <= plot.rect.y + plot.rect.height + rounding => Some(*rect),
+                        _ => None,
+                    }).collect::<Vec<_>>()
+                };
                 let content = settings_ui::build_settings_page(&state, page, width, true);
                 let mut tree = UiTree::new(Element::panel(content).background(theme::BACKGROUND));
                 tree.set_reduced_motion(true);
@@ -7357,13 +7364,7 @@ pub(crate) mod tests {
                 // Account usage now leads the Usage page. The existing local
                 // activity chart remains reachable through the page's scroll.
                 for _ in 0..24 {
-                    if frame
-                        .regions
-                        .iter()
-                        .filter(|region| region.id.starts_with(prefix))
-                        .count()
-                        == observations
-                    {
+                    if painted_observations(&frame).len() == observations {
                         break;
                     }
                     tree.handle_event(UiEvent::Scroll {
@@ -7375,9 +7376,13 @@ pub(crate) mod tests {
                 let regions: Vec<_> = frame
                     .regions
                     .iter()
-                    .filter(|region| region.id.starts_with(prefix))
+                    .filter(|region| region.id == prefix)
                     .collect();
-                assert_eq!(regions.len(), observations, "{name} at {width}");
+                assert_eq!(regions.len(), 1, "one interactive plot for {name} at {width}");
+                let painted = painted_observations(&frame);
+                assert_eq!(painted.len(), observations, "all data painted for {name} at {width}");
+                assert!(painted.iter().all(|rect| rect.x >= 0.0
+                    && rect.x + rect.width <= width + 0.01));
                 assert!(regions.iter().all(|region| region.rect.x >= 0.0
                     && region.rect.x + region.rect.width <= width + 0.01));
                 if let Some(directory) = std::env::var_os("OPENIDE_CHART_QA_DIR") {
@@ -7550,9 +7555,8 @@ pub(crate) mod tests {
         for width in [520.0, 1100.0] {
             for id in [
                 "mcp_new",
-                "mcp_select:filesystem",
                 "mcp_toggle:filesystem",
-                "mcp_delete:filesystem",
+                "mcp_details:filesystem",
             ] {
                 let mut tree = UiTree::new(build_view(&state, width));
                 assert!(
@@ -7560,6 +7564,12 @@ pub(crate) mod tests {
                     "MCP missing {id} at {width}px"
                 );
             }
+            state.mcp_presentation.details = Some("filesystem".into());
+            for id in ["mcp_select:filesystem", "mcp_delete:filesystem"] {
+                let mut detail_tree = UiTree::new(build_view(&state, width));
+                assert!(settings_action_reachable(&mut detail_tree, id, width, 720.0));
+            }
+            state.mcp_presentation.details = None;
             let closed = UiTree::new(build_view(&state, width)).layout(Size::new(width, 720.0));
             assert!(!closed
                 .regions
@@ -7720,6 +7730,7 @@ pub(crate) mod tests {
                 url: "https://auth.example.test/authorize?state=transient".into(),
             },
         });
+        state.mcp_presentation.details = Some("remote".into());
         for width in [520.0, 1100.0] {
             let mut tree = UiTree::new(build_view(&state, width));
             for id in [
@@ -7798,7 +7809,10 @@ pub(crate) mod tests {
                         }
                     }
                 }
-                if rendered == url {
+                // Paint commands retain clipped text outside a scroll view.
+                // Drag only once the entire URL is inside the real viewport.
+                if rendered == url && first.is_some_and(|point| point.y >= 0.0)
+                    && last.is_some_and(|point| point.y + 18.0 <= 720.0) {
                     selection = Some((first.unwrap(), last.unwrap()));
                     break;
                 }
@@ -7815,7 +7829,7 @@ pub(crate) mod tests {
             assert_eq!(
                 tree.selected_text(),
                 Some(url),
-                "OAuth URL selection at {width}px"
+                "OAuth URL selection at {width}px, first={first:?}, last={last:?}"
             );
             assert_eq!(
                 tree.handle_event(UiEvent::Key {

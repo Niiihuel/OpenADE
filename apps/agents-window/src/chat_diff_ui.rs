@@ -260,6 +260,8 @@ pub(crate) fn body(state: &ViewState, tool: &str) -> Element {
                         .language(language)
                         .height((file.lines.len() as f32 * 20.0 + 12.0).clamp(80.0, 280.0))
                         .palette(theme::component_palette())
+                        .font_size(crate::appearance_preferences::code_font_size())
+                        .diff_backgrounds(crate::appearance_preferences::themed_diff_backgrounds())
                         .render(),
                 );
             } else if file.unavailable.is_none() {
