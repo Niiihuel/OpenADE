@@ -61,6 +61,11 @@ says 0.1.0.
   one is added from disk, and the others sit under the tree as roots to
   switch to; tasks started from the IDE take the active folder. The list is
   kept across restarts
+- The key connection form for OpenAI, Anthropic and xAI says where each
+  company's subscription is used instead: the Codex connection, Claude Code
+  and Grok Build
+- The composer's model selector wears a generic mark; the providers keep
+  theirs inside the list
 - A Graph tab in the dock draws the workspace's files, and their imports,
   calls and type uses, as a force-directed graph: hovering a file lights up
   its neighbours, nodes can be dragged, the view zooms and pans, and a click

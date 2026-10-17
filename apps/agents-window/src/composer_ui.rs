@@ -1656,18 +1656,12 @@ fn model_effort_entries(props: &ComposerProps<'_>, width: f32) -> Vec<DropdownMe
         || !props.model_routes.is_empty()
     {
         let display = composer_model_display(props);
+        // A generic mark: the providers wear theirs inside the list.
         entries.push(selector_row(
             "composer_model_list_toggle",
             "Modelo",
             display,
-            backend_icon(
-                props,
-                if props.selected_backend == "native" {
-                    props.native_provider_id
-                } else {
-                    props.selected_backend
-                },
-            ),
+            crate::icons::MODEL,
             inner_width,
         ));
     }

@@ -1221,6 +1221,15 @@ pub(super) fn connect_modal(state: &ViewState, base: Element, viewport_width: f3
                 body.push(Text::new("Usa una clave de la API general de Z.ai. Los modelos se muestran según su documentación; el acceso se comprueba al enviar una solicitud.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
             } else if id == "minimax" {
                 body.push(Text::new("Usa la clave de tu cuenta de MiniMax. openADE consulta sus modelos disponibles antes de guardar la conexión.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
+            } else if let Some(subscription) = match id {
+                // A key pays per use; the subscription each company sells is
+                // used through its own agent, which signs in by itself.
+                "anthropic" => Some("Esta clave es para la API de Anthropic y se paga por uso. Tu suscripción de Claude (Pro o Max) se usa desde Claude Code: iniciá sesión con `claude auth login` y abrí una tarea de Claude Code. Anthropic no la ofrece a otras aplicaciones."),
+                "xai" => Some("Esta clave es para la API de xAI y se paga por uso. Tu suscripción de Grok se usa desde Grok Build, que inicia sesión con tu cuenta de xAI en el navegador con el primer mensaje."),
+                "openai" => Some("Esta clave es para la API de OpenAI y se paga por uso. Tu plan de ChatGPT se usa desde la conexión de Codex."),
+                _ => None,
+            } {
+                body.push(Text::new(subscription, theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
             }
             body.push(
                 Text::new("Clave de API", theme::component_palette())

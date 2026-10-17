@@ -2192,6 +2192,9 @@ Esta automatización conserva su perfil original de sólo lectura. Aquí puedes 
 Esta automatización ya se está ejecutando	This automation is already running
 Esta carpeta no es un repositorio de Git	This folder is not a Git repository
 Esta carpeta no es un repositorio de Git.	This folder is not a Git repository.
+Esta clave es para la API de Anthropic y se paga por uso. Tu suscripción de Claude (Pro o Max) se usa desde Claude Code: iniciá sesión con `claude auth login` y abrí una tarea de Claude Code. Anthropic no la ofrece a otras aplicaciones.	This key is for the Anthropic API and is paid per use. Your Claude subscription (Pro or Max) is used through Claude Code: sign in with `claude auth login` and open a Claude Code task. Anthropic does not offer it to other applications.
+Esta clave es para la API de OpenAI y se paga por uso. Tu plan de ChatGPT se usa desde la conexión de Codex.	This key is for the OpenAI API and is paid per use. Your ChatGPT plan is used through the Codex connection.
+Esta clave es para la API de xAI y se paga por uso. Tu suscripción de Grok se usa desde Grok Build, que inicia sesión con tu cuenta de xAI en el navegador con el primer mensaje.	This key is for the xAI API and is paid per use. Your Grok subscription is used through Grok Build, which signs in with your xAI account in the browser on the first message.
 Esta clave no permite consultar una suscripción Go. Revisa tu cuenta de OpenCode.	This key cannot query a Go subscription. Check your OpenCode account.
 Esta conexión no tiene permiso para consultar el uso.	This connection does not have permission to query usage.
 Esta conexión permite una clave opcional.	This connection allows an optional key.
