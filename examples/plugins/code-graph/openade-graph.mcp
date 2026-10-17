@@ -1,0 +1,3 @@
+Marcador del plugin code-graph: el manifiesto exige un entrypoint dentro del
+paquete cuando program es un ejecutable del PATH. openade-graph reconoce este
+nombre como primer argumento y sirve MCP para el workspace que le sigue.
