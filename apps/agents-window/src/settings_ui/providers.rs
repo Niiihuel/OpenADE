@@ -1292,27 +1292,31 @@ pub(super) fn connect_modal(state: &ViewState, base: Element, viewport_width: f3
             } {
                 body.push(Text::new(subscription, theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
             }
+            // The label and where to get a key share one line over the field.
             body.push(
-                Text::new("Clave de API", theme::component_palette())
-                    .role(TextRole::Small)
-                    .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                Element::row(vec![
+                    Text::new("Clave de API", theme::component_palette())
+                        .role(TextRole::Small)
+                        .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                        .render()
+                        .centered_y()
+                        .flex(1.0),
+                    Button::new(
+                        format!("provider_account:{id}"),
+                        "Obtener clave de API",
+                        control_palette(),
+                    )
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Compact)
                     .render(),
+                ])
+                .gap(8.0),
             );
             body.push(
                 TextField::new("provider_api_key", "", "Pega tu clave…", control_palette())
                     .size(ControlSize::Compact)
                     .password(true)
                     .render(),
-            );
-            body.push(
-                Button::new(
-                    format!("provider_account:{id}"),
-                    "Obtener clave de API",
-                    control_palette(),
-                )
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Compact)
-                .render(),
             );
             body.push(Text::new("La clave se guarda de forma privada en este equipo. El acceso a generación se comprueba al usar un modelo.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
         } else {
@@ -1397,16 +1401,6 @@ pub(super) fn connect_modal(state: &ViewState, base: Element, viewport_width: f3
         theme::component_palette(),
     )
     .width((viewport_width - 32.0).clamp(280.0, 540.0))
-    .height(if id == "opencode" && entry {
-        500.0
-    } else if matches!(id, "minimax" | "zai" | "anthropic" | "xai" | "openai") && entry {
-        400.0
-    } else if oauth && entry {
-        // Two lines and the buttons.
-        250.0
-    } else {
-        340.0
-    })
     .body(Element::column(body).gap(10.0))
     .footer(
         ButtonGroup::new(footer)

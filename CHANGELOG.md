@@ -85,6 +85,12 @@ says 0.1.0.
   advertised and the agent finds the rest with `search_mcp_tools` and calls
   them with `call_mcp_tool`, which asks as any MCP tool does; Claude Code and
   Codex defer the tools of a large server the same way
+- A provider that refuses the request for its models says why, in its own
+  words, after the HTTP status: before, the connection form said only
+  «HTTP 400»
+- The connection form is as tall as its content, with «Obtener clave de API»
+  beside the key's label; before, the key forms had empty space under the
+  note
 - A Graph tab in the dock draws the workspace's files, and their imports,
   calls and type uses, as a force-directed graph: hovering a file lights up
   its neighbours, nodes can be dragged, the view zooms and pans, and a click
