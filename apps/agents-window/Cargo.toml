@@ -16,13 +16,13 @@ openide-cli = { path = "../../crates/openide-cli" }
 openide-bridge = { path = "../../crates/openide-bridge" }
 openide-browser = { path = "../../crates/openide-browser" }
 openide-ui = { path = "../../crates/openide-ui" }
-limn-egui = { git = "https://github.com/Niiihuel/limn.git", rev = "90d440887fd42c8ed2058ccdb2a4edf1a08db124" }
+limn-egui = { git = "https://github.com/Niiihuel/limn.git", rev = "d8697a67f3dc606ad92b90e8b9999d4109c8fe50" }
 openide-preview = { path = "../../crates/openide-preview" }
 openide-debug = { path = "../../crates/openide-debug" }
 openide-graph = { path = "../../crates/openide-graph" }
 openide-acp = { path = "../../crates/openide-acp" }
-openide-editor = { package = "limn-editor", git = "https://github.com/Niiihuel/limn.git", rev = "90d440887fd42c8ed2058ccdb2a4edf1a08db124" }
-openide-language = { package = "limn-language", git = "https://github.com/Niiihuel/limn.git", rev = "90d440887fd42c8ed2058ccdb2a4edf1a08db124" }
+openide-editor = { package = "limn-editor", git = "https://github.com/Niiihuel/limn.git", rev = "d8697a67f3dc606ad92b90e8b9999d4109c8fe50" }
+openide-language = { package = "limn-language", git = "https://github.com/Niiihuel/limn.git", rev = "d8697a67f3dc606ad92b90e8b9999d4109c8fe50" }
 serde_json = "1"
 serde_yaml = "0.9"
 color = "0.3"

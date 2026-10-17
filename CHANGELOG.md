@@ -91,6 +91,9 @@ says 0.1.0.
 - The connection form is as tall as its content, with «Obtener clave de API»
   beside the key's label; before, the key forms had empty space under the
   note
+- A modal whose content fits no longer shows a scrollbar: a layout rounding
+  error of millionths of a pixel counted as overflow (limn#77, pinned to
+  `d8697a6`)
 - A Graph tab in the dock draws the workspace's files, and their imports,
   calls and type uses, as a force-directed graph: hovering a file lights up
   its neighbours, nodes can be dragged, the view zooms and pans, and a click
