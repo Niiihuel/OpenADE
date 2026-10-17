@@ -220,7 +220,7 @@ impl SettingsPage {
     /// a row is found by what it does, not only by its page's name.
     const fn keywords(self) -> &'static str {
         match self {
-            Self::General => "notificaciones notifications avisos recorrido tour proyecto project carpeta folder inicio startup no molestar do not disturb",
+            Self::General => "notificaciones notifications avisos recorrido tour proyecto project carpeta folder inicio startup no molestar do not disturb actualizaciones updates actualizar update versión version reiniciar restart",
             Self::Appearance => "fuente font tipografía typography densidad density tinte tint tono hue intensidad intensity transparencia transparency contraste contrast código code wrap diferencias diff privacidad privacy correo email tema theme claro light oscuro dark sistema system idioma language english español inglés movimiento motion animaciones",
             Self::Editor => "ajuste de línea wrap minimapa minimap sangría indent tabulaciones tabs espacios spaces pares pairs código code números de línea line numbers guías guides línea actual current line espacios en blanco whitespace regla ruler cursor caret parpadeo blink fuente font guardar save vim",
             Self::Providers => "modelo model api key clave cuenta account catálogo catalog salida output límite openai anthropic proveedor propio custom provider endpoint url base protocolo protocol variable de entorno environment agregar add",
@@ -569,9 +569,83 @@ fn general_page(state: &ViewState, compact: bool) -> Vec<Element> {
                 ),
             ],
         ),
-            crate::notifications_ui::settings_group(&state.notifications, compact),
+        updates_group(&state.update, compact),
+        crate::notifications_ui::settings_group(&state.notifications, compact),
         crate::tour_ui::settings_group(compact),
     ]
+}
+
+/// This version, what a check found and the one action that follows from it.
+pub(crate) fn updates_group(update: &crate::app_update::UpdateView, compact: bool) -> Element {
+    use crate::app_update::UpdateStatus;
+    let check = || outline("update_check", "Buscar actualizaciones").icon(Icon::Refresh).render();
+    let (status, control) = match &update.status {
+        UpdateStatus::Idle => (
+            if update.automatic {
+                "Busca versiones nuevas cada 6 horas.".to_owned()
+            } else {
+                "La búsqueda automática está desactivada.".to_owned()
+            },
+            check(),
+        ),
+        UpdateStatus::UpToDate => ("Es la versión más reciente.".to_owned(), check()),
+        UpdateStatus::Checking => (
+            "Buscando actualizaciones…".to_owned(),
+            outline("update_check", "Buscando…").loading(true).disabled().render(),
+        ),
+        UpdateStatus::Available { version, signed, .. } if update.installable && *signed => (
+            format!("openADE {version} está disponible."),
+            outline("update_download", "Descargar e instalar").icon(Icon::ArrowDown).render(),
+        ),
+        UpdateStatus::Available { version, .. } => (
+            format!("openADE {version} está disponible en GitHub."),
+            outline("update_notes", "Ver la versión").icon(Icon::ArrowRight).render(),
+        ),
+        UpdateStatus::Downloading { version, received, total } => (
+            match (received * 100).checked_div(*total) {
+                Some(percent) => format!("Descargando openADE {version}: {percent} %"),
+                None => format!("Descargando openADE {version}…"),
+            },
+            openide_ui::Progress::new(
+                if *total > 0 { *received as f32 / *total as f32 } else { 0.0 },
+                theme::component_palette(),
+            )
+            .width(140.0)
+            .render()
+            .centered_y(),
+        ),
+        UpdateStatus::Ready { version, .. } => (
+            format!("openADE {version} se instala al reiniciar o al cerrar openADE."),
+            outline("update_restart", "Reiniciar ahora").icon(Icon::Refresh).render(),
+        ),
+        UpdateStatus::Failed(error) => (
+            format!("No se pudo actualizar: {error}"),
+            outline("update_check", "Reintentar").icon(Icon::Refresh).render(),
+        ),
+    };
+    settings_parts::settings_group(
+        "Actualizaciones",
+        vec![
+            settings_parts::settings_row(
+                &format!("openADE {}", env!("CARGO_PKG_VERSION")),
+                &status,
+                control,
+                compact,
+            ),
+            settings_parts::switch_row(
+                "settings_auto_update",
+                "Actualizar automáticamente",
+                if update.installable {
+                    "Descarga cada versión nueva en segundo plano y la instala al reiniciar."
+                } else {
+                    "Avisa cuando hay una versión nueva. Esta copia no se reemplaza sola: se actualiza con el archivo de cada versión."
+                },
+                update.automatic,
+                true,
+                compact,
+            ),
+        ],
+    )
 }
 
 /// A passive note shares the row typography without presenting an unavailable

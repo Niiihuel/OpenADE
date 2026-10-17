@@ -1,7 +1,8 @@
 name: Release
 
-# A tag v* builds the Linux archive and attaches it to that tag's release.
-# Run by hand, it builds the same archive as a workflow artifact only.
+# A tag v* builds the Linux archive, signs it and attaches both to that tag's
+# release, where the app's updater finds them. Run by hand, it builds the same
+# archive as a workflow artifact only.
 on:
   push:
     tags: ["v*"]
@@ -55,6 +56,21 @@ jobs:
       # The archive's own launcher, with its own CEF: the first frame of a
       # windowless page, without a display or a GPU.
       - run: dist/openADE-$VERSION-linux-x86_64/openade --cef-probe
+      # What the app's updater checks before it unpacks a download: a minisign
+      # signature by the key built into the app, with the archive's name as
+      # its trusted comment. A release without the secret key fails here.
+      - name: Sign
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          : "${MINISIGN_SECRET_KEY:?the MINISIGN_SECRET_KEY secret is not set}"
+          cargo install rsign2 --version 0.6.5 --locked
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > "$RUNNER_TEMP/minisign.key"
+          archive=openADE-$VERSION-linux-x86_64.tar.gz
+          rsign sign -W -s "$RUNNER_TEMP/minisign.key" -t "$archive" -x "dist/$archive.minisig" "dist/$archive"
+          rm "$RUNNER_TEMP/minisign.key"
+          key=$(sed -n 's/^pub const PUBLIC_KEY: &str = "\(.*\)";$/\1/p' apps/agents-window/src/app_update.rs)
+          rsign verify -P "$key" -x "dist/$archive.minisig" "dist/$archive"
       - uses: actions/upload-artifact@v4
         with:
           name: openADE-${{ env.VERSION }}-linux-x86_64
@@ -66,4 +82,4 @@ jobs:
         run: |
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 ||
             gh release create "$GITHUB_REF_NAME" --title "openADE $GITHUB_REF_NAME" --notes "See CHANGELOG.md."
-          gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.tar.gz.sha256 --clobber
+          gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.tar.gz.sha256 dist/*.tar.gz.minisig --clobber

@@ -324,6 +324,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn update_texts_read_in_english_with_their_values_and_errors() {
+        for (spanish, english) in [
+            ("Descargando openADE 0.4.0: 25 %", "Downloading openADE 0.4.0: 25%"),
+            ("Descargando openADE 0.4.0", "Downloading openADE 0.4.0"),
+            ("openADE 0.4.0 está disponible en GitHub.", "openADE 0.4.0 is available on GitHub."),
+            ("openADE 0.4.0 está lista", "openADE 0.4.0 is ready"),
+            (
+                "No se pudo actualizar: GitHub respondió 503 Service Unavailable",
+                "Couldn't update: GitHub answered 503 Service Unavailable",
+            ),
+        ] {
+            assert_eq!(lookup(spanish).as_deref(), Some(english), "{spanish}");
+        }
+    }
+
+    #[test]
     fn a_format_text_is_read_back_into_its_values_and_said_in_english() {
         let (parts, names) = pieces("Cada {day} a las {hour:02}:{minute:02}");
         assert_eq!((parts.as_slice(), names.as_slice()), (&["Cada ", " a las ", ":", ""][..], &["day", "hour", "minute"][..]));

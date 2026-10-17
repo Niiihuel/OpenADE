@@ -3034,16 +3034,16 @@ fn notifications_e2e_a_turn_that_ends_unwatched_is_recorded_and_opens_its_task()
     assert!(app.view.notifications.items().is_empty());
     app.notify_session(Event::TurnFailed, "Turno fallido", "otra-tarea");
     assert_eq!(app.view.notifications.items().len(), 1);
-    assert!(app.view.notifications.toast(Instant::now()).is_some());
-    app.apply_action(UiAction::Clicked { id: "notification_toast_dismiss".into() }, &ctx);
-    assert!(app.view.notifications.toast(Instant::now()).is_none());
+    let failed = app.view.notifications.toasts(Instant::now())[0].id;
+    app.apply_action(UiAction::Clicked { id: format!("notification_toast_dismiss:{failed}") }, &ctx);
+    assert!(app.view.notifications.toasts(Instant::now()).is_empty());
     app.apply_action(
         UiAction::Clicked { id: "notification_setting:do_not_disturb".into() },
         &ctx,
     );
     app.notify_session(Event::Approval, "Permiso pendiente: run_command", "otra-tarea");
     assert_eq!(app.view.notifications.items().len(), 2);
-    assert!(app.view.notifications.toast(Instant::now()).is_none());
+    assert!(app.view.notifications.toasts(Instant::now()).is_empty());
     let saved = crate::notifications::NotificationSettings::load(&app.data_root);
     assert!(!saved.turn_completed && saved.do_not_disturb && saved.turn_failed);
     let reopened = AgentsWindow::with_data_root(app.data_root.clone());

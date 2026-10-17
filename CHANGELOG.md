@@ -4,6 +4,18 @@ Every release of openADE, newest first. The versions before 0.2.0 were tagged
 afterwards, on the last commit of each day of work; their `Cargo.toml` still
 says 0.1.0.
 
+## Unreleased
+
+- Updates: openADE looks for a new release every six hours, and an install
+  made from the Linux archive downloads it in the background, checks its
+  minisign signature and puts it in place when it restarts or quits. Other
+  copies say a new version exists and link to it. Settings > General has the
+  version, a check button and the switch to turn it off
+- Notifications stack up to three cards with an icon for their kind, buttons
+  and a progress bar; an update's card stays until it is dismissed
+- Release archives are signed; the `.minisig` beside each one is what the
+  updater verifies
+
 ## 0.3.0 — 2026-10-16
 
 - Settings reach every module: browser automation with per-site permissions,

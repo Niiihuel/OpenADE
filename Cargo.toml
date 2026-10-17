@@ -41,8 +41,8 @@ codegen-units = 16
 
 # limn is pinned to a tag. To build against the local checkout instead
 # (while changing limn), uncomment this block.
-# [patch."https://github.com/Niiihuel/limn.git"]
-# limn = { path = "../lienzo/crates/limn" }
-# limn-egui = { path = "../lienzo/crates/limn-egui" }
-# limn-editor = { path = "../lienzo/crates/limn-editor" }
-# limn-language = { path = "../lienzo/crates/limn-language" }
+[patch."https://github.com/Niiihuel/limn.git"]
+limn = { path = "../limn-toast-actions/crates/limn" }
+limn-egui = { path = "../limn-toast-actions/crates/limn-egui" }
+limn-editor = { path = "../limn-toast-actions/crates/limn-editor" }
+limn-language = { path = "../limn-toast-actions/crates/limn-language" }

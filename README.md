@@ -75,9 +75,20 @@ openADE-0.3.0-linux-x86_64/install.sh
 ```
 
 `install.sh` puts it in `~/.local/opt/openade`, adds the `openade` command to
-`~/.local/bin` and an entry to the application menu. Running it from a newer
-archive updates it; `~/.local/opt/openade/install.sh --uninstall` removes it
-and keeps your data. The archive also runs in place, with `./openade`.
+`~/.local/bin` and an entry to the application menu.
+`~/.local/opt/openade/install.sh --uninstall` removes it and keeps your data.
+The archive also runs in place, with `./openade`.
+
+Versions after 0.3.0 update themselves: every six hours openADE looks for a new
+release, downloads it in the background and installs it when you restart or
+quit it. Settings > General turns that off. Each archive is signed with
+[minisign](https://jedisct1.github.io/minisign/), and the updater refuses one
+whose signature does not match the key built into the app. To check an
+archive by hand:
+
+```sh
+minisign -Vm openADE-0.4.0-linux-x86_64.tar.gz -P RWTBGPfzssEDLkqVR1Ybhr7FWSSMrF1JXh3xu47NTMhaEfoxUBh04tCD
+```
 
 ## Building
 

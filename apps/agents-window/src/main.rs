@@ -1,6 +1,7 @@
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
 mod agent_cli_definitions;
+mod app_update;
 mod cli_profile_settings;
 mod agent_cursor;
 mod agent_tool_settings;
@@ -191,6 +192,10 @@ fn main() -> eframe::Result {
     #[cfg(target_os = "linux")]
     if let Some(code) = openide_cef::run_child_process() {
         std::process::exit(code);
+    }
+    // A downloaded version putting itself in place of the one that quit.
+    if std::env::args_os().nth(1).is_some_and(|argument| argument == app_update::APPLY_FLAG) {
+        std::process::exit(app_update::apply_main(&std::env::args_os().skip(2).collect::<Vec<_>>()));
     }
     // An external MCP client runs this executable as its proxy to one
     // browser context. That process is not the application: it opens no

@@ -35,6 +35,10 @@ chrono = { version = "0.4", features = ["clock", "serde"] }
 uuid = { version = "1", features = ["v4"] }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 sha2 = "0.10"
+semver = "1"
+minisign-verify = "0.2"
+flate2 = "1"
+tar = "0.4"
 sha1 = "0.10"
 jsonwebtoken = { version = "9.3", default-features = false }
 fs2 = "0.4"
@@ -51,6 +55,7 @@ toml_edit = { version = "0.25", default-features = false, features = ["parse"] }
 
 [dev-dependencies]
 tempfile = "3"
+minisign = "0.7"
 resvg = { version = "0.48.1", default-features = false, features = ["text", "system-fonts", "raster-images"] }
 
 [target.'cfg(windows)'.dependencies]
