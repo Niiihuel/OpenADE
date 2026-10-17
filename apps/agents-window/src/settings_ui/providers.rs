@@ -104,6 +104,7 @@ fn overview(state: &ViewState, compact: bool) -> Vec<Element> {
     for (title, active) in [("Conectados", true), ("Disponibles", false)] {
         let providers = provider_connections::PROVIDERS
             .iter()
+            .chain(provider_connections::KEY_PROVIDERS)
             .filter(|(id, name, _)| {
                 connected(state, id) == active
                     && (query.is_empty() || name.to_lowercase().contains(&query))
@@ -721,7 +722,7 @@ fn catalog_status(state: &ViewState, id: &str) -> Element {
 
 pub(super) fn page(state: &ViewState, compact: bool, width: f32) -> Vec<Element> {
     let id = state.catalog_browse_provider.as_str();
-    if !provider_connections::supported(id) {
+    if !provider_connections::connectable(id) {
         let mut sections = overview(state, compact);
         if show_output_settings(state) {
             sections.push(output_settings(state, compact));
@@ -2254,7 +2255,10 @@ mod tests {
                         ("opencode", vec![0.0]),
                         ("nvidia", vec![0.0]),
                         ("minimax", vec![0.0]),
-                        ("zai", vec![0.0, 0.0, 8.0, 8.0]),
+                        ("zai", vec![0.0]),
+                        // The providers connected with a key follow the accounts.
+                        ("openai", vec![0.0]),
+                        ("groq", vec![0.0, 0.0, 8.0, 8.0]),
                     ],
                 ),
                 ("nvidia", vec![("nvidia", vec![8.0])]),

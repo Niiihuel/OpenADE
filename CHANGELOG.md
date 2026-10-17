@@ -52,6 +52,15 @@ says 0.1.0.
   Gemini's, and so on for every agent the brand catalog names exactly
 - The context panel no longer names a model when there is none to send to:
   the saved id was shown as if it were connected
+- Settings → Conexiones connects OpenAI, Anthropic, xAI, DeepSeek, Mistral
+  and Groq with an API key, as it did OpenRouter, OpenCode, NVIDIA, MiniMax
+  and Z.ai: the key is kept privately on this machine and the native agent
+  uses it, with no environment variable to set
+- The IDE works in several folders: the explorer's folder name opens the
+  folders the IDE has worked in, any of them becomes the active root, a new
+  one is added from disk, and the others sit under the tree as roots to
+  switch to; tasks started from the IDE take the active folder. The list is
+  kept across restarts
 - A Graph tab in the dock draws the workspace's files, and their imports,
   calls and type uses, as a force-directed graph: hovering a file lights up
   its neighbours, nodes can be dragged, the view zooms and pans, and a click

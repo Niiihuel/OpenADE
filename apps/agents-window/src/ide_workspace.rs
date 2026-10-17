@@ -125,6 +125,11 @@ pub(crate) struct IdeWorkspaceState {
     pub agent_new_open: bool,
     /// The list of tasks beside the agent panel's content.
     pub agent_list_open: bool,
+    /// The folders the IDE has worked in, to switch between from its explorer.
+    #[serde(default)]
+    pub folders: Vec<String>,
+    #[serde(skip)]
+    pub folders_open: bool,
     /// Reveal of the task list while its own transition is in flight.
     #[serde(skip)]
     pub agent_list_progress: Option<f32>,
@@ -164,6 +169,8 @@ impl Default for IdeWorkspaceState {
             agent_tabs: Vec::new(),
             agent_new_open: false,
             agent_list_open: false,
+            folders: Vec::new(),
+            folders_open: false,
             agent_list_progress: None,
             agent_list_query: String::new(),
             menu_open: None,

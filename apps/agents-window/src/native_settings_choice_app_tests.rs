@@ -944,3 +944,36 @@ fn a_cli_task_takes_the_name_the_cli_gives_its_conversation() {
     let stored = app.store.as_ref().unwrap().load(&session).unwrap().unwrap();
     assert_eq!(stored.session.title.as_deref(), Some("Arreglar el login"));
 }
+
+#[test]
+fn the_ide_keeps_the_folders_it_worked_in_and_switches_between_them_from_its_explorer() {
+    let root = tempfile::tempdir().unwrap();
+    let (a, b) = (root.path().join("a"), root.path().join("b"));
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+    let (a, b) = (a.display().to_string(), b.display().to_string());
+    let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+    app.view.workspace = a.clone();
+    app.view.ide.mode = crate::ide_workspace::WindowMode::Ide;
+    app.refresh_composer_projects();
+    assert_eq!(app.view.ide_folders.len(), 1);
+    let ctx = egui::Context::default();
+    let paths = |app: &AgentsWindow| app.view.ide_folders.iter().map(|(path, _)| path.clone()).collect::<Vec<_>>();
+
+    // Working in another folder keeps the first among the IDE's folders, and
+    // the explorer offers it as a root to switch to.
+    app.change_workspace(b.clone());
+    assert_eq!(paths(&app), [b.clone(), a.clone()]);
+    let mut tree = openide_ui::UiTree::new(crate::view::build_view_sized(&app.view, 1400.0, 800.0));
+    let ids: Vec<_> = tree.layout(Size::new(1400.0, 800.0)).regions.iter().map(|region| region.id.clone()).collect();
+    assert!(ids.iter().any(|id| id == "ide_folder_toggle") && ids.iter().any(|id| id == "ide_folder_select:1"), "{ids:?}");
+
+    // Switching back from the explorer; the list survives a restart.
+    app.apply_action(UiAction::Clicked { id: "ide_folder_select:1".into() }, &ctx);
+    assert_eq!(app.view.workspace, a);
+    assert_eq!(paths(&app), [a.clone(), b.clone()]);
+    assert_eq!(crate::ide_workspace::IdeWorkspaceState::load(&root.path().join("data")).folders, [a.clone(), b.clone()]);
+    app.apply_action(UiAction::Clicked { id: "ide_folder_remove".into() }, &ctx);
+    assert_eq!(crate::ide_workspace::IdeWorkspaceState::load(&root.path().join("data")).folders, [b.clone()]);
+    assert_eq!(paths(&app), [a.clone(), b.clone()], "the folder stays open until another is chosen");
+}

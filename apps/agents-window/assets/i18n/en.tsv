@@ -385,6 +385,7 @@ Añadido	Added
 Añadir	Add
 Añadir al chat	Add to chat
 Añadir al mensaje	Add to message
+Añadir carpeta…	Add folder…
 Añadir cursor abajo	Add cursor below
 Añadir cursor arriba	Add cursor above
 Aún no hay ejecuciones de esta tarea.	There are no runs of this task yet.
@@ -633,8 +634,10 @@ Carpeta instalada	Installed folder
 Carpeta local	Local folder
 Carpeta que contiene openide-plugin.json	Folder containing openide-plugin.json
 Carpeta vacía	Empty folder
+Carpetas	Folders
 Carpetas de instrucciones	Instruction folders
 Carpetas de trabajo	Working folders
+Carpetas del IDE	IDE folders
 Casilla cambiada	Checkbox toggled
 Casilla en página	Checkbox on page
 Categoría	Category
@@ -2138,6 +2141,7 @@ Espera a que termine la operación actual	Wait for the current operation to fini
 Espera a que termine la operación de Git.	Wait for the Git operation to finish.
 Espera a que termine la operación de archivos en curso	Wait for the current file operation to finish
 Espera a que termine la preparación de archivos.	Wait for file preparation to finish.
+Espera a que termine la recuperación para cambiar de proyecto	Wait for the recovery to finish before switching project
 Espera a que termine la recuperación para cambiar de sesión	Wait for the recovery to finish before switching session
 Espera a que termine la respuesta.	Wait for the response to finish.
 Espera a que termine la tarea para cambiar la meta	Wait for the task to finish to change the goal
@@ -2793,6 +2797,7 @@ La carpeta del worktree ya existe. Elegí una carpeta nueva.	The worktree folder
 La carpeta destino apareció durante la instalación	The destination folder appeared during installation
 La carpeta destino ya existe	The destination folder already exists
 La carpeta no está disponible dentro del proyecto	The folder is not available inside the project
+La carpeta sigue abierta hasta que cambies a otra	The folder stays open until you switch to another
 La carpeta «{path}» y todo su contenido irán a la papelera del sistema.	The folder «{path}» and all its contents will go to the system trash.
 La clave se guarda de forma privada en este equipo. El acceso a generación se comprueba al usar un modelo.	The key is stored privately on this machine. Generation access is checked when a model is used.
 La cola de entrada está llena. Esperá y volvé a intentar; esta entrada no se envió.	The input queue is full. Wait and try again; this input was not sent.
@@ -3317,8 +3322,14 @@ Modelo y esfuerzo para el próximo mensaje.	Model and effort for the next messag
 Modelo y presupuesto	Model and budget
 Modelo: {}	Model: {}
 Modelos	Models
+Modelos Claude con tu clave de API	Claude models with your API key
+Modelos DeepSeek con tu clave de API	DeepSeek models with your API key
 Modelos GLM con la API general de Z.ai	GLM models with the general Z.ai API
+Modelos GPT con tu clave de API	GPT models with your API key
+Modelos Grok con tu clave de API	Grok models with your API key
 Modelos MiniMax con tu clave de API	MiniMax models with your API key
+Modelos Mistral con tu clave de API	Mistral models with your API key
+Modelos abiertos servidos por Groq con tu clave de API	Open models served by Groq with your API key
 Modelos alojados en NVIDIA API Catalog	Models hosted on NVIDIA API Catalog
 Modelos de OpenCode Zen y Go	OpenCode Zen and Go models
 Modelos de ese proveedor que pueden correr un turno.	Models from that provider that can run a turn.
@@ -4049,6 +4060,7 @@ Otra captura o guardado usa esta carpeta; reintentá guardar	Another capture or 
 Otra instancia está actualizando esta conexión	Another instance is updating this connection
 Otra respuesta	Another answer
 Otra ventana está usando la recuperación del editor: {e}	Another window is using editor recovery: {e}
+Otras carpetas	Other folders
 Otras conversaciones	Other conversations
 Otro servicio	Another service
 PTY observada	PTY observed
@@ -4335,6 +4347,7 @@ Quitar del grupo	Remove from group
 Quitar división	Remove split
 Quitar división · conservar ambas sesiones	Remove split · keep both sessions
 Quitar el permiso propio de {}	Remove the own permission for {}
+Quitar esta carpeta del IDE	Remove this folder from the IDE
 Quitar filtro	Remove filter
 Quitar origen	Remove source
 Quitar perfil	Remove profile

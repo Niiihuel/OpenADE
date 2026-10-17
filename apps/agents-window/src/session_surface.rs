@@ -4541,6 +4541,7 @@ mod tests {
             off_screen_turns: std::collections::BTreeMap::new(),
             cli_task_mode: Default::default(),
             cli_mode_open: false,
+            ide_folders: Vec::new(),
             turn_check_command: String::new(),
             turn_check_failure: None,
             review_model: Default::default(),

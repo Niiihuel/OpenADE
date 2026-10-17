@@ -644,6 +644,8 @@ pub struct ViewState {
     /// The permissions the selected CLI task starts its CLI with.
     pub cli_task_mode: crate::cli_tasks::CliMode,
     pub cli_mode_open: bool,
+    /// The folders the IDE works in, the active one first, as (path, label).
+    pub ide_folders: Vec<(String, String)>,
     /// The check command saved for the open project, shown in Settings.
     pub turn_check_command: String,
     pub turn_check_failure: Option<String>,
@@ -4368,6 +4370,7 @@ pub(crate) mod tests {
             off_screen_turns: BTreeMap::new(),
             cli_task_mode: Default::default(),
             cli_mode_open: false,
+            ide_folders: Vec::new(),
             turn_check_command: String::new(),
             turn_check_failure: None,
             review_model: Default::default(),

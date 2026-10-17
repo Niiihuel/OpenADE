@@ -7109,6 +7109,7 @@ impl AgentsWindow {
             off_screen_turns: BTreeMap::new(),
             cli_task_mode: Default::default(),
             cli_mode_open: false,
+            ide_folders: Vec::new(),
             turn_check_command: String::new(),
             turn_check_failure: None,
             review_model: Default::default(),
@@ -9623,6 +9624,7 @@ impl AgentsWindow {
         }
         self.view.composer_project_options =
             composer_project_options(&self.view.workspace, &self.known_project_paths);
+        self.sync_ide_folders();
     }
 
     fn persist_sidebar_preferences(&mut self) {
@@ -11452,7 +11454,7 @@ impl AgentsWindow {
     fn begin_provider_connect(&mut self, id: &str) {
         if self.view.running
             || self.provider_connection_worker.is_some()
-            || !crate::provider_connections::supported(id)
+            || !crate::provider_connections::connectable(id)
         {
             return;
         }
@@ -17763,23 +17765,60 @@ impl AgentsWindow {
         self.sync_navigation_controls();
     }
 
+    /// The explorer's folders: the active one first, then the ones the IDE
+    /// has worked in.
+    fn sync_ide_folders(&mut self) {
+        self.view.ide_folders =
+            composer_project_options(&self.view.workspace, &self.view.ide.folders);
+    }
+
+    /// In the IDE, the folder being worked in stays among its folders.
+    fn remember_ide_folder(&mut self) {
+        let workspace = self.view.workspace.clone();
+        if !self.view.ide.is_active()
+            || workspace.is_empty()
+            || self.view.ide.folders.contains(&workspace)
+        {
+            return;
+        }
+        self.view.ide.folders.push(workspace);
+        self.persist_ide_workspace();
+    }
+
+    /// The active folder leaves the IDE's list; it stays open until another
+    /// is chosen.
+    fn remove_ide_folder(&mut self) {
+        self.view.ide.folders_open = false;
+        let workspace = self.view.workspace.clone();
+        if !self.view.ide.folders.contains(&workspace) {
+            return;
+        }
+        self.view.ide.folders.retain(|folder| *folder != workspace);
+        self.persist_ide_workspace();
+        self.sync_ide_folders();
+        self.view.status = "La carpeta sigue abierta hasta que cambies a otra".to_owned();
+    }
+
     fn change_workspace(&mut self, value: String) {
         if self.view.environment.workflow.busy.is_some() {
             return;
         }
-        if self.view.running || self.view.composer_branches.switching() {
+        if self.view.workspace == value {
+            return;
+        }
+        // A turn goes on off screen; a recovery in flight is waited for.
+        if self.view.composer_branches.switching()
+            || (self.view.running && !self.park_active_run())
+        {
             self.view.status = if self.view.composer_branches.switching() {
                 "Espera a que termine el cambio de rama"
             } else {
-                "Detén el agente antes de cambiar de proyecto"
+                "Espera a que termine la recuperación para cambiar de proyecto"
             }
             .to_owned();
             self.view.workspace_draft = self.view.workspace.clone();
             self.tree
                 .set_input_value("workspace", self.view.workspace.clone());
-            return;
-        }
-        if self.view.workspace == value {
             return;
         }
         self.close_automation_editor();
@@ -17788,7 +17827,10 @@ impl AgentsWindow {
         } else {
             self.save_draft();
         }
+        // The IDE keeps the folder it leaves and the one it goes to.
+        self.remember_ide_folder();
         self.view.workspace = value;
+        self.remember_ide_folder();
         self.reset_marketplace_workspace();
         self.view.composer_branches = Default::default();
         self.view.workspace_draft = self.view.workspace.clone();
@@ -18297,6 +18339,9 @@ impl AgentsWindow {
         }
         if matches!(&action, UiAction::Clicked { id } if id != "cli_mode_toggle") {
             self.view.cli_mode_open = false;
+        }
+        if matches!(&action, UiAction::Clicked { id } if id != "ide_folder_toggle") {
+            self.view.ide.folders_open = false;
         }
         let addon_settings = match &action {
             UiAction::Clicked { id } => match id.as_str() {
@@ -19760,6 +19805,30 @@ impl AgentsWindow {
             }
             UiAction::Clicked { id } if id == "dock_add_dismiss" => {
                 self.view.show_dock_add_menu = false;
+            }
+            UiAction::Clicked { id } if id == "ide_folder_toggle" => {
+                self.view.ide.folders_open = !self.view.ide.folders_open;
+            }
+            UiAction::Clicked { id } if id == "ide_folder_dismiss" => {
+                self.view.ide.folders_open = false;
+            }
+            UiAction::Clicked { id } if id == "ide_folder_browse" => {
+                self.view.ide.folders_open = false;
+                self.open_workspace_folder_picker(ctx);
+            }
+            UiAction::Clicked { id } if id == "ide_folder_remove" => self.remove_ide_folder(),
+            UiAction::Clicked { id } if id.starts_with("ide_folder_select:") => {
+                self.view.ide.folders_open = false;
+                let chosen = id
+                    .strip_prefix("ide_folder_select:")
+                    .and_then(|index| index.parse::<usize>().ok())
+                    .and_then(|index| self.view.ide_folders.get(index).cloned());
+                if let Some((path, _)) = chosen {
+                    self.change_workspace(path);
+                    if !self.view.running {
+                        self.visit_navigation();
+                    }
+                }
             }
             UiAction::Clicked { id } if id == "cli_mode_toggle" => {
                 self.view.cli_mode_open = !self.view.cli_mode_open;
@@ -21389,7 +21458,7 @@ impl AgentsWindow {
             }
             UiAction::Clicked { id } if id.starts_with("provider_usage_connect:") => {
                 let provider = id.trim_start_matches("provider_usage_connect:");
-                if crate::provider_connections::supported(provider)
+                if crate::provider_connections::connectable(provider)
                     && self.view.native_provider_definitions.contains_key(provider)
                 {
                     self.view.provider_usage_open = false;
@@ -21404,7 +21473,7 @@ impl AgentsWindow {
             }
             UiAction::Clicked { id } if id.starts_with("provider_account:") => {
                 let provider = id.trim_start_matches("provider_account:");
-                if crate::provider_connections::supported(provider) {
+                if crate::provider_connections::connectable(provider) {
                     ctx.open_url(egui::OpenUrl::new_tab(
                         crate::provider_connections::account_url(provider),
                     ));
@@ -21413,7 +21482,7 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id.starts_with("provider_disconnect:") => {
                 let provider = id.trim_start_matches("provider_disconnect:");
                 if !self.view.running
-                    && crate::provider_connections::supported(provider)
+                    && crate::provider_connections::connectable(provider)
                     && self.provider_connection_worker.is_none()
                 {
                     self.provider_connection_id = Some(provider.into());
@@ -21623,7 +21692,7 @@ impl AgentsWindow {
             }
             UiAction::Clicked { id } if id.starts_with("catalog_browse:") => {
                 let provider_id = id.trim_start_matches("catalog_browse:");
-                if crate::provider_connections::supported(provider_id)
+                if crate::provider_connections::connectable(provider_id)
                     && self
                         .view
                         .native_provider_definitions
