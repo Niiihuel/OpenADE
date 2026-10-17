@@ -28,6 +28,12 @@ says 0.1.0.
   than when its task opens; the conversation says it is waiting for the
   sign-in, and Stop ends the wait
 - The ACP registry list in Settings has a search field
+- A task's turn goes on when another task is opened or created, instead of
+  having to be stopped first: its row wears the clock, what it asks waits for
+  an answer, its end is announced and leaves the task unread, and opening it
+  again shows the live turn with its Stop; the message of a turn that failed
+  off screen goes back to that task's draft. Quitting with such turns asks
+  first
 - A Graph tab in the dock draws the workspace's files, and their imports,
   calls and type uses, as a force-directed graph: hovering a file lights up
   its neighbours, nodes can be dragged, the view zooms and pans, and a click

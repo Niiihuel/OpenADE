@@ -638,6 +638,9 @@ pub struct ViewState {
     pub acp_installing: Option<String>,
     /// What the registry list of Settings is filtered by.
     pub acp_query: String,
+    /// Conversations whose turn goes on off screen, and whether it waits for
+    /// an answer there.
+    pub off_screen_turns: BTreeMap<String, bool>,
     /// The check command saved for the open project, shown in Settings.
     pub turn_check_command: String,
     pub turn_check_failure: Option<String>,
@@ -1050,6 +1053,9 @@ struct SessionRowContext {
     selected_asked: bool,
     /// `en pausa · 03:10` for the sessions paused on a provider limit.
     pause_labels: BTreeMap<String, String>,
+    /// Conversations whose turn goes on off screen, and whether it waits for
+    /// an answer there.
+    off_screen_turns: BTreeMap<String, bool>,
 }
 
 impl SessionRowContext {
@@ -1062,7 +1068,8 @@ impl SessionRowContext {
             // A turn that runs on has what it asked, whatever the list knew.
             return self.selected_asked;
         }
-        self.session_recovery.get(&session.id) == Some(&SessionRecoveryView::Question)
+        self.off_screen_turns.get(&session.id) == Some(&true)
+            || self.session_recovery.get(&session.id) == Some(&SessionRecoveryView::Question)
     }
 }
 
@@ -1094,6 +1101,7 @@ impl From<&ViewState> for SessionRowContext {
             group_menu_id: state.group_menu_id.clone(),
             session_plans: state.session_plans.clone(),
             session_recovery: state.session_recovery.clone(),
+            off_screen_turns: state.off_screen_turns.clone(),
             selected_asked: state
                 .pending_permissions
                 .iter()
@@ -1194,7 +1202,7 @@ fn session_row_parts(
             .size(Some(6.0), Some(6.0))
             .background(theme::BRAND)
             .radius(3.0)
-    } else if selected && state.running {
+    } else if (selected && state.running) || state.off_screen_turns.contains_key(&session.id) {
         Element::icon(Icon::Clock).foreground(theme::FOREGROUND)
     } else if session.pinned {
         Element::icon(Icon::Pin).foreground(theme::FOREGROUND_SUBTLE)
@@ -4010,7 +4018,7 @@ fn confirmation_dialog(state: &ViewState, base: Element, viewport_width: f32) ->
         })
     } else if state.automations.quit_pending {
         Some((
-            "¿Salir con automatizaciones en curso?".to_owned(),
+            "¿Salir con agentes en curso?".to_owned(),
             "Las que están corriendo se cancelan, y ninguna tarea programada se ejecuta mientras openADE está cerrado.".to_owned(),
             "automation_quit_confirm".to_owned(),
             "automation_quit_cancel".to_owned(),
@@ -4351,6 +4359,7 @@ pub(crate) mod tests {
             acp_catalog_error: None,
             acp_installing: None,
             acp_query: String::new(),
+            off_screen_turns: BTreeMap::new(),
             turn_check_command: String::new(),
             turn_check_failure: None,
             review_model: Default::default(),
@@ -8826,6 +8835,15 @@ pub(crate) mod tests {
         assert_eq!(marks(&live, &session("live", false)), waiting);
         // Only on its own row.
         assert_eq!(marks(&live, &session("another", false)), (vec![], false, false));
+        // A turn going on off screen wears the clock on its own row, and the
+        // question's mark once it waits for an answer there.
+        let mut away = empty_state();
+        away.selected_session = Some("live".into());
+        away.off_screen_turns.insert("away".into(), false);
+        assert_eq!(marks(&away, &session("away", false)), running);
+        assert_eq!(marks(&away, &session("live", false)), (vec![], false, false));
+        away.off_screen_turns.insert("away".into(), true);
+        assert_eq!(marks(&away, &session("away", false)), waiting);
         // A permission prompt is not a question.
         live.pending_permissions[0].tool_name = "run_command".into();
         assert_eq!(marks(&live, &session("live", false)), running);

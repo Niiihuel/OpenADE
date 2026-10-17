@@ -92,6 +92,7 @@ fn pump(app: &mut AgentsWindow, done: impl Fn(&AgentsWindow) -> bool) {
     let ctx = egui::Context::default();
     while !done(app) {
         app.poll_run();
+        app.poll_parked_runs();
         app.poll_acp_agents(&ctx);
         assert!(Instant::now() < deadline, "timed out: {}", app.view.status);
         std::thread::sleep(Duration::from_millis(5));
@@ -399,4 +400,40 @@ fn export_acp_visual_review() {
     png(composer(&app), "acp-composer-models", 720.0, 520.0);
     app.view.composer_model_list_open = false;
     png(composer(&app), "acp-composer-menu", 720.0, 520.0);
+}
+
+#[test]
+fn an_acp_turn_goes_on_off_screen_and_what_it_asks_waits_for_the_person() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app = window(root.path());
+    app.start_acp_task("fake");
+    let away = app.view.selected_session.clone().unwrap();
+    app.view.prompt = "decí hola".into();
+    app.start_run();
+    assert!(app.view.running, "{}", app.view.status);
+
+    // Another task opens over it: the turn is parked, and what it asks waits
+    // for the person as a mark on its row, not as a denial.
+    app.start_acp_task("fake");
+    let on_screen = app.view.selected_session.clone().unwrap();
+    assert_ne!(on_screen, away);
+    assert!(!app.view.running && app.parked_runs.len() == 1, "{}", app.view.status);
+    pump(&mut app, |app| app.view.off_screen_turns.get(&away) == Some(&true));
+    let stored = app.store.as_ref().unwrap().load(&away).unwrap().unwrap();
+    assert!(stored.events.iter().any(|event| matches!(&event.kind, AgentEventKind::PermissionRequested { .. })), "its events are in its own journal");
+    assert!(app.view.transcript.is_empty() && app.view.pending_permissions.is_empty(), "and not on screen");
+
+    // Back on it, the request is there to answer, and the turn ends on screen
+    // without telling the transcript anything twice.
+    app.open_session(&away);
+    assert!(app.view.running && app.active_run.is_some(), "{}", app.view.status);
+    assert_eq!(app.view.pending_permissions.len(), 1);
+    assert!(app.view.transcript.iter().any(|item| matches!(item, TranscriptItem::Assistant { content, .. } if content.starts_with("Hola desde ACP"))), "{:?}", app.view.transcript);
+    let request = app.view.pending_permissions[0].request_id.clone();
+    app.answer_permission(&request, true);
+    pump(&mut app, |app| app.active_run.is_none() && !app.view.running);
+    assert!(app.view.transcript.iter().any(|item| matches!(item, TranscriptItem::Assistant { content, streaming: false } if content == "Hola desde ACP y fin")), "{:?}", app.view.transcript);
+    let tools: Vec<_> = app.view.transcript.iter().filter(|item| matches!(item, TranscriptItem::Tool { .. })).collect();
+    assert_eq!(tools.len(), 1, "{tools:#?}");
+    assert!(app.parked_runs.is_empty() && app.view.off_screen_turns.is_empty());
 }

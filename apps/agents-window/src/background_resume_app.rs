@@ -135,7 +135,9 @@ impl AgentsWindow {
     /// What holds this session off screen, worded as the reason a turn of it
     /// cannot start here.
     pub(super) fn off_screen_busy(&self, session_id: &str) -> Option<&'static str> {
-        if self
+        if self.parked_runs.iter().any(|parked| parked.run.session_id() == session_id) {
+            Some("Espera a que termine el turno")
+        } else if self
             .background_automation_runs
             .iter()
             .any(|run| run.session_id == session_id)

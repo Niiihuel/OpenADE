@@ -1130,6 +1130,60 @@ struct BackgroundAutomationRun {
     run: ActiveRun,
 }
 
+/// A turn that goes on while its conversation is off screen, with what the
+/// window keeps of the turn on screen until it is back.
+struct ParkedRun {
+    run: ActiveRun,
+    workspace: String,
+    run_has_output: bool,
+    turn_had_effects: bool,
+    pending_prompt: Option<String>,
+    pending_attachments: Vec<ComposerAttachmentView>,
+    /// What it asked and nobody has answered yet.
+    pending_permissions: Vec<PermissionView>,
+    /// Its final event was seen; what is left is the tail of its process.
+    ended: bool,
+}
+
+impl ParkedRun {
+    /// What `process_event` keeps of this event for the turn on screen.
+    fn note(&mut self, event: &AgentEvent) {
+        if matches!(
+            &event.kind,
+            AgentEventKind::AssistantDelta { .. }
+                | AgentEventKind::AssistantMessage { .. }
+                | AgentEventKind::ToolStarted { .. }
+                | AgentEventKind::ToolOutputDelta { .. }
+                | AgentEventKind::ToolResultMedia { .. }
+                | AgentEventKind::ProcessOutput { .. }
+        ) {
+            self.run_has_output = true;
+        }
+        match &event.kind {
+            AgentEventKind::ToolStarted { tool_call } => {
+                self.turn_had_effects |= crate::turn_check::tool_has_effects(&tool_call.name);
+            }
+            AgentEventKind::PermissionRequested { request_id, tool_call }
+                if !self.pending_permissions.iter().any(|permission| permission.request_id == *request_id) =>
+            {
+                self.pending_permissions.push(PermissionView {
+                    request_id: request_id.clone(),
+                    tool_name: tool_call.name.clone(),
+                    arguments: serde_json::to_string_pretty(&tool_call.arguments).unwrap_or_default(),
+                });
+            }
+            AgentEventKind::PermissionResolved { request_id, .. } => {
+                self.pending_permissions.retain(|permission| permission.request_id != *request_id);
+            }
+            AgentEventKind::TurnCompleted { .. }
+            | AgentEventKind::TurnFailed { .. }
+            | AgentEventKind::TurnCancelled
+            | AgentEventKind::TurnPaused { .. } => self.ended = true,
+            _ => {}
+        }
+    }
+}
+
 fn install_text_measurer(tree: &mut UiTree, context: &egui::Context) {
     limn_egui::attach_fonts(tree, context);
 }
@@ -1288,6 +1342,14 @@ fn relayout_after_updates(
 }
 
 impl ActiveRun {
+    fn session_id(&self) -> &str {
+        match self {
+            Self::Native(run) => &run.session_id,
+            Self::Cli(run) => &run.session_id,
+            Self::Acp(run) => &run.session_id,
+        }
+    }
+
     fn journal_error(&self) -> Option<String> {
         match self {
             Self::Native(run) => run.journal_error(),
@@ -1397,6 +1459,8 @@ pub struct AgentsWindow {
     background_automation_runs: Vec<BackgroundAutomationRun>,
     /// Paused trees the clock is continuing while they are not on screen.
     background_resumes: Vec<background_resume_app::BackgroundResume>,
+    /// Turns of the conversations the person left while they ran.
+    parked_runs: Vec<ParkedRun>,
     native_automation_result_errors: HashMap<(PathBuf, String), String>,
     automation_queue: VecDeque<(usize, AutomationDispatch)>,
     marketplace_response: Option<Receiver<MarketplaceResponse>>,
@@ -7017,6 +7081,7 @@ impl AgentsWindow {
             acp_catalog_error: None,
             acp_installing: None,
             acp_query: String::new(),
+            off_screen_turns: BTreeMap::new(),
             turn_check_command: String::new(),
             turn_check_failure: None,
             review_model: Default::default(),
@@ -7308,6 +7373,7 @@ impl AgentsWindow {
             automation_last_poll: Instant::now() - Duration::from_secs(31),
             background_automation_runs: Vec::new(),
             background_resumes: Vec::new(),
+            parked_runs: Vec::new(),
             native_automation_result_errors: HashMap::new(),
             automation_queue: VecDeque::new(),
             marketplace_response: None,
@@ -12634,8 +12700,7 @@ impl AgentsWindow {
             self.view.status = "Espera a que termine el cambio de rama".to_owned();
             return;
         }
-        if self.view.running {
-            self.view.status = "Detén el agente antes de cambiar de sesión".to_owned();
+        if !self.park_active_run() {
             return;
         }
         self.close_automation_editor();
@@ -12915,8 +12980,7 @@ impl AgentsWindow {
             self.view.status = "Espera a que termine el cambio de rama".to_owned();
             return;
         }
-        if self.view.running {
-            self.view.status = "Detén el agente antes de cambiar de sesión".to_owned();
+        if !self.park_active_run() {
             return;
         }
         self.prompt_focus_pending = false;
@@ -13035,6 +13099,7 @@ impl AgentsWindow {
                         }
                     }
                 }
+                self.unpark_run(id);
                 self.show_persistence_error();
                 self.sync_background_selected();
                 self.refresh_sessions();
@@ -14367,8 +14432,7 @@ impl AgentsWindow {
         let Some((agent, _)) = crate::agent_cli_definitions::profile(agent_id) else {
             return;
         };
-        if self.view.running {
-            self.view.status = "Detén el agente antes de cambiar de sesión".to_owned();
+        if !self.park_active_run() {
             return;
         }
         if self.resolve_agent_cli(agent).is_none() {
@@ -14557,6 +14621,8 @@ impl AgentsWindow {
             }
             _ => None,
         };
+        // Read back from the journal already: not told to the transcript twice.
+        let seen = event.sequence <= self.last_sequence;
         self.last_sequence = self.last_sequence.max(event.sequence);
         if native_run {
             // shortcut: an event queued before a journal reread counts twice
@@ -14636,7 +14702,7 @@ impl AgentsWindow {
                 }
             }
         }
-        let mut changed = self.projection.apply_event(&event);
+        let mut changed = !seen && self.projection.apply_event(&event);
         if matches!(
             &event.kind,
             AgentEventKind::AssistantDelta { .. }
@@ -14905,14 +14971,8 @@ impl AgentsWindow {
         // immediately, even while its visual offset is still animating.
         let selected = self.view.selected_session.as_deref();
         let selected_run = self.view.running
-            && (self.active_run.as_ref().is_some_and(|run| {
-                selected
-                    == Some(match run {
-                        ActiveRun::Native(run) => run.session_id.as_str(),
-                        ActiveRun::Cli(run) => run.session_id.as_str(),
-                        ActiveRun::Acp(run) => run.session_id.as_str(),
-                    })
-            }) || self
+            && (self.active_run.as_ref().is_some_and(|run| selected == Some(run.session_id()))
+                || self
                 .active_resume
                 .as_ref()
                 .is_some_and(|run| selected == Some(run.session_id.as_str())));
@@ -15030,6 +15090,209 @@ impl AgentsWindow {
             self.show_persistence_error();
         }
         changed
+    }
+
+    /// The conversation on screen is left: its turn goes on off screen. A
+    /// recovery of it is waited for instead.
+    fn park_active_run(&mut self) -> bool {
+        let Some(run) = self.active_run.take() else {
+            if self.view.running {
+                self.view.status =
+                    "Espera a que termine la recuperación para cambiar de sesión".to_owned();
+                return false;
+            }
+            return true;
+        };
+        self.parked_runs.push(ParkedRun {
+            run,
+            workspace: self.view.workspace.clone(),
+            run_has_output: std::mem::take(&mut self.run_has_output),
+            turn_had_effects: std::mem::take(&mut self.turn_had_effects),
+            pending_prompt: self.pending_prompt.take(),
+            pending_attachments: std::mem::take(&mut self.pending_attachments),
+            pending_permissions: std::mem::take(&mut self.view.pending_permissions),
+            ended: !self.view.running,
+        });
+        self.view.running = false;
+        self.sync_off_screen_turns();
+        true
+    }
+
+    /// The conversation of a parked turn is back on screen: the turn is the
+    /// one on screen again, over the transcript just read from the journal.
+    fn unpark_run(&mut self, session_id: &str) {
+        let Some(index) = self
+            .parked_runs
+            .iter()
+            .position(|parked| parked.run.session_id() == session_id)
+        else {
+            return;
+        };
+        let parked = self.parked_runs.remove(index);
+        self.active_run = Some(parked.run);
+        self.run_has_output = parked.run_has_output;
+        self.turn_had_effects = parked.turn_had_effects;
+        self.pending_prompt = parked.pending_prompt;
+        self.pending_attachments = parked.pending_attachments;
+        self.view.pending_permissions = parked.pending_permissions;
+        self.view.running = !parked.ended;
+        if self.view.running {
+            self.view.status = "Ejecutando...".to_owned();
+        }
+        self.sync_off_screen_turns();
+    }
+
+    fn sync_off_screen_turns(&mut self) {
+        self.view.off_screen_turns = self
+            .parked_runs
+            .iter()
+            .filter(|parked| !parked.ended)
+            .map(|parked| {
+                (
+                    parked.run.session_id().to_owned(),
+                    !parked.pending_permissions.is_empty(),
+                )
+            })
+            .collect();
+    }
+
+    /// A stopped turn's message goes back to its conversation's draft, as it
+    /// goes back to the composer on screen.
+    fn give_back_parked_prompt(&mut self, index: usize) {
+        let parked = &mut self.parked_runs[index];
+        let attachments = std::mem::take(&mut parked.pending_attachments);
+        let Some(prompt) = parked.pending_prompt.take().filter(|_| !parked.run_has_output) else {
+            return;
+        };
+        let key = (parked.workspace.clone(), Some(parked.run.session_id().to_owned()));
+        if !attachments.is_empty() {
+            let drafted = self.attachment_drafts.entry(key.clone()).or_default();
+            for file in attachments {
+                if !drafted.iter().any(|existing| existing.path == file.path) {
+                    drafted.push(file);
+                }
+            }
+        }
+        if self.drafts.get(&key).is_some_and(|draft| !draft.is_empty()) {
+            return;
+        }
+        if let Some(store) = &self.store {
+            if let Err(error) = store.save_draft(Path::new(&key.0), key.1.as_deref(), &prompt) {
+                self.draft_error = Some(error.to_string());
+            }
+        }
+        self.drafts.insert(key, prompt);
+    }
+
+    /// Turns going on off screen: their events are kept, what they ask waits
+    /// for the person, and their end is announced on a conversation left
+    /// unread. What is queued behind them waits for the conversation to be
+    /// opened again.
+    fn poll_parked_runs(&mut self) -> bool {
+        let mut changed = false;
+        let mut index = 0;
+        while index < self.parked_runs.len() {
+            let (events, disconnected) = self.parked_runs[index].run.drain();
+            changed |= !events.is_empty() || disconnected;
+            let native_run = matches!(self.parked_runs[index].run, ActiveRun::Native(_));
+            let session_id = self.parked_runs[index].run.session_id().to_owned();
+            for event in events {
+                if !native_run {
+                    if let Some(store) = &self.store {
+                        if let Err(error) = store.append_event(&event.session_id, &event) {
+                            self.persistence_error = Some(error.to_string());
+                            self.parked_runs[index].run.cancel();
+                            continue;
+                        }
+                    }
+                }
+                self.parked_runs[index].note(&event);
+                if matches!(
+                    event.kind,
+                    AgentEventKind::ToolFinished { .. }
+                        | AgentEventKind::TurnCompleted { .. }
+                        | AgentEventKind::TurnFailed { .. }
+                        | AgentEventKind::TurnCancelled
+                ) {
+                    self.environment_dirty = true;
+                }
+                match &event.kind {
+                    AgentEventKind::PermissionRequested { tool_call, .. } => {
+                        let waiting = if openide_harness::is_user_interaction_tool(&tool_call.name) {
+                            "Esperando tu respuesta".to_owned()
+                        } else {
+                            format!("Permiso pendiente: {}", tool_call.name)
+                        };
+                        self.notify_session(crate::notifications::Event::Approval, &waiting, &session_id);
+                    }
+                    AgentEventKind::TurnCompleted { .. } => {
+                        self.notify_session(
+                            crate::notifications::Event::TurnCompleted,
+                            "Turno completado",
+                            &session_id,
+                        );
+                        self.parked_runs[index].pending_prompt = None;
+                        self.parked_runs[index].pending_attachments.clear();
+                        self.leave_unread(&session_id);
+                    }
+                    AgentEventKind::TurnFailed { .. } => {
+                        self.notify_session(crate::notifications::Event::TurnFailed, "Turno fallido", &session_id);
+                        self.give_back_parked_prompt(index);
+                        self.leave_unread(&session_id);
+                    }
+                    AgentEventKind::TurnCancelled => {
+                        self.give_back_parked_prompt(index);
+                        self.leave_unread(&session_id);
+                    }
+                    AgentEventKind::TurnPaused { .. } => {
+                        self.notify_session(crate::notifications::Event::Approval, "Turno en pausa", &session_id);
+                        self.parked_runs[index].pending_prompt = None;
+                        self.parked_runs[index].pending_attachments.clear();
+                    }
+                    _ => {}
+                }
+                // A turn that was stopped or failed does not go on to what was
+                // queued behind it until the user says so.
+                if matches!(event.kind, AgentEventKind::TurnCancelled | AgentEventKind::TurnFailed { .. }) {
+                    if let Some(queue) = self.turn_queue.get_mut(&session_id).filter(|queue| !queue.items.is_empty()) {
+                        queue.paused = true;
+                        self.save_turn_queues();
+                    }
+                }
+            }
+            if disconnected {
+                if let Some(error) = self.parked_runs[index].run.journal_error() {
+                    self.persistence_error = Some(error);
+                }
+                if !self.parked_runs[index].ended {
+                    self.notify_session(
+                        crate::notifications::Event::TurnFailed,
+                        "El proceso terminó sin evento final",
+                        &session_id,
+                    );
+                    self.give_back_parked_prompt(index);
+                    self.leave_unread(&session_id);
+                }
+                self.parked_runs.remove(index);
+                if native_run {
+                    self.reconcile_native_automation_session(&session_id);
+                }
+                self.refresh_sessions();
+                self.show_persistence_error();
+            } else {
+                index += 1;
+            }
+        }
+        if changed {
+            self.sync_off_screen_turns();
+        }
+        changed
+    }
+
+    fn leave_unread(&self, session_id: &str) {
+        if let Some(store) = &self.store {
+            let _ = store.mark_unread(session_id);
+        }
     }
 
     fn start_resume(&mut self) {
@@ -22247,6 +22510,9 @@ impl eframe::App for AgentsWindow {
         for run in self.background_automation_runs.drain(..) {
             run.run.cancel();
         }
+        for parked in self.parked_runs.drain(..) {
+            parked.run.cancel();
+        }
         // Dropping a continuation's worker cancels it.
         self.background_resumes.clear();
         let now_ms = chrono::Utc::now().timestamp_millis();
@@ -22277,7 +22543,9 @@ impl eframe::App for AgentsWindow {
         if ctx.input(|input| input.viewport().close_requested())
             && !self.view.automations.quit_allowed
             && !self.view.code_editor_quit_confirm
-            && (!self.background_automation_runs.is_empty() || !self.automation_queue.is_empty())
+            && (!self.background_automation_runs.is_empty()
+                || !self.automation_queue.is_empty()
+                || !self.parked_runs.is_empty())
         {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.view.automations.quit_pending = true;
@@ -22327,6 +22595,7 @@ impl eframe::App for AgentsWindow {
             | self.poll_subagent_sessions()
             | self.poll_automations()
             | self.poll_background_resumes()
+            | self.poll_parked_runs()
             | self.poll_compact()
             | self.poll_resume()
             | self.poll_child_recovery()

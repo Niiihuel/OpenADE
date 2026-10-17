@@ -4488,6 +4488,7 @@ mod tests {
             acp_catalog_error: None,
             acp_installing: None,
             acp_query: String::new(),
+            off_screen_turns: std::collections::BTreeMap::new(),
             turn_check_command: String::new(),
             turn_check_failure: None,
             review_model: Default::default(),

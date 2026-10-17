@@ -1402,6 +1402,7 @@ Ejecutando	Running
 Ejecutando MCP	Running MCP
 Ejecutando script	Running script
 Ejecutando {} en una terminal nueva	Running {} in a new terminal
+Ejecutando...	Running...
 Ejecutar	Run
 Ejecutar JavaScript en la página	Run JavaScript on the page
 Ejecutar ahora	Run now
@@ -2118,6 +2119,7 @@ Espera a que termine el cambio de rama antes de eliminar esta tarea	Wait for the
 Espera a que termine el cambio de rama para enviar el mensaje	Wait for the branch switch to finish to send the message
 Espera a que termine el cambio de rama.	Wait for the branch switch to finish.
 Espera a que termine el guardado	Wait for the save to finish
+Espera a que termine el turno	Wait for the turn to finish
 Espera a que termine el turno antes de compactar	Wait for the turn to finish before compacting
 Espera a que termine el turno para cambiar el modo o las skills	Wait for the turn to finish to change the mode or the skills
 Espera a que termine la automatización	Wait for the automation to finish
@@ -2134,6 +2136,7 @@ Espera a que termine la operación actual	Wait for the current operation to fini
 Espera a que termine la operación de Git.	Wait for the Git operation to finish.
 Espera a que termine la operación de archivos en curso	Wait for the current file operation to finish
 Espera a que termine la preparación de archivos.	Wait for file preparation to finish.
+Espera a que termine la recuperación para cambiar de sesión	Wait for the recovery to finish before switching session
 Espera a que termine la respuesta.	Wait for the response to finish.
 Espera a que termine la tarea para cambiar la meta	Wait for the task to finish to change the goal
 Espera a que terminen los agentes para desinstalar plugins.	Wait for agents to finish before uninstalling plugins.
@@ -5757,7 +5760,6 @@ ya no existe	it no longer exists
 ¿Qué hará esta tarea?	What will this task do?
 ¿Qué tenemos en la agenda hoy?	What's on the agenda today?
 ¿Recargar el archivo?	Reload the file?
-¿Salir con automatizaciones en curso?	Exit with automations running?
 ¿Un recorrido rápido?	A quick tour?
 Árbol de GitHub inválido	Invalid GitHub tree
 Éxito	Success
@@ -6010,3 +6012,4 @@ Carpetas y repositorios donde se descubren skills.	Folders and repositories wher
 Consulta sus instrucciones, procedencia y opciones de instalación.	View its instructions, provenance, and installation options.
 Un origen necesita atención	A source needs attention
 Volver al catálogo	Back to catalog
+¿Salir con agentes en curso?	Exit with agents running?

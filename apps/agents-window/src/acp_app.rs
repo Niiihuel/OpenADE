@@ -236,8 +236,7 @@ impl AgentsWindow {
             self.view.status = format!("{agent_id} no está instalado en este equipo");
             return;
         };
-        if self.view.running {
-            self.view.status = "Detén el agente antes de cambiar de sesión".to_owned();
+        if !self.park_active_run() {
             return;
         }
         let Some(store) = &self.store else {
