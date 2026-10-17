@@ -4,6 +4,18 @@ Every release of openADE, newest first. The versions before 0.2.0 were tagged
 afterwards, on the last commit of each day of work; their `Cargo.toml` still
 says 0.1.0.
 
+## Unreleased
+
+- A Graph tab in the dock draws the workspace's files, and their imports,
+  calls and type uses, as a force-directed graph: hovering a file lights up
+  its neighbours, nodes can be dragged, the view zooms and pans, and a click
+  opens the file. Its floating controls filter by path and link kind, color
+  groups of files, show only what surrounds the open file, play the project's
+  growth as a timelapse and tune the forces; they are kept in `graph-view.json`
+- `openade-graph`: an incremental index of the workspace's code that agents
+  query over MCP or the command line instead of rereading files, with a hook
+  that points CLI agents to it before they grep or read a large file
+
 ## 0.3.0 — 2026-10-16
 
 - Settings reach every module: browser automation with per-site permissions,

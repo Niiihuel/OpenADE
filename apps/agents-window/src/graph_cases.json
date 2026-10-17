@@ -1,0 +1,300 @@
+{
+  "_nota": "Casos entrada → salida esperada. Cada función nombrada acá está definida en SPEC.md §7. Tolerancia numérica: 1e-6.",
+  "radioNodo": [
+    {
+      "peso": 0,
+      "mult": 1,
+      "esperado": 8
+    },
+    {
+      "peso": 7,
+      "mult": 1,
+      "esperado": 8.485281374238571
+    },
+    {
+      "peso": 99,
+      "mult": 1,
+      "esperado": 30
+    },
+    {
+      "peso": 500,
+      "mult": 1,
+      "esperado": 30
+    },
+    {
+      "peso": 7,
+      "mult": 2,
+      "esperado": 16.970562748477143
+    }
+  ],
+  "opacidadEtiquetas": [
+    {
+      "zoom": 1,
+      "fundido": 0,
+      "esperado": 1
+    },
+    {
+      "zoom": 0.5,
+      "fundido": 0,
+      "esperado": 0
+    },
+    {
+      "zoom": 0.25,
+      "fundido": 0,
+      "esperado": 0
+    },
+    {
+      "zoom": 0.5,
+      "fundido": -1,
+      "esperado": 1
+    },
+    {
+      "zoom": 0.7071067811865476,
+      "fundido": 0,
+      "esperado": 0.5
+    },
+    {
+      "zoom": 4,
+      "fundido": 3,
+      "esperado": 0
+    }
+  ],
+  "escalaNodo": [
+    {
+      "zoom": 1,
+      "esperado": 1
+    },
+    {
+      "zoom": 4,
+      "esperado": 0.5
+    },
+    {
+      "zoom": 0.25,
+      "esperado": 2
+    }
+  ],
+  "sliderAFuerza": [
+    {
+      "slider": 0,
+      "esperado": 0
+    },
+    {
+      "slider": 0.5,
+      "esperado": 0.09090909090909093
+    },
+    {
+      "slider": 1,
+      "esperado": 1
+    },
+    {
+      "slider": 0.5187132489703118,
+      "esperado": 0.1
+    }
+  ],
+  "fuerzaAslider": [
+    {
+      "fuerza": 0.1,
+      "esperado": 0.5187132489703118
+    },
+    {
+      "fuerza": 1,
+      "esperado": 1
+    }
+  ],
+  "sliderARepulsion": [
+    {
+      "slider": 10,
+      "esperado": 1000
+    },
+    {
+      "slider": 0,
+      "esperado": 0
+    },
+    {
+      "slider": 20,
+      "esperado": 8000
+    }
+  ],
+  "limitarZoom": [
+    {
+      "zoom": 100,
+      "esperado": 8
+    },
+    {
+      "zoom": 0.001,
+      "esperado": 0.0078125
+    },
+    {
+      "zoom": 1,
+      "esperado": 1
+    }
+  ],
+  "factorRueda": [
+    {
+      "deltaY": 120,
+      "deltaMode": 0,
+      "esperado": 0.6666666666666666
+    },
+    {
+      "deltaY": -120,
+      "deltaMode": 0,
+      "esperado": 1.5
+    },
+    {
+      "deltaY": 3,
+      "deltaMode": 1,
+      "esperado": 0.6666666666666666
+    },
+    {
+      "deltaY": 0,
+      "deltaMode": 0,
+      "esperado": 1
+    }
+  ],
+  "opacidadFlecha": [
+    {
+      "zoom": 0.3,
+      "esperado": 0
+    },
+    {
+      "zoom": 0.55,
+      "esperado": 0.5
+    },
+    {
+      "zoom": 1,
+      "esperado": 1
+    }
+  ],
+  "esClic": [
+    {
+      "desplazamientoPx": 4,
+      "esperado": true
+    },
+    {
+      "desplazamientoPx": 5,
+      "esperado": true
+    },
+    {
+      "desplazamientoPx": 6,
+      "esperado": false
+    }
+  ],
+  "propiedades": [
+    "Enfriamiento: con alpha inicial 1 y objetivo 0, la simulación se detiene (alpha ≤ 0.001) en exactamente 300 ticks.",
+    "Si A enlaza a B y B enlaza a A, se dibuja una sola línea entre ellos.",
+    "Tras cambiar cualquier fuerza, alpha vuelve a ser ≥ 0.3 y la simulación corre.",
+    "Arrastrar un nodo lo fija bajo el cursor; al soltarlo queda libre otra vez.",
+    "Sin cambios ni movimiento, el bucle de dibujo se detiene solo (no consume CPU en reposo).",
+    "Grafo local con 1 salto: la nota central tiene peso 30 y sus vecinos peso 0. Con 2 saltos: 30, 15, 0.",
+    "Timelapse: con 164 pasos totales avanza 6.4 pasos por segundo y se detiene al mostrar el último paso (no sigue redibujando).",
+    "Si una nota coincide con dos grupos, toma el color del primero de la lista.",
+    "Las etiquetas y los adjuntos nunca toman color de grupo; los no resueltos nunca se ocultan por el filtro.",
+    "Grafo local: el slider de profundidad va de 1 a 5 y la nota central siempre pasa el filtro."
+  ],
+  "velocidadTimelapse": [
+    {
+      "totalPasos": 0,
+      "esperado": 5
+    },
+    {
+      "totalPasos": 164,
+      "esperado": 6.4031242374328485
+    },
+    {
+      "totalPasos": 400,
+      "esperado": 10
+    },
+    {
+      "totalPasos": 1000000,
+      "esperado": 100
+    }
+  ],
+  "pasoTimelapse": [
+    {
+      "velocidad": 20,
+      "ms": 0,
+      "esperado": 1
+    },
+    {
+      "velocidad": 20,
+      "ms": 1000,
+      "esperado": 21
+    },
+    {
+      "velocidad": 6.4031242374328485,
+      "ms": 500,
+      "esperado": 4
+    }
+  ],
+  "resolverFiltro": [
+    {
+      "consultas": [],
+      "esperado": "normal"
+    },
+    {
+      "consultas": [
+        {
+          "color": null,
+          "coincide": false
+        }
+      ],
+      "esperado": "oculta"
+    },
+    {
+      "consultas": [
+        {
+          "color": null,
+          "coincide": true
+        },
+        {
+          "color": "rojo",
+          "coincide": true
+        },
+        {
+          "color": "verde",
+          "coincide": true
+        }
+      ],
+      "esperado": "rojo"
+    },
+    {
+      "consultas": [
+        {
+          "color": "rojo",
+          "coincide": false
+        },
+        {
+          "color": "verde",
+          "coincide": true
+        }
+      ],
+      "esperado": "verde"
+    },
+    {
+      "consultas": [
+        {
+          "color": null,
+          "coincide": true
+        },
+        {
+          "color": "rojo",
+          "coincide": false
+        }
+      ],
+      "esperado": "normal"
+    },
+    {
+      "consultas": [
+        {
+          "color": null,
+          "coincide": false
+        },
+        {
+          "color": "rojo",
+          "coincide": true
+        }
+      ],
+      "esperado": "oculta"
+    }
+  ]
+}

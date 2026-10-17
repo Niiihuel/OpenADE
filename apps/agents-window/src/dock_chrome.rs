@@ -50,6 +50,7 @@ pub(super) fn icon(kind: SideTab) -> Icon {
         SideTab::CodeReview => Icon::GitBranch,
         SideTab::SessionChanges | SideTab::FilePreview | SideTab::CodeSnapshot => Icon::Code,
         SideTab::Browser => Icon::Globe,
+        SideTab::Graph => Icon::GitBranch,
         SideTab::Terminal => Icon::Terminal,
     }
 }
@@ -196,6 +197,7 @@ fn matches_query(query: &str, title: &str, kind: SideTab) -> bool {
         SideTab::CodeReview => "repositorio git",
         SideTab::SessionChanges => "cambios chat conversación",
         SideTab::Browser => "navegador web",
+        SideTab::Graph => "grafo nodos enlaces",
         SideTab::Terminal => "terminal",
         SideTab::FilePreview => "vista de archivo",
         SideTab::CodeSnapshot => "vista previa capturada",

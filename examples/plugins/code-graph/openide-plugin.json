@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "code-graph",
+  "name": "Grafo de código",
+  "version": "0.3.0",
+  "description": "Índice incremental de definiciones, llamadas e imports del proyecto para consultar en lugar de releer archivos.",
+  "publisher": "OpenADE",
+  "program": "openade-graph",
+  "entrypoint": "openade-graph.mcp",
+  "args": ["${workspace}"],
+  "credential_env_names": []
+}

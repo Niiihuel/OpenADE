@@ -12,6 +12,7 @@ members = [
     "crates/openide-bridge",
     "crates/openide-browser",
     "crates/openide-connections",
+    "crates/openide-graph",
 ]
 # Builds on Linux alone, as a dependency of agents-window there: a member
 # would be built by the workspace's commands on every system.
