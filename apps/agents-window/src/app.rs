@@ -7016,6 +7016,7 @@ impl AgentsWindow {
             acp_catalog: Vec::new(),
             acp_catalog_error: None,
             acp_installing: None,
+            acp_query: String::new(),
             turn_check_command: String::new(),
             turn_check_failure: None,
             review_model: Default::default(),
@@ -21858,6 +21859,7 @@ impl AgentsWindow {
                     self.persist_native_settings();
                 }
                 "catalog_provider_query" => self.view.catalog_provider_query = value,
+                "acp_query" => self.view.acp_query = value,
                 "catalog_model_query" => self.view.catalog_model_query = value,
                 "settings_search" => self.view.settings_nav_query = value,
                 "rename_title" => self.view.rename_draft = value,

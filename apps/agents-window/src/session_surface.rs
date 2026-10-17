@@ -4487,6 +4487,7 @@ mod tests {
             acp_catalog: Vec::new(),
             acp_catalog_error: None,
             acp_installing: None,
+            acp_query: String::new(),
             turn_check_command: String::new(),
             turn_check_failure: None,
             review_model: Default::default(),

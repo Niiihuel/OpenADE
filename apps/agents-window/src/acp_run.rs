@@ -10,7 +10,7 @@ use openide_acp::registry::{self, BinaryTarget, Launch, Registry};
 use openide_acp::{AgentCommand, Connection, Event, PermissionAnswer};
 use openide_core::{
     AgentEvent, AgentEventKind, ModelStreamEvent, OutputStream, PermissionResolution, PlanSnapshot, PlanStep,
-    PlanStepStatus, ToolCall,
+    PlanStepStatus, ToolCall, TurnMode, UserImage,
 };
 use openide_harness::PermissionChoice;
 use serde_json::{json, Value};
@@ -18,6 +18,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::cell::RefCell;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -397,6 +398,9 @@ fn option_for(options: &[PermissionOption], choice: PermissionChoice) -> Option<
     order.iter().find_map(|kind| options.iter().find(|option| option.kind == *kind)).map(|option| option.option_id.clone())
 }
 
+/// Told the agent that is about to wait for its user to sign in.
+type SignIn<'a> = &'a dyn Fn(&Arc<Connection>);
+
 /// One agent process and its ACP session, kept for the next turns.
 pub(crate) struct AcpAgent {
     connection: Arc<Connection>,
@@ -405,18 +409,28 @@ pub(crate) struct AcpAgent {
     alive: Arc<AtomicBool>,
     /// The session's options as the agent last told them.
     config: Arc<Mutex<Vec<ConfigOption>>>,
+    /// The agent takes images in a prompt.
+    pub(crate) images: bool,
     pub(crate) name: String,
 }
 
 impl AcpAgent {
     /// Starts the agent, reopens `resume` when it can and otherwise opens a
-    /// new session, signing in once if the agent asks for it.
-    fn start(command: &AgentCommand, name: &str, cwd: &Path, resume: Option<&str>) -> Result<Self, String> {
+    /// new session. When the agent asks to sign in it does so once, after
+    /// telling `sign_in`; without `sign_in` the start gives up instead.
+    fn start(
+        command: &AgentCommand,
+        name: &str,
+        cwd: &Path,
+        resume: Option<&str>,
+        sign_in: Option<SignIn<'_>>,
+    ) -> Result<Self, String> {
         let turn: Arc<Mutex<Option<Turn>>> = Arc::default();
         let alive = Arc::new(AtomicBool::new(true));
         let config: Arc<Mutex<Vec<ConfigOption>>> = Arc::default();
         let relay = (turn.clone(), alive.clone(), config.clone());
         let connection = Connection::spawn(command, cwd, move |event| relay_event(event, &relay.0, &relay.1, &relay.2))
+            .map(Arc::new)
             .map_err(|error| error.to_string())?;
         let initialized = connection.initialize("openADE", env!("CARGO_PKG_VERSION")).map_err(|error| error.to_string())?;
         let reopened = resume.filter(|_| initialized.agent_capabilities.load_session).and_then(|session| {
@@ -432,6 +446,9 @@ impl AcpAgent {
                         .iter()
                         .find(|method| method.kind.as_deref().is_none_or(|kind| kind == "agent"))
                         .ok_or_else(|| format!("{name} pide iniciar sesión: hazlo desde su CLI y vuelve a intentar"))?;
+                    let sign_in =
+                        sign_in.ok_or_else(|| format!("{name} pide iniciar sesión: se abrirá en tu navegador cuando le escribas"))?;
+                    sign_in(&connection);
                     connection.authenticate(&method.id).map_err(|error| error.to_string())?;
                     let session = connection.new_session(cwd, json!([])).map_err(|error| error.to_string())?;
                     (session.session_id, session.config_options)
@@ -442,7 +459,8 @@ impl AcpAgent {
         if let Some(options) = options {
             *lock(&config) = options;
         }
-        Ok(Self { connection: Arc::new(connection), acp_session, turn, alive, config, name: name.to_owned() })
+        let images = initialized.agent_capabilities.prompt_capabilities.image;
+        Ok(Self { connection, acp_session, turn, alive, config, images, name: name.to_owned() })
     }
 
     /// Sets the option of each category to its value, unless it has it
@@ -500,6 +518,9 @@ pub(crate) struct AgentSlot {
     /// Held while the agent starts, so a turn and an early start never
     /// start two.
     starting: Mutex<()>,
+    /// The agent waiting for its user to sign in, which stopping the turn
+    /// ends: it has no session to cancel yet.
+    signing_in: Mutex<Option<Arc<Connection>>>,
 }
 
 impl AgentSlot {
@@ -512,14 +533,29 @@ impl AgentSlot {
         self.agent().map(|agent| lock(&agent.config).clone()).unwrap_or_default()
     }
 
-    /// The running agent, started first when there is none.
-    pub(crate) fn ensure(&self, start: &AgentStart) -> Result<Arc<AcpAgent>, String> {
+    /// The running agent, started first when there is none. Only a start
+    /// given `on_sign_in` signs in, and tells it first.
+    pub(crate) fn ensure(&self, start: &AgentStart, on_sign_in: Option<&dyn Fn()>) -> Result<Arc<AcpAgent>, String> {
         let _starting = lock(&self.starting);
         if let Some(agent) = self.agent() {
             return Ok(agent);
         }
         let resume = remembered_session(&start.data_root, &start.session_id);
-        let agent = Arc::new(AcpAgent::start(&start.command, &start.agent_name, &start.workspace, resume.as_deref())?);
+        let sign_in = on_sign_in.map(|told| {
+            move |connection: &Arc<Connection>| {
+                *lock(&self.signing_in) = Some(connection.clone());
+                told();
+            }
+        });
+        let started = AcpAgent::start(
+            &start.command,
+            &start.agent_name,
+            &start.workspace,
+            resume.as_deref(),
+            sign_in.as_ref().map(|sign_in| sign_in as SignIn<'_>),
+        );
+        lock(&self.signing_in).take();
+        let agent = Arc::new(started?);
         remember_session(&start.data_root, &start.session_id, &agent.acp_session);
         *lock(&self.agent) = Some(agent.clone());
         Ok(agent)
@@ -540,6 +576,8 @@ pub(crate) struct TurnRequest {
     pub(crate) start: AgentStart,
     pub(crate) sequence_start: u64,
     pub(crate) prompt: String,
+    /// Sent after the prompt's text; only for an agent that takes images.
+    pub(crate) images: Vec<UserImage>,
     /// The value wanted for the option of each category, applied first.
     pub(crate) choices: Vec<(&'static str, String)>,
 }
@@ -558,6 +596,9 @@ impl AcpRunHandle {
 
     pub(crate) fn cancel(&self) {
         self.cancelled.store(true, Ordering::Release);
+        if let Some(connection) = lock(&self.slot.signing_in).take() {
+            connection.kill();
+        }
         let Some(agent) = self.slot.agent() else {
             return;
         };
@@ -596,7 +637,7 @@ impl AcpRunHandle {
 }
 
 fn run_turn(request: TurnRequest, slot: &AgentSlot, sender: Sender<AgentEvent>, cancelled: &AtomicBool) {
-    let mut opening = Turn {
+    let opening = RefCell::new(Turn {
         sender,
         session_id: request.start.session_id.clone(),
         sequence: request.sequence_start,
@@ -606,11 +647,43 @@ fn run_turn(request: TurnRequest, slot: &AgentSlot, sender: Sender<AgentEvent>, 
         tool_order: Vec::new(),
         permissions: HashMap::new(),
         asked: 0,
+    });
+    let emit = |kind| opening.borrow_mut().emit(kind);
+    emit(AgentEventKind::SessionStarted { workspace: request.start.workspace.clone() });
+    if !request.images.is_empty() {
+        // So the transcript shows them on the message, as for the native agent.
+        emit(AgentEventKind::TurnAdmittedWithImages {
+            turn_id: format!("acp-{}", request.sequence_start),
+            prompt: request.prompt.clone(),
+            model: request.start.agent_name.clone(),
+            mode: TurnMode::Build,
+            images: request.images.clone(),
+        });
+    }
+    emit(AgentEventKind::TurnStarted { prompt: request.prompt.clone() });
+    let signing_in = || {
+        emit(AgentEventKind::HostNotice {
+            code: "acp_sign_in".into(),
+            detail: format!(
+                "{} pidió iniciar sesión, en una página que suele abrir en tu navegador. El turno sigue cuando termines; Detener lo cancela.",
+                request.start.agent_name
+            ),
+        });
+        // Stopped before the wait began, so Stop found nothing to end.
+        if cancelled.load(Ordering::Acquire) {
+            if let Some(connection) = lock(&slot.signing_in).take() {
+                connection.kill();
+            }
+        }
     };
-    opening.emit(AgentEventKind::SessionStarted { workspace: request.start.workspace.clone() });
-    opening.emit(AgentEventKind::TurnStarted { prompt: request.prompt.clone() });
-    let agent = match slot.ensure(&request.start).and_then(|agent| agent.choose(&request.choices).map(|()| agent)) {
+    let started = slot.ensure(&request.start, Some(&signing_in as &dyn Fn())).and_then(|agent| agent.choose(&request.choices).map(|()| agent));
+    let mut opening = opening.into_inner();
+    let agent = match started {
         Ok(agent) => agent,
+        Err(_) if cancelled.load(Ordering::Acquire) => {
+            opening.emit(AgentEventKind::TurnCancelled);
+            return;
+        }
         Err(error) => {
             opening.emit(AgentEventKind::TurnFailed { error });
             return;
@@ -622,7 +695,13 @@ fn run_turn(request: TurnRequest, slot: &AgentSlot, sender: Sender<AgentEvent>, 
     }
     opening.emit(AgentEventKind::ModelRequestStarted { step: 1, model: agent.name.clone() });
     *lock(&agent.turn) = Some(opening);
-    let stopped = agent.connection.prompt(&agent.acp_session, &[ContentBlock::Text { text: request.prompt }]);
+    let mut prompt = vec![ContentBlock::Text { text: request.prompt }];
+    prompt.extend(request.images.into_iter().map(|image| ContentBlock::Image {
+        data: image.data_base64,
+        mime_type: image.mime_type.as_str().to_owned(),
+        uri: None,
+    }));
+    let stopped = agent.connection.prompt(&agent.acp_session, &prompt);
     // Taken out before the last event: once it is dropped the window sees
     // the channel close, and the agent's late messages reach no one.
     let Some(mut turn) = lock(&agent.turn).take() else {

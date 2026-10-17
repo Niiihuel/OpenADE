@@ -171,7 +171,7 @@ impl AgentsWindow {
         };
         let (sender, receiver) = std::sync::mpsc::channel();
         let started = std::thread::Builder::new().name("acp-start".into()).spawn(move || {
-            let _ = sender.send((session_id, slot.ensure(&start).map(drop)));
+            let _ = sender.send((session_id, slot.ensure(&start, None).map(drop)));
         });
         if started.is_ok() {
             self.acp_warming = Some(receiver);
@@ -267,11 +267,12 @@ impl AgentsWindow {
             return;
         }
         let prompt = self.view.prompt.trim().to_owned();
-        if prompt.is_empty() {
+        let attachments = self.view.composer_attachments.clone();
+        if prompt.is_empty() && attachments.is_empty() {
             return;
         }
-        if !self.view.composer_attachments.is_empty() {
-            self.show_composer_error("Los adjuntos todavía no llegan a los agentes ACP; envía solo el texto.");
+        if self.attachment_pastes_pending.contains(&self.draft_key()) {
+            self.view.status = "Espera a que se preparen los adjuntos".to_owned();
             return;
         }
         if self.persistence_error.is_some() {
@@ -286,27 +287,46 @@ impl AgentsWindow {
             self.show_composer_error("Abre la tarea del agente antes de escribirle");
             return;
         };
+        let workspace = PathBuf::from(&self.view.workspace);
+        // shortcut: images are read even when they go as paths, so one over
+        // 8 MiB is refused for an agent that would only open it itself.
+        let payload = match prepare_native_attachments_with_image_support(&workspace, &attachments, true) {
+            Ok(payload) => payload,
+            Err(error) => {
+                self.show_composer_error(error);
+                return;
+            }
+        };
+        let slot = self.acp_slots.entry(session_id.clone()).or_default().clone();
+        // Files go as paths the agent opens itself. So do images, unless the
+        // agent has said it takes them inline.
+        let (text, images) = if slot.agent().is_some_and(|agent| agent.images) {
+            (native_prompt_with_images(&prompt, &payload.path_attachments, &payload.image_attachments), payload.images)
+        } else {
+            (composer_prompt_with_attachments(&prompt, &attachments), Vec::new())
+        };
         self.view.composer_error = None;
         self.stop_dictation();
-        let slot = self.acp_slots.entry(session_id.clone()).or_default().clone();
         let request = TurnRequest {
             start: AgentStart {
                 session_id,
-                workspace: PathBuf::from(&self.view.workspace),
+                workspace,
                 command: offer.command,
                 agent_name: offer.name.clone(),
                 data_root: self.data_root.clone(),
             },
             sequence_start: self.last_sequence,
-            prompt: prompt.clone(),
+            prompt: text,
+            images,
             choices: vec![("model", self.view.composer_model.clone()), ("thought_level", self.view.composer_effort.clone())],
         };
         self.active_run = Some(ActiveRun::Acp(AcpRunHandle::start(request, slot)));
         self.run_has_output = false;
         let draft = self.draft_key();
         self.pending_prompt = Some(prompt);
-        self.pending_attachments = Vec::new();
+        self.pending_attachments = attachments;
         self.view.prompt.clear();
+        self.view.composer_attachments.clear();
         self.clear_draft_key(&draft);
         self.draft_dirty_at = None;
         self.tree.set_input_value("prompt", "");

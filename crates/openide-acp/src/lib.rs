@@ -184,6 +184,16 @@ mod tests {
         assert_eq!(connection.stderr_tail(), "ready");
         drop(connection);
         assert!(started.elapsed() < Duration::from_secs(10), "dropping kills the agent instead of waiting for it");
+        let silent = AgentCommand { program: "sh".into(), args: vec!["-c".into(), "exec sleep 30".into()], env: Vec::new() };
+        let connection = std::sync::Arc::new(Connection::spawn(&silent, &std::env::temp_dir(), |_| {}).unwrap());
+        let asking = {
+            let connection = connection.clone();
+            std::thread::spawn(move || connection.initialize("openADE", "0"))
+        };
+        std::thread::sleep(Duration::from_millis(50));
+        connection.kill();
+        assert!(matches!(asking.join().unwrap(), Err(Error::Closed(_))), "a killed agent's open request fails at once");
+        assert!(started.elapsed() < Duration::from_secs(10));
         let missing = AgentCommand { program: "/no/such/agent".into(), args: Vec::new(), env: Vec::new() };
         assert!(matches!(Connection::spawn(&missing, &std::env::temp_dir(), |_| {}), Err(Error::Spawn(_))));
     }

@@ -219,6 +219,14 @@ impl Connection {
         self.notify("session/cancel", json!({"sessionId": session_id}))
     }
 
+    /// Ends the agent's process: what it was asked and has not answered
+    /// fails as closed.
+    pub fn kill(&self) {
+        if let Some(child) = &self.child {
+            let _ = child.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).kill();
+        }
+    }
+
     pub fn set_mode(&self, session_id: &str, mode_id: &str) -> Result<(), Error> {
         self.request("session/set_mode", json!({"sessionId": session_id, "modeId": mode_id}), Some(Duration::from_secs(30)))
             .map(drop)

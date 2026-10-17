@@ -7,6 +7,12 @@ use std::io::{BufRead, Write};
 use std::path::Path;
 
 const FAKE_AGENT: &str = "OPENADE_FAKE_ACP_AGENT";
+/// A file the fake agent writes each message it gets to, one per line.
+const FAKE_LOG: &str = "OPENADE_FAKE_ACP_LOG";
+/// Set, the fake agent asks to sign in and never finishes signing in.
+const FAKE_LOGIN: &str = "OPENADE_FAKE_ACP_LOGIN";
+/// Set, the fake agent takes no images in a prompt.
+const FAKE_NO_IMAGES: &str = "OPENADE_FAKE_ACP_NO_IMAGES";
 
 /// The fake agent: this test binary, run again on this one test, which then
 /// speaks ACP on its stdio. The harness's own lines are not JSON, and the
@@ -27,7 +33,15 @@ fn fake_acp_agent() {
     if std::env::var_os(FAKE_AGENT).is_none() {
         return;
     }
-    let mut lines = std::io::stdin().lock().lines().map_while(Result::ok).filter_map(|line| serde_json::from_str::<Value>(&line).ok());
+    let log = std::env::var_os(FAKE_LOG);
+    let login = std::env::var_os(FAKE_LOGIN).is_some();
+    let images = std::env::var_os(FAKE_NO_IMAGES).is_none();
+    let mut lines = std::io::stdin().lock().lines().map_while(Result::ok).filter_map(|line| serde_json::from_str::<Value>(&line).ok()).inspect(|message| {
+        if let Some(log) = &log {
+            let mut file = std::fs::OpenOptions::new().create(true).append(true).open(log).unwrap();
+            writeln!(file, "{message}").unwrap();
+        }
+    });
     let send = |message: Value| {
         let mut out = std::io::stdout().lock();
         writeln!(out, "{message}").unwrap();
@@ -47,7 +61,10 @@ fn fake_acp_agent() {
     send(Value::String(String::new()));
     while let Some(message) = lines.next() {
         match message["method"].as_str() {
-            Some("initialize") => send(json!({"jsonrpc": "2.0", "id": message["id"], "result": {"protocolVersion": 1}})),
+            Some("initialize") => send(json!({"jsonrpc": "2.0", "id": message["id"], "result": {"protocolVersion": 1,
+                "agentCapabilities": {"promptCapabilities": {"image": images}}, "authMethods": [{"id": "fake-login", "name": "Cuenta falsa"}]}})),
+            // Signing in waits on the user's browser, which never answers here.
+            Some("session/new") if login => send(json!({"jsonrpc": "2.0", "id": message["id"], "error": {"code": -32000, "message": "Authentication required"}})),
             Some("session/new") => send(json!({"jsonrpc": "2.0", "id": message["id"], "result": {"sessionId": "fake-1", "configOptions": config(&chosen)}})),
             Some("session/set_config_option") => {
                 chosen[message["params"]["configId"].as_str().unwrap()] = message["params"]["value"].clone();
@@ -79,6 +96,11 @@ fn pump(app: &mut AgentsWindow, done: impl Fn(&AgentsWindow) -> bool) {
         assert!(Instant::now() < deadline, "timed out: {}", app.view.status);
         std::thread::sleep(Duration::from_millis(5));
     }
+}
+
+/// The messages the fake agent got, as written to its log.
+fn received(log: &Path) -> Vec<Value> {
+    std::fs::read_to_string(log).unwrap_or_default().lines().map(|line| serde_json::from_str(line).unwrap()).collect()
 }
 
 /// A window that knows the fake agent, in a project of its own.
@@ -185,6 +207,80 @@ fn the_agents_own_models_and_efforts_are_chosen_in_the_composer_and_remembered()
 }
 
 #[test]
+fn attachments_reach_the_agent_and_images_go_inline_when_it_takes_them() {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let png = STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC").unwrap();
+    for takes_images in [true, false] {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = window(root.path());
+        let log = root.path().join("agent.log");
+        app.view.acp_agents[0].command.env.push((FAKE_LOG.into(), log.display().to_string()));
+        if !takes_images {
+            app.view.acp_agents[0].command.env.push((FAKE_NO_IMAGES.into(), "1".into()));
+        }
+        app.start_acp_task("fake");
+        // The started agent has said whether it takes images.
+        pump(&mut app, |app| !app.view.composer_model_options.is_empty());
+        let workspace = PathBuf::from(&app.view.workspace);
+        std::fs::write(workspace.join("screen.png"), &png).unwrap();
+        std::fs::write(workspace.join("notes.md"), "notas").unwrap();
+        for name in ["screen.png", "notes.md"] {
+            app.view.composer_attachments.push(composer_attachment_for_path(&workspace, Path::new(name)).unwrap());
+        }
+
+        turn(&mut app, "mirá esto");
+        let prompt = received(&log).into_iter().find(|message| message["method"] == "session/prompt").expect("a prompt")["params"]["prompt"].clone();
+        let text = prompt[0]["text"].as_str().unwrap();
+        assert!(text.starts_with("mirá esto") && text.contains("notes.md") && text.contains("screen.png"), "{text}");
+        let shown = if takes_images {
+            let image = UserImage::from_bytes(UserImageMime::Png, &png).unwrap();
+            assert_eq!(prompt[1], json!({"type": "image", "mimeType": "image/png", "data": image.data_base64}));
+            1
+        } else {
+            assert_eq!(prompt.as_array().unwrap().len(), 1, "the image goes as a path: {prompt}");
+            0
+        };
+        assert!(app.view.composer_attachments.is_empty());
+        assert!(
+            app.view.transcript.iter().any(|item| matches!(item, TranscriptItem::User { content, images } if content == text && images.len() == shown)),
+            "{:?}",
+            app.view.transcript
+        );
+    }
+}
+
+#[test]
+fn an_agent_that_asks_to_sign_in_says_so_and_stop_ends_the_wait() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app = window(root.path());
+    let ctx = egui::Context::default();
+    let log = root.path().join("agent.log");
+    app.view.acp_agents[0].command.env.extend([(FAKE_LOG.into(), log.display().to_string()), (FAKE_LOGIN.into(), "1".into())]);
+    app.start_acp_task("fake");
+    let session = app.view.selected_session.clone().unwrap();
+    // Opening the task does not open the browser: the first message does.
+    pump(&mut app, |app| app.view.composer_error.is_some());
+    assert!(app.view.composer_error.as_deref().unwrap().contains("pide iniciar sesión"), "{:?}", app.view.composer_error);
+    assert!(!received(&log).iter().any(|message| message["method"] == "authenticate"));
+
+    app.view.prompt = "hola".into();
+    app.start_run();
+    let told = |app: &AgentsWindow| {
+        app.view.transcript.iter().any(|item| matches!(item, TranscriptItem::Notice { message, .. } if message.contains("pidió iniciar sesión")))
+    };
+    pump(&mut app, told);
+    let started = Instant::now();
+    app.apply_action(UiAction::Clicked { id: "turn_stop".into() }, &ctx);
+    pump(&mut app, |app| app.active_run.is_none() && !app.view.running);
+    assert!(started.elapsed() < Duration::from_secs(10), "Stop does not wait for the sign-in to time out");
+    assert_eq!(app.view.status, "Turno cancelado");
+    assert_eq!(app.view.prompt, "hola", "the message comes back to the composer");
+    let stored = app.store.as_ref().unwrap().load(&session).unwrap().unwrap();
+    assert!(stored.events.iter().any(|event| matches!(event.kind, AgentEventKind::TurnCancelled)));
+    assert_eq!(received(&log).iter().filter(|message| message["method"] == "authenticate").count(), 1);
+}
+
+#[test]
 fn settings_list_the_registry_and_install_turn_on_and_remove_its_agents() {
     let root = tempfile::tempdir().unwrap();
     let mut app = window(root.path());
@@ -227,6 +323,15 @@ fn settings_list_the_registry_and_install_turn_on_and_remove_its_agents() {
         assert!(ids.contains(&"acp_remove:antigravity-acp"), "{ids:?}");
         assert!(ids.iter().any(|id| id.starts_with("acp_install:")), "{ids:?}");
     }
+
+    // The registry's search keeps only what matches, by name, id or description.
+    app.view.acp_query = "GEMINI".into();
+    let mut tree = UiTree::new(crate::settings_ui::build_settings_page(&app.view, SettingsPage::ExternalAgents, 900.0, true));
+    let frame = tree.layout(openide_ui::Size::new(900.0, 40000.0));
+    let ids: Vec<&str> = frame.regions.iter().map(|region| region.id.as_str()).collect();
+    assert!(ids.contains(&"acp_package:gemini") && ids.contains(&"acp_query"), "{ids:?}");
+    assert!(!ids.iter().any(|id| id.starts_with("acp_install:")), "{ids:?}");
+    app.view.acp_query.clear();
 
     app.apply_action(UiAction::Clicked { id: "acp_package:gemini".into() }, &ctx);
     assert_eq!(crate::acp_run::packages_on(&app.data_root), ["gemini"]);
@@ -276,6 +381,11 @@ fn export_acp_visual_review() {
     app.view.acp_catalog = crate::acp_run::catalog(&registry, Some(bin.as_os_str()), &root.path().join("installs"), &["gemini".into()]);
     app.view.acp_installing = Some("cursor".into());
     png(crate::settings_ui::build_settings_page(&app.view, SettingsPage::ExternalAgents, 900.0, true), "acp-settings", 900.0, 5200.0);
+    app.view.acp_query = "google".into();
+    png(crate::settings_ui::build_settings_page(&app.view, SettingsPage::ExternalAgents, 900.0, true), "acp-settings-search", 900.0, 2600.0);
+    app.view.acp_query = "zzz".into();
+    png(crate::settings_ui::build_settings_page(&app.view, SettingsPage::ExternalAgents, 900.0, true), "acp-settings-none", 900.0, 2600.0);
+    app.view.acp_query.clear();
 
     app.start_acp_task("fake");
     pump(&mut app, |app| !app.view.composer_model_options.is_empty());

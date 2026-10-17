@@ -213,9 +213,23 @@ fn acp_groups(state: &ViewState, compact: bool) -> Vec<Element> {
         Icon::InfoCircle,
     )];
     ready_rows.extend(ready.into_iter().map(row));
+    let query = state.acp_query.trim().to_lowercase();
+    let search = SearchField::new("acp_query", &state.acp_query, "Buscar en el registro…", control_palette())
+        .accessibility_label("Buscar agentes del registro ACP")
+        .size(ControlSize::Compact)
+        .render();
+    let mut registry_rows = vec![Element::column(vec![search]).padding(8.0)];
+    registry_rows.extend(
+        rest.into_iter()
+            .filter(|entry| query.is_empty() || format!("{} {} {}", entry.name, entry.id, entry.description).to_lowercase().contains(&query))
+            .map(row),
+    );
+    if registry_rows.len() == 1 {
+        registry_rows.push(page_note("Sin resultados", "Ningún agente del registro coincide con la búsqueda.", Icon::Search));
+    }
     vec![
         settings_parts::settings_group("Agentes ACP listos", ready_rows),
-        settings_parts::settings_group("Registro ACP", rest.into_iter().map(row).collect()),
+        settings_parts::settings_group("Registro ACP", registry_rows),
     ]
 }
 

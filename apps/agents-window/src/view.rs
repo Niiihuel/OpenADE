@@ -636,6 +636,8 @@ pub struct ViewState {
     pub acp_catalog_error: Option<String>,
     /// The registry agent being downloaded.
     pub acp_installing: Option<String>,
+    /// What the registry list of Settings is filtered by.
+    pub acp_query: String,
     /// The check command saved for the open project, shown in Settings.
     pub turn_check_command: String,
     pub turn_check_failure: Option<String>,
@@ -4348,6 +4350,7 @@ pub(crate) mod tests {
             acp_catalog: Vec::new(),
             acp_catalog_error: None,
             acp_installing: None,
+            acp_query: String::new(),
             turn_check_command: String::new(),
             turn_check_failure: None,
             review_model: Default::default(),

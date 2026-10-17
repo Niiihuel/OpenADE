@@ -20,6 +20,14 @@ says 0.1.0.
 - The composer picks an ACP agent's own models and reasoning effort; the
   agent starts when its task opens so they are there before the first
   message, and the choice is kept for the next tasks of that agent
+- ACP agents get the composer's attachments: files and folders as paths
+  they open themselves, and images inline to an agent that takes them,
+  shown on the message as for the native agent, or as paths to one that
+  does not
+- An ACP agent that asks to sign in does so on the first message rather
+  than when its task opens; the conversation says it is waiting for the
+  sign-in, and Stop ends the wait
+- The ACP registry list in Settings has a search field
 - A Graph tab in the dock draws the workspace's files, and their imports,
   calls and type uses, as a force-directed graph: hovering a file lights up
   its neighbours, nodes can be dragged, the view zooms and pans, and a click
