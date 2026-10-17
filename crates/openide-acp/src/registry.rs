@@ -219,29 +219,63 @@ fn download(url: &str) -> Result<Vec<u8>, String> {
 /// Downloads `target` into `dir` and unpacks it, checking its SHA-256 when
 /// the index gives one. Returns how to run what was installed.
 pub fn install(target: &BinaryTarget, dir: &Path) -> Result<AgentCommand, String> {
-    install_with(target, dir, &download)
+    install_with(target, dir, &download_to)
 }
 
-fn install_with(target: &BinaryTarget, dir: &Path, fetch: &dyn Fn(&str) -> Result<Vec<u8>, String>) -> Result<AgentCommand, String> {
-    let bytes = fetch(&target.archive)?;
-    if let Some(expected) = &target.sha256 {
-        let actual = format!("{:x}", Sha256::digest(&bytes));
-        if !actual.eq_ignore_ascii_case(expected) {
-            return Err(format!("La descarga de {} no coincide con su huella publicada", target.archive));
-        }
-    }
+/// Streams `url` into a new file at `path`: a vendor's build runs to
+/// hundreds of megabytes, more than is worth holding in memory.
+fn download_to(url: &str, path: &Path) -> Result<(), String> {
+    let client = reqwest::blocking::Client::builder()
+        // Each read may wait this long; the whole download takes what it takes.
+        .timeout(Duration::from_secs(60))
+        .build()
+        .map_err(|error| error.to_string())?;
+    let mut response = client
+        .get(url)
+        .send()
+        .and_then(reqwest::blocking::Response::error_for_status)
+        .map_err(|error| format!("No se pudo descargar {url}: {error}"))?;
+    let mut file = std::fs::File::create(path).map_err(|error| error.to_string())?;
+    std::io::copy(&mut response, &mut file).map_err(|error| format!("No se pudo descargar {url}: {error}"))?;
+    Ok(())
+}
+
+fn install_with(target: &BinaryTarget, dir: &Path, fetch: &dyn Fn(&str, &Path) -> Result<(), String>) -> Result<AgentCommand, String> {
     // Unpacked beside the final place and moved in whole: a failed install
     // never leaves half an agent where `launch` would find it.
     let staging = dir.with_file_name(format!("{}.partial", dir.file_name().and_then(|name| name.to_str()).unwrap_or("agent")));
     let _ = std::fs::remove_dir_all(&staging);
     std::fs::create_dir_all(&staging).map_err(|error| error.to_string())?;
-    let name = target.archive.rsplit('/').next().unwrap_or("download");
+    let installed = unpack_into(target, &staging, fetch);
+    if installed.is_err() {
+        let _ = std::fs::remove_dir_all(&staging);
+    }
+    installed?;
+    let _ = std::fs::remove_dir_all(dir);
+    if let Some(parent) = dir.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    std::fs::rename(&staging, dir).map_err(|error| error.to_string())?;
+    Ok(command(dir.join(&target.cmd), &target.args, &target.env))
+}
+
+/// Downloads and checks `target` and unpacks it in `staging`.
+fn unpack_into(target: &BinaryTarget, staging: &Path, fetch: &dyn Fn(&str, &Path) -> Result<(), String>) -> Result<(), String> {
+    let name = target.archive.rsplit('/').next().filter(|name| plain_name(name)).unwrap_or("download");
     let archive = staging.join(name);
-    std::fs::write(&archive, &bytes).map_err(|error| error.to_string())?;
+    fetch(&target.archive, &archive)?;
+    if let Some(expected) = &target.sha256 {
+        let mut hasher = Sha256::new();
+        let mut file = std::fs::File::open(&archive).map_err(|error| error.to_string())?;
+        std::io::copy(&mut file, &mut hasher).map_err(|error| error.to_string())?;
+        if !format!("{:x}", hasher.finalize()).eq_ignore_ascii_case(expected) {
+            return Err(format!("La descarga de {} no coincide con su huella publicada", target.archive));
+        }
+    }
     let unpack = |program: &str, args: &[&str]| -> Result<(), String> {
         let status = std::process::Command::new(program)
             .args(args)
-            .current_dir(&staging)
+            .current_dir(staging)
             .status()
             .map_err(|error| format!("No se pudo ejecutar {program} para descomprimir el agente: {error}"))?;
         status.success().then_some(()).ok_or_else(|| format!("{program} no pudo descomprimir {name}"))
@@ -269,12 +303,7 @@ fn install_with(target: &BinaryTarget, dir: &Path, fetch: &dyn Fn(&str) -> Resul
         permissions.set_mode(permissions.mode() | 0o755);
         std::fs::set_permissions(&program, permissions).map_err(|error| error.to_string())?;
     }
-    let _ = std::fs::remove_dir_all(dir);
-    if let Some(parent) = dir.parent() {
-        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    std::fs::rename(&staging, dir).map_err(|error| error.to_string())?;
-    Ok(command(dir.join(&target.cmd), &target.args, &target.env))
+    Ok(())
 }
 
 #[cfg(test)]
@@ -328,6 +357,23 @@ mod tests {
         assert!(plain_name("antigravity-acp") && plain_name("1.2.3") && !plain_name("..") && !plain_name("a/b"));
     }
 
+    /// Installs a published agent for real and says what it answers.
+    #[test]
+    #[ignore = "downloads a vendor's build: OPENADE_ACP_INSTALL=<id> OPENADE_ACP_DIR=<dir> cargo test -p openide-acp installs_a_published_agent -- --ignored --nocapture"]
+    fn installs_a_published_agent() {
+        let id = std::env::var("OPENADE_ACP_INSTALL").expect("OPENADE_ACP_INSTALL");
+        let root = PathBuf::from(std::env::var_os("OPENADE_ACP_DIR").expect("OPENADE_ACP_DIR"));
+        let agent = load(&root).unwrap().agents.into_iter().find(|agent| agent.id == id).expect("the agent in the index");
+        let Some(Launch::Binary { target, dir }) = agent.launch(&|_| None, &root.join("installs")) else {
+            panic!("{id} has no build to download for {}", platform());
+        };
+        let command = install(&target, &dir).unwrap();
+        let connection = crate::Connection::spawn(&command, &root, |_| {}).unwrap();
+        println!("initialize: {:?}", connection.initialize("openADE", "0"));
+        println!("session/new: {:?}", connection.new_session(&root, serde_json::json!([])));
+        println!("stderr: {}", connection.stderr_tail());
+    }
+
     #[test]
     fn a_download_is_checked_unpacked_and_moved_in_whole() {
         let root = tempfile::tempdir().unwrap();
@@ -348,7 +394,7 @@ mod tests {
             env: BTreeMap::new(),
             sha256: Some(format!("{:x}", Sha256::digest(&bytes))),
         };
-        let fetch = |_: &str| Ok(bytes.clone());
+        let fetch = |_: &str, path: &Path| std::fs::write(path, &bytes).map_err(|error| error.to_string());
         let dir = root.path().join("installs/agent/1.0.0");
         let command = install_with(&target, &dir, &fetch).unwrap();
         assert_eq!(command.program, dir.join("./bin/agent"));
@@ -358,5 +404,6 @@ mod tests {
         let error = install_with(&tampered, &root.path().join("installs/agent/2.0.0"), &fetch).unwrap_err();
         assert!(error.contains("huella"), "{error}");
         assert!(!root.path().join("installs/agent/2.0.0").exists());
+        assert!(!root.path().join("installs/agent/2.0.0.partial").exists(), "a failed download is not left behind");
     }
 }

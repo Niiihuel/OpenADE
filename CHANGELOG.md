@@ -14,9 +14,9 @@ says 0.1.0.
   restart when the agent supports it
 - Settings → External CLIs lists every agent of the ACP registry with how it
   runs here: the user's own install, a package that `npx` or `uvx` fetches
-  (offered once switched on), or the vendor's build, which Install downloads,
-  checks against its published SHA-256 and Remove deletes (Google
-  Antigravity among them)
+  (offered once switched on), or the vendor's build, which Install streams
+  to disk, checks against its SHA-256 when the registry publishes one, and
+  Remove deletes (Google Antigravity among them)
 - The composer picks an ACP agent's own models and reasoning effort; the
   agent starts when its task opens so they are there before the first
   message, and the choice is kept for the next tasks of that agent

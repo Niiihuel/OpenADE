@@ -185,11 +185,16 @@ fn acp_groups(state: &ViewState, compact: bool) -> Vec<Element> {
                 true,
                 compact,
             ),
-            AcpSource::Download { .. } => {
+            AcpSource::Download { target, .. } => {
                 let installing = state.acp_installing.as_deref() == Some(entry.id.as_str());
+                let check = if target.sha256.is_some() {
+                    " y comprueba su huella publicada"
+                } else {
+                    "; el registro no publica su huella"
+                };
                 settings_parts::settings_row(
                     &entry.name,
-                    format!("{about}Descarga la versión {} de su fabricante y comprueba su huella.", entry.version),
+                    format!("{about}Descarga la versión {} de su fabricante{check}.", entry.version),
                     outline(format!("acp_install:{}", entry.id), if installing { "Instalando…" } else { "Instalar" })
                         .icon(Icon::Add)
                         .enabled(state.acp_installing.is_none())
