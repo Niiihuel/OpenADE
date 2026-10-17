@@ -15,7 +15,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use openide_core::ToolCall;
-use serde_json::Value;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -179,6 +179,13 @@ impl McpServerBinding {
     }
 }
 
+/// Finds MCP tools past the advertised budget: the model searches them by
+/// words and calls one by name through `MCP_CALL_TOOL`, as Claude Code and
+/// Codex defer the tools of a large server.
+pub const MCP_SEARCH_TOOL: &str = "search_mcp_tools";
+pub const MCP_CALL_TOOL: &str = "call_mcp_tool";
+const MAX_SEARCH_HITS: usize = 10;
+
 enum Route {
     Local,
     Mcp {
@@ -186,15 +193,27 @@ enum Route {
         tool: String,
         client: Arc<dyn McpToolClient>,
     },
+    Search,
+    Call,
+}
+
+/// An MCP tool left out of the advertised catalog, with its own validator.
+struct DeferredTool {
+    server: String,
+    definition: ToolDefinition,
+    validator: jsonschema::Validator,
 }
 
 /// ToolExecutor with one immutable catalog of local and discovered MCP tools.
 /// Names are `mcp__<server>__<tool>`; bytes outside the local name alphabet
 /// are encoded as `_xHH`. Collisions and overlong names fail construction.
+/// MCP tools past `MAX_ADVERTISED_TOOLS` are deferred: reachable through the
+/// two meta-tools, which take the catalog's last two places.
 pub struct McpCompositeTools {
     local: Arc<dyn ToolExecutor>,
     catalog: ToolCatalog,
     routes: BTreeMap<String, Route>,
+    deferred: Vec<DeferredTool>,
     invalidated_servers: Mutex<BTreeSet<String>>,
 }
 
@@ -206,13 +225,6 @@ impl McpCompositeTools {
         let mut definitions = Vec::new();
         let mut routes = BTreeMap::new();
         for definition in local.definitions() {
-            if definitions.len() >= MAX_ADVERTISED_TOOLS {
-                return Err(McpToolAdapterError::Catalog(
-                    ToolCatalogError::TooManyTools {
-                        limit: MAX_ADVERTISED_TOOLS,
-                    },
-                ));
-            }
             if routes
                 .insert(definition.name.clone(), Route::Local)
                 .is_some()
@@ -222,19 +234,13 @@ impl McpCompositeTools {
             definitions.push(definition);
         }
         let mut server_names = BTreeSet::new();
+        let mut mcp_definitions = Vec::new();
         for binding in servers {
             if !server_names.insert(binding.name.clone()) {
                 return Err(McpToolAdapterError::DuplicateServerName(binding.name));
             }
             let server_segment = encode_segment(&binding.name);
             for tool in binding.tools {
-                if definitions.len() >= MAX_ADVERTISED_TOOLS {
-                    return Err(McpToolAdapterError::Catalog(
-                        ToolCatalogError::TooManyTools {
-                            limit: MAX_ADVERTISED_TOOLS,
-                        },
-                    ));
-                }
                 if tool.name.is_empty() {
                     return Err(McpToolAdapterError::InvalidToolName {
                         server: binding.name,
@@ -284,14 +290,35 @@ impl McpCompositeTools {
                 if routes.insert(exposed_name.clone(), route).is_some() {
                     return Err(McpToolAdapterError::Collision(exposed_name));
                 }
-                definitions.push(definition);
+                mcp_definitions.push((binding.name.clone(), definition));
             }
         }
+        let mut deferred = Vec::new();
+        if definitions.len() + mcp_definitions.len() > MAX_ADVERTISED_TOOLS {
+            let kept = MAX_ADVERTISED_TOOLS.saturating_sub(definitions.len() + 2);
+            for (server, definition) in mcp_definitions.split_off(kept.min(mcp_definitions.len())) {
+                let validator = crate::registry::compile_validator(&definition)?;
+                deferred.push(DeferredTool {
+                    server,
+                    definition,
+                    validator,
+                });
+            }
+            for (name, route) in [(MCP_SEARCH_TOOL, Route::Search), (MCP_CALL_TOOL, Route::Call)] {
+                if routes.insert(name.to_owned(), route).is_some() {
+                    return Err(McpToolAdapterError::Collision(name.to_owned()));
+                }
+            }
+            mcp_definitions.push((String::new(), search_definition(&deferred)));
+            mcp_definitions.push((String::new(), call_definition()));
+        }
+        definitions.extend(mcp_definitions.into_iter().map(|(_, definition)| definition));
         let catalog = ToolCatalog::new(definitions)?;
         Ok(Self {
             local,
             catalog,
             routes,
+            deferred,
             invalidated_servers: Mutex::new(BTreeSet::new()),
         })
     }
@@ -301,11 +328,174 @@ impl McpCompositeTools {
     }
 
     /// Exact names to configure in `PermissionPolicy` before exposing this
-    /// executor to a runner. Local tools are excluded.
+    /// executor to a runner: the advertised MCP tools and the call to a
+    /// deferred one. Local tools and the search are excluded.
     pub fn mcp_tool_names(&self) -> impl Iterator<Item = &str> + '_ {
-        self.routes
+        self.routes.iter().filter_map(|(name, route)| {
+            let asks = match route {
+                Route::Mcp { .. } => self.catalog.get(name).is_some(),
+                Route::Call => true,
+                Route::Local | Route::Search => false,
+            };
+            asks.then_some(name.as_str())
+        })
+    }
+
+    /// The deferred tools whose name, description or parameter names contain
+    /// the query's words, best first; an empty query lists them all.
+    fn search(&self, query: &str) -> String {
+        let terms: Vec<String> = query
+            .to_lowercase()
+            .split(|character: char| !character.is_alphanumeric())
+            .filter(|term| term.len() > 1)
+            .map(str::to_owned)
+            .collect();
+        let mut hits: Vec<(usize, &DeferredTool)> = self
+            .deferred
             .iter()
-            .filter_map(|(name, route)| matches!(route, Route::Mcp { .. }).then_some(name.as_str()))
+            .filter_map(|tool| {
+                let name = tool.definition.name.to_lowercase();
+                let mut text = tool.definition.description.to_lowercase();
+                if let Some(properties) = tool
+                    .definition
+                    .parameters
+                    .get("properties")
+                    .and_then(Value::as_object)
+                {
+                    for property in properties.keys() {
+                        text.push(' ');
+                        text.push_str(&property.to_lowercase());
+                    }
+                }
+                let score: usize = terms
+                    .iter()
+                    .map(|term| {
+                        if name.contains(term.as_str()) {
+                            3
+                        } else {
+                            usize::from(text.contains(term.as_str()))
+                        }
+                    })
+                    .sum();
+                (terms.is_empty() || score > 0).then_some((score, tool))
+            })
+            .collect();
+        hits.sort_by(|left, right| {
+            right
+                .0
+                .cmp(&left.0)
+                .then_with(|| left.1.definition.name.cmp(&right.1.definition.name))
+        });
+        if hits.is_empty() {
+            return format!(
+                "No MCP tool matches {query:?}. An empty query lists every tool {MCP_SEARCH_TOOL} knows."
+            );
+        }
+        if terms.is_empty() {
+            return hits
+                .iter()
+                .map(|(_, tool)| {
+                    let summary = tool.definition.description.lines().next().unwrap_or_default();
+                    format!("{}: {}", tool.definition.name, summary)
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+        }
+        let shown: Vec<Value> = hits
+            .iter()
+            .take(MAX_SEARCH_HITS)
+            .map(|(_, tool)| {
+                json!({
+                    "name": tool.definition.name,
+                    "description": tool.definition.description,
+                    "parameters": tool.definition.parameters,
+                })
+            })
+            .collect();
+        let mut output = serde_json::to_string_pretty(&shown).expect("JSON values serialize");
+        if hits.len() > MAX_SEARCH_HITS {
+            write!(
+                output,
+                "\n{} more tools match; refine the query.",
+                hits.len() - MAX_SEARCH_HITS
+            )
+            .expect("writing to String cannot fail");
+        }
+        output
+    }
+
+    async fn call_deferred(
+        &self,
+        call: &ToolCall,
+        context: &ToolContext,
+    ) -> Result<ToolOutput, AgentError> {
+        let name = call
+            .arguments
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let arguments = call
+            .arguments
+            .get("arguments")
+            .cloned()
+            .unwrap_or_else(|| json!({}));
+        let Some(tool) = self.deferred.iter().find(|tool| tool.definition.name == name) else {
+            return Ok(ToolOutput::error(if self.catalog.get(name).is_some() {
+                format!("{name} is advertised in this request: call it directly")
+            } else {
+                format!("unknown MCP tool: {name}; find it with {MCP_SEARCH_TOOL}")
+            }));
+        };
+        if let Err(error) = tool.validator.validate(&arguments) {
+            return Ok(ToolOutput::error(
+                ToolCatalogError::InvalidArguments {
+                    name: name.to_owned(),
+                    reason: error.to_string(),
+                }
+                .to_string(),
+            ));
+        }
+        match self.routes.get(name) {
+            Some(Route::Mcp {
+                server,
+                tool,
+                client,
+            }) => self.call_server(server, tool, client, arguments, context).await,
+            _ => Ok(ToolOutput::error(format!("unknown tool: {name}"))),
+        }
+    }
+
+    async fn call_server(
+        &self,
+        server: &str,
+        tool: &str,
+        client: &Arc<dyn McpToolClient>,
+        arguments: Value,
+        context: &ToolContext,
+    ) -> Result<ToolOutput, AgentError> {
+        if self.is_server_catalog_invalidated(server) {
+            return Ok(ToolOutput::error(format!(
+                "MCP {server} changed its tool catalog; start a new turn to rediscover it"
+            )));
+        }
+        let result = client
+            .call_tool(tool, arguments, &context.cancel)
+            .await
+            .map_err(|error| match error {
+                McpError::EffectUncertain(message) => {
+                    AgentError::EffectUncertain(format!("MCP {server}/{tool}: {message}"))
+                }
+                McpError::Remote { code, message } => AgentError::EffectUncertain(format!(
+                    "MCP {server}/{tool}: remote error {code}: {message}"
+                )),
+                McpError::Cancelled => AgentError::Cancelled,
+                other => AgentError::Tool(format!("MCP {server}/{tool}: {other}")),
+            })?;
+        let content = format_mcp_result(&result);
+        Ok(ToolOutput {
+            content,
+            is_error: result.is_error,
+        })
     }
 
     /// A server changed its tool list after this immutable catalog was sent
@@ -366,13 +556,15 @@ impl ToolExecutor for McpCompositeTools {
     fn certifies_plan_read(&self, name: &str) -> bool {
         match self.routes.get(name) {
             Some(Route::Local) => self.local.certifies_plan_read(name),
-            Some(Route::Mcp { .. }) | None => false,
+            Some(Route::Search) => true,
+            Some(Route::Mcp { .. } | Route::Call) | None => false,
         }
     }
     fn certifies_parallel_read(&self, name: &str) -> bool {
         match self.routes.get(name) {
             Some(Route::Local) => self.local.certifies_parallel_read(name),
-            Some(Route::Mcp { .. }) | None => false,
+            Some(Route::Search) => true,
+            Some(Route::Mcp { .. } | Route::Call) | None => false,
         }
     }
 
@@ -394,32 +586,71 @@ impl ToolExecutor for McpCompositeTools {
                 tool,
                 client,
             }) => {
-                if self.is_server_catalog_invalidated(server) {
-                    return Ok(ToolOutput::error(format!(
-                        "MCP {server} changed its tool catalog; start a new turn to rediscover it"
-                    )));
-                }
-                let result = client
-                    .call_tool(tool, call.arguments.clone(), &context.cancel)
+                self.call_server(server, tool, client, call.arguments.clone(), context)
                     .await
-                    .map_err(|error| match error {
-                        McpError::EffectUncertain(message) => {
-                            AgentError::EffectUncertain(format!("MCP {server}/{tool}: {message}"))
-                        }
-                        McpError::Remote { code, message } => AgentError::EffectUncertain(format!(
-                            "MCP {server}/{tool}: remote error {code}: {message}"
-                        )),
-                        McpError::Cancelled => AgentError::Cancelled,
-                        other => AgentError::Tool(format!("MCP {server}/{tool}: {other}")),
-                    })?;
-                let content = format_mcp_result(&result);
+            }
+            Some(Route::Search) => {
+                let query = call
+                    .arguments
+                    .get("query")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
                 Ok(ToolOutput {
-                    content,
-                    is_error: result.is_error,
+                    content: self.search(query),
+                    is_error: false,
                 })
             }
+            Some(Route::Call) => self.call_deferred(call, context).await,
             None => Ok(ToolOutput::error(format!("unknown tool: {}", call.name))),
         }
+    }
+}
+
+fn search_definition(deferred: &[DeferredTool]) -> ToolDefinition {
+    let mut per_server: BTreeMap<&str, usize> = BTreeMap::new();
+    for tool in deferred {
+        *per_server.entry(tool.server.as_str()).or_default() += 1;
+    }
+    let servers = per_server
+        .iter()
+        .map(|(server, count)| format!("{server} ({count})"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    ToolDefinition {
+        name: MCP_SEARCH_TOOL.to_owned(),
+        description: format!(
+            "Finds MCP tools that are not listed in this request: {} more on {servers}. \
+             Returns the best matches with their name, description and parameters; call one \
+             with {MCP_CALL_TOOL}. Search with words of what the tool does or is called; \
+             an empty query lists every such tool.",
+            deferred.len()
+        ),
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Words to look for in tool names, descriptions and parameter names"}
+            },
+            "additionalProperties": false
+        }),
+    }
+}
+
+fn call_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: MCP_CALL_TOOL.to_owned(),
+        description: format!(
+            "Calls an MCP tool found with {MCP_SEARCH_TOOL}, by its exact name, with the \
+             arguments its parameters describe."
+        ),
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": format!("The tool's name as {MCP_SEARCH_TOOL} returned it")},
+                "arguments": {"type": "object", "description": "The tool's arguments"}
+            },
+            "required": ["name"],
+            "additionalProperties": false
+        }),
     }
 }
 
@@ -677,6 +908,87 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn tools_past_the_budget_are_searched_and_called_through_the_meta_tools() {
+        let local = Arc::new(LocalTools::new());
+        let local_count = local.definitions().len();
+        let server = |count: usize| async move {
+            let mock = Arc::new(MockClient::new(
+                (0..count).map(|index| tool(&format!("tool_{index}"))).collect(),
+            ));
+            let binding = McpServerBinding::discover("rea", mock.clone(), &CancellationToken::new())
+                .await
+                .unwrap();
+            (mock, binding)
+        };
+        // Everything fits: no meta-tools.
+        let (_, binding) = server(MAX_ADVERTISED_TOOLS - local_count).await;
+        let full = McpCompositeTools::new(local.clone(), vec![binding]).unwrap();
+        assert_eq!(full.definitions().len(), MAX_ADVERTISED_TOOLS);
+        assert!(full.catalog().get(MCP_CALL_TOOL).is_none());
+
+        let (mock, binding) = server(170).await;
+        let composite = McpCompositeTools::new(local, vec![binding]).unwrap();
+        let advertised = MAX_ADVERTISED_TOOLS - local_count - 2;
+        assert_eq!(composite.definitions().len(), MAX_ADVERTISED_TOOLS);
+        assert!(composite
+            .catalog()
+            .get(MCP_SEARCH_TOOL)
+            .unwrap()
+            .description
+            .contains(&format!("{} more on rea ({})", 170 - advertised, 170 - advertised)));
+        let names: Vec<_> = composite.mcp_tool_names().collect();
+        assert_eq!(names.len(), advertised + 1);
+        assert!(names.contains(&MCP_CALL_TOOL) && !names.contains(&MCP_SEARCH_TOOL));
+        assert!(names.contains(&"mcp__rea__tool_0") && !names.contains(&"mcp__rea__tool_169"));
+        assert!(composite.certifies_plan_read(MCP_SEARCH_TOOL));
+        assert!(!composite.certifies_plan_read(MCP_CALL_TOOL));
+
+        let search = |query: &str| ToolCall {
+            id: "search".into(),
+            name: MCP_SEARCH_TOOL.into(),
+            arguments: json!({"query": query}),
+        };
+        let found = composite.execute(&search("tool_169"), &context()).await.unwrap();
+        assert!(!found.is_error && found.content.contains("\"mcp__rea__tool_169\""));
+        assert!(found.content.contains("\"value\""), "{}", found.content);
+        let many = composite.execute(&search("tool"), &context()).await.unwrap();
+        assert!(many.content.ends_with("more tools match; refine the query."));
+        let none = composite.execute(&search("zzz"), &context()).await.unwrap();
+        assert!(none.content.starts_with("No MCP tool matches"));
+        let all = composite.execute(&search(""), &context()).await.unwrap();
+        assert_eq!(all.content.lines().count(), 170 - advertised);
+
+        // A deferred tool is not callable by name, only through the call tool.
+        let direct = composite.execute(&call("mcp__rea__tool_169"), &context()).await.unwrap();
+        assert!(direct.is_error && mock.calls.lock().unwrap().is_empty());
+        let via = |name: &str, arguments: Value| ToolCall {
+            id: "via".into(),
+            name: MCP_CALL_TOOL.into(),
+            arguments: json!({"name": name, "arguments": arguments}),
+        };
+        let invalid = composite
+            .execute(&via("mcp__rea__tool_169", json!({})), &context())
+            .await
+            .unwrap();
+        assert!(invalid.is_error && invalid.content.contains("invalid arguments"));
+        let advertised_one = composite
+            .execute(&via("mcp__rea__tool_0", json!({"value": "x"})), &context())
+            .await
+            .unwrap();
+        assert!(advertised_one.is_error && advertised_one.content.contains("call it directly"));
+        assert!(mock.calls.lock().unwrap().is_empty());
+        let called = composite
+            .execute(&via("mcp__rea__tool_169", json!({"value": "x"})), &context())
+            .await
+            .unwrap();
+        assert!(!called.is_error);
+        assert_eq!(
+            *mock.calls.lock().unwrap(),
+            [("tool_169".to_owned(), json!({"value": "x"}))]
+        );
+    }
+
+    #[tokio::test]
     async fn explicit_selection_keeps_full_discovery_but_advertises_and_calls_only_chosen_tools() {
         let mock = Arc::new(MockClient::new(
             (0..170)
@@ -686,12 +998,6 @@ mod tests {
         let binding = McpServerBinding::discover("rea", mock.clone(), &CancellationToken::new())
             .await
             .unwrap();
-        assert!(matches!(
-            McpCompositeTools::new(Arc::new(LocalTools::new()), vec![binding.clone()]),
-            Err(McpToolAdapterError::Catalog(
-                ToolCatalogError::TooManyTools { limit: 128 }
-            ))
-        ));
         let chosen = vec!["tool_169".into(), "tool_2".into()];
         let filtered = binding.clone().select_tools(Some(&chosen)).unwrap();
         let selected_digest = filtered.discovery_selection_digest();

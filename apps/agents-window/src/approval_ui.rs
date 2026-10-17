@@ -242,6 +242,11 @@ pub(crate) fn summary(tool_name: &str, arguments: &str) -> ApprovalSummary {
             Icon::Globe,
             &["paths"],
         ),
+        openide_harness::MCP_CALL_TOOL => (
+            "Usar conexión MCP",
+            Icon::Grid,
+            &["name"],
+        ),
         _ if tool_name.starts_with("mcp__") => (
             "Usar conexión MCP",
             Icon::Grid,
@@ -309,11 +314,12 @@ pub(crate) fn summary(tool_name: &str, arguments: &str) -> ApprovalSummary {
     }
     if target.is_empty() {
         target = clip(tool_name, 256).0;
-        if let Some(mcp) = tool_name.strip_prefix("mcp__") {
-            if let Some((server, operation)) = mcp.split_once("__") {
-                target = clip(&format!("{server} · {operation}"), 256).0;
-            }
-        }
+    }
+    if let Some((server, operation)) = target
+        .strip_prefix("mcp__")
+        .and_then(|mcp| mcp.split_once("__"))
+    {
+        target = clip(&format!("{server} · {operation}"), 256).0;
     }
     ApprovalSummary {
         title: title.into(),

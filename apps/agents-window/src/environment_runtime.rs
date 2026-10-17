@@ -536,20 +536,23 @@ mod tests {
                 .await
                 .unwrap();
             let definitions = prepared.tools().definitions();
+            assert_eq!(definitions.len(), openide_harness::MAX_ADVERTISED_TOOLS);
+            assert!(prepared.notices().is_empty());
+            let asked = prepared
+                .ask_tool_names()
+                .iter()
+                .filter(|name| name.starts_with("mcp__inspection-local__"))
+                .count();
+            let searchable = prepared
+                .ask_tool_names()
+                .contains(&openide_harness::MCP_CALL_TOOL.to_owned());
             if count > capacity {
-                assert_eq!(definitions.len(), base_count);
-                assert_eq!(prepared.notices().len(), 1);
+                // Two places go to the meta-tools; the overflow is searched.
+                assert_eq!(asked, capacity - 2);
+                assert!(searchable);
             } else {
-                assert_eq!(definitions.len(), openide_harness::MAX_ADVERTISED_TOOLS);
-                assert!(prepared.notices().is_empty());
-                assert_eq!(
-                    prepared
-                        .ask_tool_names()
-                        .iter()
-                        .filter(|name| name.starts_with("mcp__inspection-local__"))
-                        .count(),
-                    count
-                );
+                assert_eq!(asked, count);
+                assert!(!searchable);
             }
             assert!(definitions
                 .iter()

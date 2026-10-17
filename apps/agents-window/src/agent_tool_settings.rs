@@ -261,7 +261,9 @@ impl AgentToolSettings {
                 PermissionPolicy::new().with_default_mode(PermissionMode::Deny),
                 |policy, tool| policy.with_tool(tool.name(), self.mode_for(tool)),
             )
-            .with_tool("apply_patch", self.mode_for(LocalTool::WriteFile));
+            .with_tool("apply_patch", self.mode_for(LocalTool::WriteFile))
+            // Reads the turn's own catalog: the call it leads to is what asks.
+            .with_tool(openide_harness::MCP_SEARCH_TOOL, PermissionMode::Allow);
         self.persistent_modes()
             .into_iter()
             .fold(policy, |policy, (name, mode)| policy.with_tool(name, mode))

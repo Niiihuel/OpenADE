@@ -118,7 +118,10 @@ pub use mcp_oauth::{
 pub use mcp_oauth_file::FileTokenStore;
 #[cfg(windows)]
 pub use mcp_oauth_windows::WindowsCredentialTokenStore;
-pub use mcp_tools::{McpCompositeTools, McpServerBinding, McpToolAdapterError, McpToolClient};
+pub use mcp_tools::{
+    McpCompositeTools, McpServerBinding, McpToolAdapterError, McpToolClient, MCP_CALL_TOOL,
+    MCP_SEARCH_TOOL,
+};
 pub use model_stream::{
     model_event_channel, ModelEventSender, MAX_MODEL_EVENT_BYTES, MODEL_EVENT_CHANNEL_CAPACITY,
 };

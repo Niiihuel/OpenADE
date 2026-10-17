@@ -80,6 +80,11 @@ says 0.1.0.
 - The Graph tab opens with the whole graph in view and keeps it so until
   the camera is moved
 - A notice about an MCP server left out no longer ends in two periods
+- An MCP server with more tools than the model's catalog takes (128 with the
+  local tools) is no longer left out of the turn: the tools that fit are
+  advertised and the agent finds the rest with `search_mcp_tools` and calls
+  them with `call_mcp_tool`, which asks as any MCP tool does; Claude Code and
+  Codex defer the tools of a large server the same way
 - A Graph tab in the dock draws the workspace's files, and their imports,
   calls and type uses, as a force-directed graph: hovering a file lights up
   its neighbours, nodes can be dragged, the view zooms and pans, and a click
