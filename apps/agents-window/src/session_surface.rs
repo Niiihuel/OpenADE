@@ -4566,6 +4566,8 @@ mod tests {
             bottom_presentation_height: None,
             environment_presentation_progress: None,
             side_tab: SideTab::Context,
+            graph_options: Default::default(),
+            graph_status: Default::default(),
             activity_page: 0,
             activity: Default::default(),
             review_page: 0,

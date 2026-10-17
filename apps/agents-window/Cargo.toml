@@ -19,6 +19,7 @@ openide-ui = { path = "../../crates/openide-ui" }
 limn-egui = { git = "https://github.com/Niiihuel/limn.git", rev = "90d440887fd42c8ed2058ccdb2a4edf1a08db124" }
 openide-preview = { path = "../../crates/openide-preview" }
 openide-debug = { path = "../../crates/openide-debug" }
+openide-graph = { path = "../../crates/openide-graph" }
 openide-editor = { package = "limn-editor", git = "https://github.com/Niiihuel/limn.git", rev = "90d440887fd42c8ed2058ccdb2a4edf1a08db124" }
 openide-language = { package = "limn-language", git = "https://github.com/Niiihuel/limn.git", rev = "90d440887fd42c8ed2058ccdb2a4edf1a08db124" }
 serde_json = "1"

@@ -104,6 +104,7 @@ pub enum SideTab {
     CodeSnapshot,
     Terminal,
     Browser,
+    Graph,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -728,6 +729,8 @@ pub struct ViewState {
     /// Transient in-flow environment reveal; None uses its open state.
     pub environment_presentation_progress: Option<f32>,
     pub side_tab: SideTab,
+    pub graph_options: crate::graph_view::GraphOptions,
+    pub graph_status: crate::graph_view::GraphStatus,
     /// Pages are independent so switching tabs preserves the user's place.
     pub activity_page: usize,
     pub(crate) activity: dock_activity::ActivityUi,
@@ -3030,6 +3033,7 @@ fn dock_add_menu(state: &ViewState) -> Element {
         ),
         ("files", "Archivos", Icon::Folder, SideTab::Files),
         ("activity", "Actividad", Icon::History, SideTab::Activity),
+        ("graph", "Grafo", Icon::GitBranch, SideTab::Graph),
         ("review", "Cambios de Git", Icon::Code, SideTab::CodeReview),
     ];
     let mut menu: Vec<DropdownMenuEntry> = vec![
@@ -3200,6 +3204,12 @@ fn side_pane_primary_sized(state: &ViewState, width: f32, height: f32) -> Elemen
             SideTab::CodeReview => code_review_content(state, width),
             SideTab::SessionChanges => crate::session_changes_ui::build(state, width),
             SideTab::Browser => crate::browser_ui::build(state, width),
+            SideTab::Graph => crate::graph_ui::build(
+                &state.graph_options,
+                &state.graph_status,
+                width,
+                (height - RIGHT_HEADER_HEIGHT - status_height).max(0.0),
+            ),
             SideTab::Terminal => terminal_content(state, width),
             SideTab::CodeSnapshot => state.code_snapshot.as_ref().map_or_else(
                 || {
@@ -3251,6 +3261,7 @@ fn side_pane_primary_sized(state: &ViewState, width: f32, height: f32) -> Elemen
                 state.side_tab,
                 SideTab::Files
                     | SideTab::Activity
+                    | SideTab::Graph
                     | SideTab::Browser
                     | SideTab::Terminal
                     | SideTab::CodeReview
@@ -3272,7 +3283,7 @@ fn side_pane_primary_sized(state: &ViewState, width: f32, height: f32) -> Elemen
             SideTab::Browser => "side_pane_browser",
             SideTab::FilePreview => "side_pane_preview",
             SideTab::CodeSnapshot => "side_pane_code_snapshot",
-            SideTab::Files | SideTab::Activity | SideTab::Terminal => unreachable!(),
+            SideTab::Files | SideTab::Activity | SideTab::Graph | SideTab::Terminal => unreachable!(),
         };
         ScrollArea::new(scroll_id, body)
             .tint(theme::FOREGROUND_SUBTLE)
@@ -4415,6 +4426,8 @@ pub(crate) mod tests {
             bottom_presentation_height: None,
             environment_presentation_progress: None,
             side_tab: SideTab::Context,
+            graph_options: Default::default(),
+            graph_status: Default::default(),
             activity_page: 0,
             activity: Default::default(),
             review_page: 0,

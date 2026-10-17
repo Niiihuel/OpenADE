@@ -84,7 +84,7 @@ impl AgentsWindow {
         true
     }
 
-    fn open_tool_workspace_file(&mut self, owner: &str, path: &str) {
+    pub(super) fn open_tool_workspace_file(&mut self, owner: &str, path: &str) {
         let workspace = Path::new(&self.view.workspace);
         let relative = workspace.canonicalize().ok().and_then(|root| {
             let path = workspace.join(path).canonicalize().ok()?;

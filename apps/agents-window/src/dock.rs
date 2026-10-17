@@ -56,6 +56,8 @@ pub enum DockTabKind {
     Context,
     Files,
     Activity,
+    /// The workspace's files and how they link, drawn as a graph.
+    Graph,
     CodeReview,
     SessionChanges,
     Terminal,
@@ -102,6 +104,7 @@ impl DockTab {
             DockTabKind::Context => "Nueva pestaña".to_owned(),
             DockTabKind::Files => "Archivos".to_owned(),
             DockTabKind::Activity => "Actividad".to_owned(),
+            DockTabKind::Graph => "Grafo".to_owned(),
             DockTabKind::CodeReview => "Repositorio".to_owned(),
             DockTabKind::SessionChanges => "Cambios del chat".to_owned(),
             DockTabKind::Terminal => "Terminal".to_owned(),

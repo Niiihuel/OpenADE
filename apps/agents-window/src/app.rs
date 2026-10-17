@@ -182,6 +182,8 @@ mod streaming_perf_tests;
 mod tool_disclosure_app_tests;
 #[path = "tool_navigation_app.rs"]
 mod tool_navigation_app;
+#[path = "graph_app.rs"]
+mod graph_app;
 
 #[path = "composer_interaction_app.rs"]
 mod composer_interaction_app;
@@ -1485,6 +1487,12 @@ pub struct AgentsWindow {
     // shows when it comes back, but takes no input.
     browser_live: HashMap<u64, bool>,
     agent_cursor: crate::agent_cursor::AgentCursor,
+    /// The graph tab's layout thread, camera and pointer; its options live in the view.
+    graph: crate::graph_view::GraphView,
+    /// The file last shown in the dock: the graph's focused node.
+    graph_last_file: Option<String>,
+    /// The graph's status changed while painting: lay out once more.
+    graph_relayout: bool,
     // The window's scale, which a browser context is launched with; zero
     // until the first frame has told it.
     browser_scale: f32,
@@ -5942,6 +5950,7 @@ impl AgentsWindow {
                     DockTabKind::Context => SideTab::Context,
                     DockTabKind::Files => SideTab::Files,
                     DockTabKind::Activity => SideTab::Activity,
+                    DockTabKind::Graph => SideTab::Graph,
                     DockTabKind::CodeReview => SideTab::CodeReview,
                     DockTabKind::SessionChanges => SideTab::SessionChanges,
                     DockTabKind::Terminal => SideTab::Terminal,
@@ -5994,6 +6003,7 @@ impl AgentsWindow {
                     DockTabKind::Context => SideTab::Context,
                     DockTabKind::Files => SideTab::Files,
                     DockTabKind::Activity => SideTab::Activity,
+                    DockTabKind::Graph => SideTab::Graph,
                     DockTabKind::CodeReview => SideTab::CodeReview,
                     DockTabKind::SessionChanges => SideTab::SessionChanges,
                     DockTabKind::Terminal => SideTab::Terminal,
@@ -6035,6 +6045,7 @@ impl AgentsWindow {
                 DockTabKind::Context => SideTab::Context,
                 DockTabKind::Files => SideTab::Files,
                 DockTabKind::Activity => SideTab::Activity,
+                DockTabKind::Graph => SideTab::Graph,
                 DockTabKind::CodeReview => SideTab::CodeReview,
                 DockTabKind::SessionChanges => SideTab::SessionChanges,
                 DockTabKind::Terminal => SideTab::Terminal,
@@ -7085,6 +7096,8 @@ impl AgentsWindow {
             right_presentation_width: None,
             bottom_presentation_height: None,
             side_tab: SideTab::Context,
+            graph_options: crate::graph_view::GraphOptions::load(&root),
+            graph_status: Default::default(),
             activity_page: 0,
             activity: Default::default(),
             review_page: 0,
@@ -7377,6 +7390,9 @@ impl AgentsWindow {
             browser_restart_urls: HashMap::new(),
             browser_live: HashMap::new(),
             agent_cursor: Default::default(),
+            graph: Default::default(),
+            graph_last_file: None,
+            graph_relayout: false,
             browser_scale: 0.0,
             browser_pointer_down: None,
             browser_wheel: Default::default(),
@@ -17760,6 +17776,10 @@ impl AgentsWindow {
         if self.apply_tour_action(&action) {
             return;
         }
+        if let Some(applied) = crate::graph_ui::apply(&mut self.view.graph_options, &action) {
+            self.apply_graph_change(applied, &action, ctx);
+            return;
+        }
         if let UiAction::Clicked { id } = &action {
             use crate::message_actions::Effect;
             match crate::message_actions::apply_action(&mut self.view, id) {
@@ -19113,6 +19133,7 @@ impl AgentsWindow {
                         "context" | "newtab" => Some(self.dock.open(&workspace_scope, DockTabKind::Context)),
                         "activity" => Some(self.dock.open(&scope, DockTabKind::Activity)),
                         "review" => Some(self.dock.open(&workspace_scope, DockTabKind::CodeReview)),
+                        "graph" => Some(self.dock.open(&workspace_scope, DockTabKind::Graph)),
                         "changes" => Some(self.dock.open(&scope, DockTabKind::SessionChanges)),
                         "terminal" => Some(self.dock.new_terminal(&scope)),
                         "browser" => Some(self.dock.open(&scope, DockTabKind::Browser)),
@@ -22578,6 +22599,12 @@ impl eframe::App for AgentsWindow {
                     needs_relayout = true;
                     continue;
                 }
+                if !workflow_modal_open {
+                    if let Some(relayout) = self.handle_graph_event(&event, &ctx) {
+                        needs_relayout |= relayout;
+                        continue;
+                    }
+                }
                 let browser_rejection = self.view.browser.input_rejection.is_some();
                 if !workflow_modal_open && self.handle_browser_event(&event) {
                     // Wheel input only moves the page, and its frames arrive
@@ -22661,6 +22688,7 @@ impl eframe::App for AgentsWindow {
         needs_relayout |= self.update_detail(&ctx);
         needs_relayout |= self.update_terminal(&ctx);
         needs_relayout |= self.update_browser(&ctx);
+        needs_relayout |= self.update_graph();
         needs_relayout |= self.update_github_account(&ctx);
         needs_relayout |= self.update_github_contributions(&ctx);
         needs_relayout |= self.sync_stream_presentation(presentation_frame_time);
@@ -22724,6 +22752,7 @@ impl eframe::App for AgentsWindow {
                 self.terminal_focus_pending = false;
             }
         }
+        self.paint_graph(&ctx, &mut frame);
         render::paint(ui, &frame);
         self.paint_agent_cursor(ui, area.min);
         if !workflow_modal_open && !self.view.show_command_center {
@@ -22795,6 +22824,14 @@ impl eframe::App for AgentsWindow {
             .and_then(|_| self.browsers.get(&self.active_browser_id()?)?.cursor())
         {
             ctx.set_cursor_icon(icon);
+        }
+        let over_graph = pointer.is_some_and(|p| {
+            self.tree.frame().hit_test(openide_ui::Point::new(p.x, p.y)) == Some(crate::graph_view::CANVAS_ID)
+        });
+        if self.graph.grabbing() {
+            ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+        } else if over_graph && self.graph.over_node() {
+            ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
         }
         let can_resize = !workflow_modal_open && !self.tree.has_open_popover();
         if can_resize && (near_bottom || self.dock_drag == Some(DockDrag::Bottom)) {

@@ -93,16 +93,34 @@ const CONTEXT_CATEGORY_INKS: [(&str, Color); 7] = [
     ("tools", EFFORT_ULTRA),
     ("project", ACTIVITY_ADDED),
     ("skills", WARNING),
-    ("mcp", Color::rgb(86, 196, 205)),
-    ("subagents", Color::rgb(236, 128, 180)),
+    ("mcp", CATEGORY_TEAL),
+    ("subagents", CATEGORY_PINK),
     ("conversation", ASSISTANT),
 ];
+const CATEGORY_TEAL: Color = Color::rgb(86, 196, 205);
+const CATEGORY_PINK: Color = Color::rgb(236, 128, 180);
+
 pub fn context_category_ink(id: &str) -> Color {
     CONTEXT_CATEGORY_INKS
         .iter()
         .find(|(category, _)| *category == id)
         .map_or(FOREGROUND_SUBTLE, |(_, ink)| *ink)
 }
+/// The workspace graph. Its folders take the window's accents in turn, the
+/// largest folder first; the rest of the graph is drawn in the neutral roles.
+pub const GRAPH_FOLDER_INKS: [Color; 7] = [
+    LINK,
+    ACTIVITY_ADDED,
+    WARNING,
+    CATEGORY_TEAL,
+    CATEGORY_PINK,
+    ACTIVITY_REMOVED,
+    CODE_NUMBER,
+];
+/// A node with no folder color, a link, and a link of the node under the pointer.
+pub const GRAPH_NODE: Color = SCHEME.muted_on_raised;
+pub const GRAPH_LINK: Color = TRACK;
+pub const GRAPH_LINK_LIT: Color = SCHEME.muted;
 /// The counts in a file card's header: a third diff pair kept as it is.
 pub const ACTIVITY_ADDED: Color = Color::rgb(105, 210, 145);
 pub const ACTIVITY_REMOVED: Color = Color::rgb(240, 125, 130);
