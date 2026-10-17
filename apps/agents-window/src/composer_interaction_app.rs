@@ -7,7 +7,8 @@ use crate::composer_suggestions::{self, ComposerSuggestionAction, ComposerTrigge
 
 impl AgentsWindow {
     pub(super) fn composer_policy_editable(&self) -> bool {
-        self.view.selected_backend == "native"
+        (self.view.selected_backend == "native"
+            || crate::acp_run::agent_id(&self.view.selected_backend).is_some())
             && !self.view.running
             && !self.view.background_run_selected
             && !self.view.show_settings

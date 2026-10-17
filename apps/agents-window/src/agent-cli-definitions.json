@@ -6,6 +6,10 @@
       "label": "Claude Code",
       "executables": ["claude"],
       "accept_all_args": ["--dangerously-skip-permissions"],
+      "read_only_args": ["--permission-mode", "plan"],
+      "new_session_args": ["--session-id", "{session}"],
+      "resume_args": ["--resume", "{session}"],
+      "sessions": "claude_projects",
       "bridge": "claude_mcp_config",
       "selection_reference": "@{path}#L{lines}"
     },
@@ -14,6 +18,9 @@
       "label": "Codex",
       "executables": ["codex"],
       "accept_all_args": ["--dangerously-bypass-approvals-and-sandbox"],
+      "read_only_args": ["--sandbox", "read-only"],
+      "resume_args": ["resume", "{session}"],
+      "sessions": "codex_rollouts",
       "bridge": "codex_config",
       "selection_reference": "{path}:{lines}"
     },
@@ -22,6 +29,9 @@
       "label": "opencode",
       "executables": ["opencode"],
       "accept_all_args": ["--auto"],
+      "read_only_args": ["--agent", "plan"],
+      "resume_args": ["--session", "{session}"],
+      "sessions": "opencode_list",
       "bridge": null,
       "selection_reference": "@{path}#L{lines}"
     }

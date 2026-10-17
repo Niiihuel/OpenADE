@@ -345,7 +345,12 @@ fn summary(props: &ComposerProps<'_>) -> Element {
     // fit beside the title: 150 px go to the title, the insets and the badge's
     // padding, and the monospace face advances 6.7 px.
     let room = ((width - 150.0) / 6.7) as usize;
-    let model = usage.and_then(|usage| usage.model.rsplit('/').next()).unwrap_or("");
+    // A route that cannot be used names no model: its id is only what was
+    // saved, and the composer says there is nothing to send to.
+    let model = usage
+        .filter(|usage| usage.error.is_none())
+        .and_then(|usage| usage.model.rsplit('/').next())
+        .unwrap_or("");
     if !model.is_empty() && room > 8 {
         card = card.badge(crate::view::shorten(model, room - 1));
     }

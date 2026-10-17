@@ -1034,6 +1034,7 @@ Copiar y abrir navegador	Copy and open browser
 Copias guardadas por turno	Copies saved per turn
 Corregir	Fix
 Corregí el archivo de reglas antes de editarlo	Fix the rules file before editing it
+Corregí las reglas de comandos antes de añadir una: {}	Fix the command rules before adding one: {}
 Corregí las reglas de comandos antes de ejecutar el agente nativo: {error}	Fix the command rules before running the native agent: {error}
 Corrige la configuración MCP antes de guardarla: {error}	Fix the MCP configuration before saving it: {error}
 Corrige la configuración de hooks antes de guardarla: {error}	Fix the hooks configuration before saving it: {error}
@@ -2039,6 +2040,7 @@ Enviar entrada a un comando	Send input to a command
 Enviar respuesta	Send answer
 Enviar sin imágenes	Send without images
 Enviar todos a la papelera…	Move all to trash…
+Enviá o borrá el mensaje escrito antes de reanudar	Send or clear the written message before resuming
 Enviá o borrá lo que estás escribiendo antes de traer un mensaje de la cola	Send or clear what you're typing before bringing back a queued message
 Equilibrada	Balanced
 Equipo	Machine
@@ -3723,6 +3725,7 @@ No se pudo guardar el borrador de intervención: {error}	Couldn't save the inter
 No se pudo guardar el chequeo del proyecto: {error}	Could not save the project check: {error}
 No se pudo guardar el esfuerzo elegido. Elige de nuevo o deshaz el cambio.	Could not save the chosen effort. Choose again or undo the change.
 No se pudo guardar el esfuerzo elegido: {error}	Couldn't save the chosen effort: {error}
+No se pudo guardar el estado de la tarea CLI: {}	The CLI task's state could not be saved: {}
 No se pudo guardar el idioma: {error}	Could not save the language: {error}
 No se pudo guardar el límite de contexto: {error}	Could not save the context limit: {error}
 No se pudo guardar el límite de salida: {error}	Could not save the output limit: {error}
@@ -4114,6 +4117,8 @@ Permiso pendiente	Pending permission
 Permiso pendiente en turno interrumpido; requiere recuperación antes de continuar	Permission pending in interrupted turn; recovery required before continuing
 Permiso pendiente · turno interrumpido	Permission pending · turn interrupted
 Permisos	Permissions
+Permisos al iniciar la CLI	Permissions when the CLI starts
+Permisos al iniciar la CLI: {}	Permissions when the CLI starts: {}
 Permisos de sesión	Session permissions
 Permisos del proveedor	Provider permissions
 Permisos pendientes	Pending permissions
@@ -4125,6 +4130,7 @@ Permitido · resultado confirmado	Allowed · result confirmed
 Permitir	Allow
 Permitir en esta sesión	Allow in this session
 Permitir siempre	Always allow
+Permitir siempre `{}`	Always allow `{}`
 Permitir siempre en {}	Always allow in {}
 Permitir todo	Allow everything
 Permitir una vez	Allow once
@@ -4737,6 +4743,7 @@ Secuencia inválida en el resultado de automatización	Invalid sequence in the a
 Seguir a la CLI	Follow the CLI
 Seguir a la CLI: si la iniciaste en modo aceptar todo, las herramientas de openADE tampoco preguntan. En cualquier otro modo, openADE pide aprobación.	Follow the CLI: if you started it in accept-all mode, openADE tools don't ask either. In any other mode, openADE asks for approval.
 Seguir editando	Keep editing
+Seguí con lo que estabas haciendo: la aplicación se cerró en medio de tu turno anterior.	Go on with what you were doing: the application was closed in the middle of your previous turn.
 Selecciona el modelo del turno interrumpido	Select the model of the interrupted turn
 Selecciona el modelo original del subagente	Select the subagent's original model
 Selecciona instrucciones del catálogo de este proyecto para incluirlas en los próximos turnos del agente nativo.	Select instructions from this project's catalog to include them in the next native agent turns.
@@ -5360,6 +5367,7 @@ Ya se está compactando una sesión	A session is already being compacted
 [{omitted} bytes de salida omitidos]	[{omitted} bytes of output omitted]
 `{command}` no terminó en {} segundos y fue detenido.\n{}	`{command}` did not finish in {} seconds and was stopped.\n{}
 `{command}` terminó con código {}.\n{}	`{command}` finished with code {}.\n{}
+`{}` se permite sin preguntar desde el próximo turno	`{}` runs without asking from the next turn on
 abierta	open
 abiertas	open
 abr	Apr
@@ -5734,7 +5742,6 @@ ya no existe	it no longer exists
 {}{} líneas encontradas	{}{} lines found
 «.» y «..» no son nombres válidos	«.» and «..» are not valid names
 «Permitir todo» está elegido en el compositor: escribe y ejecuta sin pedir aprobación. Se cambia desde el selector de permisos del compositor.	“Allow all” is chosen in the composer: it writes and runs without asking for approval. Change it from the composer's permission selector.
-«Permitir» no restringe el prefijo ni salta la aprobación: el permiso de comandos del agente sigue decidiendo si se pregunta antes de ejecutarlo.	“Allow” neither restricts the prefix nor skips approval: the agent's command permission still decides whether it asks before running it.
 «{path}» irá a la papelera del sistema.	«{path}» will go to the system trash.
 «{}» ya no es un archivo sin seguimiento	«{}» is no longer an untracked file
 «{}»\n\nSe eliminará esta conversación, sus subagentes y su historial. Los archivos del proyecto se conservarán. Esta acción no se puede deshacer.	«{}»\n\nThis conversation, its subagents, and its history will be deleted. Project files will be kept. This action cannot be undone.
@@ -6012,4 +6019,9 @@ Carpetas y repositorios donde se descubren skills.	Folders and repositories wher
 Consulta sus instrucciones, procedencia y opciones de instalación.	View its instructions, provenance, and installation options.
 Un origen necesita atención	A source needs attention
 Volver al catálogo	Back to catalog
+{} no aceptó el modo {}: {}	{} did not accept the mode {}: {}
+{} no tiene un modo plan: sigue en su modo normal	{} has no plan mode: it stays in its normal mode
+{}: se aplica al iniciar la CLI	{}: applies when the CLI starts
+{}: se aplica al reiniciar la CLI	{}: applies when the CLI is restarted
+«Permitir» ejecuta sin preguntar los comandos que empiezan exactamente con este prefijo cuando el agente está en «Pedir aprobación». No abre nada en «Sólo lectura», y un shell que ejecute otra cosa (sh -c, env) sigue preguntando.	«Allow» runs the commands that start exactly with this prefix without asking while the agent is in «Ask for approval». It opens nothing in «Read only», and a shell that runs something else (sh -c, env) still asks.
 ¿Salir con agentes en curso?	Exit with agents running?

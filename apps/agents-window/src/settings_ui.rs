@@ -1645,7 +1645,7 @@ pub fn hook_editor_modal(state: &ViewState, base: Element, viewport_width: f32) 
 
 // The harness never lets an Allow rule lower the host's Ask or Deny, so the
 // editor and the confirmation must not promise unattended execution.
-pub(crate) const EXEC_RULE_ALLOW_MEANING: &str = "«Permitir» no restringe el prefijo ni salta la aprobación: el permiso de comandos del agente sigue decidiendo si se pregunta antes de ejecutarlo.";
+pub(crate) const EXEC_RULE_ALLOW_MEANING: &str = "«Permitir» ejecuta sin preguntar los comandos que empiezan exactamente con este prefijo cuando el agente está en «Pedir aprobación». No abre nada en «Sólo lectura», y un shell que ejecute otra cosa (sh -c, env) sigue preguntando.";
 
 fn exec_rules_page(state: &ViewState, compact: bool) -> Vec<Element> {
     let settings = &state.native_exec_rules;

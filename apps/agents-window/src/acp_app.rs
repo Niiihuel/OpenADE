@@ -318,6 +318,7 @@ impl AgentsWindow {
             prompt: text,
             images,
             choices: vec![("model", self.view.composer_model.clone()), ("thought_level", self.view.composer_effort.clone())],
+            mode: self.view.turn_mode,
         };
         self.active_run = Some(ActiveRun::Acp(AcpRunHandle::start(request, slot)));
         self.run_has_output = false;

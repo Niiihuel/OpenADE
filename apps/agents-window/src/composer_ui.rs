@@ -222,9 +222,9 @@ impl<'a> ComposerProps<'a> {
             turn_mode: state.turn_mode,
             full_access: pending_permissions
                 .map_or(state.native_full_access, |settings| settings.full_access()),
-            // An ACP agent asks before acting on its own; the native
-            // agent's permissions are not its.
-            permission_controls: crate::acp_run::agent_id(&state.selected_backend).is_none().then_some((
+            // The presets answer an ACP agent's requests too: "Permitir
+            // todo" allows them, "Sólo lectura" refuses its edits and commands.
+            permission_controls: Some((
                 pending_permissions.map_or(state.native_tool_permissions, |settings| {
                     settings.permissions()
                 }),
@@ -693,7 +693,7 @@ fn add_context_control(props: &ComposerProps<'_>) -> Element {
                     .icon(Icon::Plan)
                     .annotation("Sin editar")
                     .selected(props.turn_mode == TurnMode::Plan);
-                (if props.selected_backend == "native" {
+                (if props.selected_backend == "native" || crate::acp_run::agent_id(&props.selected_backend).is_some() {
                     item
                 } else {
                     item.disabled()
@@ -1067,7 +1067,10 @@ fn backend_icon(props: &ComposerProps<'_>, provider_id: &str) -> Icon {
     if props.agent_name.is_empty() {
         icon_for_provider(provider_id)
     } else {
-        crate::provider_icons::icon_for_acp_agent(props.agent_name)
+        crate::provider_icons::icon_for_acp_agent(
+            crate::acp_run::agent_id(props.selected_backend).unwrap_or(""),
+            props.agent_name,
+        )
     }
 }
 

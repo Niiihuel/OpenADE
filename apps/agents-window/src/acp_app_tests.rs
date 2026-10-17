@@ -48,13 +48,15 @@ fn fake_acp_agent() {
         out.flush().unwrap();
     };
     let update = |update: Value| send(json!({"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": "fake-1", "update": update}}));
-    let mut chosen = json!({"model": "fake-a", "effort": "high"});
+    let mut chosen = json!({"model": "fake-a", "effort": "high", "mode": "build"});
     let config = |chosen: &Value| {
         json!([
             {"id": "model", "name": "Model", "category": "model", "type": "select", "currentValue": chosen["model"],
              "options": [{"value": "fake-a", "name": "Rápido"}, {"value": "fake-b", "name": "Profundo"}]},
             {"id": "effort", "name": "Effort", "category": "thought_level", "type": "select", "currentValue": chosen["effort"],
-             "options": [{"value": "low", "name": "Bajo"}, {"value": "high", "name": "Alto"}]}
+             "options": [{"value": "low", "name": "Bajo"}, {"value": "high", "name": "Alto"}]},
+            {"id": "mode", "name": "Mode", "category": "mode", "type": "select", "currentValue": chosen["mode"],
+             "options": [{"value": "build", "name": "Build"}, {"value": "plan", "name": "Plan"}]}
         ])
     };
     // The harness has just printed "test … ..." with no line break.
@@ -111,6 +113,11 @@ fn window(root: &Path) -> AgentsWindow {
     let mut app = AgentsWindow::with_data_root(root.join("data"));
     app.view.workspace = workspace.display().to_string();
     app.view.acp_agents = vec![AcpOffer { id: "fake".into(), name: "Agente falso".into(), command: fake_agent() }];
+    // "Pedir aprobación": what the agent asks reaches the person as a card.
+    // A fresh profile starts read-only, which refuses its edits and commands.
+    app.agent_tool_settings.set_full_access(false);
+    app.agent_tool_settings.set(openide_harness::LocalTool::WriteFile, true);
+    app.agent_tool_settings.set(openide_harness::LocalTool::RunCommand, true);
     app
 }
 
@@ -436,4 +443,77 @@ fn an_acp_turn_goes_on_off_screen_and_what_it_asks_waits_for_the_person() {
     let tools: Vec<_> = app.view.transcript.iter().filter(|item| matches!(item, TranscriptItem::Tool { .. })).collect();
     assert_eq!(tools.len(), 1, "{tools:#?}");
     assert!(app.parked_runs.is_empty() && app.view.off_screen_turns.is_empty());
+}
+
+#[test]
+fn plan_mode_and_the_presets_reach_an_acp_agent() {
+    use openide_harness::LocalTool;
+    let root = tempfile::tempdir().unwrap();
+    let log = root.path().join("agent.log");
+    let mut app = window(root.path());
+    app.view.acp_agents[0].command.env.push((FAKE_LOG.into(), log.display().to_string()));
+    app.start_acp_task("fake");
+    let session = app.view.selected_session.clone().unwrap();
+    pump(&mut app, |app| !app.view.composer_model_options.is_empty());
+
+    // Plan: the agent's own plan mode is chosen before the prompt, and the
+    // turn is admitted as a Plan turn.
+    app.view.turn_mode = TurnMode::Plan;
+    turn(&mut app, "mirá nomás");
+    let got = received(&log);
+    let set = got
+        .iter()
+        .position(|message| message["method"] == "session/set_config_option" && message["params"]["configId"] == "mode" && message["params"]["value"] == "plan")
+        .expect("the plan mode is set");
+    let prompt = got.iter().position(|message| message["method"] == "session/prompt").unwrap();
+    assert!(set < prompt);
+    let stored = app.store.as_ref().unwrap().load(&session).unwrap().unwrap();
+    assert!(stored.events.iter().any(|event| matches!(&event.kind, AgentEventKind::TurnAdmitted { mode: TurnMode::Plan, .. })), "{:?}", stored.events);
+
+    // Build again under "Permitir todo": the mode goes back and the request
+    // is answered without a card.
+    app.view.turn_mode = TurnMode::Build;
+    app.agent_tool_settings.set_full_access(true);
+    app.view.prompt = "hacelo".into();
+    app.start_run();
+    pump(&mut app, |app| app.active_run.is_none() && !app.view.running);
+    assert!(app.view.pending_permissions.is_empty());
+    assert!(received(&log).iter().any(|message| message["method"] == "session/set_config_option" && message["params"]["value"] == "build"));
+    assert!(app.view.transcript.iter().any(|item| matches!(item, TranscriptItem::Tool { output: Some(output), is_error: false, .. } if output.trim() == "hi")), "{:?}", app.view.transcript);
+
+    // "Sólo lectura": the command is refused without a card.
+    app.agent_tool_settings.set_full_access(false);
+    app.agent_tool_settings.set(LocalTool::WriteFile, false);
+    app.agent_tool_settings.set(LocalTool::RunCommand, false);
+    app.view.prompt = "otra".into();
+    app.start_run();
+    pump(&mut app, |app| app.active_run.is_none() && !app.view.running);
+    assert!(app.view.pending_permissions.is_empty());
+    let tools: Vec<_> = app.view.transcript.iter().filter(|item| matches!(item, TranscriptItem::Tool { .. })).collect();
+    assert_eq!(tools.len(), 3, "{tools:#?}");
+    assert!(matches!(tools[2], TranscriptItem::Tool { output: Some(output), is_error: true, .. } if output == "Permiso denegado"), "{tools:#?}");
+}
+
+#[test]
+fn an_acp_turn_the_app_was_closed_in_is_offered_to_go_on() {
+    let root = tempfile::tempdir().unwrap();
+    let log = root.path().join("agent.log");
+    let mut app = window(root.path());
+    app.view.acp_agents[0].command.env.push((FAKE_LOG.into(), log.display().to_string()));
+    let store = app.store.clone().unwrap();
+    let session = store.create(PathBuf::from(&app.view.workspace), "acp:fake").unwrap().id;
+    store.append_event(&session, &AgentEvent::new(session.clone(), 1, AgentEventKind::TurnStarted { prompt: "arrancá".into() })).unwrap();
+    app.refresh_sessions();
+    assert_eq!(app.view.session_recovery.get(&session), Some(&SessionRecoveryView::Resume));
+
+    app.apply_action(UiAction::Clicked { id: format!("session_recover:{session}") }, &egui::Context::default());
+    assert!(app.view.running, "{}", app.view.status);
+    pump(&mut app, |app| !app.view.pending_permissions.is_empty());
+    let request = app.view.pending_permissions[0].request_id.clone();
+    app.answer_permission(&request, true);
+    pump(&mut app, |app| app.active_run.is_none() && !app.view.running);
+    let prompt = received(&log).into_iter().find(|message| message["method"] == "session/prompt").expect("a prompt");
+    assert!(prompt["params"]["prompt"][0]["text"].as_str().unwrap().contains("se cerró en medio"), "{prompt}");
+    app.refresh_sessions();
+    assert!(!app.view.session_recovery.contains_key(&session), "ended: nothing is left to go on with");
 }

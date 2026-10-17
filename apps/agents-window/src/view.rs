@@ -641,6 +641,9 @@ pub struct ViewState {
     /// Conversations whose turn goes on off screen, and whether it waits for
     /// an answer there.
     pub off_screen_turns: BTreeMap<String, bool>,
+    /// The permissions the selected CLI task starts its CLI with.
+    pub cli_task_mode: crate::cli_tasks::CliMode,
+    pub cli_mode_open: bool,
     /// The check command saved for the open project, shown in Settings.
     pub turn_check_command: String,
     pub turn_check_failure: Option<String>,
@@ -1208,6 +1211,9 @@ fn session_row_parts(
         Element::icon(Icon::Pin).foreground(theme::FOREGROUND_SUBTLE)
     } else if let Some(agent) = session.backend.strip_prefix(CLI_BACKEND) {
         Element::icon(crate::provider_icons::icon_for_agent_cli(agent))
+            .foreground(theme::FOREGROUND_SUBTLE)
+    } else if let Some(agent) = session.backend.strip_prefix(crate::acp_run::ACP_BACKEND) {
+        Element::icon(crate::provider_icons::icon_for_acp_agent(agent, agent))
             .foreground(theme::FOREGROUND_SUBTLE)
     } else {
         Element::spacer()
@@ -4360,6 +4366,8 @@ pub(crate) mod tests {
             acp_installing: None,
             acp_query: String::new(),
             off_screen_turns: BTreeMap::new(),
+            cli_task_mode: Default::default(),
+            cli_mode_open: false,
             turn_check_command: String::new(),
             turn_check_failure: None,
             review_model: Default::default(),

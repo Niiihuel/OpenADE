@@ -32,6 +32,8 @@ pub(crate) struct ApprovalSummary {
     pub link: Option<(&'static str, &'static str)>,
     /// The site a browser action is on, when the user can allow the site.
     pub site: Option<String>,
+    /// The argv prefix of a command the user can allow for good.
+    pub command: Option<Vec<String>>,
 }
 
 impl ApprovalTarget {
@@ -319,7 +321,38 @@ pub(crate) fn summary(tool_name: &str, arguments: &str) -> ApprovalSummary {
         icon,
         link: None,
         site: None,
+        command: None,
     }
+}
+
+/// The exact prefix a command approval can allow for good: the program, and
+/// its first word when that names a subcommand. A shell or launcher that
+/// runs whatever follows has no such prefix.
+pub(crate) fn command_prefix(tool_name: &str, arguments: &str) -> Option<Vec<String>> {
+    if !matches!(tool_name, "run_command" | "start_command") || arguments.len() > MAX_SUMMARY_INPUT {
+        return None;
+    }
+    let arguments: Value = serde_json::from_str(arguments).ok()?;
+    let arguments = openide_harness::split_command_arguments(&arguments).unwrap_or(arguments);
+    let command = arguments.get("command")?.as_str()?.trim();
+    if command.is_empty()
+        || command.contains(char::is_whitespace)
+        || openide_harness::is_opaque_wrapper(command)
+    {
+        return None;
+    }
+    let mut prefix = vec![command.to_owned()];
+    let first = arguments
+        .get("args")
+        .and_then(Value::as_array)
+        .and_then(|args| args.first())
+        .and_then(Value::as_str);
+    if let Some(first) = first.filter(|first| {
+        !first.starts_with('-') && !first.contains(['/', '\\', '.', ' ']) && first.len() <= 64
+    }) {
+        prefix.push(first.to_owned());
+    }
+    Some(prefix)
 }
 
 /// An image call says what it sends and that it may cost. The model and the
@@ -425,13 +458,17 @@ fn notice(
     .target(summary.target)
     .status(status)
     .icon(summary.icon);
-    match (summary.link, summary.site) {
-        (Some((action, label)), _) => request.link(action, label),
-        (None, Some(site)) => request.link(
+    match (summary.link, summary.site, summary.command) {
+        (Some((action, label)), _, _) => request.link(action, label),
+        (None, Some(site), _) => request.link(
             target.decision_action("allow_site"),
             format!("Permitir siempre en {}", site.split_once("://").map_or(site.as_str(), |(_, host)| host)),
         ),
-        (None, None) => request,
+        (None, None, Some(prefix)) => request.link(
+            target.decision_action("allow_command"),
+            format!("Permitir siempre `{}`", prefix.join(" ")),
+        ),
+        (None, None, None) => request,
     }
     .render()
 }
@@ -445,6 +482,11 @@ pub(crate) fn inline_root(permission: &PermissionView, state: &ViewState, compac
     );
     let mut summary = with_image(summary, &permission.tool_name, &permission.arguments, state);
     summary.site = crate::browser_sites::site_of_call(&permission.tool_name, &permission.arguments, &state.agent_page_url);
+    // A saved rule answers the native agent's own commands; a CLI's or an
+    // ACP agent's are decided by that agent.
+    summary.command = (state.selected_backend == "native")
+        .then(|| command_prefix(&permission.tool_name, &permission.arguments))
+        .flatten();
     notice(
         &root_target(permission, state),
         summary,
@@ -826,7 +868,7 @@ mod tests {
     }
 
     #[test]
-    fn inline_card_carries_the_three_scoped_decisions_without_focus_or_protocol_fields() {
+    fn inline_card_carries_the_scoped_decisions_and_the_prefix_link_without_focus_or_protocol_fields() {
         let mut state = fixture();
         state.pending_permissions[0].tool_name = "run_command".into();
         state.pending_permissions[0].arguments = json!({
@@ -850,8 +892,11 @@ mod tests {
                 .iter()
                 .filter(|region| region.kind == HitKind::Button)
                 .collect();
-            assert_eq!(buttons.len(), 3);
-            for choice in ["allow_session", "deny", "allow_once"] {
+            // The three decisions, and the link that allows the command's
+            // prefix for good.
+            assert_eq!(buttons.len(), 4);
+            assert!(texts(&frame).contains("Permitir siempre `cargo test`"), "{}", texts(&frame));
+            for choice in ["allow_session", "deny", "allow_once", "allow_command"] {
                 let id = target.decision_action(choice);
                 let rect = frame.regions.iter().find(|region| region.id == id).unwrap().rect;
                 assert!(rect.x >= 0.0 && rect.x + rect.width <= width);

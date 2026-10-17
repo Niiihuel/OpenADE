@@ -238,12 +238,13 @@ pub(crate) fn header(
         .shrink_to_fit()
         .size(None, Some(HEADER_ACTION_SIZE));
     let mut top = Vec::new();
-    if cli.is_some() {
+    if let Some(agent) = cli {
         top.push(header_action(
             "cli_task_restart",
             Icon::Refresh,
             "Reiniciar la CLI en una terminal nueva",
         ));
+        top.push(cli_mode_menu(state, agent));
     }
     if !recovery_decision_pending && width >= 300.0 {
         top.push(crate::view::window_mode_control(state));
@@ -280,6 +281,55 @@ pub(crate) fn header(
         .trailing(top)
         .sizing(crate::ui_sizing::PANE_HEADER)
         .render()
+}
+
+/// The permissions a CLI task starts its CLI with, chosen from its header;
+/// a CLI already running takes them at its next start.
+fn cli_mode_menu(state: &ViewState, agent: &str) -> Element {
+    use crate::cli_tasks::CliMode;
+    let definition = crate::agent_cli_definitions::profile(agent).map(|(agent, _)| agent);
+    let icon = |mode: CliMode| match mode {
+        CliMode::Ask => Icon::CheckCircle,
+        CliMode::ReadOnly => Icon::File,
+        CliMode::FullAccess => Icon::WarningTriangle,
+    };
+    let trigger = UiIconButton::new(
+        "cli_mode_toggle",
+        icon(state.cli_task_mode),
+        theme::action_palette(theme::BACKGROUND, theme::FOREGROUND),
+    )
+    .variant(ButtonVariant::Ghost)
+    .size(ControlSize::Dense)
+    .active(state.cli_mode_open)
+    .active_hover(openide_ui::ActiveHover::Palette)
+    .tooltip_with(
+        openide_ui::TooltipSpec::new(format!("Permisos al iniciar la CLI: {}", state.cli_task_mode.label()))
+            .placement(TooltipPlacement::Below),
+    )
+    .render();
+    let mut entries = vec![openide_ui::DropdownMenuEntry::Heading("Permisos al iniciar la CLI".into())];
+    entries.extend(CliMode::ALL.into_iter().map(|mode| {
+        let item = openide_ui::DropdownMenuItem::new(mode.action(), mode.label())
+            .icon(icon(mode))
+            .selected(state.cli_task_mode == mode);
+        if definition.is_some_and(|agent| mode.offered_by(agent)) {
+            item
+        } else {
+            item.disabled()
+        }
+        .into()
+    }));
+    openide_ui::DropdownMenu::new(
+        trigger,
+        entries,
+        state.cli_mode_open,
+        "cli_mode_dismiss",
+        theme::menu_palette(),
+    )
+    .context_menu_style()
+    .placement(openide_ui::PopoverPlacement::BottomEnd)
+    .width(220.0)
+    .render()
 }
 
 /// A user's message. It stays at the top of the transcript while its turn
@@ -4489,6 +4539,8 @@ mod tests {
             acp_installing: None,
             acp_query: String::new(),
             off_screen_turns: std::collections::BTreeMap::new(),
+            cli_task_mode: Default::default(),
+            cli_mode_open: false,
             turn_check_command: String::new(),
             turn_check_failure: None,
             review_model: Default::default(),

@@ -442,7 +442,7 @@ fn agent_new_menu(state: &ViewState) -> Element {
     );
     entries.extend(state.acp_agents.iter().map(|agent| {
         DropdownMenuItem::new(format!("acp_task:{}", agent.id), &agent.name)
-            .icon(crate::provider_icons::icon_for_acp_agent(&agent.name))
+            .icon(crate::provider_icons::icon_for_acp_agent(&agent.id, &agent.name))
             .into()
     }));
     DropdownMenu::new(

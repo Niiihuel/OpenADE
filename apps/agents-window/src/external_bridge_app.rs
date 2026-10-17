@@ -402,9 +402,50 @@ impl AgentsWindow {
                     agent.label
                 ))
             })?;
-            let mut args: Vec<OsString> = Vec::new();
-            if accept_all {
+            // The task's own conversation and permissions come first: `codex
+            // resume <id>` is a subcommand, and the flags follow it.
+            let task_id = self.view.selected_session.clone();
+            let mut task = task_id
+                .as_deref()
+                .map(|id| crate::cli_tasks::get(&self.data_root, id))
+                .unwrap_or_default();
+            // A terminal of a task opens the task's conversation; one opened
+            // on its own starts the CLI as it is.
+            let mut args: Vec<OsString> = match &task_id {
+                Some(_) => crate::cli_tasks::session_args(agent, &self.cli_homes, &mut task)
+                    .into_iter()
+                    .map(OsString::from)
+                    .collect(),
+                None => Vec::new(),
+            };
+            let full_access = accept_all || task.mode == crate::cli_tasks::CliMode::FullAccess;
+            if full_access {
                 args.extend(agent.accept_all_args.iter().map(OsString::from));
+            } else if task.mode == crate::cli_tasks::CliMode::ReadOnly {
+                args.extend(agent.read_only_args.iter().map(OsString::from));
+            }
+            if let Some(task_id) = &task_id {
+                if let Err(error) = crate::cli_tasks::save(&self.data_root, task_id, &task) {
+                    self.view.status = error;
+                }
+                // A CLI that names its own session: it is looked for once the
+                // CLI has had time to create it.
+                if let (None, Some(discovery), Some(started)) = (&task.session, agent.sessions, task.started_at_ms) {
+                    let taken = crate::cli_tasks::load(&self.data_root)
+                        .into_values()
+                        .filter_map(|other| other.session)
+                        .collect();
+                    let probe = crate::cli_tasks::discover(
+                        discovery,
+                        &self.cli_homes,
+                        program.clone(),
+                        self.agent_search_path(),
+                        PathBuf::from(&self.view.workspace),
+                        started,
+                        taken,
+                    );
+                    self.cli_session_probes.push((task_id.clone(), probe));
+                }
             }
             let mut env = Vec::new();
             // The CLI needs the same search path it was found with (its own
@@ -430,7 +471,7 @@ impl AgentsWindow {
                 let token = bridge.grant(Grant {
                     workspace: PathBuf::from(&self.view.workspace),
                     // OpenIDE chose these arguments itself, so this is known.
-                    cli_accepts_all: accept_all,
+                    cli_accepts_all: full_access,
                     session: session.clone(),
                 });
                 match kind.bridge_launch(&url, &token, &config_dir) {

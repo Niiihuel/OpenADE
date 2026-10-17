@@ -84,6 +84,7 @@ mod files;
 mod folder_dialog;
 mod fonts;
 mod acp_run;
+mod cli_tasks;
 mod graph_layout;
 mod graph_ui;
 mod graph_view;

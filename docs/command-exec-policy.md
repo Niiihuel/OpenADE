@@ -24,9 +24,9 @@ let rules = ExecPolicy::new(vec![ExecRule::new(
 let permission_policy = PermissionPolicy::new().with_exec_policy(rules);
 ```
 
-`ExecRule::new` and `ExecPolicy::new` enforce nonempty prefixes and bounded token, rule, and justification sizes. Rules currently have no editable Settings file or UI. The application must explicitly supply a validated `PermissionPolicy` to both `AgentRunner` and `ResumeEngine`; an absent policy has no prefix rules. A future Settings adapter can store rule patterns, decisions, and justifications, then rebuild them through these constructors. Deserializing an `ExecRule` alone is not a validation step.
+`ExecRule::new` and `ExecPolicy::new` enforce nonempty prefixes and bounded token, rule, and justification sizes. Settings → Comandos edits the rules, kept in `native-exec-rules.json`. The application must explicitly supply a validated `PermissionPolicy` to both `AgentRunner` and `ResumeEngine`; an absent policy has no prefix rules. Deserializing an `ExecRule` alone is not a validation step.
 
-The tool call's first argv token is `command`; subsequent tokens are `args`. A rule matches a prefix. A union matches any listed literal at that position. Matching decisions combine as `Deny > Ask > Allow`, irrespective of rule order. An `Allow` rule never lowers an existing host `Ask` or `Deny`, and it does not currently grant automatic execution. The current host mode remains authoritative. Malformed command arguments are denied.
+The tool call's first argv token is `command`; subsequent tokens are `args`. A rule matches a prefix. A union matches any listed literal at that position. Matching decisions combine as `Deny > Ask > Allow`, irrespective of rule order. An `Allow` rule answers a host `Ask` for its exact prefix, so the command runs without a prompt; it never lowers a host `Deny`, and a shell or launcher (`sh -c …`, `env …`) is never allowed by prefix. The approval card of a command offers "Permitir siempre" for its prefix, which saves such a rule. Malformed command arguments are denied.
 
 For restrictive `Ask` and `Deny` rules, a program token such as `git` also matches an absolute path ending in `git.exe`, ignoring ASCII case. `Allow` matching remains exact. The harness does not resolve executable identity from `PATH`; a future automatic allowance would need that verification.
 

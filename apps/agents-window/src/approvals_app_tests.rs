@@ -157,3 +157,52 @@ fn decision_for_a_request_that_is_no_longer_pending_is_ignored() {
         assert!(decisions(&app, &target).is_empty());
     }
 }
+
+#[test]
+fn a_command_approval_offers_always_which_saves_an_allow_rule_for_its_prefix() {
+    use crate::approval_ui::command_prefix;
+    use openide_harness::{ExecDecision, ExecPatternToken};
+    let words = |words: &[&str]| Some(words.iter().map(|word| word.to_string()).collect::<Vec<_>>());
+    assert_eq!(command_prefix("run_command", r#"{"command":"git","args":["status","-s"]}"#), words(&["git", "status"]));
+    assert_eq!(command_prefix("start_command", r#"{"command":"npm run dev"}"#), words(&["npm", "run"]));
+    assert_eq!(command_prefix("run_command", r#"{"command":"ls","args":["-la"]}"#), words(&["ls"]));
+    assert_eq!(command_prefix("run_command", r#"{"command":"cargo","args":["test","--all"]}"#), words(&["cargo", "test"]));
+    assert_eq!(command_prefix("run_command", r#"{"command":"sh","args":["-c","rm -rf x"]}"#), None, "a shell runs whatever follows");
+    assert_eq!(command_prefix("run_command", r#"{"command":"python3","args":["tool.py"]}"#), None, "so does an interpreter");
+    assert_eq!(command_prefix("apply_patch", r#"{"patch":"x"}"#), None);
+
+    let (_root, mut app, target) = fixture();
+    app.view.pending_permissions.clear();
+    app.view.pending_permissions.push(PermissionView {
+        request_id: "pending:command".into(),
+        tool_name: "run_command".into(),
+        arguments: r#"{"command":"git","args":["status"]}"#.into(),
+    });
+    let target = ApprovalTarget { request_id: "pending:command".into(), ..target };
+    let size = Size::new(900.0, 720.0);
+    let mut tree = UiTree::new(crate::view::build_window_view(&app.view, size.width, size.height));
+    let frame = tree.layout(size);
+    let texts: Vec<_> = frame
+        .commands
+        .iter()
+        .filter_map(|command| match command {
+            openide_ui::DrawCommand::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(texts.contains(&"Permitir siempre `git status`"), "{texts:?}");
+    assert!(frame.regions.iter().any(|region| region.id == target.decision_action("allow_command")));
+
+    click(&mut app, target.decision_action("allow_command"));
+    let rules = ExecPolicySettings::load(&app.data_root).unwrap().rules;
+    assert_eq!(rules.len(), 1);
+    assert_eq!(rules[0].decision(), ExecDecision::Allow);
+    assert_eq!(rules[0].pattern(), [ExecPatternToken::Literal("git".into()), ExecPatternToken::Literal("status".into())]);
+    assert_eq!(app.exec_policy_settings.rules, rules);
+    assert!(app.view.status.contains("`git status`"), "{}", app.view.status);
+    // The same prefix again is one rule, and the session's grant is the
+    // worker's to save: without one no one-time decision is invented.
+    click(&mut app, target.decision_action("allow_command"));
+    assert_eq!(ExecPolicySettings::load(&app.data_root).unwrap().rules.len(), 1);
+    assert!(decisions(&app, &target).is_empty());
+}

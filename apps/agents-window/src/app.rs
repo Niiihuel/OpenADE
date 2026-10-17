@@ -1461,6 +1461,9 @@ pub struct AgentsWindow {
     background_resumes: Vec<background_resume_app::BackgroundResume>,
     /// Turns of the conversations the person left while they ran.
     parked_runs: Vec<ParkedRun>,
+    cli_homes: crate::cli_tasks::Homes,
+    /// Searches for the session a CLI task's CLI created after its start.
+    cli_session_probes: Vec<(String, Receiver<Option<String>>)>,
     native_automation_result_errors: HashMap<(PathBuf, String), String>,
     automation_queue: VecDeque<(usize, AutomationDispatch)>,
     marketplace_response: Option<Receiver<MarketplaceResponse>>,
@@ -3030,6 +3033,28 @@ fn recovery_status(recovery: &ReplayRecovery) -> &'static str {
             "Turno abortado con herramientas pendientes; requiere resolución"
         }
     }
+}
+
+/// What an ACP agent is told to go on with a turn the app was closed in the
+/// middle of.
+const ACP_CONTINUATION: &str =
+    "Seguí con lo que estabas haciendo: la aplicación se cerró en medio de tu turno anterior.";
+
+/// An ACP turn that started and never ended: the app was closed in the
+/// middle of it, and the agent with it.
+fn acp_turn_unfinished(events: &[AgentEvent]) -> bool {
+    events
+        .iter()
+        .rev()
+        .find_map(|event| match &event.kind {
+            AgentEventKind::TurnStarted { .. } => Some(true),
+            AgentEventKind::TurnCompleted { .. }
+            | AgentEventKind::TurnFailed { .. }
+            | AgentEventKind::TurnCancelled
+            | AgentEventKind::TurnPaused { .. } => Some(false),
+            _ => None,
+        })
+        .unwrap_or(false)
 }
 
 fn native_session_views(
@@ -7082,6 +7107,8 @@ impl AgentsWindow {
             acp_installing: None,
             acp_query: String::new(),
             off_screen_turns: BTreeMap::new(),
+            cli_task_mode: Default::default(),
+            cli_mode_open: false,
             turn_check_command: String::new(),
             turn_check_failure: None,
             review_model: Default::default(),
@@ -7374,6 +7401,8 @@ impl AgentsWindow {
             background_automation_runs: Vec::new(),
             background_resumes: Vec::new(),
             parked_runs: Vec::new(),
+            cli_homes: crate::cli_tasks::Homes::from_env(),
+            cli_session_probes: Vec::new(),
             native_automation_result_errors: HashMap::new(),
             automation_queue: VecDeque::new(),
             marketplace_response: None,
@@ -8790,6 +8819,13 @@ impl AgentsWindow {
                         }
                         let (recovery, plan, pause) =
                             native_session_views(&self.data_root, &store, record);
+                        // An ACP agent is closed with the app: a turn of it
+                        // that never ended can be asked to go on.
+                        let recovery = recovery.or_else(|| {
+                            (record.session.backend.starts_with(crate::acp_run::ACP_BACKEND)
+                                && acp_turn_unfinished(&record.events))
+                            .then_some(SessionRecoveryView::Resume)
+                        });
                         if let Some(recovery) = recovery {
                             let selected_running = self.view.running
                                 && self.view.selected_session.as_deref()
@@ -10545,6 +10581,30 @@ impl AgentsWindow {
         );
     }
 
+    /// A rule allowing `prefix` for the next turns, kept with the others.
+    fn allow_command_always(&mut self, prefix: &[String]) -> Result<(), String> {
+        if let Some(error) = &self.exec_policy_load_error {
+            return Err(format!("Corregí las reglas de comandos antes de añadir una: {error}"));
+        }
+        let rule = openide_harness::ExecRule::new(
+            prefix.iter().cloned().map(openide_harness::ExecPatternToken::Literal).collect(),
+            ExecDecision::Allow,
+            Some("Permitido siempre desde una aprobación".to_owned()),
+        )
+        .map_err(|error| error.to_string())?;
+        let mut rules = self.exec_policy_settings.rules.clone();
+        if !rules.contains(&rule) {
+            rules.push(rule);
+        }
+        let next = ExecPolicySettings { rules };
+        next.policy().map_err(|error| error.to_string())?;
+        next.save(&self.data_root).map_err(|error| error.to_string())?;
+        self.exec_policy_settings = next;
+        self.exec_policy_load_error = None;
+        self.view.native_exec_rules = ExecPolicyUiState::from_settings(&self.exec_policy_settings);
+        Ok(())
+    }
+
     fn delete_exec_rule(&mut self, index: usize) {
         let mut next_view = self.view.native_exec_rules.clone();
         if let Err(error) = next_view.remove(index) {
@@ -11045,6 +11105,28 @@ impl AgentsWindow {
         // scoped controls; only their exact durable confirmation can dispatch.
         self.view.pending_native_command_termination = None;
         self.open_native_command_controls(command_id);
+    }
+
+    /// What the composer's preset says of an ACP agent's request: "Permitir
+    /// todo" allows it, "Sólo lectura" refuses an edit or a command, and the
+    /// others leave it to the person.
+    fn acp_preset_answer(&self, tool_name: &str) -> Option<bool> {
+        use crate::composer_permissions_ui::{preset_for_permissions, ComposerPermissionPreset};
+        match preset_for_permissions(
+            self.agent_tool_settings.permissions(),
+            self.agent_tool_settings.full_access(),
+        ) {
+            ComposerPermissionPreset::FullAccess => Some(true),
+            ComposerPermissionPreset::ReadOnly
+                if matches!(
+                    tool_name,
+                    "edit_file" | "write_file" | "apply_patch" | "run_command" | "start_command"
+                ) =>
+            {
+                Some(false)
+            }
+            _ => None,
+        }
     }
 
     fn native_permission_policy(&self) -> Result<PermissionPolicy, String> {
@@ -12716,6 +12798,8 @@ impl AgentsWindow {
         self.view.composer_branches.open = false;
         self.view.main_page = MainPage::Workspace;
         self.view.background_run_selected = false;
+        self.view.cli_task_mode = Default::default();
+        self.view.cli_mode_open = false;
         // Whatever is selected next, a draft included, shows its conversation.
         self.dock.restore_maximized();
         self.view.selected_session = None;
@@ -13041,6 +13125,7 @@ impl AgentsWindow {
                 self.view.selected_backend = stored.session.backend.clone();
                 self.refresh_composer_selection();
                 self.warm_acp_agent();
+                self.view.cli_task_mode = crate::cli_tasks::get(&self.data_root, id).mode;
                 self.ensure_cli_terminal();
                 self.view.turn_mode = stored
                     .events
@@ -14460,6 +14545,38 @@ impl AgentsWindow {
 
     /// A CLI names its conversation through the terminal's window title. The
     /// task starts with the CLI's name and takes that title once there is one.
+    /// The permissions the selected CLI task starts its CLI with. A CLI that
+    /// is running keeps its own until it is started again.
+    fn set_cli_task_mode(&mut self, mode: crate::cli_tasks::CliMode) {
+        self.view.cli_mode_open = false;
+        let Some(session_id) = self
+            .view
+            .selected_session
+            .clone()
+            .filter(|_| crate::view::cli_task(&self.view))
+        else {
+            return;
+        };
+        let mut task = crate::cli_tasks::get(&self.data_root, &session_id);
+        task.mode = mode;
+        match crate::cli_tasks::save(&self.data_root, &session_id, &task) {
+            Ok(()) => {
+                self.view.cli_task_mode = mode;
+                let running = self
+                    .dock
+                    .terminal_tabs(&self.dock_scope())
+                    .iter()
+                    .any(|tab| self.terminals.contains_key(&tab.id.get()));
+                self.view.status = if running {
+                    format!("{}: se aplica al reiniciar la CLI", mode.label())
+                } else {
+                    format!("{}: se aplica al iniciar la CLI", mode.label())
+                };
+            }
+            Err(error) => self.view.status = error,
+        }
+    }
+
     fn follow_cli_task_title(&mut self) -> bool {
         if !crate::view::cli_task(&self.view) {
             return false;
@@ -14757,20 +14874,27 @@ impl AgentsWindow {
                     });
                     // A site the user decided about is answered as they said,
                     // for the turn that is running in the conversation shown.
-                    let decided = (self.view.running
-                        && self.view.selected_session.as_deref() == Some(event.session_id.as_str()))
-                    .then(|| self.agent_browser_site(&tool_call.name, &tool_call.arguments.to_string()))
-                    .flatten()
-                    .and_then(|site| {
-                        let access = self.browser_sites.access(&site);
-                        (access != crate::browser_sites::SiteAccess::Allow
-                            || crate::browser_runtime::browser_site_auto_allow_is_bound(
-                                &tool_call.name, &tool_call.arguments, Some(&site),
-                            )).then_some(access)
-                    })
-                    .filter(|access| *access != crate::browser_sites::SiteAccess::Ask);
-                    if let Some(access) = decided {
-                        self.answer_permission(request_id, access == crate::browser_sites::SiteAccess::Allow);
+                    let own = self.view.running
+                        && self.view.selected_session.as_deref() == Some(event.session_id.as_str());
+                    let decided = own
+                        .then(|| self.agent_browser_site(&tool_call.name, &tool_call.arguments.to_string()))
+                        .flatten()
+                        .and_then(|site| {
+                            let access = self.browser_sites.access(&site);
+                            (access != crate::browser_sites::SiteAccess::Allow
+                                || crate::browser_runtime::browser_site_auto_allow_is_bound(
+                                    &tool_call.name, &tool_call.arguments, Some(&site),
+                                )).then_some(access)
+                        })
+                        .filter(|access| *access != crate::browser_sites::SiteAccess::Ask)
+                        .map(|access| access == crate::browser_sites::SiteAccess::Allow)
+                        .or_else(|| {
+                            (own && matches!(&self.active_run, Some(ActiveRun::Acp(_))))
+                                .then(|| self.acp_preset_answer(&tool_call.name))
+                                .flatten()
+                        });
+                    if let Some(allow) = decided {
+                        self.answer_permission(request_id, allow);
                     } else {
                         let waiting = if openide_harness::is_user_interaction_tool(&tool_call.name) {
                             "Esperando tu respuesta".to_owned()
@@ -15217,6 +15341,20 @@ impl AgentsWindow {
                     self.environment_dirty = true;
                 }
                 match &event.kind {
+                    // The preset answers an ACP agent off screen as it does on it.
+                    AgentEventKind::PermissionRequested { request_id, tool_call }
+                        if matches!(self.parked_runs[index].run, ActiveRun::Acp(_))
+                            && self.acp_preset_answer(&tool_call.name).is_some() =>
+                    {
+                        let allow = self.acp_preset_answer(&tool_call.name) == Some(true);
+                        self.parked_runs[index].run.resolve_permission(
+                            request_id,
+                            if allow { PermissionChoice::Allow } else { PermissionChoice::Deny },
+                        );
+                        self.parked_runs[index]
+                            .pending_permissions
+                            .retain(|permission| permission.request_id != *request_id);
+                    }
                     AgentEventKind::PermissionRequested { tool_call, .. } => {
                         let waiting = if openide_harness::is_user_interaction_tool(&tool_call.name) {
                             "Esperando tu respuesta".to_owned()
@@ -15289,10 +15427,45 @@ impl AgentsWindow {
         changed
     }
 
+    /// The CLI sessions found after a start, kept for the next one.
+    fn poll_cli_session_probes(&mut self) -> bool {
+        let root = self.data_root.clone();
+        let mut changed = false;
+        self.cli_session_probes.retain(|(task_id, probe)| match probe.try_recv() {
+            Ok(found) => {
+                if let Some(session) = found {
+                    let mut task = crate::cli_tasks::get(&root, task_id);
+                    task.session = Some(session);
+                    let _ = crate::cli_tasks::save(&root, task_id, &task);
+                }
+                changed = true;
+                false
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => true,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => false,
+        });
+        changed
+    }
+
     fn leave_unread(&self, session_id: &str) {
         if let Some(store) = &self.store {
             let _ = store.mark_unread(session_id);
         }
+    }
+
+    /// Goes on with an ACP turn the app was closed in the middle of: the
+    /// agent gets its session back when it can reopen it, and is told.
+    fn resume_acp_turn(&mut self, events: &[AgentEvent]) {
+        if !acp_turn_unfinished(events) {
+            self.view.status = "La sesión no tiene un turno interrumpido".to_owned();
+            return;
+        }
+        if !self.view.prompt.trim().is_empty() {
+            self.view.status = "Enviá o borrá el mensaje escrito antes de reanudar".to_owned();
+            return;
+        }
+        self.view.prompt = ACP_CONTINUATION.to_owned();
+        self.start_acp_run();
     }
 
     fn start_resume(&mut self) {
@@ -15326,6 +15499,10 @@ impl AgentsWindow {
         };
         let stored = match store.load(&session_id) {
             Ok(Some(stored)) if stored.session.backend == "native" => stored,
+            Ok(Some(stored)) if stored.session.backend.starts_with(crate::acp_run::ACP_BACKEND) => {
+                self.resume_acp_turn(&stored.events);
+                return;
+            }
             Ok(Some(_)) => {
                 self.view.status = "Esta sesión usa un agente CLI".to_owned();
                 return;
@@ -18118,6 +18295,9 @@ impl AgentsWindow {
         if matches!(&action, UiAction::Clicked { id } if id != "ide_agent_new_toggle") {
             self.view.ide.agent_new_open = false;
         }
+        if matches!(&action, UiAction::Clicked { id } if id != "cli_mode_toggle") {
+            self.view.cli_mode_open = false;
+        }
         let addon_settings = match &action {
             UiAction::Clicked { id } => match id.as_str() {
                 "plugins_open" | "marketplace_tab:plugins" => Some(SettingsPage::Plugins),
@@ -19580,6 +19760,17 @@ impl AgentsWindow {
             }
             UiAction::Clicked { id } if id == "dock_add_dismiss" => {
                 self.view.show_dock_add_menu = false;
+            }
+            UiAction::Clicked { id } if id == "cli_mode_toggle" => {
+                self.view.cli_mode_open = !self.view.cli_mode_open;
+            }
+            UiAction::Clicked { id } if id == "cli_mode_dismiss" => {
+                self.view.cli_mode_open = false;
+            }
+            UiAction::Clicked { id } if crate::cli_tasks::CliMode::from_action(&id).is_some() => {
+                if let Some(mode) = crate::cli_tasks::CliMode::from_action(&id) {
+                    self.set_cli_task_mode(mode);
+                }
             }
             UiAction::Clicked { id } if id == "cli_task_restart" => {
                 if crate::view::cli_task(&self.view) {
@@ -21739,7 +21930,10 @@ impl AgentsWindow {
                 self.commit_agent_tool_settings(next, message);
             }
             UiAction::Clicked { id } if id == "turn_mode_toggle" => {
-                if self.view.selected_backend == "native" && !self.view.running {
+                if (self.view.selected_backend == "native"
+                    || crate::acp_run::agent_id(&self.view.selected_backend).is_some())
+                    && !self.view.running
+                {
                     self.view.turn_mode = match self.view.turn_mode {
                         TurnMode::Plan => TurnMode::Build,
                         TurnMode::Build => TurnMode::Plan,
@@ -22596,6 +22790,7 @@ impl eframe::App for AgentsWindow {
             | self.poll_automations()
             | self.poll_background_resumes()
             | self.poll_parked_runs()
+            | self.poll_cli_session_probes()
             | self.poll_compact()
             | self.poll_resume()
             | self.poll_child_recovery()

@@ -34,6 +34,24 @@ says 0.1.0.
   again shows the live turn with its Stop; the message of a turn that failed
   off screen goes back to that task's draft. Quitting with such turns asks
   first
+- A command prefix allowed in Settings → Comandos runs without asking while
+  the agent is in «Pedir aprobación»; a command's approval card offers
+  «Permitir siempre» for its prefix, which saves that rule and allows the
+  call for the session
+- A CLI task starts its CLI with the permissions chosen in its header — ask,
+  read-only (plan), or allow all — through each CLI's own flags, and starts
+  it again on the CLI's own conversation: Claude Code under the session
+  openADE names for it, Codex and opencode under the session found after
+  their first start
+- ACP agents take the composer's Plan mode, through their own plan mode when
+  they have one, and its presets: «Permitir todo» answers their requests and
+  «Sólo lectura» refuses their edits and commands; a turn the app was closed
+  in the middle of is offered to go on
+- ACP agents wear their company's mark on the home screen, the new-task
+  menu, the composer and the task list: Grok Build is Grok's, Gemini CLI is
+  Gemini's, and so on for every agent the brand catalog names exactly
+- The context panel no longer names a model when there is none to send to:
+  the saved id was shown as if it were connected
 - A Graph tab in the dock draws the workspace's files, and their imports,
   calls and type uses, as a force-directed graph: hovering a file lights up
   its neighbours, nodes can be dragged, the view zooms and pans, and a click

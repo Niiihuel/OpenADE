@@ -163,7 +163,7 @@ fn cli_entry(state: &ViewState) -> Option<Element> {
     }));
     row.extend(state.acp_agents.iter().map(|agent| {
         let button = openide_ui::Button::new(format!("acp_task:{}", agent.id), &agent.name, theme::component_palette())
-            .icon(crate::provider_icons::icon_for_acp_agent(&agent.name))
+            .icon(crate::provider_icons::icon_for_acp_agent(&agent.id, &agent.name))
             .variant(openide_ui::ButtonVariant::Ghost)
             .size(openide_ui::ControlSize::Compact)
             .tooltip(format!("Nueva tarea con {} en la conversación", agent.name));

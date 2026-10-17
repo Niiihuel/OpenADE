@@ -3,8 +3,8 @@
 //! the approval cards and Stop work for them unchanged.
 
 use openide_acp::schema::{
-    ConfigOption, ConfigValue, ContentBlock, PermissionOption, PermissionOptionKind, PermissionRequest, PlanEntryStatus, SessionUpdate, StopReason,
-    ToolCallContent, ToolCallStatus, ToolKind,
+    ConfigOption, ConfigValue, ContentBlock, PermissionOption, PermissionOptionKind, PermissionRequest, PlanEntryStatus, SessionModeState,
+    SessionUpdate, StopReason, ToolCallContent, ToolCallStatus, ToolKind,
 };
 use openide_acp::registry::{self, BinaryTarget, Launch, Registry};
 use openide_acp::{AgentCommand, Connection, Event, PermissionAnswer};
@@ -409,6 +409,8 @@ pub(crate) struct AcpAgent {
     alive: Arc<AtomicBool>,
     /// The session's options as the agent last told them.
     config: Arc<Mutex<Vec<ConfigOption>>>,
+    /// The session's modes, for an agent that tells them apart from options.
+    modes: Arc<Mutex<Option<SessionModeState>>>,
     /// The agent takes images in a prompt.
     pub(crate) images: bool,
     pub(crate) name: String,
@@ -428,18 +430,22 @@ impl AcpAgent {
         let turn: Arc<Mutex<Option<Turn>>> = Arc::default();
         let alive = Arc::new(AtomicBool::new(true));
         let config: Arc<Mutex<Vec<ConfigOption>>> = Arc::default();
-        let relay = (turn.clone(), alive.clone(), config.clone());
-        let connection = Connection::spawn(command, cwd, move |event| relay_event(event, &relay.0, &relay.1, &relay.2))
+        let modes: Arc<Mutex<Option<SessionModeState>>> = Arc::default();
+        let relay = (turn.clone(), alive.clone(), config.clone(), modes.clone());
+        let connection = Connection::spawn(command, cwd, move |event| relay_event(event, &relay.0, &relay.1, &relay.2, &relay.3))
             .map(Arc::new)
             .map_err(|error| error.to_string())?;
         let initialized = connection.initialize("openADE", env!("CARGO_PKG_VERSION")).map_err(|error| error.to_string())?;
         let reopened = resume.filter(|_| initialized.agent_capabilities.load_session).and_then(|session| {
-            connection.load_session(session, cwd, json!([])).ok().map(|loaded| (session.to_owned(), loaded.config_options))
+            connection
+                .load_session(session, cwd, json!([]))
+                .ok()
+                .map(|loaded| (session.to_owned(), loaded.config_options, loaded.modes))
         });
-        let (acp_session, options) = match reopened {
+        let (acp_session, options, session_modes) = match reopened {
             Some(reopened) => reopened,
             None => match connection.new_session(cwd, json!([])) {
-                Ok(session) => (session.session_id, session.config_options),
+                Ok(session) => (session.session_id, session.config_options, session.modes),
                 Err(openide_acp::Error::Rpc { message, .. }) if message.to_lowercase().contains("auth") => {
                     let method = initialized
                         .auth_methods
@@ -451,7 +457,7 @@ impl AcpAgent {
                     sign_in(&connection);
                     connection.authenticate(&method.id).map_err(|error| error.to_string())?;
                     let session = connection.new_session(cwd, json!([])).map_err(|error| error.to_string())?;
-                    (session.session_id, session.config_options)
+                    (session.session_id, session.config_options, session.modes)
                 }
                 Err(error) => return Err(error.to_string()),
             },
@@ -459,8 +465,9 @@ impl AcpAgent {
         if let Some(options) = options {
             *lock(&config) = options;
         }
+        *lock(&modes) = session_modes;
         let images = initialized.agent_capabilities.prompt_capabilities.image;
-        Ok(Self { connection, acp_session, turn, alive, config, images, name: name.to_owned() })
+        Ok(Self { connection, acp_session, turn, alive, config, modes, images, name: name.to_owned() })
     }
 
     /// Sets the option of each category to its value, unless it has it
@@ -489,12 +496,80 @@ impl AcpAgent {
     }
 }
 
+/// Whether a mode the agent names is its plan-like one: looking and
+/// proposing, without edits.
+fn plan_like(id: &str, name: &str) -> bool {
+    let text = format!("{id} {name}").to_lowercase();
+    ["plan", "architect", "ask"].iter().any(|word| text.contains(word))
+}
+
+impl AcpAgent {
+    /// Puts the agent in its plan-like mode for a Plan turn, or out of it for
+    /// a Build one, through whichever the agent speaks: a `mode` option or
+    /// the session's modes. `Ok(false)` says the agent has no such mode.
+    fn set_turn_mode(&self, mode: TurnMode) -> Result<bool, String> {
+        let want_plan = mode == TurnMode::Plan;
+        let option = lock(&self.config).iter().find(|option| option.category.as_deref() == Some("mode")).cloned();
+        if let Some(option) = option {
+            let ConfigValue::Select { current_value, options } = &option.value else {
+                return Ok(!want_plan);
+            };
+            let all = options.all();
+            let current_plan = all.iter().find(|choice| choice.value == *current_value).is_some_and(|choice| plan_like(&choice.value, &choice.name));
+            let Some(target) = all.iter().find(|choice| plan_like(&choice.value, &choice.name) == want_plan) else {
+                return Ok(!want_plan);
+            };
+            if current_plan != want_plan {
+                let updated = self
+                    .connection
+                    .set_config_option(&self.acp_session, &option.id, &target.value)
+                    .map_err(|error| format!("{} no aceptó el modo {}: {error}", self.name, target.name))?;
+                if !updated.is_empty() {
+                    *lock(&self.config) = updated;
+                }
+            }
+            return Ok(true);
+        }
+        let Some(modes) = lock(&self.modes).clone() else {
+            return Ok(!want_plan);
+        };
+        let current_plan = modes
+            .available_modes
+            .iter()
+            .find(|mode| mode.id == modes.current_mode_id)
+            .is_some_and(|mode| plan_like(&mode.id, &mode.name));
+        let Some(target) = modes.available_modes.iter().find(|mode| plan_like(&mode.id, &mode.name) == want_plan) else {
+            return Ok(!want_plan);
+        };
+        if current_plan != want_plan {
+            self.connection
+                .set_mode(&self.acp_session, &target.id)
+                .map_err(|error| format!("{} no aceptó el modo {}: {error}", self.name, target.name))?;
+            if let Some(modes) = lock(&self.modes).as_mut() {
+                modes.current_mode_id = target.id.clone();
+            }
+        }
+        Ok(true)
+    }
+}
+
 /// Passes the agent's messages to the turn that is running; between turns
 /// there is nobody to tell, as when a reopened session replays its history.
-fn relay_event(event: Event, turn: &Mutex<Option<Turn>>, alive: &AtomicBool, config: &Mutex<Vec<ConfigOption>>) {
+fn relay_event(
+    event: Event,
+    turn: &Mutex<Option<Turn>>,
+    alive: &AtomicBool,
+    config: &Mutex<Vec<ConfigOption>>,
+    modes: &Mutex<Option<SessionModeState>>,
+) {
     let mut slot = lock(turn);
     match (event, slot.as_mut()) {
         (Event::Update { update: SessionUpdate::ConfigOptionUpdate { config_options }, .. }, _) => *lock(config) = config_options,
+        (Event::Update { update: SessionUpdate::CurrentModeUpdate { current_mode_id }, .. }, _) => {
+            if let Some(modes) = lock(modes).as_mut() {
+                modes.current_mode_id = current_mode_id;
+            }
+        }
         (Event::Update { update, .. }, Some(turn)) => turn.update(update),
         (Event::Permission { request, permission }, Some(turn)) => turn.ask(request, permission),
         (Event::Closed { .. }, _) => alive.store(false, Ordering::Release),
@@ -580,6 +655,8 @@ pub(crate) struct TurnRequest {
     pub(crate) images: Vec<UserImage>,
     /// The value wanted for the option of each category, applied first.
     pub(crate) choices: Vec<(&'static str, String)>,
+    /// Plan puts the agent in its plan-like mode, when it has one.
+    pub(crate) mode: TurnMode,
 }
 
 impl AcpRunHandle {
@@ -650,13 +727,22 @@ fn run_turn(request: TurnRequest, slot: &AgentSlot, sender: Sender<AgentEvent>, 
     });
     let emit = |kind| opening.borrow_mut().emit(kind);
     emit(AgentEventKind::SessionStarted { workspace: request.start.workspace.clone() });
-    if !request.images.is_empty() {
-        // So the transcript shows them on the message, as for the native agent.
-        emit(AgentEventKind::TurnAdmittedWithImages {
-            turn_id: format!("acp-{}", request.sequence_start),
+    // Admitted as the native agent's turns are: the transcript shows the
+    // images on the message, and the mode is read back when the task opens.
+    let turn_id = format!("acp-{}", request.sequence_start);
+    if request.images.is_empty() {
+        emit(AgentEventKind::TurnAdmitted {
+            turn_id,
             prompt: request.prompt.clone(),
             model: request.start.agent_name.clone(),
-            mode: TurnMode::Build,
+            mode: request.mode,
+        });
+    } else {
+        emit(AgentEventKind::TurnAdmittedWithImages {
+            turn_id,
+            prompt: request.prompt.clone(),
+            model: request.start.agent_name.clone(),
+            mode: request.mode,
             images: request.images.clone(),
         });
     }
@@ -676,7 +762,20 @@ fn run_turn(request: TurnRequest, slot: &AgentSlot, sender: Sender<AgentEvent>, 
             }
         }
     };
-    let started = slot.ensure(&request.start, Some(&signing_in as &dyn Fn())).and_then(|agent| agent.choose(&request.choices).map(|()| agent));
+    let started = slot
+        .ensure(&request.start, Some(&signing_in as &dyn Fn()))
+        .and_then(|agent| agent.choose(&request.choices).map(|()| agent))
+        .and_then(|agent| {
+            agent.set_turn_mode(request.mode).map(|has_mode| {
+                if !has_mode {
+                    emit(AgentEventKind::HostNotice {
+                        code: "acp_no_plan_mode".into(),
+                        detail: format!("{} no tiene un modo plan: sigue en su modo normal", agent.name),
+                    });
+                }
+                agent
+            })
+        });
     let mut opening = opening.into_inner();
     let agent = match started {
         Ok(agent) => agent,
