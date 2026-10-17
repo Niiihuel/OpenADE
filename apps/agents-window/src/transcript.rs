@@ -3653,7 +3653,10 @@ pub(crate) fn host_notice_text(code: &str, detail: &str) -> String {
         ),
         openide_core::NOTICE_MCP_UNAVAILABLE => format!(
             "{}. El turno sigue sin ese servidor",
-            detail.split_once('\n').map_or(detail, |(_, why)| why)
+            detail
+                .split_once('\n')
+                .map_or(detail, |(_, why)| why)
+                .trim_end_matches('.')
         ),
         _ => detail.to_owned(),
     }

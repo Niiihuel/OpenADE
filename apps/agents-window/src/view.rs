@@ -7279,17 +7279,14 @@ pub(crate) mod tests {
                     delta_y: -180.0,
                 });
             }
-            assert!(
-                tree.scroll_offset(scroll_id) > 0.0,
-                "metadata must scroll at {width}"
-            );
+            // The body is sized to its content: it scrolls only where it has to.
             for exact in [
-                "131072 tokens",
-                "120000 tokens",
-                "8192 tokens",
-                "US$ 1.2500",
-                "US$ 4.5000",
-                "US$ 0.2500",
+                "131 072",
+                "120 000",
+                "8 192",
+                "US$ 1.25",
+                "US$ 4.5",
+                "US$ 0.25",
             ] {
                 assert!(observed.contains(exact), "{exact} at {width}");
             }

@@ -126,7 +126,13 @@ pub struct Credential {
     pub oauth: bool,
     pub disabled: bool,
     pub welcome_seen: bool,
+    /// The name this app registered its OAuth client under; a record from
+    /// before the rename has none, and registers again.
+    pub agent_name: Option<String>,
 }
+
+/// What ChatGPT shows as the agent asking for access.
+pub const AGENT_NAME: &str = "openADE";
 
 pub fn credential_dir(root: &Path) -> Result<PathBuf, String> {
     let dir = root.join("provider-credentials");

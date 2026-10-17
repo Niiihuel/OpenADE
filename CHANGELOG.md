@@ -66,6 +66,20 @@ says 0.1.0.
   and Grok Build
 - The composer's model selector wears a generic mark; the providers keep
   theirs inside the list
+- A model's details are chips for what it takes and does and tiles for its
+  limits and prices, sized to their content; a provider not yet connected
+  shows one row inviting the connection instead of an empty catalog and an
+  error
+- The API key of a provider connected by key enables Conectar as soon as
+  it is typed; before, only OpenCode's and NVIDIA's did
+- The usage card says the figure and its window on one line, the renewal
+  beside the window's name, what is known of the measurement in one line,
+  and its button in the header
+- The Codex connection registers itself with ChatGPT as openADE: a record
+  from before the rename registers again on the next sign-in
+- The Graph tab opens with the whole graph in view and keeps it so until
+  the camera is moved
+- A notice about an MCP server left out no longer ends in two periods
 - A Graph tab in the dock draws the workspace's files, and their imports,
   calls and type uses, as a force-directed graph: hovering a file lights up
   its neighbours, nodes can be dragged, the view zooms and pans, and a click

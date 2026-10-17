@@ -22243,7 +22243,8 @@ impl AgentsWindow {
                             connect.phase,
                             crate::provider_connections::ConnectPhase::Entry
                                 | crate::provider_connections::ConnectPhase::Error
-                        ) && matches!(connect.provider_id.as_str(), "opencode" | "nvidia")
+                        ) && crate::provider_connections::connectable(&connect.provider_id)
+                            && !matches!(connect.provider_id.as_str(), "codex" | "openrouter")
                         {
                             self.provider_key_draft = value.chars().take(4096).collect();
                             connect.key_entered = !self.provider_key_draft.trim().is_empty();

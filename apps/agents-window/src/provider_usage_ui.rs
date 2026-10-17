@@ -362,26 +362,23 @@ fn window_row(window: &UsageWindow, now: u64) -> Element {
         ),
         _ => format!("{} usado", amount(window.used, window.unit)),
     };
-    let mut rows = vec![Element::row(vec![
-        Text::new(&window.label, theme::component_palette())
-            .truncate()
-            .render()
-            .flex(1.0),
-        Text::new(value, theme::component_palette())
-            .truncate()
-            .render(),
-    ])
-    .gap(8.0)];
-    if let Some(track) = progress(window) {
-        rows.push(track);
-    }
+    // The window's name and its renewal share the line above the bar.
+    let mut head = vec![Text::new(&window.label, theme::component_palette()).truncate().render()];
     if let Some(reset) = reset_label(window, now) {
-        rows.push(
-            Text::new(reset, theme::component_palette())
+        head.push(
+            Text::new(format!("· {reset}"), theme::component_palette())
                 .role(TextRole::Small)
                 .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
-                .render(),
+                .truncate()
+                .render()
+                .centered_y(),
         );
+    }
+    head.push(Element::spacer().flex(1.0));
+    head.push(Text::new(value, theme::component_palette()).truncate().render());
+    let mut rows = vec![Element::row(head).gap(6.0)];
+    if let Some(track) = progress(window) {
+        rows.push(track);
     }
     Element::column(rows).gap(6.0)
 }
@@ -541,6 +538,14 @@ fn usage_card(
             header.push(plan_badge(plan).centered_y());
         }
     }
+    // The account's action sits in the header; a narrow card keeps it below.
+    let mut action = action;
+    if width >= 420.0 {
+        if let Some(action) = action.take() {
+            // Its own height: the row would stretch it to a fractional one.
+            header.push(action.size(None, Some(28.0)));
+        }
+    }
     let mut rows = vec![Element::row(header).gap(6.0)];
     if width < 420.0 {
         if let Some(plan) = &snapshot.plan_label {
@@ -553,8 +558,9 @@ fn usage_card(
     let measured = !snapshot.windows.is_empty() || !snapshot.balances.is_empty();
     if measured {
         let (value, label, color) = headline(snapshot);
+        // The figure and what it is, on one line.
         rows.push(
-            Element::column(vec![
+            Element::row(vec![
                 Text::new(value, theme::component_palette())
                     .role(TextRole::Display)
                     .ink(color)
@@ -562,9 +568,10 @@ fn usage_card(
                 Text::new(label, theme::component_palette())
                     .role(TextRole::Small)
                     .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
-                    .render(),
+                    .render()
+                    .centered_y(),
             ])
-            .gap(4.0),
+            .gap(8.0),
         );
         for balance in snapshot.balances.iter().skip(1) {
             rows.push(
@@ -604,21 +611,15 @@ fn usage_card(
     }
     // The model count shares the same authoritative catalog as Settings and
     // the composer. A missing catalog stays absent, never a invented count.
+    // What is known of the measurement, in one line.
+    let mut facts = Vec::new();
     if !compact {
         if let Some(provider) = state
             .catalog
             .as_ref()
             .and_then(|catalog| catalog.providers.get(&snapshot.provider_id))
         {
-            notes.push(
-                Text::new(
-                    format!("{} modelos en tu catálogo", provider.models.len()),
-                    theme::component_palette(),
-                )
-                .role(TextRole::Small)
-                .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
-                .render(),
-            );
+            facts.push(format!("{} modelos en tu catálogo", provider.models.len()));
         }
     }
     if snapshot.fetched_at_ms.is_some()
@@ -627,8 +628,11 @@ fn usage_card(
             ProviderUsageStatus::Loading | ProviderUsageStatus::Error
         )
     {
+        facts.push(updated(snapshot, now));
+    }
+    if !facts.is_empty() {
         notes.push(
-            Text::new(updated(snapshot, now), theme::component_palette())
+            Text::new(facts.join(" · "), theme::component_palette())
                 .role(TextRole::Small)
                 .ink(status_color)
                 .render(),
@@ -2301,9 +2305,9 @@ mod tests {
                 .collect();
             assert_eq!(actions.len(), provider_connections::PROVIDERS.len());
             for action in &actions {
-                assert_eq!(
-                    action.rect.height,
-                    28.0,
+                // Pixel snapping at a fractional offset is float noise.
+                assert!(
+                    (action.rect.height - 28.0).abs() < 0.01,
                     "{width}px {}: {:?}",
                     action.id,
                     action.rect

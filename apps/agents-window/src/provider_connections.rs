@@ -28,7 +28,7 @@ use openide_connections::{client, credential_dir, json_response, load, lock, now
 #[cfg(test)]
 use openide_connections::key_provider;
 pub(crate) use openide_connections::{
-    codex_token_source, connectable, key_connectable, read_key, refresh_due, service, supported, KEY_PROVIDERS, PROVIDERS,
+    codex_token_source, connectable, read_key, refresh_due, service, supported, KEY_PROVIDERS, PROVIDERS,
 };
 use openide_connections::refresh_codex;
 
@@ -347,7 +347,12 @@ fn oauth(
                 .append_pair("state", &state)
                 .append_pair("nonce", &nonce)
                 .append_pair("ext_agent_host_id", &host_id(root)?);
-            if let Some(client_id) = old.as_ref().and_then(|r| r.client_id.as_deref()) {
+            // A client registered under an earlier name is left behind:
+            // ChatGPT shows the name only at registration.
+            let current = old
+                .as_ref()
+                .filter(|r| r.agent_name.as_deref() == Some(openide_connections::AGENT_NAME));
+            if let Some(client_id) = current.and_then(|r| r.client_id.as_deref()) {
                 query.append_pair("client_id", client_id);
                 // Account selection stays in the browser; identity is checked after return.
                 if let Some(email) = old.as_ref().and_then(|r| r.email.as_deref()) {
@@ -404,7 +409,11 @@ fn oauth(
             ..Default::default()
         }
     } else {
-        let prior_client = old.as_ref().and_then(|r| r.client_id.as_deref());
+        // Only a client registered under the current name is expected back.
+        let prior_client = old
+            .as_ref()
+            .filter(|r| r.agent_name.as_deref() == Some(openide_connections::AGENT_NAME))
+            .and_then(|r| r.client_id.as_deref());
         let issued = callback
             .get("client_id")
             .map(String::as_str)
@@ -446,6 +455,7 @@ fn oauth(
             version: 1,
             provider_id: id.into(),
             client_id: Some(issued.into()),
+            agent_name: Some(openide_connections::AGENT_NAME.into()),
             subject: Some(identity.sub),
             email: identity.email,
             id_token: Some(id_token.into()),
@@ -646,7 +656,7 @@ mod api_provider_tests {
             ("mistral", "MISTRAL_API_KEY"),
             ("groq", "GROQ_API_KEY"),
         ] {
-            assert!(key_connectable(provider) && !supported(provider), "{provider}");
+            assert!(openide_connections::key_connectable(provider) && !supported(provider), "{provider}");
             assert_eq!(key_provider(env), Some(provider));
             assert_eq!(read_key(root.path(), env), None);
             save(root.path(), &Credential {

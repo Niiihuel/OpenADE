@@ -708,6 +708,9 @@ Claude Code ya tiene una línea de estado configurada	Claude Code already has a 
 Claude Code, Codex y otras CLIs iniciadas desde openADE reciben las herramientas activadas abajo. Desactivado, ninguna llamada externa llega a openADE.	Claude Code, Codex and other CLIs started from openADE get the tools turned on below. When it is off, no outside call reaches openADE.
 Clave de API	API key
 Clave de firma inválida	Invalid signing key
+Clave de la API de Anthropic, pago por uso. Tu suscripción de Claude se usa desde Claude Code.	Anthropic API key, paid per use. Your Claude subscription is used through Claude Code.
+Clave de la API de OpenAI, pago por uso. Tu plan de ChatGPT se usa desde la conexión de Codex.	OpenAI API key, paid per use. Your ChatGPT plan is used through the Codex connection.
+Clave de la API de xAI, pago por uso. Tu suscripción de Grok se usa desde Grok Build.	xAI API key, paid per use. Your Grok subscription is used through Grok Build.
 Clave de {} guardada. El acceso se comprobará al usar un modelo.	{} key saved. Access will be checked when a model is used.
 Clave guardada	Key saved
 Claves de firma de ChatGPT inválidas	Invalid ChatGPT signing keys
@@ -850,6 +853,7 @@ Conectar otra cuenta	Connect another account
 Conectar proveedor	Connect provider
 Conectá el proveedor del modelo para generar el mensaje.	Connect the model provider to generate the message.
 Conectá una cuenta de GitHub para crear el pull request	Connect a GitHub account to create the pull request
+Conectá {} para ver sus modelos	Connect {} to see its models
 Conexiones a herramientas externas, locales o por HTTP.	Connections to external tools, local or over HTTP.
 Conexión	Connection
 Conexión MCP copiada; estará disponible mientras esta pestaña permanezca abierta	MCP connection copied; it will be available while this tab stays open
@@ -2192,9 +2196,6 @@ Esta automatización conserva su perfil original de sólo lectura. Aquí puedes 
 Esta automatización ya se está ejecutando	This automation is already running
 Esta carpeta no es un repositorio de Git	This folder is not a Git repository
 Esta carpeta no es un repositorio de Git.	This folder is not a Git repository.
-Esta clave es para la API de Anthropic y se paga por uso. Tu suscripción de Claude (Pro o Max) se usa desde Claude Code: iniciá sesión con `claude auth login` y abrí una tarea de Claude Code. Anthropic no la ofrece a otras aplicaciones.	This key is for the Anthropic API and is paid per use. Your Claude subscription (Pro or Max) is used through Claude Code: sign in with `claude auth login` and open a Claude Code task. Anthropic does not offer it to other applications.
-Esta clave es para la API de OpenAI y se paga por uso. Tu plan de ChatGPT se usa desde la conexión de Codex.	This key is for the OpenAI API and is paid per use. Your ChatGPT plan is used through the Codex connection.
-Esta clave es para la API de xAI y se paga por uso. Tu suscripción de Grok se usa desde Grok Build, que inicia sesión con tu cuenta de xAI en el navegador con el primer mensaje.	This key is for the xAI API and is paid per use. Your Grok subscription is used through Grok Build, which signs in with your xAI account in the browser on the first message.
 Esta clave no permite consultar una suscripción Go. Revisa tu cuenta de OpenCode.	This key cannot query a Go subscription. Check your OpenCode account.
 Esta conexión no tiene permiso para consultar el uso.	This connection does not have permission to query usage.
 Esta conexión permite una clave opcional.	This connection allows an optional key.
@@ -2394,6 +2395,7 @@ Fuentes	Sources
 Fuentes y herramientas	Sources and tools
 Funciona con Claude Code y Codex iniciados desde el menú de perfiles de la terminal. Los subagentes de openADE todavía no se ofrecen a una CLI externa.	Works with Claude Code and Codex started from the terminal's profile menu. openADE subagents are not offered to an external CLI yet.
 Funciona con Claude Code y Codex iniciados desde el menú de perfiles de la terminal. Los subagentes todavía no se ofrecen: su interruptor se guarda para cuando estén disponibles.	Works with Claude Code and Codex started from the terminal profiles menu. Subagents are not offered yet: their switch is saved for when they are available.
+Genera {}	Generates {}
 Generación de imagen	Image generation
 Generación de imágenes	Image generation
 Generación de imágenes guardada	Image generation saved
@@ -2471,6 +2473,7 @@ HEAD separado: no hay una rama para buscar PR	Detached HEAD: there is no branch 
 HTTP sólo se permite en localhost	HTTP is only allowed on localhost
 HTTPS; HTTP sólo para localhost o loopback. Sin credenciales, búsqueda ni fragmento.	HTTPS; HTTP only for localhost or loopback. No credentials, query or fragment.
 Habilitado · sin probar	Enabled · untested
+Hace	Does
 Hacer push	Push
 Hay acciones con identificadores duplicados.	Some actions have duplicate identifiers.
 Hay archivos sin guardar	There are unsaved files
@@ -3219,6 +3222,7 @@ Los límites de esta conexión se administran en tu plan de ChatGPT	This connect
 Los límites de la automatización difieren del snapshot original	The automation limits differ from the original snapshot
 Los límites y el saldo pertenecen a cada proveedor. El contexto de una conversación y los precios del catálogo no representan el consumo de tu suscripción.	Limits and balance belong to each provider. A conversation's context and catalog prices do not represent your subscription usage.
 Los mensajes quitados ya no están disponibles.	The removed messages are no longer available.
+Los modelos de tu cuenta aparecen aquí con la conexión hecha.	The models of your account appear here once connected.
 Los niveles que admite el modelo elegido. Más calidad tarda más y cuesta más.	The levels the chosen model supports. More quality takes longer and costs more.
 Los nuevos turnos nativos leen AGENTS.md o AGENTS.override.md y las skills activas del proyecto. Antes de consultar al modelo, se guarda una copia exacta de esas instrucciones adicionales; el motor compone también sus propias instrucciones de modo y herramientas.	New native turns read AGENTS.md or AGENTS.override.md and the project's active skills. Before querying the model, an exact copy of those additional instructions is saved; the engine also composes its own mode and tool instructions.
 Los perfiles de CLI no son válidos: {error}	The CLI profiles are not valid: {error}
@@ -3256,6 +3260,7 @@ Límites de salida inválidos: {error}	Invalid output limits: {error}
 Límites de tu última sesión de Claude Code.	Limits from your last Claude Code session.
 Límites de tu última sesión local de Codex.	Limits from your last local Codex session.
 Límites del proveedor	Provider limits
+Límites · tokens	Limits · tokens
 Línea:columna	Line:column
 MCP configurado para próximos turnos	MCP configured for upcoming turns
 MCP ejecutado	MCP executed
@@ -4394,6 +4399,7 @@ Recargar desde disco	Reload from disk
 Recargar página	Reload page
 Rechazada antes del efecto	Rejected before the effect
 Rechazar	Reject
+Recibe	Takes
 Recibiendo commits…	Pulling commits…
 Recibir (pull, solo avance rápido)	Pull (fast-forward only)
 Recibir {} de {upstream}	Pull {} from {upstream}
@@ -4872,6 +4878,7 @@ Sin conversación	No conversation
 Sin copia	No copy
 Sin copia guardada	No saved copy
 Sin crédito en {provider}	No credit on {provider}
+Sin datos	No data
 Sin datos de consumo disponibles	No usage data available
 Sin desglose	No breakdown
 Sin diferencias	No differences
@@ -5389,6 +5396,7 @@ abiertas	open
 abr	Apr
 activada	enabled
 actividad	activity
+actualizado	updated
 agente	agent
 agentes	agents
 ahora	now
@@ -5414,6 +5422,7 @@ cancelado	cancelled
 captura incompleta	incomplete capture
 casilla	checkbox
 catálogo models.dev	models.dev catalog
+catálogo sin verificar	catalog unverified
 celda	cell
 cerrada	closed
 comando	command
@@ -6041,3 +6050,4 @@ Volver al catálogo	Back to catalog
 {}: se aplica al reiniciar la CLI	{}: applies when the CLI is restarted
 «Permitir» ejecuta sin preguntar los comandos que empiezan exactamente con este prefijo cuando el agente está en «Pedir aprobación». No abre nada en «Sólo lectura», y un shell que ejecute otra cosa (sh -c, env) sigue preguntando.	«Allow» runs the commands that start exactly with this prefix without asking while the agent is in «Ask for approval». It opens nothing in «Read only», and a shell that runs something else (sh -c, env) still asks.
 ¿Salir con agentes en curso?	Exit with agents running?
+última actualización	last update
