@@ -186,6 +186,7 @@ mod tests {
 
     fn inputs() -> ComposerProps<'static> {
         ComposerProps {
+            agent_name: "",
             check_failure: None,
             pause_line: None,
             keymap_profile: crate::keymap::KeymapProfile::default(),

@@ -3,10 +3,10 @@
 //! the approval cards and Stop work for them unchanged.
 
 use openide_acp::schema::{
-    ContentBlock, PermissionOption, PermissionOptionKind, PermissionRequest, PlanEntryStatus, SessionUpdate, StopReason,
+    ConfigOption, ConfigValue, ContentBlock, PermissionOption, PermissionOptionKind, PermissionRequest, PlanEntryStatus, SessionUpdate, StopReason,
     ToolCallContent, ToolCallStatus, ToolKind,
 };
-use openide_acp::registry::{self, Launch, Registry};
+use openide_acp::registry::{self, BinaryTarget, Launch, Registry};
 use openide_acp::{AgentCommand, Connection, Event, PermissionAnswer};
 use openide_core::{
     AgentEvent, AgentEventKind, ModelStreamEvent, OutputStream, PermissionResolution, PlanSnapshot, PlanStep,
@@ -19,11 +19,12 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 /// A session whose backend starts with this runs that registry agent.
 pub(crate) const ACP_BACKEND: &str = "acp:";
 const SESSIONS_FILE: &str = "acp-sessions.json";
+const PACKAGES_FILE: &str = "acp-packages.json";
 /// Tool output kept for the transcript; the agent keeps the whole of it.
 const MAX_TOOL_OUTPUT: usize = 64 * 1024;
 
@@ -39,23 +40,110 @@ pub(crate) struct AcpOffer {
     pub(crate) command: AgentCommand,
 }
 
-/// The registry's agents installed here, run with the login shell's
-/// `search_path` so the agent's own commands find the user's tools.
-pub(crate) fn offers(registry: &Registry, search_path: Option<&OsStr>, installs: &Path) -> Vec<AcpOffer> {
+/// How a registry agent can run here, as Settings tells it.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum AcpSource {
+    /// The user's own install, at this path.
+    Own(PathBuf),
+    /// The vendor's build, downloaded by openADE.
+    Downloaded,
+    /// Through `npx` or `uvx`, which fetch the package on first use; it is
+    /// offered once the user turns it on.
+    Package { runner: String, package: String, on: bool },
+    /// The vendor's build, still to download into `dir`.
+    Download { target: BinaryTarget, dir: PathBuf },
+    /// Nothing on this machine runs it, for this reason.
+    Missing(&'static str),
+}
+
+/// One agent of the registry and how it runs here.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct AcpEntry {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) description: String,
+    pub(crate) version: String,
+    pub(crate) source: AcpSource,
+    command: Option<AgentCommand>,
+}
+
+impl AcpEntry {
+    /// The agent as the menus offer it, when it runs here now.
+    pub(crate) fn offer(&self) -> Option<AcpOffer> {
+        let command = self.command.clone()?;
+        Some(AcpOffer { id: self.id.clone(), name: self.name.clone(), command })
+    }
+}
+
+/// The registry's agents and how each runs here, with the login shell's
+/// `search_path` so an agent's own commands find the user's tools. Those a
+/// package runner fetches are offered only when listed in `packages_on`.
+pub(crate) fn catalog(registry: &Registry, search_path: Option<&OsStr>, installs: &Path, packages_on: &[String]) -> Vec<AcpEntry> {
     let find = |name: &str| search_path.and_then(|path| registry::find_in(path, name));
     registry
         .agents
         .iter()
-        .filter_map(|agent| match agent.launch(&find, installs)? {
-            Launch::Local(mut command) => {
+        .map(|agent| {
+            let (source, command) = match agent.launch(&find, installs) {
+                Some(Launch::Local(command)) if command.program.starts_with(installs) => (AcpSource::Downloaded, Some(command)),
+                Some(Launch::Local(command)) => (AcpSource::Own(command.program.clone()), Some(command)),
+                Some(Launch::Package(command)) => {
+                    let runner = command.program.file_name().and_then(OsStr::to_str).unwrap_or("npx").to_owned();
+                    let target = if runner == "uvx" { &agent.distribution.uvx } else { &agent.distribution.npx };
+                    let package = target.as_ref().map(|target| target.package.clone()).unwrap_or_default();
+                    let on = packages_on.contains(&agent.id);
+                    (AcpSource::Package { runner, package, on }, on.then_some(command))
+                }
+                Some(Launch::Binary { target, dir }) => (AcpSource::Download { target, dir }, None),
+                None if agent.distribution.npx.is_some() => (AcpSource::Missing("Necesita Node.js (npx) en tu PATH"), None),
+                None if agent.distribution.uvx.is_some() => (AcpSource::Missing("Necesita uv (uvx) en tu PATH"), None),
+                None => (AcpSource::Missing("No hay una versión para este sistema"), None),
+            };
+            let command = command.map(|mut command| {
                 if let Some(path) = search_path.and_then(OsStr::to_str) {
                     command.env.push(("PATH".into(), path.to_owned()));
                 }
-                Some(AcpOffer { id: agent.id.clone(), name: agent.name.clone(), command })
+                command
+            });
+            AcpEntry {
+                id: agent.id.clone(),
+                name: agent.name.clone(),
+                description: agent.description.clone(),
+                version: agent.version.clone(),
+                source,
+                command,
             }
-            Launch::Package(_) | Launch::Binary { .. } => None,
         })
         .collect()
+}
+
+/// The agents run through `npx` or `uvx` that the user turned on.
+pub(crate) fn packages_on(root: &Path) -> Vec<String> {
+    std::fs::read(root.join(PACKAGES_FILE)).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default()
+}
+
+pub(crate) fn set_package_on(root: &Path, id: &str, on: bool) -> Result<(), String> {
+    let mut ids = packages_on(root);
+    ids.retain(|known| known != id);
+    if on {
+        ids.push(id.to_owned());
+    }
+    let bytes = serde_json::to_vec_pretty(&ids).map_err(|error| error.to_string())?;
+    openide_harness::atomic_write(&root.join(PACKAGES_FILE), &bytes).map_err(|error| error.to_string())
+}
+
+/// The session's option of `category` (`model`, `thought_level`): its
+/// current value and every value it takes, with its name.
+pub(crate) fn choices(config: &[ConfigOption], category: &str) -> Option<(String, Vec<(String, String)>)> {
+    let option = config.iter().find(|option| option.category.as_deref() == Some(category))?;
+    let ConfigValue::Select { current_value, options } = &option.value else {
+        return None;
+    };
+    Some((current_value.clone(), options.all().into_iter().map(|choice| (choice.value.clone(), choice.name.clone())).collect()))
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Which ACP session of which agent each openADE session continues, so a
@@ -315,6 +403,8 @@ pub(crate) struct AcpAgent {
     acp_session: String,
     turn: Arc<Mutex<Option<Turn>>>,
     alive: Arc<AtomicBool>,
+    /// The session's options as the agent last told them.
+    config: Arc<Mutex<Vec<ConfigOption>>>,
     pub(crate) name: String,
 }
 
@@ -324,17 +414,18 @@ impl AcpAgent {
     fn start(command: &AgentCommand, name: &str, cwd: &Path, resume: Option<&str>) -> Result<Self, String> {
         let turn: Arc<Mutex<Option<Turn>>> = Arc::default();
         let alive = Arc::new(AtomicBool::new(true));
-        let relay = (turn.clone(), alive.clone());
-        let connection = Connection::spawn(command, cwd, move |event| relay_event(event, &relay.0, &relay.1))
+        let config: Arc<Mutex<Vec<ConfigOption>>> = Arc::default();
+        let relay = (turn.clone(), alive.clone(), config.clone());
+        let connection = Connection::spawn(command, cwd, move |event| relay_event(event, &relay.0, &relay.1, &relay.2))
             .map_err(|error| error.to_string())?;
         let initialized = connection.initialize("openADE", env!("CARGO_PKG_VERSION")).map_err(|error| error.to_string())?;
-        let reopened = resume
-            .filter(|_| initialized.agent_capabilities.load_session)
-            .and_then(|session| connection.load_session(session, cwd, json!([])).ok().map(|_| session.to_owned()));
-        let acp_session = match reopened {
-            Some(session) => session,
+        let reopened = resume.filter(|_| initialized.agent_capabilities.load_session).and_then(|session| {
+            connection.load_session(session, cwd, json!([])).ok().map(|loaded| (session.to_owned(), loaded.config_options))
+        });
+        let (acp_session, options) = match reopened {
+            Some(reopened) => reopened,
             None => match connection.new_session(cwd, json!([])) {
-                Ok(session) => session.session_id,
+                Ok(session) => (session.session_id, session.config_options),
                 Err(openide_acp::Error::Rpc { message, .. }) if message.to_lowercase().contains("auth") => {
                     let method = initialized
                         .auth_methods
@@ -342,20 +433,50 @@ impl AcpAgent {
                         .find(|method| method.kind.as_deref().is_none_or(|kind| kind == "agent"))
                         .ok_or_else(|| format!("{name} pide iniciar sesión: hazlo desde su CLI y vuelve a intentar"))?;
                     connection.authenticate(&method.id).map_err(|error| error.to_string())?;
-                    connection.new_session(cwd, json!([])).map_err(|error| error.to_string())?.session_id
+                    let session = connection.new_session(cwd, json!([])).map_err(|error| error.to_string())?;
+                    (session.session_id, session.config_options)
                 }
                 Err(error) => return Err(error.to_string()),
             },
         };
-        Ok(Self { connection: Arc::new(connection), acp_session, turn, alive, name: name.to_owned() })
+        if let Some(options) = options {
+            *lock(&config) = options;
+        }
+        Ok(Self { connection: Arc::new(connection), acp_session, turn, alive, config, name: name.to_owned() })
+    }
+
+    /// Sets the option of each category to its value, unless it has it
+    /// already or the agent does not offer that value.
+    fn choose(&self, choices: &[(&str, String)]) -> Result<(), String> {
+        for (category, value) in choices {
+            let option = lock(&self.config).iter().find(|option| option.category.as_deref() == Some(*category)).cloned();
+            let Some(option) = option else {
+                continue;
+            };
+            let ConfigValue::Select { current_value, options } = &option.value else {
+                continue;
+            };
+            if current_value == value || !options.all().iter().any(|choice| choice.value == *value) {
+                continue;
+            }
+            let updated = self
+                .connection
+                .set_config_option(&self.acp_session, &option.id, value)
+                .map_err(|error| format!("{} no aceptó el cambio de {}: {error}", self.name, option.name.to_lowercase()))?;
+            if !updated.is_empty() {
+                *lock(&self.config) = updated;
+            }
+        }
+        Ok(())
     }
 }
 
 /// Passes the agent's messages to the turn that is running; between turns
 /// there is nobody to tell, as when a reopened session replays its history.
-fn relay_event(event: Event, turn: &Mutex<Option<Turn>>, alive: &AtomicBool) {
-    let mut slot = turn.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+fn relay_event(event: Event, turn: &Mutex<Option<Turn>>, alive: &AtomicBool, config: &Mutex<Vec<ConfigOption>>) {
+    let mut slot = lock(turn);
     match (event, slot.as_mut()) {
+        (Event::Update { update: SessionUpdate::ConfigOptionUpdate { config_options }, .. }, _) => *lock(config) = config_options,
         (Event::Update { update, .. }, Some(turn)) => turn.update(update),
         (Event::Permission { request, permission }, Some(turn)) => turn.ask(request, permission),
         (Event::Closed { .. }, _) => alive.store(false, Ordering::Release),
@@ -367,29 +488,67 @@ fn relay_event(event: Event, turn: &Mutex<Option<Turn>>, alive: &AtomicBool) {
 pub(crate) struct AcpRunHandle {
     pub(crate) session_id: String,
     pub(crate) events: Receiver<AgentEvent>,
-    agent: Arc<Mutex<Option<Arc<AcpAgent>>>>,
+    slot: Arc<AgentSlot>,
     cancelled: Arc<AtomicBool>,
 }
 
 /// Where a session's agent lives between turns: the window keeps one per
-/// session and each turn starts the agent in it when it is not running.
-pub(crate) type AgentSlot = Arc<Mutex<Option<Arc<AcpAgent>>>>;
+/// session, started ahead of the first turn or by it.
+#[derive(Default)]
+pub(crate) struct AgentSlot {
+    agent: Mutex<Option<Arc<AcpAgent>>>,
+    /// Held while the agent starts, so a turn and an early start never
+    /// start two.
+    starting: Mutex<()>,
+}
 
-pub(crate) struct TurnRequest {
+impl AgentSlot {
+    pub(crate) fn agent(&self) -> Option<Arc<AcpAgent>> {
+        lock(&self.agent).clone().filter(|agent| agent.alive.load(Ordering::Acquire))
+    }
+
+    /// The running agent's options, or none before it starts.
+    pub(crate) fn config(&self) -> Vec<ConfigOption> {
+        self.agent().map(|agent| lock(&agent.config).clone()).unwrap_or_default()
+    }
+
+    /// The running agent, started first when there is none.
+    pub(crate) fn ensure(&self, start: &AgentStart) -> Result<Arc<AcpAgent>, String> {
+        let _starting = lock(&self.starting);
+        if let Some(agent) = self.agent() {
+            return Ok(agent);
+        }
+        let resume = remembered_session(&start.data_root, &start.session_id);
+        let agent = Arc::new(AcpAgent::start(&start.command, &start.agent_name, &start.workspace, resume.as_deref())?);
+        remember_session(&start.data_root, &start.session_id, &agent.acp_session);
+        *lock(&self.agent) = Some(agent.clone());
+        Ok(agent)
+    }
+}
+
+/// What starting a session's agent takes.
+#[derive(Clone)]
+pub(crate) struct AgentStart {
     pub(crate) session_id: String,
-    pub(crate) sequence_start: u64,
     pub(crate) workspace: PathBuf,
-    pub(crate) prompt: String,
     pub(crate) command: AgentCommand,
     pub(crate) agent_name: String,
     pub(crate) data_root: PathBuf,
 }
 
+pub(crate) struct TurnRequest {
+    pub(crate) start: AgentStart,
+    pub(crate) sequence_start: u64,
+    pub(crate) prompt: String,
+    /// The value wanted for the option of each category, applied first.
+    pub(crate) choices: Vec<(&'static str, String)>,
+}
+
 impl AcpRunHandle {
-    pub(crate) fn start(request: TurnRequest, slot: AgentSlot) -> Self {
+    pub(crate) fn start(request: TurnRequest, slot: Arc<AgentSlot>) -> Self {
         let (sender, events) = mpsc::channel();
         let cancelled = Arc::new(AtomicBool::new(false));
-        let handle = Self { session_id: request.session_id.clone(), events, agent: slot.clone(), cancelled: cancelled.clone() };
+        let handle = Self { session_id: request.start.session_id.clone(), events, slot: slot.clone(), cancelled: cancelled.clone() };
         std::thread::Builder::new()
             .name("acp-turn".into())
             .spawn(move || run_turn(request, &slot, sender, &cancelled))
@@ -399,11 +558,11 @@ impl AcpRunHandle {
 
     pub(crate) fn cancel(&self) {
         self.cancelled.store(true, Ordering::Release);
-        let Some(agent) = self.agent.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone() else {
+        let Some(agent) = self.slot.agent() else {
             return;
         };
         // The protocol asks for every open request to be answered as cancelled.
-        let mut turn = agent.turn.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut turn = lock(&agent.turn);
         if let Some(turn) = turn.as_mut() {
             for (request_id, (request, _, tool_call_id)) in std::mem::take(&mut turn.permissions) {
                 let _ = agent.connection.answer_permission(&request, &PermissionAnswer::Cancelled);
@@ -415,10 +574,10 @@ impl AcpRunHandle {
     }
 
     pub(crate) fn resolve_permission(&self, request_id: &str, choice: PermissionChoice) -> bool {
-        let Some(agent) = self.agent.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone() else {
+        let Some(agent) = self.slot.agent() else {
             return false;
         };
-        let mut turn = agent.turn.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut turn = lock(&agent.turn);
         let Some(turn) = turn.as_mut() else {
             return false;
         };
@@ -439,7 +598,7 @@ impl AcpRunHandle {
 fn run_turn(request: TurnRequest, slot: &AgentSlot, sender: Sender<AgentEvent>, cancelled: &AtomicBool) {
     let mut opening = Turn {
         sender,
-        session_id: request.session_id.clone(),
+        session_id: request.start.session_id.clone(),
         sequence: request.sequence_start,
         prefix: format!("acp-{}-", request.sequence_start),
         text: String::new(),
@@ -448,29 +607,13 @@ fn run_turn(request: TurnRequest, slot: &AgentSlot, sender: Sender<AgentEvent>, 
         permissions: HashMap::new(),
         asked: 0,
     };
-    opening.emit(AgentEventKind::SessionStarted { workspace: request.workspace.clone() });
+    opening.emit(AgentEventKind::SessionStarted { workspace: request.start.workspace.clone() });
     opening.emit(AgentEventKind::TurnStarted { prompt: request.prompt.clone() });
-    let running = slot
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .clone()
-        .filter(|agent| agent.alive.load(Ordering::Acquire));
-    let agent = match running {
-        Some(agent) => agent,
-        None => {
-            let resume = remembered_session(&request.data_root, &request.session_id);
-            match AcpAgent::start(&request.command, &request.agent_name, &request.workspace, resume.as_deref()) {
-                Ok(agent) => {
-                    remember_session(&request.data_root, &request.session_id, &agent.acp_session);
-                    let agent = Arc::new(agent);
-                    *slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(agent.clone());
-                    agent
-                }
-                Err(error) => {
-                    opening.emit(AgentEventKind::TurnFailed { error });
-                    return;
-                }
-            }
+    let agent = match slot.ensure(&request.start).and_then(|agent| agent.choose(&request.choices).map(|()| agent)) {
+        Ok(agent) => agent,
+        Err(error) => {
+            opening.emit(AgentEventKind::TurnFailed { error });
+            return;
         }
     };
     if cancelled.load(Ordering::Acquire) {
@@ -478,11 +621,11 @@ fn run_turn(request: TurnRequest, slot: &AgentSlot, sender: Sender<AgentEvent>, 
         return;
     }
     opening.emit(AgentEventKind::ModelRequestStarted { step: 1, model: agent.name.clone() });
-    *agent.turn.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(opening);
+    *lock(&agent.turn) = Some(opening);
     let stopped = agent.connection.prompt(&agent.acp_session, &[ContentBlock::Text { text: request.prompt }]);
     // Taken out before the last event: once it is dropped the window sees
     // the channel close, and the agent's late messages reach no one.
-    let Some(mut turn) = agent.turn.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).take() else {
+    let Some(mut turn) = lock(&agent.turn).take() else {
         return;
     };
     match stopped {
@@ -618,23 +761,55 @@ mod tests {
     }
 
     #[test]
-    fn only_agents_installed_here_are_offered_and_they_get_the_shells_path() {
+    fn the_catalog_offers_what_runs_here_and_packages_only_once_turned_on() {
         let bin = tempfile::tempdir().unwrap();
-        let grok = bin.path().join("grok");
-        std::fs::write(&grok, "#!/bin/sh\n").unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&grok, std::fs::Permissions::from_mode(0o755)).unwrap();
+        for name in ["grok", "npx"] {
+            std::fs::write(bin.path().join(name), "#!/bin/sh\n").unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(bin.path().join(name), std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
         }
+        let installs = tempfile::tempdir().unwrap();
         let registry: Registry = serde_json::from_str(include_str!("../../../crates/openide-acp/testdata/registry.json")).unwrap();
-        let offers = offers(&registry, Some(bin.path().as_os_str()), Path::new("/nowhere"));
+        let path = Some(bin.path().as_os_str());
+        let found = catalog(&registry, path, installs.path(), &[]);
+        let entry = |catalog: &[AcpEntry], id: &str| catalog.iter().find(|entry| entry.id == id).cloned().unwrap();
+        let offers: Vec<_> = found.iter().filter_map(AcpEntry::offer).collect();
         assert_eq!(offers.len(), 1, "{offers:?}");
         assert_eq!((offers[0].id.as_str(), offers[0].name.as_str()), ("grok-build", "Grok Build"));
-        assert_eq!(offers[0].command.program, grok);
         assert_eq!(offers[0].command.args, ["agent", "stdio"]);
         assert!(offers[0].command.env.contains(&("PATH".into(), bin.path().to_str().unwrap().to_owned())));
-        assert!(super::offers(&registry, None, Path::new("/nowhere")).is_empty());
+        assert_eq!(entry(&found, "grok-build").source, AcpSource::Own(bin.path().join("grok")));
+        assert!(matches!(&entry(&found, "gemini").source, AcpSource::Package { runner, on: false, .. } if runner == "npx"));
+        assert!(matches!(entry(&found, "fast-agent").source, AcpSource::Missing(_)));
+        let turned_on = catalog(&registry, path, installs.path(), &["gemini".into()]);
+        assert!(turned_on.iter().filter_map(AcpEntry::offer).any(|offer| offer.id == "gemini"));
+        assert!(catalog(&registry, None, installs.path(), &[]).iter().all(|entry| entry.offer().is_none()));
+        if registry::platform() == "linux-x86_64" {
+            let AcpSource::Download { target, dir } = entry(&found, "antigravity-acp").source else {
+                panic!("Google's ACP server to download");
+            };
+            let program = dir.join(&target.cmd);
+            std::fs::create_dir_all(program.parent().unwrap()).unwrap();
+            std::fs::write(&program, "").unwrap();
+            let installed = catalog(&registry, path, installs.path(), &[]);
+            assert_eq!(entry(&installed, "antigravity-acp").source, AcpSource::Downloaded);
+            assert!(entry(&installed, "antigravity-acp").offer().is_some());
+        }
+    }
+
+    #[test]
+    fn an_agents_options_are_read_by_category() {
+        let config: Vec<ConfigOption> = serde_json::from_value(json!([
+            {"id": "model", "name": "Model", "category": "model", "type": "select", "currentValue": "a", "options": [{"value": "a", "name": "A"}]},
+            {"id": "reasoning_effort", "name": "Effort", "category": "thought_level", "type": "select", "currentValue": "high",
+             "options": [{"value": "low", "name": "Low"}, {"value": "high", "name": "High"}]}
+        ]))
+        .unwrap();
+        assert_eq!(choices(&config, "thought_level"), Some(("high".into(), vec![("low".into(), "Low".into()), ("high".into(), "High".into())])));
+        assert_eq!(choices(&config, "mode"), None);
     }
 
     #[test]
@@ -645,6 +820,10 @@ mod tests {
         remember_session(root.path(), "b", "acp-2");
         assert_eq!(remembered_session(root.path(), "a").as_deref(), Some("acp-1"));
         assert_eq!(agent_id("acp:grok-build"), Some("grok-build"));
+        set_package_on(root.path(), "gemini", true).unwrap();
+        set_package_on(root.path(), "cline", true).unwrap();
+        set_package_on(root.path(), "gemini", false).unwrap();
+        assert_eq!(packages_on(root.path()), ["cline"]);
         assert_eq!(agent_id("native"), None);
     }
 }

@@ -391,6 +391,13 @@ pub(crate) struct PromptResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct SetConfigOptionResponse {
+    #[serde(default)]
+    pub config_options: Vec<ConfigOption>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct SessionNotification {
     pub session_id: String,
     pub update: SessionUpdate,

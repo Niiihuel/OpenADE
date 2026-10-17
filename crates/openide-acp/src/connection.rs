@@ -5,8 +5,8 @@
 //! every update the agent sent before it has been handled.
 
 use crate::schema::{
-    ContentBlock, InitializeResponse, LoadSessionResponse, NewSessionResponse, PermissionRequest,
-    PromptResponse, SessionNotification, SessionUpdate, StopReason, PROTOCOL_VERSION,
+    ConfigOption, ContentBlock, InitializeResponse, LoadSessionResponse, NewSessionResponse, PermissionRequest,
+    PromptResponse, SessionNotification, SessionUpdate, SetConfigOptionResponse, StopReason, PROTOCOL_VERSION,
 };
 use serde_json::{json, Value};
 use std::collections::{HashMap, VecDeque};
@@ -224,13 +224,15 @@ impl Connection {
             .map(drop)
     }
 
-    pub fn set_config_option(&self, session_id: &str, config_id: &str, value: &str) -> Result<(), Error> {
-        self.request(
+    /// Changes one of the session's options; the agent answers with all of
+    /// them as they are now.
+    pub fn set_config_option(&self, session_id: &str, config_id: &str, value: &str) -> Result<Vec<ConfigOption>, Error> {
+        let answer = self.request(
             "session/set_config_option",
             json!({"sessionId": session_id, "configId": config_id, "value": value}),
             Some(Duration::from_secs(30)),
-        )
-        .map(drop)
+        )?;
+        parse::<SetConfigOptionResponse>(answer).map(|response| response.config_options)
     }
 
     pub fn answer_permission(&self, request: &Value, answer: &PermissionAnswer) -> Result<(), Error> {

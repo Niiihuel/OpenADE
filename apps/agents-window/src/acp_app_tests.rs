@@ -4,6 +4,7 @@ use crate::transcript::TranscriptItem;
 use openide_acp::AgentCommand;
 use serde_json::json;
 use std::io::{BufRead, Write};
+use std::path::Path;
 
 const FAKE_AGENT: &str = "OPENADE_FAKE_ACP_AGENT";
 
@@ -33,12 +34,25 @@ fn fake_acp_agent() {
         out.flush().unwrap();
     };
     let update = |update: Value| send(json!({"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": "fake-1", "update": update}}));
+    let mut chosen = json!({"model": "fake-a", "effort": "high"});
+    let config = |chosen: &Value| {
+        json!([
+            {"id": "model", "name": "Model", "category": "model", "type": "select", "currentValue": chosen["model"],
+             "options": [{"value": "fake-a", "name": "Rápido"}, {"value": "fake-b", "name": "Profundo"}]},
+            {"id": "effort", "name": "Effort", "category": "thought_level", "type": "select", "currentValue": chosen["effort"],
+             "options": [{"value": "low", "name": "Bajo"}, {"value": "high", "name": "Alto"}]}
+        ])
+    };
     // The harness has just printed "test … ..." with no line break.
     send(Value::String(String::new()));
     while let Some(message) = lines.next() {
         match message["method"].as_str() {
             Some("initialize") => send(json!({"jsonrpc": "2.0", "id": message["id"], "result": {"protocolVersion": 1}})),
-            Some("session/new") => send(json!({"jsonrpc": "2.0", "id": message["id"], "result": {"sessionId": "fake-1"}})),
+            Some("session/new") => send(json!({"jsonrpc": "2.0", "id": message["id"], "result": {"sessionId": "fake-1", "configOptions": config(&chosen)}})),
+            Some("session/set_config_option") => {
+                chosen[message["params"]["configId"].as_str().unwrap()] = message["params"]["value"].clone();
+                send(json!({"jsonrpc": "2.0", "id": message["id"], "result": {"configOptions": config(&chosen)}}));
+            }
             Some("session/prompt") => {
                 update(json!({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "Hola desde ACP"}}));
                 update(json!({"sessionUpdate": "tool_call", "toolCallId": "t1", "title": "echo hi", "kind": "execute", "status": "pending", "rawInput": {"command": "echo hi"}}));
@@ -58,21 +72,39 @@ fn fake_acp_agent() {
 
 fn pump(app: &mut AgentsWindow, done: impl Fn(&AgentsWindow) -> bool) {
     let deadline = Instant::now() + Duration::from_secs(30);
+    let ctx = egui::Context::default();
     while !done(app) {
         app.poll_run();
+        app.poll_acp_agents(&ctx);
         assert!(Instant::now() < deadline, "timed out: {}", app.view.status);
         std::thread::sleep(Duration::from_millis(5));
     }
 }
 
+/// A window that knows the fake agent, in a project of its own.
+fn window(root: &Path) -> AgentsWindow {
+    let workspace = root.join("project");
+    std::fs::create_dir_all(&workspace).unwrap();
+    let mut app = AgentsWindow::with_data_root(root.join("data"));
+    app.view.workspace = workspace.display().to_string();
+    app.view.acp_agents = vec![AcpOffer { id: "fake".into(), name: "Agente falso".into(), command: fake_agent() }];
+    app
+}
+
+/// Runs one turn, allowing what the agent asks for.
+fn turn(app: &mut AgentsWindow, prompt: &str) {
+    app.view.prompt = prompt.into();
+    app.start_run();
+    pump(app, |app| !app.view.pending_permissions.is_empty());
+    let request = app.view.pending_permissions[0].request_id.clone();
+    app.answer_permission(&request, true);
+    pump(app, |app| app.active_run.is_none() && !app.view.running);
+}
+
 #[test]
 fn an_acp_agent_answers_in_the_conversation_and_asks_before_acting() {
     let root = tempfile::tempdir().unwrap();
-    let workspace = root.path().join("project");
-    std::fs::create_dir(&workspace).unwrap();
-    let mut app = AgentsWindow::with_data_root(root.path().join("data"));
-    app.view.workspace = workspace.display().to_string();
-    app.view.acp_agents = vec![AcpOffer { id: "fake".into(), name: "Agente falso".into(), command: fake_agent() }];
+    let mut app = window(root.path());
     app.start_acp_task("fake");
     assert_eq!(app.view.selected_backend, "acp:fake", "{}", app.view.status);
     let session = app.view.selected_session.clone().unwrap();
@@ -116,4 +148,145 @@ fn an_agent_that_is_not_installed_says_so_instead_of_starting() {
     app.start_acp_task("ghost");
     assert!(app.view.selected_session.is_none());
     assert!(app.view.status.contains("ghost"), "{}", app.view.status);
+}
+
+#[test]
+fn the_agents_own_models_and_efforts_are_chosen_in_the_composer_and_remembered() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app = window(root.path());
+    let ctx = egui::Context::default();
+    app.start_acp_task("fake");
+    let session = app.view.selected_session.clone().unwrap();
+    // Opening the task starts its agent, whose options reach the composer.
+    pump(&mut app, |app| !app.view.composer_model_options.is_empty());
+    assert_eq!(app.view.composer_model_options, [("fake-a".into(), "Rápido".into()), ("fake-b".into(), "Profundo".into())]);
+    assert_eq!((app.view.composer_model.as_str(), app.view.composer_effort.as_str()), ("fake-a", "high"));
+    app.apply_action(UiAction::Clicked { id: "composer_model_toggle".into() }, &ctx);
+    assert!(app.view.composer_model_menu_open);
+    app.apply_action(UiAction::Clicked { id: "composer_model:fake-b".into() }, &ctx);
+    app.apply_action(UiAction::Clicked { id: "composer_effort:low".into() }, &ctx);
+    assert_eq!((app.view.composer_model.as_str(), app.view.composer_effort.as_str()), ("fake-b", "low"));
+    // Unknown to the agent, so nothing changes.
+    app.apply_action(UiAction::Clicked { id: "composer_model:gpt-4.1".into() }, &ctx);
+    assert_eq!(app.view.composer_model, "fake-b");
+
+    turn(&mut app, "hola");
+    let config = app.acp_slots[&session].config();
+    assert_eq!(crate::acp_run::choices(&config, "model").unwrap().0, "fake-b", "{}", app.view.status);
+    assert_eq!(crate::acp_run::choices(&config, "thought_level").unwrap().0, "low");
+    assert!(app.view.transcript.iter().any(|item| matches!(item, TranscriptItem::Assistant { content, .. } if content == "Hola desde ACP y fin")));
+
+    // The next task of this agent starts with the same choice.
+    app.start_acp_task("fake");
+    assert_ne!(app.view.selected_session.as_deref(), Some(session.as_str()));
+    pump(&mut app, |app| !app.view.composer_model_options.is_empty());
+    assert_eq!(app.view.composer_model, "fake-b");
+    assert!(!app.acp_slots.contains_key(&session), "the idle agent of the other task stops");
+}
+
+#[test]
+fn settings_list_the_registry_and_install_turn_on_and_remove_its_agents() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app = window(root.path());
+    let ctx = egui::Context::default();
+    // A fresh copy of the index keeps the refreshes off the network.
+    std::fs::create_dir_all(&app.data_root).unwrap();
+    std::fs::write(app.data_root.join("acp-registry.json"), include_str!("../../../crates/openide-acp/testdata/registry.json")).unwrap();
+    let registry: openide_acp::registry::Registry =
+        serde_json::from_str(include_str!("../../../crates/openide-acp/testdata/registry.json")).unwrap();
+    let bin = root.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::write(bin.join("npx"), "").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(bin.join("npx"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let installs = app.data_root.join("acp-agents");
+    let downloaded = installs.join("antigravity-acp");
+    app.view.acp_catalog = crate::acp_run::catalog(&registry, Some(bin.as_os_str()), &installs, &[]);
+    let linux = openide_acp::registry::platform() == "linux-x86_64";
+    if linux {
+        let Some(crate::acp_run::AcpSource::Download { target, dir }) =
+            app.view.acp_catalog.iter().find(|entry| entry.id == "antigravity-acp").map(|entry| entry.source.clone())
+        else {
+            panic!("Antigravity to download");
+        };
+        std::fs::create_dir_all(dir.join(&target.cmd).parent().unwrap()).unwrap();
+        std::fs::write(dir.join(&target.cmd), "").unwrap();
+        let found = crate::acp_run::catalog(&registry, Some(bin.as_os_str()), &installs, &[]);
+        assert!(matches!(found.iter().find(|entry| entry.id == "antigravity-acp").unwrap().source, crate::acp_run::AcpSource::Downloaded));
+        app.view.acp_catalog = found;
+    }
+
+    let mut tree = UiTree::new(crate::settings_ui::build_settings_page(&app.view, SettingsPage::ExternalAgents, 900.0, true));
+    let frame = tree.layout(openide_ui::Size::new(900.0, 40000.0));
+    let ids: Vec<&str> = frame.regions.iter().map(|region| region.id.as_str()).collect();
+    assert!(ids.contains(&"acp_package:gemini"), "{ids:?}");
+    if linux {
+        assert!(ids.contains(&"acp_remove:antigravity-acp"), "{ids:?}");
+        assert!(ids.iter().any(|id| id.starts_with("acp_install:")), "{ids:?}");
+    }
+
+    app.apply_action(UiAction::Clicked { id: "acp_package:gemini".into() }, &ctx);
+    assert_eq!(crate::acp_run::packages_on(&app.data_root), ["gemini"]);
+    if linux {
+        app.apply_action(UiAction::Clicked { id: "acp_remove:antigravity-acp".into() }, &ctx);
+        assert!(!downloaded.exists());
+        assert!(!app.view.settings_notice_error, "{:?}", app.view.settings_notice);
+    }
+    // Only what openADE downloaded can be removed.
+    app.apply_action(UiAction::Clicked { id: "acp_remove:gemini".into() }, &ctx);
+    pump(&mut app, |app| app.acp_offers_loading.is_none());
+    assert!(!app.view.acp_catalog.is_empty());
+}
+
+/// Writes the ACP Settings rows and the composer's menu of an ACP agent's
+/// models as PNG files under `OPENADE_VISUAL_DIR`, to look at.
+#[test]
+#[ignore = "visual review: OPENADE_VISUAL_DIR=<dir> cargo test export_acp_visual_review -- --ignored"]
+fn export_acp_visual_review() {
+    let out = PathBuf::from(std::env::var_os("OPENADE_VISUAL_DIR").expect("OPENADE_VISUAL_DIR"));
+    std::fs::create_dir_all(&out).unwrap();
+    let png = |element: Element, name: &str, width: f32, height: f32| {
+        let root = Element::column(vec![element]).background(crate::theme::BACKGROUND).size(Some(width), Some(height));
+        let (_context, mut tree) = crate::view::ide_visual_tests::native_tree(root);
+        let frame = tree.layout(openide_ui::Size::new(width, height));
+        let svg = out.join(format!("{name}.svg"));
+        crate::settings_ui::visual_qa::write_native_frame_svg(&frame, &svg, width, height).unwrap();
+        let parsed = resvg::usvg::Tree::from_str(&std::fs::read_to_string(&svg).unwrap(), &crate::settings_ui::visual_qa::native_svg_options()).unwrap();
+        let mut pixmap = resvg::tiny_skia::Pixmap::new(width as u32, height as u32).unwrap();
+        resvg::render(&parsed, resvg::tiny_skia::Transform::identity(), &mut pixmap.as_mut());
+        pixmap.save_png(out.join(format!("{name}.png"))).unwrap();
+    };
+    let root = tempfile::tempdir().unwrap();
+    let mut app = window(root.path());
+    let registry: openide_acp::registry::Registry =
+        serde_json::from_str(include_str!("../../../crates/openide-acp/testdata/registry.json")).unwrap();
+    let bin = root.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    for name in ["npx", "grok"] {
+        std::fs::write(bin.join(name), "").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(bin.join(name), std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+    app.view.acp_catalog = crate::acp_run::catalog(&registry, Some(bin.as_os_str()), &root.path().join("installs"), &["gemini".into()]);
+    app.view.acp_installing = Some("cursor".into());
+    png(crate::settings_ui::build_settings_page(&app.view, SettingsPage::ExternalAgents, 900.0, true), "acp-settings", 900.0, 5200.0);
+
+    app.start_acp_task("fake");
+    pump(&mut app, |app| !app.view.composer_model_options.is_empty());
+    app.view.composer_model_menu_open = true;
+    app.view.composer_model_list_open = true;
+    // Its menus open upwards, over the conversation.
+    let composer = |app: &AgentsWindow| {
+        let composer = crate::composer_ui::build_composer(&crate::composer_ui::ComposerProps::from_state(&app.view, 720.0, false, None, "Escribe", None));
+        Element::column(vec![Element::spacer().flex(1.0), composer])
+    };
+    png(composer(&app), "acp-composer-models", 720.0, 520.0);
+    app.view.composer_model_list_open = false;
+    png(composer(&app), "acp-composer-menu", 720.0, 520.0);
 }

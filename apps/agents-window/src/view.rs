@@ -631,6 +631,11 @@ pub struct ViewState {
     pub agent_clis: Vec<AgentCliRowView>,
     /// Agents of the ACP registry this machine can run.
     pub acp_agents: Vec<crate::acp_run::AcpOffer>,
+    /// Every agent of the ACP registry and how it runs here, for Settings.
+    pub acp_catalog: Vec<crate::acp_run::AcpEntry>,
+    pub acp_catalog_error: Option<String>,
+    /// The registry agent being downloaded.
+    pub acp_installing: Option<String>,
     /// The check command saved for the open project, shown in Settings.
     pub turn_check_command: String,
     pub turn_check_failure: Option<String>,
@@ -4340,6 +4345,9 @@ pub(crate) mod tests {
             plugin_skills: Vec::new(),
             agent_clis: Vec::new(),
             acp_agents: Vec::new(),
+            acp_catalog: Vec::new(),
+            acp_catalog_error: None,
+            acp_installing: None,
             turn_check_command: String::new(),
             turn_check_failure: None,
             review_model: Default::default(),

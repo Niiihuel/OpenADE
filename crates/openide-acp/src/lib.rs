@@ -100,6 +100,20 @@ mod tests {
     }
 
     #[test]
+    fn a_changed_option_comes_back_with_the_others() {
+        let (connection, _events) = fake(|lines, send| {
+            let set = lines.next().unwrap();
+            assert_eq!(set["params"], json!({"sessionId": "s1", "configId": "model", "value": "b"}));
+            send(json!({"jsonrpc": "2.0", "id": set["id"], "result": {"configOptions": [
+                {"id": "model", "name": "Modelo", "category": "model", "type": "select", "currentValue": "b",
+                 "options": [{"value": "a", "name": "A"}, {"value": "b", "name": "B"}]}
+            ]}}));
+        });
+        let options = connection.set_config_option("s1", "model", "b").unwrap();
+        assert!(matches!(&options[0].value, ConfigValue::Select { current_value, .. } if current_value == "b"), "{options:?}");
+    }
+
+    #[test]
     fn cancelling_ends_the_turn_as_cancelled() {
         let (connection, _events) = fake(|lines, send| {
             let prompt = lines.next().unwrap();

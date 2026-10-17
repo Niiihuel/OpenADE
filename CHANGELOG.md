@@ -12,6 +12,14 @@ says 0.1.0.
   answers in the ordinary conversation, with streamed text and reasoning,
   tool rows, plans, approval cards and Stop; its session reopens after a
   restart when the agent supports it
+- Settings → External CLIs lists every agent of the ACP registry with how it
+  runs here: the user's own install, a package that `npx` or `uvx` fetches
+  (offered once switched on), or the vendor's build, which Install downloads,
+  checks against its published SHA-256 and Remove deletes (Google
+  Antigravity among them)
+- The composer picks an ACP agent's own models and reasoning effort; the
+  agent starts when its task opens so they are there before the first
+  message, and the choice is kept for the next tasks of that agent
 - A Graph tab in the dock draws the workspace's files, and their imports,
   calls and type uses, as a force-directed graph: hovering a file lights up
   its neighbours, nodes can be dragged, the view zooms and pans, and a click

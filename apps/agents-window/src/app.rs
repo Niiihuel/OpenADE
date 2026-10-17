@@ -1497,8 +1497,12 @@ pub struct AgentsWindow {
     browser_live: HashMap<u64, bool>,
     agent_cursor: crate::agent_cursor::AgentCursor,
     /// Each ACP task's agent, kept running between its turns.
-    acp_slots: HashMap<String, crate::acp_run::AgentSlot>,
-    acp_offers_loading: Option<Receiver<Result<Vec<crate::acp_run::AcpOffer>, String>>>,
+    acp_slots: HashMap<String, Arc<crate::acp_run::AgentSlot>>,
+    acp_offers_loading: Option<Receiver<Result<Vec<crate::acp_run::AcpEntry>, String>>>,
+    /// An agent starting ahead of its task's first turn, by session.
+    acp_warming: Option<Receiver<(String, Result<(), String>)>>,
+    /// An agent's download, by registry id.
+    acp_installing: Option<Receiver<(String, Result<(), String>)>>,
     /// The graph tab's layout thread, camera and pointer; its options live in the view.
     graph: crate::graph_view::GraphView,
     /// The file last shown in the dock: the graph's focused node.
@@ -7009,6 +7013,9 @@ impl AgentsWindow {
             plugin_skills: Vec::new(),
             agent_clis: Vec::new(),
             acp_agents: Vec::new(),
+            acp_catalog: Vec::new(),
+            acp_catalog_error: None,
+            acp_installing: None,
             turn_check_command: String::new(),
             turn_check_failure: None,
             review_model: Default::default(),
@@ -7405,6 +7412,8 @@ impl AgentsWindow {
             agent_cursor: Default::default(),
             acp_slots: HashMap::new(),
             acp_offers_loading: None,
+            acp_warming: None,
+            acp_installing: None,
             graph: Default::default(),
             graph_last_file: None,
             graph_relayout: false,
@@ -11967,6 +11976,9 @@ impl AgentsWindow {
     }
 
     fn refresh_composer_choice_options(&mut self) {
+        if self.refresh_acp_composer_options() {
+            return;
+        }
         let codex_live = self.view.selected_backend == "codex" && !self.codex_models.is_empty();
         self.view.composer_model_options = if codex_live {
             self.view
@@ -12325,6 +12337,9 @@ impl AgentsWindow {
     }
 
     fn select_composer_model(&mut self, model: &str) {
+        if self.select_acp_choice(false, model).is_some() {
+            return;
+        }
         if self.composer_choices_editable() && model != "openide:configure-model" {
             let provider = self
                 .view
@@ -12391,6 +12406,9 @@ impl AgentsWindow {
     }
 
     fn select_composer_effort(&mut self, effort: &str) -> bool {
+        if let Some(selected) = self.select_acp_choice(true, effort) {
+            return selected;
+        }
         if self.composer_choices_editable()
             && (self.composer_selection_busy() || self.view.composer_pending.is_some())
         {
@@ -12957,6 +12975,7 @@ impl AgentsWindow {
                     .set_input_value("workspace", self.view.workspace.clone());
                 self.view.selected_backend = stored.session.backend.clone();
                 self.refresh_composer_selection();
+                self.warm_acp_agent();
                 self.ensure_cli_terminal();
                 self.view.turn_mode = stored
                     .events
@@ -18064,7 +18083,7 @@ impl AgentsWindow {
                 fraction,
                 committed,
             } if id == "composer_effort_slider" => {
-                if self.composer_choices_editable()
+                if self.composer_model_editable()
                     && self.composer_slider_effort(fraction).is_some()
                 {
                     if committed {
@@ -19312,6 +19331,15 @@ impl AgentsWindow {
             }
             UiAction::Clicked { id } if id.starts_with("cli_task:") => {
                 self.start_cli_task(&id["cli_task:".len()..]);
+            }
+            UiAction::Clicked { id } if id.starts_with("acp_install:") => {
+                self.install_acp_agent(&id["acp_install:".len()..]);
+            }
+            UiAction::Clicked { id } if id.starts_with("acp_remove:") => {
+                self.remove_acp_agent(&id["acp_remove:".len()..]);
+            }
+            UiAction::Clicked { id } if id.starts_with("acp_package:") => {
+                self.toggle_acp_package(&id["acp_package:".len()..]);
             }
             UiAction::Clicked { id } if id.starts_with("acp_task:") => {
                 self.start_acp_task(&id["acp_task:".len()..]);
@@ -21521,7 +21549,7 @@ impl AgentsWindow {
                 self.view.backend_menu_open = false;
             }
             UiAction::Clicked { id } if id == "composer_model_toggle" => {
-                if self.composer_choices_editable() {
+                if self.composer_model_editable() {
                     self.view.composer_context_open = false;
                     self.view.composer_model_menu_open = !(self.view.composer_model_menu_open
                         || self.view.composer_effort_menu_open);
@@ -21562,7 +21590,7 @@ impl AgentsWindow {
                 }
             }
             UiAction::Clicked { id } if id == "composer_model_list_toggle" => {
-                if self.composer_choices_editable()
+                if self.composer_model_editable()
                     && self.view.composer_model_menu_open
                     && !self.view.composer_advanced_open
                 {
@@ -21621,7 +21649,7 @@ impl AgentsWindow {
             UiAction::Clicked { id }
                 if id == "composer_advanced_toggle" || id == "composer_advanced_chip_toggle" =>
             {
-                if self.composer_choices_editable()
+                if self.composer_model_editable()
                     && self.view.composer_model_menu_open
                     && !self.view.composer_model_list_open
                     && self
@@ -21646,7 +21674,7 @@ impl AgentsWindow {
                 self.select_composer_model(id.trim_start_matches("composer_model:"));
             }
             UiAction::Clicked { id } if id == "composer_effort_toggle" => {
-                if self.composer_choices_editable()
+                if self.composer_model_editable()
                     && (!self.view.composer_model_options.is_empty()
                         || !self.view.composer_effort_options.is_empty())
                 {

@@ -24,7 +24,7 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
     let mode_option = |option: ExternalPermissionMode| {
         DropdownOption::new(option.action_id(), option.label()).selected(option == mode)
     };
-    vec![
+    let mut content = vec![
         settings_parts::feedback_banner(
             "Funciona con Claude Code y Codex iniciados desde el menú de perfiles de la terminal. Los subagentes de openADE todavía no se ofrecen a una CLI externa.",
             FeedbackTone::Info,
@@ -72,6 +72,9 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
                 })
                 .collect(),
         ),
+    ];
+    content.extend(acp_groups(state, compact));
+    content.extend([
         own_profiles(state, compact),
         settings_parts::settings_group(
             "Herramientas ofrecidas",
@@ -134,6 +137,80 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
                 ),
             ],
         ),
+    ]);
+    content
+}
+
+/// The agents of the ACP registry: those ready to start a task, then the
+/// rest with what each needs to run here.
+fn acp_groups(state: &ViewState, compact: bool) -> Vec<Element> {
+    use crate::acp_run::{AcpEntry, AcpSource};
+    if state.acp_catalog.is_empty() {
+        return vec![match &state.acp_catalog_error {
+            Some(error) => settings_parts::feedback_banner(
+                format!("No se pudo leer el registro de agentes ACP: {error}"),
+                FeedbackTone::Error,
+                None,
+                compact,
+            ),
+            None => settings_parts::loading_state(
+                "Buscando agentes ACP",
+                "Leyendo el registro de agentes y lo que está instalado en este equipo.",
+            ),
+        }];
+    }
+    let row = |entry: &AcpEntry| {
+        let about = match entry.description.trim().trim_end_matches('.') {
+            "" => String::new(),
+            about => format!("{about}. "),
+        };
+        match &entry.source {
+            AcpSource::Own(path) => settings_parts::value_row(
+                &entry.name,
+                format!("{about}Usa tu instalación en {}.", path.display()),
+                "Instalado",
+                compact,
+            ),
+            AcpSource::Downloaded => settings_parts::settings_row(
+                &entry.name,
+                format!("{about}Versión {} descargada por openADE.", entry.version),
+                outline(format!("acp_remove:{}", entry.id), "Quitar").icon(Icon::Trash).render(),
+                compact,
+            ),
+            AcpSource::Package { runner, package, on } => settings_parts::switch_row(
+                format!("acp_package:{}", entry.id),
+                &entry.name,
+                format!("{about}Se inicia con {runner} {package}, que lo descarga la primera vez."),
+                *on,
+                true,
+                compact,
+            ),
+            AcpSource::Download { .. } => {
+                let installing = state.acp_installing.as_deref() == Some(entry.id.as_str());
+                settings_parts::settings_row(
+                    &entry.name,
+                    format!("{about}Descarga la versión {} de su fabricante y comprueba su huella.", entry.version),
+                    outline(format!("acp_install:{}", entry.id), if installing { "Instalando…" } else { "Instalar" })
+                        .icon(Icon::Add)
+                        .enabled(state.acp_installing.is_none())
+                        .render(),
+                    compact,
+                )
+            }
+            AcpSource::Missing(reason) => settings_parts::value_row(&entry.name, about.trim_end(), *reason, compact),
+        }
+    };
+    let (ready, rest): (Vec<&AcpEntry>, Vec<&AcpEntry>) =
+        state.acp_catalog.iter().partition(|entry| entry.offer().is_some());
+    let mut ready_rows = vec![page_note(
+        "Conversan en el chat de openADE",
+        "Los agentes listos aparecen en Inicio y en Nueva tarea con. Cada uno usa su propia cuenta y la primera vez te pide iniciar sesión.",
+        Icon::InfoCircle,
+    )];
+    ready_rows.extend(ready.into_iter().map(row));
+    vec![
+        settings_parts::settings_group("Agentes ACP listos", ready_rows),
+        settings_parts::settings_group("Registro ACP", rest.into_iter().map(row).collect()),
     ]
 }
 

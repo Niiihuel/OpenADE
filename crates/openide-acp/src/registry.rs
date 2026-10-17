@@ -130,6 +130,9 @@ impl RegistryAgent {
                 return Some(Launch::Local(command(program, &words[1..], &BTreeMap::new())));
             }
         }
+        // The index comes from the network: its names become folders only
+        // when they cannot climb out of `installs`.
+        let binary = binary.filter(|_| plain_name(&self.id) && plain_name(&self.version));
         let dir = installs.join(&self.id).join(&self.version);
         if let Some(target) = binary {
             let installed = dir.join(&target.cmd);
@@ -147,6 +150,11 @@ impl RegistryAgent {
         }
         binary.map(|target| Launch::Binary { target: target.clone(), dir })
     }
+}
+
+/// A name that is one path component, safe to join under a folder.
+pub fn plain_name(name: &str) -> bool {
+    !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\'])
 }
 
 /// The program `name` on this process's `PATH`, as a shell would find it.
@@ -315,6 +323,9 @@ mod tests {
             assert_eq!(dir, installs.join("antigravity-acp").join(agent("antigravity-acp").version));
         }
         assert_eq!(agent("fast-agent").launch(&none, installs), None);
+        let climbing = RegistryAgent { id: "../../etc".into(), ..agent("antigravity-acp") };
+        assert!(!matches!(climbing.launch(&none, installs), Some(Launch::Binary { .. })));
+        assert!(plain_name("antigravity-acp") && plain_name("1.2.3") && !plain_name("..") && !plain_name("a/b"));
     }
 
     #[test]

@@ -67,6 +67,9 @@ pub(crate) struct ComposerProps<'a> {
     pub transcript: &'a str,
     pub placeholder: &'a str,
     pub selected_backend: &'a str,
+    /// The ACP agent of the task, whose own models the menu lists; empty
+    /// for other backends.
+    pub agent_name: &'a str,
     pub native_provider_id: &'a str,
     pub model_label: &'a str,
     pub model_options: &'a [(String, String)],
@@ -186,12 +189,20 @@ impl<'a> ComposerProps<'a> {
             transcript: &state.composer_transcript,
             placeholder,
             selected_backend: &state.selected_backend,
+            agent_name: crate::acp_run::agent_id(&state.selected_backend)
+                .and_then(|id| state.acp_agents.iter().find(|agent| agent.id == id))
+                .map_or("", |agent| agent.name.as_str()),
             native_provider_id: pending_model.map_or(state.native_provider_id.as_str(), |model| {
                 model.route.provider_id.as_str()
             }),
             model_label,
             model_options: &state.composer_model_options,
-            model_routes: &state.composer_routes,
+            // An ACP agent offers its own models, never the native routes.
+            model_routes: if crate::acp_run::agent_id(&state.selected_backend).is_some() {
+                &[]
+            } else {
+                &state.composer_routes
+            },
             model_metadata: Some(&state.composer_model_metadata),
             provider_status: Some(&state.composer_provider_status),
             selected_model,
@@ -211,7 +222,9 @@ impl<'a> ComposerProps<'a> {
             turn_mode: state.turn_mode,
             full_access: pending_permissions
                 .map_or(state.native_full_access, |settings| settings.full_access()),
-            permission_controls: Some((
+            // An ACP agent asks before acting on its own; the native
+            // agent's permissions are not its.
+            permission_controls: crate::acp_run::agent_id(&state.selected_backend).is_none().then_some((
                 pending_permissions.map_or(state.native_tool_permissions, |settings| {
                     settings.permissions()
                 }),
@@ -1049,9 +1062,19 @@ impl ModelPickerRow<'_> {
     }
 }
 
+/// The icon of a backend's models: an ACP agent's brand, else its provider's.
+fn backend_icon(props: &ComposerProps<'_>, provider_id: &str) -> Icon {
+    if props.agent_name.is_empty() {
+        icon_for_provider(provider_id)
+    } else {
+        crate::provider_icons::icon_for_acp_agent(props.agent_name)
+    }
+}
+
 fn model_provider_section(
     provider_id: &str,
     label: &str,
+    icon: Icon,
     count: usize,
     collapsed: bool,
     width: f32,
@@ -1060,7 +1083,7 @@ fn model_provider_section(
         format!("composer_model_provider_toggle:{provider_id}"),
         label,
     )
-    .icon(icon_for_provider(provider_id))
+    .icon(icon)
     .count(count)
     .collapsed(collapsed)
     .width(width)
@@ -1479,9 +1502,12 @@ fn model_effort_entries(props: &ComposerProps<'_>, width: f32) -> Vec<DropdownMe
                     provider_id,
                     if provider_id == "codex" {
                         "Codex CLI"
+                    } else if !props.agent_name.is_empty() {
+                        props.agent_name
                     } else {
                         provider_id
                     },
+                    backend_icon(props, provider_id),
                     models.len(),
                     collapsed,
                     inner_width,
@@ -1497,7 +1523,7 @@ fn model_effort_entries(props: &ComposerProps<'_>, width: f32) -> Vec<DropdownMe
                             detail: id,
                             status: "",
                             glyphs: Vec::new(),
-                            icon: icon_for_provider(provider_id),
+                            icon: backend_icon(props, provider_id),
                             width: inner_width,
                             selected: id == props.selected_model,
                             enabled: true,
@@ -1557,6 +1583,7 @@ fn model_effort_entries(props: &ComposerProps<'_>, width: f32) -> Vec<DropdownMe
                 entries.push(model_provider_section(
                     &provider.provider_id,
                     &model_provider_heading(provider),
+                    icon_for_provider(&provider.provider_id),
                     routes.len(),
                     collapsed,
                     inner_width,
@@ -1630,11 +1657,14 @@ fn model_effort_entries(props: &ComposerProps<'_>, width: f32) -> Vec<DropdownMe
             "composer_model_list_toggle",
             "Modelo",
             display,
-            icon_for_provider(if props.selected_backend == "native" {
-                props.native_provider_id
-            } else {
-                props.selected_backend
-            }),
+            backend_icon(
+                props,
+                if props.selected_backend == "native" {
+                    props.native_provider_id
+                } else {
+                    props.selected_backend
+                },
+            ),
             inner_width,
         ));
     }
@@ -2111,7 +2141,9 @@ pub(crate) fn build_composer_with_height(
     props: &ComposerProps<'_>,
     available_height: Option<f32>,
 ) -> Element {
-    if props.selected_backend != "native" {
+    // An ACP agent's task goes on in the conversation; other CLIs' history
+    // is read-only.
+    if props.selected_backend != "native" && crate::acp_run::agent_id(props.selected_backend).is_none() {
         return Element::column(vec![
         Element::text("Historial de una CLI externa")
             .font_size(14.0)
@@ -2387,6 +2419,7 @@ pub(crate) mod tests {
 
     pub(crate) fn props<'a>(prompt: &'a str, width: f32) -> ComposerProps<'a> {
         ComposerProps {
+            agent_name: "",
             check_failure: None,
             pause_line: None,
             keymap_profile: KeymapProfile::default(),
