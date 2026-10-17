@@ -6,6 +6,12 @@ says 0.1.0.
 
 ## Unreleased
 
+- Agents over the Agent Client Protocol: any agent of the public ACP
+  registry installed on this machine (Grok Build, Gemini CLI, Copilot, Cursor,
+  Qwen Code, opencode and others) starts a task from the home screen and
+  answers in the ordinary conversation, with streamed text and reasoning,
+  tool rows, plans, approval cards and Stop; its session reopens after a
+  restart when the agent supports it
 - A Graph tab in the dock draws the workspace's files, and their imports,
   calls and type uses, as a force-directed graph: hovering a file lights up
   its neighbours, nodes can be dragged, the view zooms and pans, and a click

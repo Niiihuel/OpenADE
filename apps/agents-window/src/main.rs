@@ -83,6 +83,7 @@ mod file_ops;
 mod files;
 mod folder_dialog;
 mod fonts;
+mod acp_run;
 mod graph_layout;
 mod graph_ui;
 mod graph_view;

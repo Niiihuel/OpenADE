@@ -184,6 +184,11 @@ mod tool_disclosure_app_tests;
 mod tool_navigation_app;
 #[path = "graph_app.rs"]
 mod graph_app;
+#[path = "acp_app.rs"]
+mod acp_app;
+#[cfg(test)]
+#[path = "acp_app_tests.rs"]
+mod acp_app_tests;
 
 #[path = "composer_interaction_app.rs"]
 mod composer_interaction_app;
@@ -353,6 +358,7 @@ type NativeCommandOutputResponse = (
 enum ActiveRun {
     Native(AgentRunHandle),
     Cli(CliRunHandle),
+    Acp(crate::acp_run::AcpRunHandle),
 }
 
 /// Bound work pulled into one UI frame. Keeping the unread tail in the channel
@@ -1285,7 +1291,7 @@ impl ActiveRun {
     fn journal_error(&self) -> Option<String> {
         match self {
             Self::Native(run) => run.journal_error(),
-            Self::Cli(_) => None,
+            Self::Cli(_) | Self::Acp(_) => None,
         }
     }
 
@@ -1293,6 +1299,7 @@ impl ActiveRun {
         match self {
             Self::Native(run) => run.resolve_permission(request_id, choice),
             Self::Cli(_) => false,
+            Self::Acp(run) => run.resolve_permission(request_id, choice),
         }
     }
 
@@ -1300,6 +1307,7 @@ impl ActiveRun {
         match self {
             Self::Native(run) => run.cancel(),
             Self::Cli(run) => run.cancel(),
+            Self::Acp(run) => run.cancel(),
         }
     }
 
@@ -1307,6 +1315,7 @@ impl ActiveRun {
         let receiver = match self {
             Self::Native(run) => &run.events,
             Self::Cli(run) => &run.events,
+            Self::Acp(run) => &run.events,
         };
         drain_ui_updates(receiver)
     }
@@ -1487,6 +1496,9 @@ pub struct AgentsWindow {
     // shows when it comes back, but takes no input.
     browser_live: HashMap<u64, bool>,
     agent_cursor: crate::agent_cursor::AgentCursor,
+    /// Each ACP task's agent, kept running between its turns.
+    acp_slots: HashMap<String, crate::acp_run::AgentSlot>,
+    acp_offers_loading: Option<Receiver<Result<Vec<crate::acp_run::AcpOffer>, String>>>,
     /// The graph tab's layout thread, camera and pointer; its options live in the view.
     graph: crate::graph_view::GraphView,
     /// The file last shown in the dock: the graph's focused node.
@@ -6996,6 +7008,7 @@ impl AgentsWindow {
             compat_hooks: Vec::new(),
             plugin_skills: Vec::new(),
             agent_clis: Vec::new(),
+            acp_agents: Vec::new(),
             turn_check_command: String::new(),
             turn_check_failure: None,
             review_model: Default::default(),
@@ -7390,6 +7403,8 @@ impl AgentsWindow {
             browser_restart_urls: HashMap::new(),
             browser_live: HashMap::new(),
             agent_cursor: Default::default(),
+            acp_slots: HashMap::new(),
+            acp_offers_loading: None,
             graph: Default::default(),
             graph_last_file: None,
             graph_relayout: false,
@@ -13543,6 +13558,10 @@ impl AgentsWindow {
             self.request_message_edit_submit();
             return;
         }
+        if crate::acp_run::agent_id(&self.view.selected_backend).is_some() {
+            self.start_acp_run();
+            return;
+        }
         // A turn may carry its own model (a review, for one) without touching
         // the user's selection. Taken here so every early return discards it
         // and it can never reach a later turn.
@@ -14486,13 +14505,15 @@ impl AgentsWindow {
     fn process_event(&mut self, event: AgentEvent) -> bool {
         let native_run =
             self.active_resume.is_some() || matches!(&self.active_run, Some(ActiveRun::Native(_)));
+        // An ACP agent publishes its plan like the native worker does.
+        let plan_run = native_run || matches!(&self.active_run, Some(ActiveRun::Acp(_)));
         if let AgentEventKind::PlanProposed { plan } | AgentEventKind::PlanUpdated { plan, .. } =
             &event.kind
         {
             // Live plan publications belong to the selected native worker.
             // Reject stale/foreign/invalid events before advancing the cursor
             // or persisting anything. Replay loads durable history separately.
-            if !native_run
+            if !plan_run
                 || self.view.selected_session.as_deref() != Some(event.session_id.as_str())
                 || !plan.is_valid()
                 || event.sequence <= self.last_sequence
@@ -14612,7 +14633,7 @@ impl AgentsWindow {
         }
         match &event.kind {
             AgentEventKind::PlanProposed { plan } | AgentEventKind::PlanUpdated { plan, .. }
-                if native_run
+                if plan_run
                     && persisted
                     && self.view.selected_session.as_deref() == Some(event.session_id.as_str())
                     && plan.is_valid() =>
@@ -14869,6 +14890,7 @@ impl AgentsWindow {
                     == Some(match run {
                         ActiveRun::Native(run) => run.session_id.as_str(),
                         ActiveRun::Cli(run) => run.session_id.as_str(),
+                        ActiveRun::Acp(run) => run.session_id.as_str(),
                     })
             }) || self
                 .active_resume
@@ -19291,6 +19313,9 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id.starts_with("cli_task:") => {
                 self.start_cli_task(&id["cli_task:".len()..]);
             }
+            UiAction::Clicked { id } if id.starts_with("acp_task:") => {
+                self.start_acp_task(&id["acp_task:".len()..]);
+            }
             UiAction::Clicked { id } if id == "notifications_toggle" => {
                 self.view.notifications.toggle();
             }
@@ -22689,6 +22714,7 @@ impl eframe::App for AgentsWindow {
         needs_relayout |= self.update_terminal(&ctx);
         needs_relayout |= self.update_browser(&ctx);
         needs_relayout |= self.update_graph();
+        needs_relayout |= self.poll_acp_agents(&ctx);
         needs_relayout |= self.update_github_account(&ctx);
         needs_relayout |= self.update_github_contributions(&ctx);
         needs_relayout |= self.sync_stream_presentation(presentation_frame_time);

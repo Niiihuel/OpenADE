@@ -629,6 +629,8 @@ pub struct ViewState {
     pub compat_hooks: Vec<CompatHookRowView>,
     pub plugin_skills: Vec<PluginSkillsRowView>,
     pub agent_clis: Vec<AgentCliRowView>,
+    /// Agents of the ACP registry this machine can run.
+    pub acp_agents: Vec<crate::acp_run::AcpOffer>,
     /// The check command saved for the open project, shown in Settings.
     pub turn_check_command: String,
     pub turn_check_failure: Option<String>,
@@ -4337,6 +4339,7 @@ pub(crate) mod tests {
             compat_hooks: Vec::new(),
             plugin_skills: Vec::new(),
             agent_clis: Vec::new(),
+            acp_agents: Vec::new(),
             turn_check_command: String::new(),
             turn_check_failure: None,
             review_model: Default::default(),

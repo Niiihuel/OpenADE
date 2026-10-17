@@ -355,6 +355,7 @@ impl AgentsWindow {
 
     /// Reloads the detected CLI list shown in Settings.
     pub(super) fn refresh_agent_clis(&mut self) {
+        self.refresh_acp_agents();
         self.view.agent_clis = agent_cli_definitions::definitions()
             .iter()
             .map(|agent| crate::view::AgentCliRowView {

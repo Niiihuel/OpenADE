@@ -36,6 +36,14 @@ pub(crate) fn icon_for_agent_cli(agent_id: &str) -> Icon {
     }
 }
 
+/// An ACP agent's mark from the brand catalog, found by its name.
+pub(crate) fn icon_for_acp_agent(name: &str) -> Icon {
+    crate::brand_icons::search(name, 1)
+        .first()
+        .and_then(|brand| brand.icon(!crate::theme_mode::light()))
+        .unwrap_or(Icon::Terminal)
+}
+
 /// Artwork limn does not ship: provider marks and the application's own
 /// glyphs. Each is an SVG drawn with `currentColor`, so it follows the theme.
 pub(crate) const CODEX: Icon =

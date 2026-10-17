@@ -4483,6 +4483,7 @@ mod tests {
             compat_hooks: Vec::new(),
             plugin_skills: Vec::new(),
             agent_clis: Vec::new(),
+            acp_agents: Vec::new(),
             turn_check_command: String::new(),
             turn_check_failure: None,
             review_model: Default::default(),
