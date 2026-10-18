@@ -168,6 +168,8 @@ mod pause_app_tests;
 #[cfg(test)]
 #[path = "file_drop_app_tests.rs"]
 mod file_drop_app_tests;
+#[path = "cli_status_app.rs"]
+mod cli_status_app;
 #[cfg(test)]
 #[path = "message_edit_app_tests.rs"]
 mod message_edit_app_tests;
@@ -1519,6 +1521,13 @@ pub struct AgentsWindow {
     pub(crate) file_drops: crate::file_drop::FileDrops,
     /// A notice asked for the window's attention; sent on the next frame.
     attention_pending: bool,
+    /// The task each CLI terminal belongs to, and how its CLI reports.
+    cli_terminal_tasks: HashMap<u64, (String, crate::cli_status::StatusReport)>,
+    /// Tasks whose CLI works (`false`) or waits for the person (`true`).
+    cli_status: BTreeMap<String, bool>,
+    /// The word each task's hooks last wrote, so one is acted on once.
+    cli_status_words: HashMap<String, String>,
+    cli_status_polled: Option<Instant>,
     keyboard_paste_handled: bool,
     pending_text_paste: Option<text_input_app::TextPasteRequest>,
     attachment_viewer_generation: u64,
@@ -7459,6 +7468,10 @@ impl AgentsWindow {
             attachment_pastes_pending: HashSet::new(),
             file_drops: Default::default(),
             attention_pending: false,
+            cli_terminal_tasks: HashMap::new(),
+            cli_status: BTreeMap::new(),
+            cli_status_words: HashMap::new(),
+            cli_status_polled: None,
             keyboard_paste_handled: false,
             pending_text_paste: None,
             attachment_viewer_generation: 0,
@@ -15294,6 +15307,7 @@ impl AgentsWindow {
                     !parked.pending_permissions.is_empty(),
                 )
             })
+            .chain(self.cli_status.iter().map(|(session, asks)| (session.clone(), *asks)))
             .collect();
     }
 
@@ -22930,6 +22944,7 @@ impl eframe::App for AgentsWindow {
             | self.poll_background_resumes()
             | self.poll_parked_runs()
             | self.poll_cli_session_probes()
+            | self.poll_cli_status(&ctx)
             | self.poll_compact()
             | self.poll_resume()
             | self.poll_child_recovery()

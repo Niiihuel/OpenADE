@@ -114,6 +114,12 @@ says 0.1.0.
 - A short chime plays with each notice (Settings → Notificaciones → Sonido,
   on by default), and a desktop notice also asks the window manager to mark
   the window until it is seen
+- A Claude Code or Codex task shows in the sidebar whether its CLI is
+  working (clock) or waiting for an answer or an approval (chat mark), and
+  leaves the task unread with a notice when its turn ends off screen. Claude
+  Code reports through hooks passed with `--settings`, which write to
+  `OPENADE_CLI_STATUS`; Codex through its OSC 9 notifications, which the
+  terminal now reads
 
 ## 0.3.0 — 2026-10-16
 

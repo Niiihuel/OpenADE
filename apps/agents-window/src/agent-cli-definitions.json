@@ -11,6 +11,7 @@
       "resume_args": ["--resume", "{session}"],
       "sessions": "claude_projects",
       "bridge": "claude_mcp_config",
+      "status": "claude_hooks",
       "selection_reference": "@{path}#L{lines}"
     },
     {
@@ -22,6 +23,7 @@
       "resume_args": ["resume", "{session}"],
       "sessions": "codex_rollouts",
       "bridge": "codex_config",
+      "status": "codex_notifications",
       "selection_reference": "{path}:{lines}"
     },
     {

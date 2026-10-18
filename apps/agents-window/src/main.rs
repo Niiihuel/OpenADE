@@ -53,6 +53,7 @@ mod command_center_visual_tests;
 mod composer_attachments;
 mod file_drop;
 mod chime;
+mod cli_status;
 mod composer_context_ui;
 mod composer_pending;
 mod composer_permissions_ui;

@@ -448,6 +448,19 @@ impl AgentsWindow {
                 }
             }
             let mut env = Vec::new();
+            // A task's CLI says whether it works, asks or is done.
+            if let (Some(task_id), Some(report)) = (&task_id, agent.status) {
+                let file = crate::cli_status::status_file(&self.data_root, task_id);
+                if let Some(directory) = file.parent() {
+                    std::fs::create_dir_all(directory)?;
+                }
+                // What the previous process wrote is not this one's news.
+                let _ = std::fs::remove_file(&file);
+                args.extend(report.args());
+                env.push((crate::cli_status::STATUS_VARIABLE, file.to_string_lossy().into_owned()));
+                self.cli_terminal_tasks.insert(id, (task_id.clone(), report));
+                self.cli_status_words.remove(task_id);
+            }
             // The CLI needs the same search path it was found with (its own
             // runtime, such as node, usually sits beside it).
             if let Some(path) = self.agent_search_path().and_then(|path| path.into_string().ok()) {

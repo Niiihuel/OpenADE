@@ -9,7 +9,7 @@ use std::{
     io::{self, Read, Write},
     path::Path,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
         Arc, Condvar, Mutex, Weak,
     },
     thread,
@@ -137,12 +137,18 @@ impl Dimensions {
     }
 }
 
+const INPUT_KEYS: u8 = 1;
+const INPUT_ENTER: u8 = 2;
+
 struct TerminalCallbacks {
     // Parser callbacks do not own the input queue's lifetime. Explicit session
     // closure wakes the writer and rejects any later protocol responses.
     reply: Option<Weak<InputQueue>>,
     /// The window title the running program last asked for.
     title: String,
+    /// Desktop notifications the program sent (OSC 9 and OSC 777), not yet
+    /// taken by the app.
+    notices: Vec<String>,
 }
 
 impl vt100::Callbacks for TerminalCallbacks {
@@ -152,6 +158,24 @@ impl vt100::Callbacks for TerminalCallbacks {
             .filter(|character| !character.is_control())
             .take(160)
             .collect();
+    }
+
+    fn unhandled_osc(&mut self, _: &mut vt100::Screen, params: &[&[u8]]) {
+        let text = match params {
+            // OSC 9;4 is a progress bar, not a notification.
+            [b"9", rest @ ..] if rest.first() != Some(&b"4".as_slice()) => rest.join(&b';'),
+            [b"777", b"notify", rest @ ..] => rest.join(&b';'),
+            _ => return,
+        };
+        if self.notices.len() < 16 {
+            self.notices.push(
+                String::from_utf8_lossy(&text)
+                    .chars()
+                    .filter(|character| !character.is_control())
+                    .take(200)
+                    .collect(),
+            );
+        }
     }
 
     fn unhandled_csi(
@@ -185,6 +209,11 @@ struct SharedScreen {
     parser: Mutex<vt100::Parser<TerminalCallbacks>>,
     error: Mutex<Option<String>>,
     revision: AtomicU64,
+    /// When the program last wrote output.
+    output_at: Mutex<Option<std::time::Instant>>,
+    /// Keys sent since the app last asked: `INPUT_KEYS`, with `INPUT_ENTER`
+    /// when Enter was among them.
+    input: AtomicU8,
     closed: AtomicBool,
     visible: AtomicBool,
     repaint: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
@@ -200,10 +229,13 @@ impl SharedScreen {
                 TerminalCallbacks {
                     reply,
                     title: String::new(),
+                    notices: Vec::new(),
                 },
             )),
             error: Mutex::new(None),
             revision: AtomicU64::new(0),
+            output_at: Mutex::new(None),
+            input: AtomicU8::new(0),
             closed: AtomicBool::new(false),
             visible: AtomicBool::new(true),
             repaint: Mutex::new(None),
@@ -636,6 +668,8 @@ impl TerminalSession {
             .as_ref()
             .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "terminal closed"))?;
         input.push(bytes)?;
+        let enter = if bytes.contains(&b'\r') { INPUT_ENTER } else { 0 };
+        self.shared.input.fetch_or(INPUT_KEYS | enter, Ordering::AcqRel);
         // Input always returns to the live prompt, including after a history
         // selection. Keep this in the session so all input routes agree.
         self.selection = None;
@@ -854,6 +888,39 @@ impl TerminalSession {
             changed = true;
         }
         changed
+    }
+
+    pub fn is_running(&self) -> bool {
+        matches!(&self.status, SessionStatus::Running)
+    }
+
+    /// The notifications the program sent since the last call, oldest first.
+    pub fn take_notices(&self) -> Vec<String> {
+        std::mem::take(
+            &mut self
+                .shared
+                .parser
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .callbacks_mut()
+                .notices,
+        )
+    }
+
+    /// How long the program has written nothing; `None` before its first output.
+    pub fn quiet_for(&self) -> Option<std::time::Duration> {
+        self.shared
+            .output_at
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .map(|at| at.elapsed())
+    }
+
+    /// Whether keys were sent since the last call: `Some(true)` when Enter
+    /// was among them.
+    pub fn take_input(&self) -> Option<bool> {
+        let input = self.shared.input.swap(0, Ordering::AcqRel);
+        (input & INPUT_KEYS != 0).then_some(input & INPUT_ENTER != 0)
     }
 
     /// The window title set by the running program; empty until it sets one.
@@ -1168,6 +1235,8 @@ fn start_reader(mut reader: Box<dyn Read + Send>, shared: Arc<SharedScreen>) -> 
                         match shared.parser.lock() {
                             Ok(mut parser) => {
                                 parser.process(&chunk[..len]);
+                                *shared.output_at.lock().unwrap_or_else(|e| e.into_inner()) =
+                                    Some(std::time::Instant::now());
                                 shared.changed();
                             }
                             Err(_) => break,

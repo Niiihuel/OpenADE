@@ -35,6 +35,10 @@ pub(crate) struct AgentCliDefinition {
     pub sessions: Option<SessionDiscovery>,
     /// How OpenIDE hands this CLI its tools. `None` starts it unconnected.
     pub bridge: Option<BridgeKind>,
+    /// How a task's CLI tells the app it is working, waiting for the person
+    /// or done. `None` shows no status.
+    #[serde(default)]
+    pub status: Option<crate::cli_status::StatusReport>,
     /// What is typed into the CLI's prompt for a selection of a file:
     /// `{path}` is relative to the project and `{lines}` is `12` or `12-30`.
     pub selection_reference: String,
