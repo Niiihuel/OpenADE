@@ -14517,8 +14517,7 @@ impl AgentsWindow {
                 .with_system_instructions(instructions)
                 .with_native_runtime_identity(&turn_settings.provider_id, endpoint)
                 .with_event_journal(store.clone())
-                .with_native_steering(store.clone())
-                .with_external_controls(store.clone());
+                .with_native_steering(store.clone());
             let command_actor = match self.native_command_actor_for(session_id) {
                 Ok(actor) => actor,
                 Err(error) => {

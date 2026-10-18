@@ -159,6 +159,7 @@ dependencies = [
  "openide-graph",
  "openide-harness",
  "openide-preview",
+ "openide-remote",
  "openide-ui",
  "portable-pty",
  "reqwest",

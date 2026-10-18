@@ -40,7 +40,6 @@ mod user_interaction;
 mod process_tree;
 mod project_instructions;
 mod registry;
-mod remote_control;
 mod responses;
 mod resume;
 mod runner;
@@ -159,9 +158,6 @@ pub use project_instructions::{
 pub use registry::{
     ToolCatalog, ToolCatalogError, MAX_ADVERTISED_TOOLS, MAX_CATALOG_SCHEMA_BYTES,
     MAX_TOOL_NAME_BYTES, MAX_TOOL_SCHEMA_BYTES,
-};
-pub use remote_control::{
-    native_remote_owner, request_native_remote_cancel, NativeRemoteControlGuard, NativeRemoteOwner,
 };
 pub use responses::{
     hosted_web_citations, hosted_web_search_calls, hosted_web_search_presentation,

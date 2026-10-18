@@ -73,7 +73,6 @@ pub struct AgentRunner {
     session_approvals: Option<(Arc<SessionStore>, CommandIsolation)>,
     user_interaction: Option<Arc<SessionStore>>,
     native_steering_store: Option<Arc<SessionStore>>,
-    external_controls_store: Option<Arc<SessionStore>>,
     manual_command_actor: Option<Arc<NativeManualCommandActor>>,
 }
 
@@ -307,7 +306,6 @@ impl AgentRunner {
             session_approvals: None,
             user_interaction: None,
             native_steering_store: None,
-            external_controls_store: None,
             manual_command_actor: None,
         }
     }
@@ -415,14 +413,6 @@ impl AgentRunner {
     /// must be the same journal used for this leased native run.
     pub fn with_native_steering(mut self, sessions: Arc<SessionStore>) -> Self {
         self.native_steering_store = Some(sessions);
-        self
-    }
-
-    /// Allow a local remote gateway to cancel this active turn or resolve its
-    /// pending permissions. Requires the same leased journal and native steering
-    /// store; the owner heartbeat exists only after all initial validation passes.
-    pub fn with_external_controls(mut self, sessions: Arc<SessionStore>) -> Self {
-        self.external_controls_store = Some(sessions);
         self
     }
 
@@ -681,17 +671,6 @@ impl AgentRunner {
                 "native request and event sink must match the leased session".into(),
             ));
         }
-        if let Some(store) = &self.external_controls_store {
-            if !self
-                .native_steering_store
-                .as_ref()
-                .is_some_and(|steering| Arc::ptr_eq(store, steering))
-            {
-                return Err(AgentError::InvalidRequest(
-                    "external controls require the native steering journal".into(),
-                ));
-            }
-        }
         self.validate_manual_actor(lease, sink)?;
         let workspace = canonical_workspace(&request.workspace)?;
         self.validate_initial_admission(&request, &workspace, lease, sink)?;
@@ -731,26 +710,6 @@ impl AgentRunner {
             return Err(AgentError::Cancelled);
         }
         *initial_validation = InitialRunValidation::EffectsAllowed;
-        let _external_controls = if let Some(store) = &self.external_controls_store {
-            let context = self.native_steering_context(lease, sink)?.ok_or_else(|| {
-                AgentError::InvalidRequest(
-                    "external controls require a leased admitted turn".into(),
-                )
-            })?;
-            let pending = pending_permissions.clone();
-            Some(
-                crate::NativeRemoteControlGuard::start(
-                    store.clone(),
-                    context.lease,
-                    &context.turn_id,
-                    cancel.clone(),
-                    move |request_id, choice| pending.resolve(request_id, choice),
-                )
-                .map_err(|error| AgentError::Runtime(format!("external controls: {error}")))?,
-            )
-        } else {
-            None
-        };
         let mode = request.mode;
         // Preparation and shutdown run on the same Tokio runtime as every
         // model and tool step. In Plan mode external tools are not advertised,
@@ -6016,91 +5975,6 @@ mod tests {
             AgentEventKind::TurnFailed { .. }
         ));
         assert_eq!(tool.executions.load(Ordering::SeqCst), 0);
-    }
-
-    #[test]
-    fn external_controls_observe_cross_process_permissions_and_cancel() {
-        for approve in [true, false] {
-            let dir = tempfile::tempdir().unwrap();
-            let store = Arc::new(SessionStore::open(dir.path().join("sessions")).unwrap());
-            let gateway_store = SessionStore::open(store.storage_root()).unwrap();
-            let request = journaled_request(&store, dir.path());
-            let session_id = request.session_id.clone().unwrap();
-            let lease = store.try_acquire_native_lease(&session_id).unwrap();
-            let tool = Arc::new(CountingTool {
-                executions: AtomicUsize::new(0),
-            });
-            let runner = AgentRunner::new(model_with_tool_call(), tool.clone())
-                .with_permission_policy(
-                    PermissionPolicy::new().with_tool("echo", PermissionMode::Ask),
-                )
-                .with_native_runtime_identity("test", "https://test.example/v1")
-                .with_event_journal(store.clone())
-                .with_native_steering(store.clone())
-                .with_external_controls(store.clone());
-            let handle = runner.start_with_lease(request, lease);
-            let permission_id = wait_for_permission(&handle);
-            assert!(
-                crate::native_remote_owner(&gateway_store, &session_id, "turn-1")
-                    .unwrap()
-                    .is_some()
-            );
-            if approve {
-                gateway_store
-                    .record_permission_decision(
-                        &session_id,
-                        &permission_id,
-                        openide_core::PermissionDecision::Allow,
-                    )
-                    .unwrap();
-            } else {
-                crate::request_native_remote_cancel(&gateway_store, &session_id, "turn-1").unwrap();
-            }
-            let events = receive_until_terminal(&handle);
-            assert_eq!(tool.executions.load(Ordering::SeqCst), usize::from(approve));
-            assert!(if approve {
-                matches!(
-                    events.last().unwrap().kind,
-                    AgentEventKind::TurnCompleted { .. }
-                )
-            } else {
-                matches!(events.last().unwrap().kind, AgentEventKind::TurnCancelled)
-            });
-            let deadline = std::time::Instant::now() + Duration::from_secs(2);
-            while crate::native_remote_owner(&gateway_store, &session_id, "turn-1")
-                .unwrap()
-                .is_some()
-            {
-                assert!(std::time::Instant::now() < deadline);
-                std::thread::sleep(Duration::from_millis(10));
-            }
-        }
-    }
-
-    #[test]
-    fn external_controls_never_advertise_unvalidated_runs() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(SessionStore::open(dir.path().join("sessions")).unwrap());
-        let request = journaled_request(&store, dir.path());
-        let session_id = request.session_id.clone().unwrap();
-        let lease = store.try_acquire_native_lease(&session_id).unwrap();
-        let model = model_with_tool_call();
-        let runner = AgentRunner::new(model.clone(), Arc::new(EchoTool))
-            .with_native_runtime_identity("test", "https://test.example/v1")
-            .with_event_journal(store.clone())
-            .with_native_steering(store.clone())
-            .with_external_controls(store.clone())
-            .with_system_instructions("x".repeat(MAX_SYSTEM_INSTRUCTIONS_BYTES + 1));
-        let events = receive_until_terminal(&runner.start_with_lease(request, lease));
-        assert!(matches!(
-            events.last().unwrap().kind,
-            AgentEventKind::TurnFailed { .. }
-        ));
-        assert!(model.seen.lock().unwrap().is_empty());
-        assert!(!store.storage_root().join(".remote-controls").exists());
-        assert!(crate::native_remote_owner(&store, &session_id, "turn-1")
-            .unwrap()
-            .is_none());
     }
 
     /// Cuts its first `cut` responses at the output limit.
