@@ -1,6 +1,6 @@
 //! Typed Git operations; no shell, hooks, filters, or caller-supplied arguments.
 use crate::{
-    host::{ApiError, ApiResult},
+    error::{ApiError, ApiResult},
     workspace,
 };
 use axum::http::StatusCode;

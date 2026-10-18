@@ -66,9 +66,14 @@ pub fn read_private(path: &Path, max: u64) -> Result<Vec<u8>> {
 }
 
 pub fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
+    let mut bytes = serde_json::to_vec(value)?;
+    bytes.push(b'\n');
+    write_private(path, &bytes)
+}
+
+/// Replaces `path` atomically with a file only its owner can read.
+pub fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
     let parent = path.parent().context("missing parent directory")?;
-    // Never change permissions of an existing caller-supplied parent (for
-    // example a user's Downloads folder used for a pairing export).
     if !parent.exists() {
         prepare_directory(parent)?;
     }
@@ -82,8 +87,7 @@ pub fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
             options.mode(0o600);
         }
         let mut file = options.open(&temp)?;
-        serde_json::to_writer(&mut file, value)?;
-        file.write_all(b"\n")?;
+        file.write_all(bytes)?;
         file.sync_all()?;
         drop(file);
         fs::rename(&temp, path)?;
@@ -102,29 +106,6 @@ pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T> {
         path,
         4 * 1024 * 1024,
     )?)?)
-}
-
-/// Pairing exports must never replace an existing file, including one created
-/// between the CLI's initial check and token provisioning.
-pub fn write_new_json(path: &Path, value: &impl Serialize) -> Result<()> {
-    let parent = path.parent().context("missing parent directory")?;
-    if !parent.exists() {
-        prepare_directory(parent)?;
-    }
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
-    }
-    let mut file = options.open(path)?;
-    serde_json::to_writer(&mut file, value)?;
-    file.write_all(b"\n")?;
-    file.sync_all()?;
-    #[cfg(unix)]
-    File::open(parent)?.sync_all()?;
-    Ok(())
 }
 
 pub fn lock_file(path: &Path) -> Result<File> {

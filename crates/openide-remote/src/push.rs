@@ -138,25 +138,32 @@ pub struct PushConfig {
     pub key_id: String,
     pub topic: String,
 }
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PushEventKind {
     ApprovalRequired,
+    QuestionAsked,
     TurnCompleted,
+    TurnFailed,
 }
 #[derive(Clone)]
 pub struct PushEvent {
     pub kind: PushEventKind,
     pub session_id: String,
+    /// The task's title: what tells one notice from another.
+    pub title: String,
 }
 impl PushEvent {
     fn payload(&self, device_id: &str) -> serde_json::Value {
         let body = match self.kind {
-            PushEventKind::ApprovalRequired => "Tu tarea requiere permiso.",
-            PushEventKind::TurnCompleted => "Tu tarea terminó.",
+            PushEventKind::ApprovalRequired => "Necesita tu permiso",
+            PushEventKind::QuestionAsked => "Te hizo una pregunta",
+            PushEventKind::TurnCompleted => "Terminó",
+            PushEventKind::TurnFailed => "No pudo terminar",
         };
-        json!({"aps":{"alert":{"title":"openADE Remote","body":body},"sound":"default"},
-            "openade":{"version":1,"event":self.kind,"session_id":self.session_id,"device_id":device_id}})
+        let title: String = self.title.chars().take(80).collect();
+        json!({"aps":{"alert":{"title":title,"body":body},"sound":"default","thread-id":self.session_id},
+            "openade":{"version":2,"event":self.kind,"session_id":self.session_id,"device_id":device_id}})
     }
 }
 #[derive(Default, Debug, Serialize)]
@@ -386,12 +393,11 @@ mod tests {
         let payload = PushEvent {
             kind: PushEventKind::ApprovalRequired,
             session_id: "session-1".into(),
+            title: "aurora · Arreglar el login".into(),
         }
         .payload("device-1");
-        assert_eq!(
-            payload["aps"]["alert"]["body"],
-            "Tu tarea requiere permiso."
-        );
+        assert_eq!(payload["aps"]["alert"]["body"], "Necesita tu permiso");
+        assert_eq!(payload["aps"]["alert"]["title"], "aurora · Arreglar el login");
         assert_eq!(payload["openade"]["session_id"], "session-1");
         assert_eq!(payload.as_object().unwrap().len(), 2);
     }
@@ -465,6 +471,7 @@ mod tests {
         let event = PushEvent {
             kind: PushEventKind::ApprovalRequired,
             session_id: "session-safe-id".into(),
+            title: "Tarea".into(),
         };
         let report = service.send_event(event.clone()).await.unwrap();
         assert_eq!(
@@ -480,7 +487,7 @@ mod tests {
                 assert_eq!(headers["authorization"], "Bearer provider-fixture");
                 assert_eq!(headers["apns-topic"], APNS_TOPIC);
                 assert_eq!(headers["apns-push-type"], "alert");
-                assert_eq!(body["aps"]["alert"]["body"], "Tu tarea requiere permiso.");
+                assert_eq!(body["aps"]["alert"]["body"], "Necesita tu permiso");
                 assert!(
                     body["openade"]["device_id"] == first.id
                         || body["openade"]["device_id"] == second.id

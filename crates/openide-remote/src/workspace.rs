@@ -1,6 +1,6 @@
 //! Bounded workspace IO. On Unix every component is opened relative to a
 //! directory descriptor with O_NOFOLLOW; a replaced parent cannot escape root.
-use crate::host::{ApiError, ApiResult};
+use crate::error::{ApiError, ApiResult};
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};

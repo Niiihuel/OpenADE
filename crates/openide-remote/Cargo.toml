@@ -6,28 +6,29 @@ rust-version.workspace = true
 
 [dependencies]
 openide-core = { path = "../openide-core" }
-openide-harness = { path = "../openide-harness" }
-openide-connections = { path = "../openide-connections" }
 axum = { version = "0.8", features = ["http2"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "fs", "io-util"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 subtle = "2"
 uuid = { version = "1", features = ["v4"] }
-clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 base64 = "0.22"
 url = "2"
-qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+qrcode = { version = "0.14", default-features = false }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls", "http2"] }
 jsonwebtoken = "9.3"
+# The PC's own certificate, which the phone pins from the pairing code.
+rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+hyper = { version = "1", features = ["server", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["server-auto", "tokio", "service"] }
+futures-util = "0.3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 [dev-dependencies]
-tokio-util = "0.7"
 tempfile = "3"
-tower = { version = "0.5", features = ["util"] }
-http-body-util = "0.1"

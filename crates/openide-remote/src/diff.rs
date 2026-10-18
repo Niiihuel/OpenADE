@@ -1,4 +1,4 @@
-use crate::host::{ApiError, ApiResult};
+use crate::error::{ApiError, ApiResult};
 use serde_json::{json, Value};
 use std::{
     io::Read,

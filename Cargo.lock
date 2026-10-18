@@ -4346,23 +4346,23 @@ dependencies = [
  "anyhow",
  "axum",
  "base64 0.22.1",
- "clap",
- "http-body-util",
+ "futures-util",
+ "hyper",
+ "hyper-util",
  "jsonwebtoken",
  "libc",
- "openide-connections",
  "openide-core",
- "openide-harness",
  "qrcode",
+ "rcgen",
  "reqwest",
+ "rustls",
  "serde",
  "serde_json",
  "sha2",
  "subtle",
  "tempfile",
  "tokio",
- "tokio-util",
- "tower",
+ "tokio-rustls",
  "url",
  "uuid",
 ]
@@ -4949,6 +4949,19 @@ dependencies = [
  "objc2-core-foundation",
  "objc2-foundation 0.3.2",
  "objc2-quartz-core 0.3.2",
+]
+
+[[package]]
+name = "rcgen"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75e669e5202259b5314d1ea5397316ad400819437857b90861765f24c4cf80a2"
+dependencies = [
+ "pem",
+ "ring",
+ "rustls-pki-types",
+ "time",
+ "yasna",
 ]
 
 [[package]]
@@ -7899,6 +7912,15 @@ name = "xmlwriter"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
+
+[[package]]
+name = "yasna"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e17bb3549cc1321ae1296b9cdc2698e2b6cb1992adfa19a8c72e5b7a738f44cd"
+dependencies = [
+ "time",
+]
 
 [[package]]
 name = "yoke"

@@ -40,10 +40,16 @@ impl fmt::Display for PairingError {
 }
 impl std::error::Error for PairingError {}
 
+/// What the QR code carries: where the PC answers, how to recognize it,
+/// and a secret good once for ten minutes.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PairingInvitation {
     pub version: u32,
-    pub base_url: String,
+    /// `https://host:port` addresses, the likeliest first.
+    pub routes: Vec<String>,
+    /// SHA-256 of the PC's certificate, which the phone pins.
+    pub fingerprint: String,
+    pub server_id: String,
     pub pairing_id: String,
     pub secret: String,
     pub expires_at: u64,
@@ -56,12 +62,11 @@ impl PairingInvitation {
             URL_SAFE_NO_PAD.encode(serde_json::to_vec(self)?)
         ))
     }
-    pub fn qr_svg(&self) -> Result<String> {
+    /// The QR code's modules, row by row, `true` for dark.
+    pub fn qr_modules(&self) -> Result<(usize, Vec<bool>)> {
         let code = qrcode::QrCode::new(self.deep_link()?.as_bytes())?;
-        Ok(code
-            .render::<qrcode::render::svg::Color>()
-            .min_dimensions(640, 640)
-            .build())
+        let modules = code.to_colors().into_iter().map(|color| color == qrcode::Color::Dark).collect();
+        Ok((code.width(), modules))
     }
 }
 
@@ -76,7 +81,6 @@ pub struct PairRequest {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PairingResult {
     pub version: u32,
-    pub base_url: String,
     pub device_id: String,
     pub device_name: String,
     pub token: String,
@@ -89,7 +93,6 @@ struct Completion {
 #[derive(Serialize, Deserialize)]
 struct Pending {
     pairing_id: String,
-    base_url: String,
     secret_sha256: Vec<u8>,
     expires_at: u64,
     completion: Option<Completion>,
@@ -116,8 +119,17 @@ impl PairingStore {
         storage::lock_file(&self.directory().join("pairing.lock"))
     }
 
-    pub fn start(&self, base_url: &str, label: &str) -> Result<PairingInvitation> {
-        let base_url = validate_base_url(base_url)?;
+    pub fn start(
+        &self,
+        routes: &[String],
+        fingerprint: &str,
+        server_id: &str,
+        label: &str,
+    ) -> Result<PairingInvitation> {
+        if routes.is_empty() || routes.len() > 8 {
+            return Err(PairingError::InvalidRequest.into());
+        }
+        let routes = routes.iter().map(|route| validate_base_url(route)).collect::<Result<Vec<_>>>()?;
         validate_name(label)?;
         let _lock = self.lock()?;
         self.purge_locked(now())?;
@@ -129,8 +141,10 @@ impl PairingStore {
             bail!("too many active pairing invitations");
         }
         let invitation = PairingInvitation {
-            version: 1,
-            base_url,
+            version: 2,
+            routes,
+            fingerprint: fingerprint.to_owned(),
+            server_id: server_id.to_owned(),
             pairing_id: Uuid::new_v4().to_string(),
             secret: random_secret(),
             expires_at: now() + INVITATION_TTL_SECONDS,
@@ -140,7 +154,6 @@ impl PairingStore {
             &self.path(&invitation.pairing_id),
             &Pending {
                 pairing_id: invitation.pairing_id.clone(),
-                base_url: invitation.base_url.clone(),
                 secret_sha256: Sha256::digest(invitation.secret.as_bytes()).to_vec(),
                 expires_at: invitation.expires_at,
                 completion: None,
@@ -186,8 +199,7 @@ impl PairingStore {
             pending.completion = Some(Completion {
                 request_id: request.request_id,
                 result: PairingResult {
-                    version: 1,
-                    base_url: pending.base_url.clone(),
+                    version: 2,
                     device_id: Uuid::new_v4().to_string(),
                     device_name: request.device_name.trim().to_owned(),
                     token: random_secret(),
@@ -327,6 +339,7 @@ fn now() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    const FINGERPRINT: &str = "ab";
     fn request(invitation: &PairingInvitation, request_id: &str) -> PairRequest {
         PairRequest {
             pairing_id: invitation.pairing_id.clone(),
@@ -339,7 +352,7 @@ mod tests {
     fn one_time_retry_ack_and_revocation() {
         let tmp = tempfile::tempdir().unwrap();
         let store = PairingStore::new(tmp.path());
-        let invite = store.start("https://host.example", "My PC").unwrap();
+        let invite = store.start(&["https://host.example".into()], FINGERPRINT, "server", "My PC").unwrap();
         let id = Uuid::new_v4().to_string();
         let first = store.complete(request(&invite, &id)).unwrap();
         let retry = store.complete(request(&invite, &id)).unwrap();
@@ -369,9 +382,13 @@ mod tests {
             "https://host.example?token=x",
             "https://host.example/path",
         ] {
-            assert!(store.start(url, "PC").is_err());
+            assert!(store.start(&[url.into()], FINGERPRINT, "server", "PC").is_err());
         }
-        let invite = store.start("https://host.example/", "PC").unwrap();
+        assert!(store.start(&[], FINGERPRINT, "server", "PC").is_err());
+        let invite = store
+            .start(&["https://192.168.1.4:7787/".into(), "https://[2800::1]:7787".into()], FINGERPRINT, "server", "PC")
+            .unwrap();
+        assert_eq!(invite.routes, ["https://192.168.1.4:7787", "https://[2800::1]:7787"]);
         let mut req = request(&invite, &Uuid::new_v4().to_string());
         req.secret = "0".repeat(64);
         assert!(store.complete(req).is_err());
@@ -385,18 +402,18 @@ mod tests {
             .unwrap()
             .starts_with("openade-remote://pair#"));
         assert!(!invite.deep_link().unwrap().contains('?'));
-        assert!(invite.qr_svg().unwrap().contains("<svg"));
+        let (width, modules) = invite.qr_modules().unwrap();
+        assert_eq!(modules.len(), width * width);
     }
 
     #[test]
     fn retry_recovers_completion_persisted_before_device_insertion() {
         let tmp = tempfile::tempdir().unwrap();
         let store = PairingStore::new(tmp.path());
-        let invite = store.start("https://host.example", "PC").unwrap();
+        let invite = store.start(&["https://host.example".into()], FINGERPRINT, "server", "PC").unwrap();
         let request_id = Uuid::new_v4().to_string();
         let prepared = PairingResult {
-            version: 1,
-            base_url: invite.base_url.clone(),
+            version: 2,
             device_id: Uuid::new_v4().to_string(),
             device_name: "My iPhone".into(),
             token: random_secret(),
