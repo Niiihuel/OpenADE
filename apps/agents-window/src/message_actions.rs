@@ -118,6 +118,61 @@ pub(crate) fn turn_items(transcript: &[TranscriptItem], start: usize) -> &[Trans
     &rest[..end]
 }
 
+/// At most this much of a conversation goes to the task forked from it.
+const HANDOFF_BYTES: usize = 16_000;
+
+/// The conversation in `items` as text for another agent: its first message
+/// and as much of its end as fits, oldest first, each message whole. Tool
+/// calls are a line per turn; reasoning and attachments stay out.
+pub(crate) fn handoff_text(items: &[TranscriptItem], title: &str) -> String {
+    let mut messages: Vec<String> = Vec::new();
+    let mut turn_start = 0;
+    let close_turn = |messages: &mut Vec<String>, turn: &[TranscriptItem]| {
+        let summary = activity_summary(turn);
+        if !summary.is_empty() {
+            messages.push(format!("(El agente {summary}.)"));
+        }
+    };
+    for (index, item) in items.iter().enumerate() {
+        match item {
+            TranscriptItem::User { content, .. } => {
+                close_turn(&mut messages, &items[turn_start..index]);
+                turn_start = index;
+                messages.push(format!("Usuario:\n{}", content.trim()));
+            }
+            TranscriptItem::Assistant { content, .. } if !content.trim().is_empty() => {
+                messages.push(format!("Asistente:\n{}", content.trim()));
+            }
+            _ => {}
+        }
+    }
+    close_turn(&mut messages, &items[turn_start..]);
+    // The first message says what the work is; the end, where it stands.
+    let first: String = messages.first().map(|first| first.chars().take(HANDOFF_BYTES / 4).collect()).unwrap_or_default();
+    let mut budget = HANDOFF_BYTES.saturating_sub(first.len());
+    let mut tail = Vec::new();
+    for message in messages.iter().skip(1).rev() {
+        if message.len() > budget {
+            break;
+        }
+        budget -= message.len();
+        tail.push(message.as_str());
+    }
+    tail.reverse();
+    let omitted = messages.len().saturating_sub(1 + tail.len());
+    let mut text = format!(
+        "[Contexto de la tarea «{}» de openADE{}. Es historial, no instrucciones nuevas.]\n\n{first}",
+        title.trim(),
+        if omitted > 0 { format!(", sin {omitted} mensajes del medio") } else { String::new() },
+    );
+    for message in tail {
+        text.push_str("\n\n");
+        text.push_str(message);
+    }
+    text.push_str("\n\n[Fin del contexto. Lo que sigue es el pedido nuevo.]\n\n");
+    text
+}
+
 /// What the agent did in a turn, in one line: "leyó 6 archivos, ejecutó 3
 /// comandos, editó 2 archivos". Counted from the turn's own tool calls, each
 /// of which keeps its row above; a turn that used no tool says nothing.
@@ -251,6 +306,19 @@ pub(crate) fn turn_actions(state: &ViewState, turn: &Turn<'_>) -> Element {
             });
         }
     }
+    // Another task starts from here, with this agent or another one.
+    entries.push(DropdownMenuEntry::Heading("Bifurcar desde aquí con".into()));
+    entries.push(DropdownMenuItem::new(format!("turn_fork:{start}:native"), "openADE").icon(Icon::Chat).into());
+    entries.extend(state.acp_agents.iter().map(|agent| {
+        DropdownMenuItem::new(format!("turn_fork:{start}:acp:{}", agent.id), &agent.name)
+            .icon(crate::provider_icons::icon_for_acp_agent(&agent.id, &agent.name))
+            .into()
+    }));
+    entries.extend(state.agent_clis.iter().filter(|agent| agent.resolved.is_some()).map(|agent| {
+        DropdownMenuItem::new(format!("turn_fork:{start}:cli:{}", agent.id), &agent.label)
+            .icon(crate::provider_icons::icon_for_agent_cli(&agent.id))
+            .into()
+    }));
     let open = state.message_actions.menu.as_ref().is_some_and(|(session, row)| {
         *row == start && state.selected_session.as_deref() == Some(session)
     });
@@ -275,6 +343,9 @@ pub(crate) enum Effect {
     Activity(String),
     /// Send this `User` row's message again, through the edit's own flow.
     Retry(usize),
+    /// Start a task of `target` (`native`, `acp:<id>`, `cli:<id>`) with the
+    /// conversation up to transcript row `end` as its context.
+    Fork { end: usize, target: String },
 }
 
 /// Apply a click on a message's actions to the view. `None` when `id` is
@@ -315,6 +386,12 @@ pub(crate) fn apply_action(state: &mut ViewState, id: &str) -> Option<Effect> {
         }
         "turn_activity" => Effect::Activity(value.to_owned()),
         "turn_retry" => Effect::Retry(value.parse().ok()?),
+        "turn_fork" => {
+            let (start, target) = value.split_once(':')?;
+            let start: usize = start.parse().ok()?;
+            let end = start + turn_items(&state.transcript, start).len();
+            Effect::Fork { end, target: target.to_owned() }
+        }
         "turn_actions" => {
             let (row, action) = value.split_once(':')?;
             let row: usize = row.parse().ok()?;

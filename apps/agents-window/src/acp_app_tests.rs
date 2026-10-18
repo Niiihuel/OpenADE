@@ -553,3 +553,19 @@ fn a_task_delegated_through_the_bridge_runs_off_screen_and_answers_its_caller() 
     assert_eq!(answer.try_recv().unwrap(), Ok("Hola desde ACP y fin".into()));
     assert!(app.delegations.is_empty());
 }
+
+#[test]
+fn a_turn_forked_to_an_acp_agent_opens_its_task_with_the_conversation_to_send() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app = window(root.path());
+    app.view.selected_session = Some("source".into());
+    app.view.selected_session_title = Some("Origen".into());
+    app.view.transcript = vec![
+        TranscriptItem::User { content: "Arreglá el login".into(), images: Vec::new() },
+        TranscriptItem::Assistant { content: "Hecho".into(), streaming: false },
+    ];
+    app.fork_task(2, "acp:fake");
+    assert_eq!(app.view.selected_backend, "acp:fake", "{}", app.view.status);
+    assert_ne!(app.view.selected_session.as_deref(), Some("source"));
+    assert!(app.view.prompt.contains("Usuario:\nArreglá el login"), "{}", app.view.prompt);
+}

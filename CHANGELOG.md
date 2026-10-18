@@ -162,6 +162,12 @@ says 0.1.0.
   code signing; their updater points to the release instead of installing
   it. They are new and unproven, so a failure of theirs does not stop the
   Linux release
+- A turn's menu forks the task from there with any agent: openADE's own,
+  an installed ACP agent or a CLI. The new task, in the same project, gets
+  the conversation up to that turn as text (its first message and as much of
+  its end as fits in 16 KB, tool use as one line per turn, marked as history
+  and not instructions): written in the composer for the person to add what
+  to do, or typed into the CLI's prompt once it has started
 
 ## 0.3.0 — 2026-10-16
 

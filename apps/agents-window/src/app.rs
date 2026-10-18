@@ -178,6 +178,8 @@ mod checkpoints_app;
 mod delegation_app;
 #[path = "pr_watch_app.rs"]
 mod pr_watch_app;
+#[path = "fork_app.rs"]
+mod fork_app;
 #[cfg(test)]
 #[path = "message_edit_app_tests.rs"]
 mod message_edit_app_tests;
@@ -1540,6 +1542,8 @@ pub struct AgentsWindow {
     pr_watches: Vec<crate::pr_watch::Watch>,
     pr_watch_due: Instant,
     pr_watch_poll: Option<std::sync::mpsc::Receiver<Vec<pr_watch_app::WatchResult>>>,
+    /// Context for a forked CLI task, typed in once its CLI is ready.
+    cli_handoffs: HashMap<String, (String, Instant)>,
     /// Tasks a CLI delegated, waiting for their answer.
     delegations: HashMap<String, std::sync::mpsc::Sender<Result<String, String>>>,
     checkpoint_channel: (
@@ -7499,6 +7503,7 @@ impl AgentsWindow {
             pr_watches: crate::pr_watch::load(&root),
             pr_watch_due: Instant::now(),
             pr_watch_poll: None,
+            cli_handoffs: HashMap::new(),
             delegations: HashMap::new(),
             checkpoint_channel: std::sync::mpsc::channel(),
             keyboard_paste_handled: false,
@@ -18410,6 +18415,7 @@ impl AgentsWindow {
                         Effect::Copy(text) => ctx.copy_text(text),
                         Effect::Activity(call) => self.show_tool_activity(&call, false),
                         Effect::Retry(user_row) => self.retry_message(user_row),
+                        Effect::Fork { end, target } => self.fork_task(end, &target),
                     }
                     return;
                 }
@@ -23017,6 +23023,7 @@ impl eframe::App for AgentsWindow {
             | self.poll_cli_status(&ctx)
             | self.poll_checkpoints()
             | self.poll_pr_watch()
+            | self.poll_cli_handoffs(&ctx)
             | self.poll_compact()
             | self.poll_resume()
             | self.poll_child_recovery()
