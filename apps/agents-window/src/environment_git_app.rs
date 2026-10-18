@@ -193,6 +193,9 @@ impl AgentsWindow {
             .and_then(|snapshot| snapshot.current_branch().map(str::to_owned));
         workflow.loading = false;
         workflow.busy = None;
+        // A plain re-read may answer before the worktree's own outcome.
+        let task_worktree = (self.task_worktree.is_some() && response.outcome.is_some())
+            .then(|| matches!(response.outcome, Some(Ok(_))));
         if let Some(result) = response.outcome {
             match result {
                 Ok(notice) => {
@@ -288,6 +291,9 @@ impl AgentsWindow {
             if self.view.environment.workflow.snapshot.is_some() {
                 self.submit_environment_git_action(&id, ctx);
             }
+        }
+        if let Some(succeeded) = task_worktree {
+            self.finish_task_worktree(succeeded);
         }
         true
     }
@@ -784,6 +790,29 @@ mod tests {
         }
         assert!(app.view.environment.workflow.error.is_some());
         assert!(!app.poll_environment_git(&ctx));
+    }
+
+    #[test]
+    fn a_task_worktree_opens_a_draft_there_and_its_setup_gets_a_terminal() {
+        let (directory, mut app, ctx) = fixture();
+        let root = PathBuf::from(&app.view.workspace);
+        std::fs::create_dir_all(root.join(".openide")).unwrap();
+        std::fs::write(root.join(".openide/setup"), "echo listo\n").unwrap();
+        crate::git_branches::git_text(&root, &["add", "-A"]).unwrap();
+        crate::git_branches::git_text(&root, &["commit", "-m", "Setup"]).unwrap();
+        app.view.environment.workflow.snapshot = Some(load_snapshot(&root).unwrap());
+        app.start_task_worktree(&ctx);
+        settle(&mut app, &ctx);
+        let workspace = PathBuf::from(&app.view.workspace);
+        assert!(crate::worktree_tasks::is_task_worktree(&workspace), "{} · {}", app.view.workspace, app.view.status);
+        assert!(workspace.starts_with(directory.path().canonicalize().unwrap().join("repository.worktrees")));
+        assert!(app.view.selected_session.is_none(), "a new task's draft");
+        let branch = crate::git_branches::git_text(&workspace, &["branch", "--show-current"]).unwrap();
+        assert!(branch.starts_with("openade/"), "{branch}");
+        // The setup was given a terminal of its own; the fixture's shell
+        // cannot start, which the status says.
+        assert_eq!(app.dock.terminal_tabs(&app.dock_scope()).len(), 1);
+        assert!(app.view.status.contains(".openide/setup"), "{}", app.view.status);
     }
 
     #[test]

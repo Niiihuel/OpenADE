@@ -168,6 +168,12 @@ says 0.1.0.
   its end as fits in 16 KB, tool use as one line per turn, marked as history
   and not instructions): written in the composer for the person to add what
   to do, or typed into the CLI's prompt once it has started
+- "Nueva tarea en un worktree" in the composer's environment menu creates
+  `<repo>.worktrees/<id>` on a new branch `openade/<id>` beside the
+  repository and opens a new task's draft there; the repository's
+  `.openide/setup` (one command per line, `#` comments) runs in a terminal
+  that goes with the task. Deleting the worktree's last task removes the
+  worktree if nothing in it is uncommitted; its branch stays
 
 ## 0.3.0 — 2026-10-16
 

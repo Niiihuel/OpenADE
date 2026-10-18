@@ -453,6 +453,7 @@ pub(crate) fn local_selector(
         .into(),
     );
     entries.push(DropdownMenuEntry::Separator);
+    let task = DropdownMenuItem::new("environment_task_worktree", "Nueva tarea en un worktree").icon(Icon::Add);
     let create =
         DropdownMenuItem::new("environment_git_open_worktree", "Crear worktree…").icon(Icon::Add);
     let can_create = !busy
@@ -460,6 +461,7 @@ pub(crate) fn local_selector(
             .snapshot
             .as_ref()
             .is_some_and(|snapshot| snapshot.head.is_some());
+    entries.push(if can_create { task } else { task.disabled() }.into());
     entries.push(
         if can_create {
             create

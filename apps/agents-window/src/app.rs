@@ -180,6 +180,8 @@ mod delegation_app;
 mod pr_watch_app;
 #[path = "fork_app.rs"]
 mod fork_app;
+#[path = "worktree_tasks_app.rs"]
+mod worktree_tasks_app;
 #[cfg(test)]
 #[path = "message_edit_app_tests.rs"]
 mod message_edit_app_tests;
@@ -1542,6 +1544,8 @@ pub struct AgentsWindow {
     pr_watches: Vec<crate::pr_watch::Watch>,
     pr_watch_due: Instant,
     pr_watch_poll: Option<std::sync::mpsc::Receiver<Vec<pr_watch_app::WatchResult>>>,
+    /// The task worktree the environment's Git worker is creating.
+    task_worktree: Option<PathBuf>,
     /// Context for a forked CLI task, typed in once its CLI is ready.
     cli_handoffs: HashMap<String, (String, Instant)>,
     /// Tasks a CLI delegated, waiting for their answer.
@@ -7503,6 +7507,7 @@ impl AgentsWindow {
             pr_watches: crate::pr_watch::load(&root),
             pr_watch_due: Instant::now(),
             pr_watch_poll: None,
+            task_worktree: None,
             cli_handoffs: HashMap::new(),
             delegations: HashMap::new(),
             checkpoint_channel: std::sync::mpsc::channel(),
@@ -19947,6 +19952,7 @@ impl AgentsWindow {
                     }
                 }
             }
+            UiAction::Clicked { id } if id == "environment_task_worktree" => self.start_task_worktree(ctx),
             UiAction::Clicked { id } if id == "cli_mode_toggle" => {
                 self.view.cli_mode_open = !self.view.cli_mode_open;
             }
@@ -20660,6 +20666,7 @@ impl AgentsWindow {
                                             session_id,
                                         );
                                         self.forget_checkpoints(session_id);
+                                        self.forget_task_worktree(session_id, &record.session.workspace);
                                         let _ = crate::session_changes_external::remove_marker(
                                             store.storage_root(),
                                             session_id,
