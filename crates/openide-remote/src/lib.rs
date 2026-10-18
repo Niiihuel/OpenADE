@@ -15,4 +15,5 @@ pub mod storage;
 mod stream;
 pub mod tasks;
 pub mod tls;
+mod upnp;
 mod workspace;

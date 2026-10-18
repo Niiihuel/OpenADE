@@ -26,6 +26,8 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring",
 hyper = { version = "1", features = ["server", "http1", "http2"] }
 hyper-util = { version = "0.1", features = ["server-auto", "tokio", "service"] }
 futures-util = "0.3"
+# Opens the port on the home router when the person asks for it.
+igd-next = { version = "0.18", default-features = false, features = ["aio_tokio"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

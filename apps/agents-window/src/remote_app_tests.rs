@@ -53,7 +53,7 @@ fn phone() -> reqwest::blocking::Client {
 
 /// The server's address and a paired phone's token.
 fn paired(app: &mut AgentsWindow) -> (String, String) {
-    app.set_remote_settings(RemoteSettings { enabled: true, port: 0, public_address: String::new() });
+    app.set_remote_settings(RemoteSettings { enabled: true, port: 0, ..RemoteSettings::default() });
     let server = app.remote.server.as_ref().unwrap_or_else(|| panic!("{:?}", app.remote.error));
     let base = format!("https://127.0.0.1:{}", server.port());
     let invitation = server.invite("PC").unwrap();

@@ -52,7 +52,7 @@ async fn a_paired_phone_reads_tasks_sends_a_message_follows_the_journal_and_lose
     });
 
     let server = Server::start(
-        Options { root: root.path().join("remote"), sessions: sessions.clone(), port: 0, name: "PC de prueba".into(), public_address: None },
+        Options { root: root.path().join("remote"), sessions: sessions.clone(), port: 0, name: "PC de prueba".into(), public_address: None, upnp: false },
         bridge.clone(),
     )
     .unwrap();

@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::net::TcpListener;
-use tokio::sync::oneshot;
+pub use crate::upnp::UpnpState;
 use uuid::Uuid;
 
 /// What a phone may upload at once.
@@ -39,6 +39,8 @@ pub struct Options {
     pub name: String,
     /// A name or address the person gave for a port opened on their router.
     pub public_address: Option<String>,
+    /// Ask the router to open the port (UPnP).
+    pub upnp: bool,
 }
 
 struct Shared {
@@ -54,13 +56,17 @@ struct Shared {
     name: String,
     port: u16,
     public_address: Option<String>,
+    upnp: Arc<Mutex<UpnpState>>,
     /// Edits of a project's files and index, one at a time.
     writes: Mutex<()>,
 }
 
 impl Shared {
     fn routes(&self) -> Vec<String> {
-        crate::network::routes(self.port, self.public_address.as_deref())
+        let mut routes = crate::network::routes(self.port, self.public_address.as_deref());
+        let upnp = self.upnp.lock().unwrap_or_else(|error| error.into_inner()).route(self.port);
+        routes.extend(upnp.filter(|route| !routes.contains(route)));
+        routes
     }
 }
 
@@ -68,8 +74,9 @@ type AppState = Arc<Shared>;
 
 pub struct Server {
     shared: AppState,
-    stop: Option<oneshot::Sender<()>>,
-    thread: Option<std::thread::JoinHandle<()>>,
+    stop: tokio::sync::watch::Sender<bool>,
+    /// Answers once the port is no longer listened on.
+    released: std::sync::mpsc::Receiver<()>,
 }
 
 impl Server {
@@ -92,15 +99,18 @@ impl Server {
             name: options.name,
             port,
             public_address: options.public_address,
+            upnp: Arc::new(Mutex::new(UpnpState::Off)),
             root: options.root,
             sessions: options.sessions,
             bridge,
             writes: Mutex::new(()),
         });
-        let (stop, stopped) = oneshot::channel();
+        let (stop, stopped) = tokio::sync::watch::channel(false);
+        let (release, released) = std::sync::mpsc::channel();
         let app = router(shared.clone());
         let notices = shared.clone();
-        let thread = std::thread::Builder::new().name("openade-remote".into()).spawn(move || {
+        let upnp = options.upnp.then(|| (shared.upnp.clone(), stopped.clone()));
+        std::thread::Builder::new().name("openade-remote".into()).spawn(move || {
             let Ok(runtime) = tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(2)
                 .enable_all()
@@ -112,10 +122,20 @@ impl Server {
                 listener.set_nonblocking(true).ok();
                 let Ok(listener) = TcpListener::from_std(listener) else { return };
                 tokio::spawn(send_notices(notices));
+                let router = upnp.map(|(state, stop)| tokio::spawn(crate::upnp::keep_open(port, state, stop)));
                 serve(listener, tls, app, stopped).await;
+                let _ = release.send(());
+                // The router's port is closed after the window moved on.
+                if let Some(router) = router {
+                    let _ = router.await;
+                }
             });
         })?;
-        Ok(Self { shared, stop: Some(stop), thread: Some(thread) })
+        Ok(Self { shared, stop, released })
+    }
+
+    pub fn upnp_state(&self) -> UpnpState {
+        self.shared.upnp.lock().unwrap_or_else(|error| error.into_inner()).clone()
     }
 
     pub fn port(&self) -> u16 {
@@ -150,12 +170,9 @@ impl Server {
 
 impl Drop for Server {
     fn drop(&mut self) {
-        if let Some(stop) = self.stop.take() {
-            let _ = stop.send(());
-        }
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
+        let _ = self.stop.send(true);
+        // A server started next on the same port needs it free.
+        let _ = self.released.recv_timeout(Duration::from_secs(3));
     }
 }
 
@@ -196,7 +213,7 @@ async fn serve(
     listener: TcpListener,
     tls: tokio_rustls::TlsAcceptor,
     app: Router,
-    mut stopped: oneshot::Receiver<()>,
+    mut stopped: tokio::sync::watch::Receiver<bool>,
 ) {
     loop {
         let tcp = tokio::select! {
@@ -207,7 +224,7 @@ async fn serve(
                     continue;
                 }
             },
-            _ = &mut stopped => return,
+            _ = stopped.changed() => return,
         };
         let (tls, app) = (tls.clone(), app.clone());
         tokio::spawn(async move {

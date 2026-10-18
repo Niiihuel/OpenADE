@@ -25,11 +25,14 @@ pub(crate) struct RemoteSettings {
     pub port: u16,
     /// A name or address for a port the person opened on their router.
     pub public_address: String,
+    /// Ask the router to open the port (UPnP). Off unless asked: it puts the
+    /// server on the internet.
+    pub upnp: bool,
 }
 
 impl Default for RemoteSettings {
     fn default() -> Self {
-        Self { enabled: false, port: DEFAULT_PORT, public_address: String::new() }
+        Self { enabled: false, port: DEFAULT_PORT, public_address: String::new(), upnp: false }
     }
 }
 
@@ -149,6 +152,7 @@ impl AgentsWindow {
             port: self.remote.settings.port,
             name: host_name(),
             public_address,
+            upnp: self.remote.settings.upnp,
         };
         match Server::start(options, self.remote.bridge.clone()) {
             Ok(server) => self.remote.server = Some(server),
@@ -205,6 +209,7 @@ impl AgentsWindow {
             view.fingerprint = openide_remote::tls::short_fingerprint(server.fingerprint());
             view.routes = server.routes();
             view.push = server.push_enabled();
+            view.upnp = self.remote.settings.upnp.then(|| server.upnp_state().describe());
             view.devices = server
                 .devices()
                 .unwrap_or_default()
@@ -257,6 +262,11 @@ impl AgentsWindow {
                 if settings != self.remote.settings {
                     self.set_remote_settings(settings);
                 }
+            }
+            UiAction::Clicked { id } if id == "remote_upnp" => {
+                let mut settings = self.remote.settings.clone();
+                settings.upnp = !settings.upnp;
+                self.set_remote_settings(settings);
             }
             UiAction::Clicked { id } if id == "remote_pair" => self.start_remote_pairing(),
             UiAction::Clicked { id } if id == "remote_pair_close" => self.remote.invitation = None,
