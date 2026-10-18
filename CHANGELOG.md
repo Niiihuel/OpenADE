@@ -4,9 +4,20 @@ Every release of openADE, newest first. The versions before 0.2.0 were tagged
 afterwards, on the last commit of each day of work; their `Cargo.toml` still
 says 0.1.0.
 
-## Unreleased
+## 0.4.1 — 2026-10-18
 
 - The macOS build compiles: a file mode is widened before `openat`
+- A large MCP server (REA has about 300 tools) no longer fails every native
+  turn with "tool catalog exceeds 128 definitions": its tools past the budget
+  are searched and called through `search_mcp_tools` and `call_mcp_tool`,
+  leaving room for the tools the runner adds around them
+- An agent offered over ACP is no longer offered a second time as a terminal
+  CLI: opencode shows once on the home screen and in the new task and fork
+  menus
+- A conversation read at its end stays at its end after the turn: the
+  turn's actions row, or a dock that narrows the text, no longer leaves the
+  last lines under the composer; a turn that continues off screen follows
+  its end too while it is watched
 
 ## 0.4.0 — 2026-10-18
 
