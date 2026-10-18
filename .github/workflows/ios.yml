@@ -1,0 +1,29 @@
+name: iOS
+
+# Builds the SwiftUI app, runs XCTest and captures the debug fixtures in the
+# simulator: the only Swift compiler this project has outside a Mac.
+on:
+  push:
+    branches: [main, "wt/remote-*"]
+    paths: ["apps/ios/**", ".github/workflows/ios.yml"]
+  pull_request:
+    paths: ["apps/ios/**", ".github/workflows/ios.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  simulator:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash apps/ios/scripts/build-simulator.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-reports
+          path: apps/ios/build/reports
+          retention-days: 7
