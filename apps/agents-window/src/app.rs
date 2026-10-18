@@ -23253,6 +23253,14 @@ impl eframe::App for AgentsWindow {
             early_changed |= self.command_tree.dismiss_context_menu();
         }
         early_changed |= self.poll_file_drops(&ctx);
+        // A screen reader names the window after the task in it.
+        limn_egui::name_window(
+            &ctx,
+            &match self.view.selected_session_title.as_deref().filter(|title| !title.is_empty()) {
+                Some(title) => format!("{title} · openADE"),
+                None => "openADE".to_owned(),
+            },
+        );
         if std::mem::take(&mut self.attention_pending) && !window_focused {
             ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(
                 egui::UserAttentionType::Informational,

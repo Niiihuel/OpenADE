@@ -190,6 +190,10 @@ says 0.1.0.
   and disk traffic, refreshed every two seconds while shown, and ends one
   with SIGTERM after checking it is still openADE's. Linux reads `/proc`;
   other systems say it is not available yet
+- Screen readers: eframe's accesskit is now asked for by openADE itself
+  (limn already published every control's role and name), the window is
+  named after the open task, and a test keeps every control of the main
+  window named
 
 ## 0.3.0 — 2026-10-16
 

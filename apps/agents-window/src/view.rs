@@ -4242,6 +4242,37 @@ pub(crate) mod tests {
         )));
     }
 
+    /// What a screen reader is told of the main window: every control has a
+    /// name to say. An icon alone, with no name, is silent.
+    #[test]
+    fn every_control_of_the_main_window_has_a_name_for_a_screen_reader() {
+        use openide_ui::Role;
+        let mut state = empty_state();
+        state.sessions = vec![SessionView {
+            id: "a".into(),
+            title: "Arreglar el login".into(),
+            project: "C:/project".into(),
+            backend: "native".into(),
+            pinned: false,
+            archived: false,
+            unread: false,
+            native_automation: None,
+        }];
+        state.selected_session = Some("a".into());
+        let frame = UiTree::new(build_view(&state, 1280.0)).layout(Size::new(1280.0, 800.0));
+        let silent: Vec<String> = frame
+            .access
+            .iter()
+            .filter(|node| {
+                matches!(node.role, Role::Button | Role::Switch | Role::CheckBox | Role::TextInput | Role::MultilineTextInput | Role::SearchInput | Role::ComboBox | Role::Tab | Role::Link)
+                    && node.name.trim().is_empty()
+            })
+            .map(|node| format!("{:?} {}", node.role, node.id))
+            .collect();
+        assert!(silent.is_empty(), "controls without a name: {silent:#?}");
+        assert!(frame.access.iter().any(|node| node.name == "Nueva tarea"));
+    }
+
     pub(crate) fn empty_state() -> ViewState {
         ViewState {
             tour: Default::default(),

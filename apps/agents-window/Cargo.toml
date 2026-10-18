@@ -9,7 +9,8 @@ editor-e2e = []
 
 [dependencies]
 openide-connections = { path = "../../crates/openide-connections" }
-eframe = { version = "0.36.2", default-features = false, features = ["wgpu", "default_fonts", "links", "x11", "wayland"] }
+# accesskit: what limn describes of each frame reaches screen readers.
+eframe = { version = "0.36.2", default-features = false, features = ["wgpu", "default_fonts", "links", "x11", "wayland", "accesskit"] }
 openide-core = { path = "../../crates/openide-core" }
 openide-harness = { path = "../../crates/openide-harness" }
 openide-cli = { path = "../../crates/openide-cli" }
