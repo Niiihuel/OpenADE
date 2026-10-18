@@ -4,6 +4,27 @@ Every release of openADE, newest first. The versions before 0.2.0 were tagged
 afterwards, on the last commit of each day of work; their `Cargo.toml` still
 says 0.1.0.
 
+## Unreleased
+
+- openADE Remote is rebuilt: the window itself serves the iPhone over HTTPS
+  with its own certificate, which the phone pins from the pairing code. There
+  is no separate daemon, Python setup or Tailscale any more
+- Settings → Remoto turns it on, shows a pairing code as a QR with the PC's
+  fingerprint and addresses (local network, global IPv6, a public address, the
+  router's when UPnP is on), and lists each phone with access to revoke it
+- The phone sees every task of the sidebar, native, ACP and CLI, with its
+  state; it starts tasks, sends or queues messages, stops turns, answers
+  permissions (once, always, deny) and questions, and renames, pins and
+  archives, while the person's own screen stays as it was
+- The task list and the open task's events reach the phone as a stream read
+  from the journals, resumed from the last event it has
+- Turns, their notices and delegated calls go on while the window is hidden or
+  the screen is off: on Wayland the window drew nothing and so read nothing
+- Messages queued in a task off screen are sent when its turn ends instead of
+  waiting for it to be opened
+- Push notices for permissions, questions and finished or failed turns of any
+  task, left out while the person is at the PC
+
 ## 0.4.1 — 2026-10-18
 
 - The macOS build compiles: a file mode is widened before `openat`
