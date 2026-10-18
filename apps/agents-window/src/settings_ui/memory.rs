@@ -144,7 +144,7 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
     let mut goal_rows = vec![settings_parts::settings_row(
         "Objetivo de esta conversación",
         if automation {
-            "Esta automatización conserva su perfil original de sólo lectura. Aquí puedes consultar el estado guardado; configurar o cambiar objetivos requiere una nueva tarea nativa."
+            "Esta automatización conserva su perfil original. Aquí puedes consultar el estado guardado; configurar o cambiar objetivos requiere una nueva tarea nativa."
         } else {
             "El objetivo nativo conserva criterios, estado y evidencia por conversación. Su editor permite activarlo, pausarlo o reanudarlo explícitamente."
         },
@@ -440,7 +440,7 @@ mod tests {
                 let texts = rendered_texts(&mut tree, width);
                 assert!(texts
                     .iter()
-                    .any(|text| text.contains("perfil original de sólo lectura")));
+                    .any(|text| text.contains("perfil original")));
                 assert!(!tree.focus("settings_native_goal_open"));
                 assert!(!pointer_action(&mut tree, width, "settings_native_goal_open")
                     .iter().any(|action| matches!(action, UiAction::Clicked { id } if id == "settings_native_goal_open")));

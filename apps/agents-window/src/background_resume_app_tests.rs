@@ -646,6 +646,7 @@ fn a_paused_automation_continues_off_screen_under_its_frozen_authority() {
                 prompt: TASK.into(),
                 backend: "native".into(),
                 native_provider: Some(native_provider),
+                allow_changes: false,
                 schedule: AutomationSchedule::Once { at_ms: now + 1 },
             },
             now,

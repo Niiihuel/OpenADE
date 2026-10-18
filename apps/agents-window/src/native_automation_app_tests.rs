@@ -202,6 +202,7 @@ fn claim(app: &mut AgentsWindow) -> (usize, AutomationDispatch) {
                 prompt: PROMPT.into(),
                 backend: "native".into(),
                 native_provider: Some(native_provider),
+                allow_changes: false,
                 schedule: AutomationSchedule::Once { at_ms: now + 1 },
             },
             now,
@@ -471,6 +472,7 @@ fn app_recovers_registered_metadata_before_admission_with_frozen_route_and_instr
         instructions.clone(),
         dispatch.prompt.clone(),
         &dispatch.run_id,
+        false,
     )
     .unwrap();
     let origin = frozen

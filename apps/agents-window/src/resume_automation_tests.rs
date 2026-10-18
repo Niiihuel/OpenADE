@@ -246,6 +246,7 @@ impl AutomationFixture {
             INSTRUCTIONS.into(),
             PROMPT.into(),
             &run_id,
+            false,
         )
         .unwrap();
         let sessions = SessionStore::open(root.path().join("sessions")).unwrap();

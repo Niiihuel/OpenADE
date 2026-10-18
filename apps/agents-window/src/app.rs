@@ -8056,6 +8056,7 @@ impl AgentsWindow {
                 instructions,
                 dispatch.prompt.clone(),
                 &dispatch.run_id,
+                dispatch.allow_changes,
             )?;
             // Validate credentials before metadata publication. This makes no
             // backend request and stores only the variable name, never its key.
@@ -8411,6 +8412,7 @@ impl AgentsWindow {
                 | "automation_next"
                 | "automation_save"
                 | "automation_native_current"
+                | "automation_allow_changes"
                 | "automation_choice_dismiss"
                 | "automation_weekdays_work"
         ) || [
@@ -8556,6 +8558,16 @@ impl AgentsWindow {
                 if backend == "native" {
                     state.form.native_provider.get_or_insert(current_native);
                 }
+            }
+            return;
+        }
+        if id == "automation_allow_changes" {
+            // Turning it off is always possible; on, only with the sandbox.
+            if state.editor_step == AutomationEditorStep::Agent
+                && state.form.backend == "native"
+                && (state.form.allow_changes || crate::automation_view::changes_available())
+            {
+                state.form.allow_changes = !state.form.allow_changes;
             }
             return;
         }
@@ -27050,6 +27062,7 @@ mod tests {
                 workspace_path: workspace.clone(),
                 backend: "my-cli".into(),
                 native_provider: None,
+                allow_changes: false,
                 prompt: "hola".into(),
                 title: "Saludo".into(),
                 scheduled_at: 0,

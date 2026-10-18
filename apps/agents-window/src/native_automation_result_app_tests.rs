@@ -220,6 +220,7 @@ impl Fixture {
                         model_id: MODEL.into(),
                         custom_endpoint: provider.endpoint.clone(),
                     }),
+                    allow_changes: false,
                     schedule: AutomationSchedule::Once { at_ms: now + 1 },
                 },
                 now,
@@ -271,6 +272,7 @@ impl Fixture {
             INSTRUCTIONS.into(),
             PROMPT.into(),
             &dispatch.run_id,
+            false,
         )
         .unwrap();
         let origin = frozen
@@ -448,6 +450,7 @@ fn shared_run_ids_keep_result_diagnostics_and_proofs_scoped_to_their_workspace()
                     model_id: MODEL.into(),
                     custom_endpoint: provider.endpoint.clone(),
                 }),
+                allow_changes: false,
                 schedule: AutomationSchedule::Once { at_ms: now + 1 },
             },
             now,
@@ -534,6 +537,7 @@ fn shared_run_ids_keep_result_diagnostics_and_proofs_scoped_to_their_workspace()
         INSTRUCTIONS.into(),
         PROMPT.into(),
         &fixture.dispatch.run_id,
+        false,
     )
     .unwrap();
     let store = fixture.store();

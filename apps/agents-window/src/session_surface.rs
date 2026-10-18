@@ -2998,7 +2998,7 @@ fn recoverable_subagent_card(run: &SubagentRunView) -> Element {
 fn native_recovery_card(session_id: &str, recovery: &SessionRecoveryView, error: Option<&str>) -> Element {
     let message = match recovery {
         SessionRecoveryView::StartAutomation => {
-            "La sesión se registró antes de iniciar el agente. Se usará el perfil original de sólo lectura y la ruta guardada, sin ampliar permisos desde Settings."
+            "La sesión se registró antes de iniciar el agente. Se usará el perfil original de la automatización y la ruta guardada, sin ampliar permisos desde Settings."
         }
         SessionRecoveryView::Resume => "El turno quedó interrumpido y puede reanudarse.",
         SessionRecoveryView::Permission => {

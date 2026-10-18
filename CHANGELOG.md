@@ -178,6 +178,13 @@ says 0.1.0.
   from this machine at an unguessable address and opens rendered in the
   integrated browser, sandboxed (opaque origin, scripts on, no forms and no
   requests of its own)
+- A native automation can be allowed to change the project (its editor's
+  "Permitir cambios en el proyecto"): it then freezes a `workspace_write_v1`
+  authority that offers file edits inside the workspace and `run_command`
+  only in the workspace-write/offline sandbox (never elevated, no long
+  commands), with wider step limits; without the sandbox (Bubblewrap on
+  Linux) the switch stays off and the profile refuses to freeze. Read-only
+  stays the default, and old automations keep it
 
 ## 0.3.0 — 2026-10-16
 

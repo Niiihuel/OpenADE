@@ -164,6 +164,8 @@ pub struct AutomationForm {
     pub prompt: String,
     pub backend: String,
     pub native_provider: Option<NativeProviderSettings>,
+    /// A native run may edit the project and run sandboxed commands.
+    pub allow_changes: bool,
     pub frequency: AutomationFrequency,
     pub once_at: String,
     pub interval_minutes: String,
@@ -183,6 +185,7 @@ impl AutomationForm {
             prompt: String::new(),
             backend: backend.into(),
             native_provider: None,
+            allow_changes: false,
             frequency: AutomationFrequency::Daily,
             once_at: String::new(),
             interval_minutes: "60".to_owned(),
@@ -198,6 +201,7 @@ impl AutomationForm {
         form.title.clone_from(&automation.title);
         form.prompt.clone_from(&automation.prompt);
         form.native_provider.clone_from(&automation.native_provider);
+        form.allow_changes = automation.allow_changes;
         form.kept_schedule = Some(automation.schedule.clone());
         match &automation.schedule {
             AutomationSchedule::Once { at_ms } => {
@@ -370,6 +374,7 @@ impl AutomationForm {
             } else {
                 None
             },
+            allow_changes: self.backend == "native" && self.allow_changes,
             schedule,
         };
         draft.validate()?;
@@ -1159,6 +1164,13 @@ fn schedule_editor(state: &AutomationViewState, content_width: f32) -> Vec<Eleme
     rows
 }
 
+/// Whether this machine can isolate an automation's commands, which the
+/// profile that changes files requires. Looked up once.
+pub(crate) fn changes_available() -> bool {
+    static AVAILABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *AVAILABLE.get_or_init(|| openide_harness::CommandIsolation::WorkspaceWriteOffline.is_available_on_host())
+}
+
 fn editor_agent_step(state: &AutomationViewState, content_width: f32) -> Element {
     let palette = theme::control_palette();
     let trigger_width = content_width.min(360.0);
@@ -1278,6 +1290,30 @@ fn editor_agent_step(state: &AutomationViewState, content_width: f32) -> Element
             form_field("Modelo del agente", model)
                 .hint("Se guarda el proveedor y el modelo elegidos con esta tarea.")
                 .rows(),
+        );
+        let available = changes_available();
+        let switch = Switch::new("automation_allow_changes", state.form.allow_changes, theme::component_palette());
+        rows.push(
+            Element::row(vec![
+                if available || state.form.allow_changes { switch.render() } else { switch.disabled().render() },
+                Text::new("Permitir cambios en el proyecto", theme::component_palette()).render().centered_y(),
+            ])
+            .gap(8.0),
+        );
+        rows.push(
+            Text::new(
+                if !available {
+                    "Sólo lee el proyecto. Para permitir cambios hace falta el aislamiento de comandos (Bubblewrap en Linux)."
+                } else if state.form.allow_changes {
+                    "Edita archivos del proyecto y ejecuta comandos aislados: sin red y sin escribir fuera del proyecto. Nadie lo aprueba en el momento; revisá los cambios después."
+                } else {
+                    "Sólo lee el proyecto."
+                },
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .muted()
+            .render(),
         );
     } else {
         rows.push(
@@ -1939,6 +1975,7 @@ mod tests {
             prompt: "Revisa errores".into(),
             backend: "codex".into(),
             native_provider: None,
+            allow_changes: false,
             schedule: AutomationSchedule::Daily { hour: 9, minute: 0 },
             enabled: true,
             next_run_at: Some(86_400_000),
@@ -2020,6 +2057,7 @@ mod tests {
             prompt: form.prompt.clone(),
             backend: form.backend.clone(),
             native_provider: None,
+            allow_changes: false,
             schedule: draft.schedule,
             enabled: true,
             next_run_at: None,

@@ -310,6 +310,7 @@ fn freeze(
         INSTRUCTIONS.into(),
         PROMPT.into(),
         run_id,
+        false,
     )
     .unwrap()
 }
