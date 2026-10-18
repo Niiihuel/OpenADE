@@ -772,6 +772,16 @@ fn streaming_http_scroll_follows_the_tail_and_preserves_a_user_scrolled_position
         fixture.terminal();
         wait_app(&mut app, |app| app.active_run.is_none());
         assert_eq!(assistant_rows(&app), vec![(expected.as_str(), false)]);
+        // The ended turn grows its actions row under the text, with motion
+        // on as in the app; a follower sees it once things settle.
+        app.tree.set_reduced_motion(false);
+        app.settings_preferences.reduced_motion = false;
+        app.reduced_motion = false;
+        let ended_at = Instant::now();
+        for step in 0..40 {
+            native_frame_at(&mut app, Size::new(960.0, 620.0), ended_at + Duration::from_millis(50 * step));
+        }
+        assert_eq!(app.tree.is_scroll_at_end("transcript", 0.1), follow, "offset {}", app.tree.scroll_offset("transcript"));
         fixture.assert_one_native_request();
     }
 }
@@ -1182,7 +1192,7 @@ fn streaming_http_live_plan_snapshots_update_without_moving_a_manual_reader() {
 }
 
 #[test]
-fn streaming_layout_does_not_inherit_tail_across_owners_or_after_a_turn() {
+fn streaming_layout_does_not_inherit_tail_across_owners_and_keeps_its_own_after_a_turn() {
     let root = tempfile::tempdir().unwrap();
     let first = (0..36)
         .map(|index| format!("Fila retenida {index}: conversación original.\n\n"))
@@ -1215,8 +1225,7 @@ fn streaming_layout_does_not_inherit_tail_across_owners_or_after_a_turn() {
     );
     assert!((app.tree.scroll_offset("transcript") - previous_offset).abs() < 0.1);
     assert!(!app.tree.is_scroll_at_end("transcript", 24.0));
-    // Even after this owner obtains its own end position, the foreground
-    // native worker still belongs to the original session.
+    // Once this owner has its own end position, it keeps its own end.
     app.tree.scroll_to_end("transcript");
     native_frame_at(
         &mut app,
@@ -1224,14 +1233,12 @@ fn streaming_layout_does_not_inherit_tail_across_owners_or_after_a_turn() {
         Instant::now(),
     );
     assert!(app.tree.is_scroll_at_end("transcript", 0.1));
-    let foreign_offset = app.tree.scroll_offset("transcript");
     native_frame_at(
         &mut app,
         Size::new(viewport.width, viewport.height - 200.0),
         Instant::now(),
     );
-    assert!((app.tree.scroll_offset("transcript") - foreign_offset).abs() < 0.1);
-    assert!(!app.tree.is_scroll_at_end("transcript", 24.0));
+    assert!(app.tree.is_scroll_at_end("transcript", 0.1));
     app.view.selected_session = Some(session_id);
     native_frame(&mut app);
     assert!(app.tree.is_scroll_at_end("transcript", 0.1));
@@ -1240,14 +1247,13 @@ fn streaming_layout_does_not_inherit_tail_across_owners_or_after_a_turn() {
     let terminal_frame = native_frame(&mut app);
     assert!(app.tree.is_scroll_at_end("transcript", 0.1));
     assert!(visible(&terminal_frame, SECOND_VISIBLE));
-    let completed_offset = app.tree.scroll_offset("transcript");
+    // An ended turn read at its end stays there when the view narrows.
     native_frame_at(
         &mut app,
         Size::new(viewport.width, viewport.height - 100.0),
         Instant::now(),
     );
-    assert!((app.tree.scroll_offset("transcript") - completed_offset).abs() < 0.1);
-    assert!(!app.tree.is_scroll_at_end("transcript", 24.0));
+    assert!(app.tree.is_scroll_at_end("transcript", 0.1));
     fixture.assert_one_native_request();
 }
 

@@ -575,20 +575,23 @@ fn child_updates_do_not_inherit_a_foreign_transcript_layout_or_scroll_another_se
         assert!(app.poll_subagent_events());
         assert!(!app.sync_stream_presentation(Instant::now()));
         app.layout_workspace_frame(Size::new(960.0, 540.0));
-        assert!(
-            (app.tree.scroll_offset("transcript") - previous_offset).abs() < 0.1,
-            "foreign layout owner: {previous_owner_is_foreign}, before: {previous_offset}, after: {}",
-            app.tree.scroll_offset("transcript")
-        );
-        assert!(!app.tree.is_scroll_at_end("transcript", 24.0));
-        if !previous_owner_is_foreign {
+        if previous_owner_is_foreign {
+            assert!(
+                (app.tree.scroll_offset("transcript") - previous_offset).abs() < 0.1,
+                "before: {previous_offset}, after: {}",
+                app.tree.scroll_offset("transcript")
+            );
+            assert!(!app.tree.is_scroll_at_end("transcript", 24.0));
+        } else {
+            // The other session keeps its own end; the child's update left it alone.
+            assert!(app.tree.is_scroll_at_end("transcript", 0.1));
             assert_eq!(app.view.transcript, previous_transcript);
         }
     }
 }
 
 #[tokio::test]
-async fn selected_live_child_resize_preserves_following_but_not_manual_or_foreign_reading() {
+async fn selected_child_resize_preserves_following_but_not_manual_reading() {
     for follow in [true, false] {
         let mut fixture = ChildFixture::start_with_prompt(&scroll_history()).await;
         fixture.app.open_session(&fixture.child_id);
@@ -619,10 +622,9 @@ async fn selected_live_child_resize_preserves_following_but_not_manual_or_foreig
         fixture.app.transcript_layout_session = fixture.app.view.selected_session.clone();
         fixture.app.tree.scroll_to_end("transcript");
         scroll_frame(&mut fixture.app, 520.0);
-        let foreign_offset = fixture.app.tree.scroll_offset("transcript");
+        // Another owner at its own end keeps it too.
         fixture.app.layout_workspace_frame(Size::new(960.0, 440.0));
-        assert!((fixture.app.tree.scroll_offset("transcript") - foreign_offset).abs() < 0.1);
-        assert!(!fixture.app.tree.is_scroll_at_end("transcript", 24.0));
+        assert!(fixture.app.tree.is_scroll_at_end("transcript", 0.1));
         fixture.model.flood.notify_one();
         fixture.finish().await;
     }

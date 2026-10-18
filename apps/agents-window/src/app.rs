@@ -15208,22 +15208,9 @@ impl AgentsWindow {
     fn preserve_streaming_tail_before_layout(&mut self) {
         // The old extent is the user's intent before measuring a larger plan
         // or a smaller viewport. Scroll targets reflect manual wheel/drag input
-        // immediately, even while its visual offset is still animating.
-        let selected = self.view.selected_session.as_deref();
-        let selected_run = self.view.running
-            && (self.active_run.as_ref().is_some_and(|run| selected == Some(run.session_id()))
-                || self
-                .active_resume
-                .as_ref()
-                .is_some_and(|run| selected == Some(run.session_id.as_str())));
-        let selected_child = self
-            .view
-            .active_subagents
-            .iter()
-            .any(|child| selected == Some(child.child_session_id.as_str()));
-        if (selected_run || self.view.background_run_selected || selected_child)
-            && self.following_selected_transcript()
-        {
+        // immediately, even while its visual offset is still animating. This
+        // holds with nothing running too: a dock that opens narrows the text.
+        if self.following_selected_transcript() {
             self.tree.scroll_to_end("transcript");
         }
     }
