@@ -1037,3 +1037,66 @@ fn export_settings_density_visual_review() {
     fs::write(output.join("index.html"), index).unwrap();
     eprintln!("{}", output.join("index.html").display());
 }
+
+/// The update's section of General and its cards over it, as they look
+/// while a version downloads and once it is ready.
+#[test]
+#[ignore = "export the update cards and Settings section with native fonts"]
+fn export_update_visual_review() {
+    use super::{build_settings_page, build_settings_sidebar, SettingsPage};
+    use crate::app_update::UpdateStatus;
+    use crate::notifications::{Notice, Severity, Target};
+    use openide_ui::{Element, Size};
+
+    let output = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/update-visual-review");
+    fs::create_dir_all(&output).unwrap();
+    let options = native_svg_options();
+    let (width, height) = (1300.0, 840.0);
+    let shots: [(&str, UpdateStatus, bool); 2] = [
+        (
+            "downloading",
+            UpdateStatus::Downloading { version: "0.4.0".into(), received: 91_000_000, total: 182_000_000 },
+            false,
+        ),
+        ("ready", UpdateStatus::Ready { version: "0.4.0".into(), page: String::new() }, true),
+    ];
+    for (name, status, ready) in shots {
+        let mut state = crate::view::tests::empty_state();
+        state.show_settings = true;
+        state.settings_page = SettingsPage::General;
+        state.workspace = "/workspace/openADE".into();
+        state.workspace_draft = state.workspace.clone();
+        state.update.installable = true;
+        state.update.automatic = true;
+        state.update.status = status;
+        state
+            .notifications
+            .push(Severity::Error, "Turno fallido", "Migrar la base de datos", Some(Target::Session("s".into())));
+        state.notifications.post(if ready {
+            Notice::new(Severity::Info, "openADE 0.4.0 está lista", "Se instala al reiniciar, o la próxima vez que cierres openADE.")
+                .key("app_update")
+                .sticky()
+                .action("update_restart", "Reiniciar ahora")
+                .action("update_notes", "Novedades")
+        } else {
+            Notice::new(Severity::Info, "Descargando openADE 0.4.0", "50 % de 182 MB")
+                .key("app_update")
+                .sticky()
+                .progress(91, 182)
+        });
+        let page = build_settings_page(&state, state.settings_page, width - 244.0, true);
+        let scene = Element::row(vec![build_settings_sidebar(&state, 244.0), page])
+            .background(crate::theme::BACKGROUND)
+            .size(Some(width), Some(height));
+        let scene = crate::notifications_ui::toast_layer(&state, scene);
+        let (_context, mut tree) = crate::view::ide_visual_tests::native_tree(scene);
+        tree.set_reduced_motion(true);
+        let frame = tree.layout(Size::new(width, height));
+        let path = output.join(format!("{name}.svg"));
+        write_native_frame_svg(&frame, &path, width, height).unwrap();
+        let parsed = resvg::usvg::Tree::from_str(&fs::read_to_string(&path).unwrap(), &options).unwrap();
+        let mut pixmap = resvg::tiny_skia::Pixmap::new(width as u32, height as u32).unwrap();
+        resvg::render(&parsed, resvg::tiny_skia::Transform::identity(), &mut pixmap.as_mut());
+        pixmap.save_png(path.with_extension("png")).unwrap();
+    }
+}

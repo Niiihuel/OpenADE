@@ -134,6 +134,8 @@ pub(crate) struct SettingsPreferences {
     pub auto_switch_fallback: bool,
     pub terminal_shell: TerminalShell,
     pub reopen_last_workspace: bool,
+    /// Check for new versions every few hours and download them in the background.
+    pub auto_update: bool,
     pub last_workspace: Option<PathBuf>,
     /// Stores a `settings_page:<slug>` action ID. The app verifies that the
     /// page still exists with `SettingsPage::from_action_id` on startup.
@@ -175,6 +177,7 @@ impl Default for SettingsPreferences {
             auto_switch_fallback: false,
             terminal_shell: TerminalShell::System,
             reopen_last_workspace: false,
+            auto_update: true,
             last_workspace: None,
             last_settings_page: DEFAULT_SETTINGS_PAGE.to_owned(),
             hosted_web_search_mode: None,
@@ -263,6 +266,9 @@ impl SettingsPreferences {
             .and_then(serde_json::Value::as_bool)
         {
             preferences.auto_switch_fallback = enabled;
+        }
+        if let Some(enabled) = value.get("auto_update").and_then(serde_json::Value::as_bool) {
+            preferences.auto_update = enabled;
         }
         if let Some(reopen) = value
             .get("reopen_last_workspace")
@@ -413,6 +419,7 @@ impl SettingsPreferences {
             "auto_switch_fallback": self.auto_switch_fallback,
             "terminal_shell": self.terminal_shell,
             "reopen_last_workspace": self.reopen_last_workspace,
+            "auto_update": self.auto_update,
             "last_workspace": workspace_text,
             "last_settings_page": self.last_settings_page,
             "hosted_web_search_mode": self.hosted_web_search_mode,

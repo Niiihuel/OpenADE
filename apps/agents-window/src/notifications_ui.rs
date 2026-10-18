@@ -117,8 +117,35 @@ fn list(center: &NotificationCenter) -> Element {
     Element::column(rows).gap(2.0).padding(6.0)
 }
 
-/// Brief cards in the bottom right corner of `base`: the result of the last
-/// Settings change and the newest notification.
+/// A notification's card: what kind it is, its copy, its buttons and how far
+/// its work has gone.
+fn card(item: &Notification) -> Element {
+    let (tone, icon) = match item.severity {
+        Severity::Info => (openide_ui::AlertTone::Neutral, Icon::InfoCircle),
+        Severity::Attention => (openide_ui::AlertTone::Warning, Icon::WarningTriangle),
+        Severity::Error => (openide_ui::AlertTone::Error, Icon::ErrorCircle),
+    };
+    let mut toast = openide_ui::Toast::new(item.title.clone(), theme::menu_palette())
+        .id(format!("notification:{}", item.id))
+        .description(item.detail.clone())
+        .tone(tone)
+        .icon(icon)
+        .dismissible(format!("notification_toast_dismiss:{}", item.id));
+    // The card opens what it is about; one with buttons leaves that to them.
+    if item.target.is_some() || item.actions.is_empty() {
+        toast = toast.action(format!("notification_open:{}", item.id));
+    }
+    for action in &item.actions {
+        toast = toast.button(action.id.clone(), action.label.clone());
+    }
+    if let Some((done, total)) = item.progress.filter(|(_, total)| *total > 0) {
+        toast = toast.progress(done as f32 / total as f32);
+    }
+    toast.render()
+}
+
+/// Cards in the bottom right corner of `base`: the result of the last
+/// Settings change and the newest notifications, the newest lowest.
 pub(crate) fn toast_layer(state: &crate::view::ViewState, base: Element) -> Element {
     let mut cards = Vec::new();
     cards.extend(crate::tour_ui::invitation(state));
@@ -148,19 +175,7 @@ pub(crate) fn toast_layer(state: &crate::view::ViewState, base: Element) -> Elem
                 .render(),
         );
     }
-    if let Some(item) = state.notifications.toast(std::time::Instant::now()) {
-        cards.push(
-            openide_ui::Toast::new(item.title.clone(), theme::menu_palette())
-                .description(item.detail.clone())
-                .tone(match item.severity {
-                    Severity::Error => openide_ui::AlertTone::Error,
-                    Severity::Info | Severity::Attention => openide_ui::AlertTone::Neutral,
-                })
-                .action(format!("notification_open:{}", item.id))
-                .dismissible("notification_toast_dismiss")
-                .render(),
-        );
-    }
+    cards.extend(state.notifications.toasts(std::time::Instant::now()).into_iter().map(card));
     openide_ui::Toast::layer(base, cards, 36.0)
 }
 
@@ -373,6 +388,49 @@ mod tests {
     }
 
     #[test]
+    fn cards_stack_newest_lowest_with_their_buttons_and_progress() {
+        use crate::notifications::Notice;
+        let mut state = crate::view::tests::empty_state();
+        state.notifications.push(Severity::Error, "Turno fallido", "Migrar la base", Some(Target::Session("s".into())));
+        state.notifications.post(
+            Notice::new(Severity::Info, "Descargando openADE 0.4.0", "50 % de 180 MB")
+                .key("app_update")
+                .sticky()
+                .progress(90, 180),
+        );
+        let base = Element::spacer().size(Some(900.0), Some(600.0));
+        let mut tree = UiTree::new(toast_layer(&state, base));
+        tree.set_reduced_motion(true);
+        let frame = tree.layout(Size::new(900.0, 600.0));
+        let ink = |label: &str| {
+            frame.commands.iter().find_map(|command| match command {
+                DrawCommand::Text { text, position, .. } if text == label => Some(position.y),
+                _ => None,
+            })
+        };
+        assert!(ink("Turno fallido").unwrap() < ink("Descargando openADE 0.4.0").unwrap(), "{}", texts(&frame));
+        assert!(frame.commands.iter().any(|command| matches!(command, DrawCommand::Icon { icon: Icon::ErrorCircle, .. })));
+        assert!(frame.commands.iter().any(|command| matches!(command, DrawCommand::Icon { icon: Icon::InfoCircle, .. })));
+
+        state.notifications.post(
+            Notice::new(Severity::Info, "openADE 0.4.0 está lista", "Se instala al reiniciar.")
+                .key("app_update")
+                .sticky()
+                .action("update_restart", "Reiniciar ahora")
+                .action("update_notes", "Novedades"),
+        );
+        let ready = state.notifications.by_key("app_update").unwrap().id;
+        let base = Element::spacer().size(Some(900.0), Some(600.0));
+        let frame = UiTree::new(toast_layer(&state, base)).layout(Size::new(900.0, 600.0));
+        let shown = texts(&frame);
+        assert!(shown.contains("Reiniciar ahora") && shown.contains("Novedades"), "{shown}");
+        let ids: Vec<_> = frame.regions.iter().map(|region| region.id.as_str()).collect();
+        assert!(ids.contains(&"update_restart") && ids.contains(&"update_notes"), "{ids:?}");
+        assert!(ids.contains(&format!("notification_toast_dismiss:{ready}").as_str()));
+        assert!(!ids.contains(&format!("notification_open:{ready}").as_str()), "its buttons say what it does");
+    }
+
+    #[test]
     fn a_copied_link_is_announced_with_its_address_cut_short() {
         let mut state = crate::view::tests::empty_state();
         state.link_copied = Some(crate::view::LinkCopied {
@@ -419,14 +477,14 @@ mod tests {
         let close = frame
             .regions
             .iter()
-            .find(|region| region.id == "notification_toast_dismiss")
+            .find(|region| region.id == format!("notification_toast_dismiss:{id}"))
             .unwrap()
             .rect;
         let point = openide_ui::Point::new(close.x + close.width / 2.0, close.y + close.height / 2.0);
         tree.handle_event(UiEvent::PointerDown(point));
         assert_eq!(
             tree.handle_event(UiEvent::PointerUp(point)),
-            [UiAction::Clicked { id: "notification_toast_dismiss".into() }]
+            [UiAction::Clicked { id: format!("notification_toast_dismiss:{id}") }]
         );
 
         let settings = UiTree::new(settings_group(&center, false)).layout(Size::new(700.0, 500.0));

@@ -92,8 +92,9 @@ says 0.1.0.
   beside the key's label; before, the key forms had empty space under the
   note
 - A modal whose content fits no longer shows a scrollbar: a layout rounding
-  error of millionths of a pixel counted as overflow (limn#77, pinned to
-  `d8697a6`)
+  error of millionths of a pixel counted as overflow (limn#77; limn is
+  pinned to `bb10b72`, limn#81 on top of it, which adds the toast's icon,
+  buttons and progress)
 - A Graph tab in the dock draws the workspace's files, and their imports,
   calls and type uses, as a force-directed graph: hovering a file lights up
   its neighbours, nodes can be dragged, the view zooms and pans, and a click
@@ -147,6 +148,15 @@ says 0.1.0.
   task's agent: typed into its CLI's terminal once the CLI is idle, or sent as
   a turn of the native or ACP agent, off screen or queued behind the running
   one; watches are kept in `pr-watch.json`
+- Updates: openADE looks for a new release every six hours, and an install
+  made from the Linux archive downloads it in the background, checks its
+  minisign signature and puts it in place when it restarts or quits. Other
+  copies say a new version exists and link to it. Settings > General has the
+  version, a check button and the switch to turn it off
+- Notifications stack up to three cards with an icon for their kind, buttons
+  and a progress bar; an update's card stays until it is dismissed
+- Release archives are signed; the `.minisig` beside each one is what the
+  updater verifies
 
 ## 0.3.0 — 2026-10-16
 

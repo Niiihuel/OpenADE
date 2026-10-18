@@ -10,6 +10,8 @@ const MAX_NOTIFICATIONS: usize = 50;
 const SETTINGS_FILE: &str = "notification-settings.json";
 const MAX_SETTINGS_BYTES: u64 = 16 * 1024;
 const TOAST_DURATION: Duration = Duration::from_secs(6);
+/// Cards on screen at once; older ones stay in the list.
+const VISIBLE_TOASTS: usize = 3;
 
 /// What produced a notification; each kind can be switched off.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -182,6 +184,13 @@ pub enum Target {
     Session(String),
 }
 
+/// A button on a notification's card.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Action {
+    pub id: String,
+    pub label: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Notification {
     pub id: u64,
@@ -193,6 +202,71 @@ pub struct Notification {
     pub count: u32,
     pub read: bool,
     pub at: SystemTime,
+    /// Its buttons, the main one first. Selecting the entry in the list runs
+    /// the first when it leads nowhere else.
+    pub actions: Vec<Action>,
+    /// Its card stays until it is dismissed or the entry changes.
+    pub sticky: bool,
+    /// Bytes or steps done of a total, while the work runs.
+    pub progress: Option<(u64, u64)>,
+    /// One entry per key: posting it again replaces that entry in place.
+    pub key: Option<&'static str>,
+}
+
+/// What [`NotificationCenter::post`] records.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Notice {
+    severity: Severity,
+    title: String,
+    detail: String,
+    target: Option<Target>,
+    actions: Vec<Action>,
+    sticky: bool,
+    progress: Option<(u64, u64)>,
+    key: Option<&'static str>,
+}
+
+impl Notice {
+    pub fn new(severity: Severity, title: impl Into<String>, detail: impl Into<String>) -> Self {
+        Self {
+            severity,
+            title: title.into(),
+            detail: detail.into(),
+            target: None,
+            actions: Vec::new(),
+            sticky: false,
+            progress: None,
+            key: None,
+        }
+    }
+
+    pub fn target(mut self, target: Option<Target>) -> Self {
+        self.target = target;
+        self
+    }
+
+    pub fn action(mut self, id: impl Into<String>, label: impl Into<String>) -> Self {
+        self.actions.push(Action {
+            id: id.into(),
+            label: label.into(),
+        });
+        self
+    }
+
+    pub fn sticky(mut self) -> Self {
+        self.sticky = true;
+        self
+    }
+
+    pub fn progress(mut self, done: u64, total: u64) -> Self {
+        self.progress = Some((done, total));
+        self
+    }
+
+    pub fn key(mut self, key: &'static str) -> Self {
+        self.key = Some(key);
+        self
+    }
 }
 
 /// Newest first. Shared by every window of the app.
@@ -202,8 +276,8 @@ pub struct NotificationCenter {
     pub settings: NotificationSettings,
     items: Vec<Notification>,
     next_id: u64,
-    /// The entry announced in a card and when it appeared.
-    toast: Option<(u64, Instant)>,
+    /// Entries announced in cards, oldest first, and when each appeared.
+    toasts: Vec<(u64, Instant)>,
 }
 
 impl NotificationCenter {
@@ -222,65 +296,130 @@ impl NotificationCenter {
         detail: impl Into<String>,
         target: Option<Target>,
     ) {
-        let (title, detail) = (title.into(), detail.into());
-        let repeated = self.items.iter().position(|item| {
-            item.severity == severity
-                && item.title == title
-                && item.detail == detail
-                && item.target == target
+        self.post(Notice::new(severity, title, detail).target(target));
+    }
+
+    /// Records `notice` and announces it in a card. A notice with a key
+    /// replaces that key's entry; one with a new title is announced again,
+    /// while a new detail or progress only updates what is shown.
+    pub fn post(&mut self, notice: Notice) {
+        let Notice {
+            severity,
+            title,
+            detail,
+            target,
+            actions,
+            sticky,
+            progress,
+            key,
+        } = notice;
+        let earlier = self.items.iter().position(|item| match key {
+            Some(key) => item.key == Some(key),
+            None => {
+                item.key.is_none()
+                    && item.severity == severity
+                    && item.title == title
+                    && item.detail == detail
+                    && item.target == target
+            }
         });
-        let mut item = match repeated {
+        let (mut item, announce) = match earlier {
             Some(index) => {
                 let mut item = self.items.remove(index);
-                item.count = item.count.saturating_add(1);
-                item
+                let announce = key.is_none() || item.title != title;
+                if key.is_none() {
+                    item.count = item.count.saturating_add(1);
+                }
+                (item, announce)
             }
             None => {
                 self.next_id += 1;
-                Notification {
+                let item = Notification {
                     id: self.next_id,
                     severity,
-                    title,
-                    detail,
-                    target,
+                    title: String::new(),
+                    detail: String::new(),
+                    target: None,
                     count: 1,
                     read: false,
                     at: SystemTime::now(),
-                }
+                    actions: Vec::new(),
+                    sticky: false,
+                    progress: None,
+                    key,
+                };
+                (item, true)
             }
         };
-        item.read = false;
-        item.at = SystemTime::now();
-        if self.settings.shows_toasts() {
-            self.toast = Some((item.id, Instant::now()));
+        item.severity = severity;
+        item.title = title;
+        item.detail = detail;
+        item.target = target;
+        item.actions = actions;
+        item.sticky = sticky;
+        item.progress = progress;
+        if announce {
+            item.read = false;
+            item.at = SystemTime::now();
+            self.toasts.retain(|(id, _)| *id != item.id);
+            if self.settings.shows_toasts() {
+                self.toasts.push((item.id, Instant::now()));
+            }
         }
         self.items.insert(0, item);
         self.items.truncate(MAX_NOTIFICATIONS);
+        let items = &self.items;
+        self.toasts.retain(|(id, _)| items.iter().any(|item| item.id == *id));
     }
 
     pub fn items(&self) -> &[Notification] {
         &self.items
     }
 
-    /// The entry to announce in a card: the newest one, briefly, and never
-    /// while the list itself is open.
-    pub fn toast(&self, now: Instant) -> Option<&Notification> {
-        let (id, shown) = self.toast?;
-        if self.open || now.saturating_duration_since(shown) >= TOAST_DURATION {
-            return None;
+    pub fn by_key(&self, key: &str) -> Option<&Notification> {
+        self.items.iter().find(|item| item.key == Some(key))
+    }
+
+    /// Removes the entry with this key, and its card.
+    pub fn remove_key(&mut self, key: &str) {
+        if let Some(id) = self.by_key(key).map(|item| item.id) {
+            self.take(id);
         }
-        self.items.iter().find(|item| item.id == id)
     }
 
-    /// How long the current card still has to stay on screen.
+    /// The entries to announce in cards, oldest first: the newest few, each
+    /// briefly unless it is sticky, and none while the list itself is open.
+    pub fn toasts(&self, now: Instant) -> Vec<&Notification> {
+        if self.open {
+            return Vec::new();
+        }
+        let shown: Vec<_> = self
+            .toasts
+            .iter()
+            .filter_map(|(id, shown)| {
+                let item = self.items.iter().find(|item| item.id == *id)?;
+                (item.sticky || now.saturating_duration_since(*shown) < TOAST_DURATION).then_some(item)
+            })
+            .collect();
+        shown[shown.len().saturating_sub(VISIBLE_TOASTS)..].to_vec()
+    }
+
+    /// How long until the next card that is not sticky leaves the screen.
     pub fn toast_remaining(&self, now: Instant) -> Option<Duration> {
-        self.toast(now)?;
-        let (_, shown) = self.toast?;
-        Some(TOAST_DURATION.saturating_sub(now.saturating_duration_since(shown)))
+        let shown = self.toasts(now);
+        self.toasts
+            .iter()
+            .filter(|(id, _)| shown.iter().any(|item| item.id == *id && !item.sticky))
+            .map(|(_, at)| TOAST_DURATION.saturating_sub(now.saturating_duration_since(*at)))
+            .min()
     }
 
-    pub fn dismiss_toast(&mut self) {
-        self.toast = None;
+    pub fn dismiss_toast(&mut self, id: u64) {
+        self.toasts.retain(|(shown, _)| *shown != id);
+    }
+
+    pub fn dismiss_toasts(&mut self) {
+        self.toasts.clear();
     }
 
     pub fn unread(&self) -> usize {
@@ -304,14 +443,16 @@ impl NotificationCenter {
         }
     }
 
-    /// Removes the entry and returns where it leads.
-    pub fn take(&mut self, id: u64) -> Option<Target> {
+    /// Removes the entry and returns it.
+    pub fn take(&mut self, id: u64) -> Option<Notification> {
         let index = self.items.iter().position(|item| item.id == id)?;
-        self.items.remove(index).target
+        self.dismiss_toast(id);
+        Some(self.items.remove(index))
     }
 
     pub fn clear(&mut self) {
         self.items.clear();
+        self.toasts.clear();
     }
 }
 
@@ -361,36 +502,100 @@ mod tests {
     }
 
     #[test]
-    fn the_newest_entry_is_announced_briefly_unless_cards_are_off_or_the_list_is_open() {
+    fn the_newest_entries_are_announced_briefly_unless_cards_are_off_or_the_list_is_open() {
         let mut center = NotificationCenter::default();
         let now = Instant::now();
-        assert!(center.toast(now).is_none());
+        assert!(center.toasts(now).is_empty());
         center.push(Severity::Info, "Turno completado", "a", None);
         center.push(Severity::Error, "Turno fallido", "b", None);
-        assert_eq!(center.toast(Instant::now()).unwrap().title, "Turno fallido");
+        let titles = |center: &NotificationCenter, at| {
+            center.toasts(at).iter().map(|item| item.title.clone()).collect::<Vec<_>>()
+        };
+        assert_eq!(titles(&center, Instant::now()), ["Turno completado", "Turno fallido"]);
         let remaining = center.toast_remaining(Instant::now()).unwrap();
         assert!(remaining <= TOAST_DURATION && remaining > TOAST_DURATION / 2);
-        assert!(center.toast(Instant::now() + TOAST_DURATION).is_none());
+        assert!(center.toasts(Instant::now() + TOAST_DURATION).is_empty());
         assert!(center.toast_remaining(Instant::now() + TOAST_DURATION).is_none());
 
+        // Only the newest few are cards at once; the rest stay in the list.
+        for index in 0..5 {
+            center.push(Severity::Info, "Evento", index.to_string(), None);
+        }
+        let shown = center.toasts(Instant::now());
+        assert_eq!(shown.iter().map(|item| item.detail.as_str()).collect::<Vec<_>>(), ["2", "3", "4"]);
+
         center.toggle();
-        assert!(center.toast(Instant::now()).is_none());
+        assert!(center.toasts(Instant::now()).is_empty());
         center.toggle();
+        center.clear();
         center.push(Severity::Info, "Otro", "c", None);
-        let announced = center.toast(Instant::now()).unwrap().id;
+        let announced = center.toasts(Instant::now())[0].id;
         center.take(announced);
-        assert!(center.toast(Instant::now()).is_none());
+        assert!(center.toasts(Instant::now()).is_empty());
         center.push(Severity::Info, "Otro", "d", None);
-        center.dismiss_toast();
-        assert!(center.toast(Instant::now()).is_none());
+        center.push(Severity::Info, "Otro", "e", None);
+        let first = center.items()[1].id;
+        center.dismiss_toast(first);
+        assert_eq!(center.toasts(Instant::now())[0].detail, "e");
+        center.dismiss_toasts();
+        assert!(center.toasts(Instant::now()).is_empty());
 
         for name in ["toasts", "do_not_disturb"] {
             let mut quiet = NotificationCenter::default();
             assert!(quiet.settings.toggle(name));
             quiet.push(Severity::Info, "Turno completado", "a", None);
-            assert!(quiet.toast(Instant::now()).is_none(), "{name}");
+            assert!(quiet.toasts(Instant::now()).is_empty(), "{name}");
             assert_eq!(quiet.unread(), 1, "still listed with {name}");
         }
+    }
+
+    #[test]
+    fn a_keyed_notice_is_one_entry_updated_quietly_and_announced_again_when_its_title_changes() {
+        let mut center = NotificationCenter::default();
+        let later = Instant::now() + TOAST_DURATION * 10;
+        center.post(
+            Notice::new(Severity::Info, "Descargando openADE 0.4.0", "0 %")
+                .key("update")
+                .sticky()
+                .progress(0, 100),
+        );
+        // Opening and closing the list marks it read; its card stays.
+        center.toggle();
+        center.toggle();
+        assert_eq!(center.unread(), 0);
+        center.push(Severity::Info, "Turno completado", "a", None);
+        center.post(
+            Notice::new(Severity::Info, "Descargando openADE 0.4.0", "50 %")
+                .key("update")
+                .sticky()
+                .progress(50, 100),
+        );
+        assert_eq!(center.items().len(), 2);
+        let update = center.by_key("update").unwrap();
+        assert_eq!((update.detail.as_str(), update.progress, update.read), ("50 %", Some((50, 100)), true));
+        // Sticky, it outlasts the brief card beside it.
+        let shown = center.toasts(later);
+        assert_eq!(shown.iter().map(|item| item.key).collect::<Vec<_>>(), [Some("update")]);
+
+        center.post(
+            Notice::new(Severity::Info, "openADE 0.4.0 está lista", "Se instala al reiniciar.")
+                .key("update")
+                .sticky()
+                .action("update_restart", "Reiniciar")
+                .action("update_later", "Más tarde"),
+        );
+        let ready = center.by_key("update").unwrap();
+        assert!(!ready.read && ready.progress.is_none());
+        assert_eq!(ready.actions.iter().map(|action| action.id.as_str()).collect::<Vec<_>>(), ["update_restart", "update_later"]);
+        let shown = center.toasts(later);
+        assert_eq!(shown.len(), 1);
+        assert_eq!(shown[0].title, "openADE 0.4.0 está lista");
+        assert_eq!(center.toast_remaining(Instant::now()).map(|left| left <= TOAST_DURATION), Some(true), "the brief card still counts");
+        assert_eq!(center.toast_remaining(later), None, "a sticky card has no deadline");
+
+        center.remove_key("update");
+        assert!(center.by_key("update").is_none() && center.toasts(later).is_empty());
+        assert_eq!(center.items().len(), 1);
     }
 
     #[test]
@@ -427,9 +632,9 @@ mod tests {
         center.push(Severity::Info, "Aviso", "sin destino", None);
         let with_target = center.items()[1].id;
         let without = center.items()[0].id;
-        assert_eq!(center.take(with_target), session("7"));
+        assert_eq!(center.take(with_target).unwrap().target, session("7"));
         assert_eq!(center.take(with_target), None);
-        assert_eq!(center.take(without), None);
+        assert_eq!(center.take(without).unwrap().target, None);
         assert!(center.items().is_empty());
         center.push(Severity::Info, "x", "y", None);
         center.clear();

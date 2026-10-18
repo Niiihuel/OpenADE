@@ -6051,3 +6051,45 @@ Volver al catálogo	Back to catalog
 «Permitir» ejecuta sin preguntar los comandos que empiezan exactamente con este prefijo cuando el agente está en «Pedir aprobación». No abre nada en «Sólo lectura», y un shell que ejecute otra cosa (sh -c, env) sigue preguntando.	«Allow» runs the commands that start exactly with this prefix without asking while the agent is in «Ask for approval». It opens nothing in «Read only», and a shell that runs something else (sh -c, env) still asks.
 ¿Salir con agentes en curso?	Exit with agents running?
 última actualización	last update
+Actualizaciones	Updates
+Descargar e instalar	Download and install
+Ver la versión	View the release
+Reiniciar ahora	Restart now
+Novedades	Release notes
+Actualizar automáticamente	Update automatically
+Busca versiones nuevas cada 6 horas.	Checks for new versions every 6 hours.
+La búsqueda automática está desactivada.	Automatic checks are off.
+Es la versión más reciente.	This is the latest version.
+Descarga cada versión nueva en segundo plano y la instala al reiniciar.	Downloads each new version in the background and installs it on restart.
+Avisa cuando hay una versión nueva. Esta copia no se reemplaza sola: se actualiza con el archivo de cada versión.	Tells you when there is a new version. This copy does not replace itself: update it with each version's archive.
+Se descarga en segundo plano y se instala al reiniciar.	It downloads in the background and installs on restart.
+Esta copia no se actualiza sola: descargá la versión nueva desde GitHub.	This copy does not update itself: download the new version from GitHub.
+Se instala al reiniciar, o la próxima vez que cierres openADE.	It installs on restart, or the next time you quit openADE.
+No se pudo actualizar openADE	openADE could not be updated
+Preferencia de actualizaciones guardada	Update preference saved
+La comprobación se interrumpió	The check was interrupted
+openADE {version} está disponible.	openADE {version} is available.
+openADE {version} está disponible	openADE {version} is available
+openADE {version} está disponible en GitHub.	openADE {version} is available on GitHub.
+openADE {version} está lista	openADE {version} is ready
+openADE {version} se instala al reiniciar o al cerrar openADE.	openADE {version} installs on restart or when you quit openADE.
+openADE {version} es la versión más reciente	openADE {version} is the latest version
+Descargando openADE {version}	Downloading openADE {version}
+Descargando openADE {version}: {percent} %	Downloading openADE {version}: {percent}%
+Descargando openADE {version}…	Downloading openADE {version}…
+{percent} % de {size} MB	{percent}% of {size} MB
+No se pudo conectar con GitHub: {error}	Could not connect to GitHub: {error}
+GitHub respondió {status}	GitHub answered {status}
+La respuesta de GitHub es demasiado grande	GitHub's response is too large
+Respuesta de GitHub inválida: {error}	Invalid response from GitHub: {error}
+La versión «{tag}» no es válida	The version “{tag}” is not valid
+El archivo de la actualización es demasiado grande	The update archive is too large
+La descarga se interrumpió: {error}	The download was interrupted: {error}
+La firma de la actualización no es válida	The update's signature is not valid
+La firma de la actualización no es texto	The update's signature is not text
+No se pudo descomprimir la actualización: {error}	Could not unpack the update: {error}
+La actualización no tiene los archivos esperados	The update does not have the expected files
+No se encontró la versión descargada	The downloaded version was not found
+openADE no terminó de cerrarse; la actualización se instala la próxima vez	openADE did not finish quitting; the update installs next time
+No se pudo apartar la versión instalada: {error}	Could not move the installed version aside: {error}
+No se pudo instalar la versión nueva: {error}	Could not install the new version: {error}

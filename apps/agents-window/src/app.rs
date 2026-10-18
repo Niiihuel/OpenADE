@@ -1,5 +1,7 @@
 #[path = "marketplace_app.rs"]
 mod marketplace_app;
+#[path = "app_update_app.rs"]
+mod app_update_app;
 #[path = "appearance_app.rs"]
 mod appearance_app;
 #[path = "custom_theme_app.rs"]
@@ -1568,6 +1570,7 @@ pub struct AgentsWindow {
     /// Model for the next turn only; see `start_run`.
     turn_model_override: Option<NativeProviderSettings>,
     window_focused: bool,
+    updates: app_update_app::Updates,
     toast_shown: bool,
     /// The Settings notice on screen and when it appeared.
     settings_notice_seen: Option<(String, Instant)>,
@@ -6784,6 +6787,7 @@ impl AgentsWindow {
         crate::theme_mode::load(&root);
         let data_folder = root.display().to_string();
         let settings_preferences = SettingsPreferences::load(&root);
+        let (updates, update_view) = app_update_app::Updates::new(settings_preferences.auto_update);
         crate::theme_mode::set_appearance(&settings_preferences.appearance);
         crate::appearance_preferences::set_current(&settings_preferences.appearance);
         let ide = crate::ide_workspace::IdeWorkspaceState::load(&root);
@@ -7199,6 +7203,7 @@ impl AgentsWindow {
                 appearance_font_query: Default::default(),
                 custom_theme_ui: Default::default(),
             settings_reopen_last_workspace: settings_preferences.reopen_last_workspace,
+            update: update_view,
             settings_terminal_shell: settings_preferences.terminal_shell.clone(),
             settings_terminal_shell_draft: match &settings_preferences.terminal_shell {
                 TerminalShell::Custom(path) => path.to_string_lossy().into_owned(),
@@ -7514,6 +7519,7 @@ impl AgentsWindow {
             session_start_context: None,
             turn_model_override: None,
             window_focused: true,
+            updates,
             toast_shown: false,
             settings_notice_seen: None,
             // An unreadable file reviews with the selected model.
@@ -19973,6 +19979,14 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id.starts_with("acp_task:") => {
                 self.start_acp_task(&id["acp_task:".len()..]);
             }
+            UiAction::Clicked { id }
+                if matches!(
+                    id.as_str(),
+                    "update_check" | "update_download" | "update_restart" | "update_notes" | "settings_auto_update"
+                ) =>
+            {
+                self.apply_update_action(&id, ctx);
+            }
             UiAction::Clicked { id } if id == "notifications_toggle" => {
                 self.view.notifications.toggle();
             }
@@ -19985,8 +19999,10 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id == "settings_notice_dismiss" => {
                 self.clear_settings_notice();
             }
-            UiAction::Clicked { id } if id == "notification_toast_dismiss" => {
-                self.view.notifications.dismiss_toast();
+            UiAction::Clicked { id } if id.starts_with("notification_toast_dismiss:") => {
+                if let Ok(id) = id["notification_toast_dismiss:".len()..].parse() {
+                    self.view.notifications.dismiss_toast(id);
+                }
             }
             UiAction::Clicked { id } if id.starts_with("notification_setting:") => {
                 let mut next = self.view.notifications.settings;
@@ -19995,7 +20011,7 @@ impl AgentsWindow {
                         Ok(()) => {
                             self.view.notifications.settings = next;
                             if !next.shows_toasts() {
-                                self.view.notifications.dismiss_toast();
+                                self.view.notifications.dismiss_toasts();
                             }
                             self.view.status = "Ajustes de notificaciones guardados".to_owned();
                         }
@@ -20009,12 +20025,19 @@ impl AgentsWindow {
                 }
             }
             UiAction::Clicked { id } if id.starts_with("notification_open:") => {
-                let target = id["notification_open:".len()..]
+                let item = id["notification_open:".len()..]
                     .parse()
                     .ok()
                     .and_then(|id| self.view.notifications.take(id));
                 self.view.notifications.close();
-                if let Some(crate::notifications::Target::Session(session)) = target {
+                let (target, first_action) = item.map_or((None, None), |item| {
+                    (item.target, item.actions.into_iter().next().map(|action| action.id))
+                });
+                if target.is_none() {
+                    if let Some(action) = first_action {
+                        self.apply_action(UiAction::Clicked { id: action }, ctx);
+                    }
+                } else if let Some(crate::notifications::Target::Session(session)) = target {
                     // It may name the conversation a maximized dock covers,
                     // which a running turn does not let open again.
                     self.dock.restore_maximized();
@@ -22916,6 +22939,7 @@ impl eframe::App for AgentsWindow {
             );
         }
         self.save_draft();
+        self.apply_staged_update_on_exit();
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -22999,6 +23023,7 @@ impl eframe::App for AgentsWindow {
             | self.poll_native_command_sessions()
             | self.follow_agent_terminals()
             | self.poll_marketplace()
+            | self.poll_app_update(&ctx)
             | self.poll_plugins()
             | self.poll_catalog()
             | self.poll_model_discovery()
@@ -23592,6 +23617,7 @@ impl eframe::App for AgentsWindow {
             || !self.view.active_subagents.is_empty()
             || self.subagent_poll_needed
             || self.marketplace_response.is_some()
+            || self.updates.busy()
             || self.plugin_response.is_some()
             || self.marketplace_remote.pending()
             || self.catalog_response.is_some()

@@ -4626,6 +4626,7 @@ mod tests {
             native_hooks: Default::default(),
             settings_reduced_motion: false,
             settings_reopen_last_workspace: false,
+            update: Default::default(),
             settings_terminal_shell: crate::settings_preferences::TerminalShell::System,
             settings_terminal_shell_draft: String::new(),
             settings_terminal_shell_menu_open: false,
