@@ -166,6 +166,9 @@ mod background_resume_app;
 #[path = "pause_app_tests.rs"]
 mod pause_app_tests;
 #[cfg(test)]
+#[path = "file_drop_app_tests.rs"]
+mod file_drop_app_tests;
+#[cfg(test)]
 #[path = "message_edit_app_tests.rs"]
 mod message_edit_app_tests;
 #[cfg(test)]
@@ -1513,6 +1516,9 @@ pub struct AgentsWindow {
     attachment_worker: Option<crate::composer_attachments::AttachmentWorker>,
     attachment_visuals_pending: HashSet<String>,
     attachment_pastes_pending: HashSet<crate::composer_attachments::DraftKey>,
+    pub(crate) file_drops: crate::file_drop::FileDrops,
+    /// A notice asked for the window's attention; sent on the next frame.
+    attention_pending: bool,
     keyboard_paste_handled: bool,
     pending_text_paste: Option<text_input_app::TextPasteRequest>,
     attachment_viewer_generation: u64,
@@ -1776,7 +1782,7 @@ fn project_on_github(workspace: &str) -> bool {
     crate::github::discover_repository(Path::new(workspace)).is_some()
 }
 
-const MAX_COMPOSER_ATTACHMENTS: usize = 12;
+pub(crate) const MAX_COMPOSER_ATTACHMENTS: usize = 12;
 const MAX_COMPOSER_ATTACHMENT_PATH_BYTES: usize = 2_048;
 const MAX_COMPOSER_PROJECTS: usize = 12;
 const MAX_COMPOSER_GOAL_BYTES: usize = 8 * 1024;
@@ -6970,6 +6976,7 @@ impl AgentsWindow {
             composer_attachments: Vec::new(),
             composer_attachment_visuals: Default::default(),
             composer_attachment_loading: false,
+            composer_files_over: false,
             composer_image_viewer: None,
             message_edit: Default::default(),
             message_actions: Default::default(),
@@ -7284,6 +7291,7 @@ impl AgentsWindow {
             turn_in_view: None,
             link_copied: None,
             show_archived: false,
+            session_query: String::new(),
             session_organization: sidebar_preferences.organization,
             session_sort: sidebar_preferences.sort,
             session_sort_menu_open: false,
@@ -7449,6 +7457,8 @@ impl AgentsWindow {
             attachment_worker: crate::composer_attachments::AttachmentWorker::start(),
             attachment_visuals_pending: HashSet::new(),
             attachment_pastes_pending: HashSet::new(),
+            file_drops: Default::default(),
+            attention_pending: false,
             keyboard_paste_handled: false,
             pending_text_paste: None,
             attachment_viewer_generation: 0,
@@ -14696,6 +14706,11 @@ impl AgentsWindow {
             .unwrap_or_else(|| "Tarea".to_owned());
         if !self.window_focused && self.view.notifications.settings.uses_system() {
             crate::notifications::notify_system(title, &task);
+            // The taskbar or the compositor marks the window until it is seen.
+            self.attention_pending = true;
+        }
+        if self.view.notifications.settings.uses_sound() {
+            crate::chime::play();
         }
         self.view.notifications.push(
             event.severity(),
@@ -17244,6 +17259,32 @@ impl AgentsWindow {
         }
     }
 
+    /// A drop anywhere on the window attaches to the composer of the page
+    /// being shown; settings and the other pages have none.
+    fn accepts_file_drops(&self) -> bool {
+        self.view.main_page == MainPage::Workspace
+            && !self.view.show_settings
+            && !self.view.show_command_center
+    }
+
+    fn attach_dropped_files(&mut self, paths: &[PathBuf], ctx: &egui::Context) {
+        if let Some(list) = crate::file_drop::file_url_list(paths) {
+            self.request_composer_attachment_paste(Some(list), ctx);
+        }
+    }
+
+    fn poll_file_drops(&mut self, ctx: &egui::Context) -> bool {
+        let dropped = self.file_drops.poll(self.accepts_file_drops());
+        if !dropped.is_empty() {
+            self.attach_dropped_files(&dropped, ctx);
+        }
+        let over = self.accepts_file_drops()
+            && (self.file_drops.hovering || ctx.input(|input| !input.raw.hovered_files.is_empty()));
+        let changed = !dropped.is_empty() || over != self.view.composer_files_over;
+        self.view.composer_files_over = over;
+        changed
+    }
+
     fn request_composer_attachment_paste(
         &mut self,
         hint: Option<String>,
@@ -18476,6 +18517,11 @@ impl AgentsWindow {
                     self.open_chat_link(&url, target, ctx);
                 }
             }
+            UiAction::Clicked { id } if id.starts_with("chat_path_open:") => {
+                if let Some((path, line)) = crate::rich_text::workspace_path_from_action(&id) {
+                    self.open_reply_path(&path, line);
+                }
+            }
             UiAction::Clicked { id } if crate::rich_text::toggle_diagram_source(&id) => {}
             UiAction::Clicked { id } if id.starts_with(crate::chat_links::MENU_ACTION_PREFIX) => {
                 self.apply_chat_link_menu_action(&id, ctx);
@@ -18500,6 +18546,9 @@ impl AgentsWindow {
                         self.refresh_agent_terminal_views();
                     }
                 }
+            }
+            UiAction::FilesDropped { paths, .. } if self.accepts_file_drops() => {
+                self.attach_dropped_files(&paths, ctx);
             }
             UiAction::CopyRequested { text } => ctx.copy_text(text),
             UiAction::PasteRequested { id } => self.request_text_paste(id, ctx),
@@ -19996,6 +20045,25 @@ impl AgentsWindow {
                     self.ensure_terminal_session(id);
                     self.refresh_terminal_panes();
                 }
+            }
+            UiAction::InputChanged { id, value } if id == "session_search" => {
+                self.view.session_query = value.chars().take(200).collect();
+                self.tree.scroll_to_start("sessions_list");
+            }
+            UiAction::Clicked { id } if id == "session_search:clear" => {
+                self.view.session_query.clear();
+                self.tree.set_input_value("session_search", "");
+                self.tree.focus("session_search");
+            }
+            // Titles filter at once; words said inside the tasks are the
+            // command center's search, which reads every journal on a worker.
+            UiAction::Clicked { id } if id == "session_search_messages" => {
+                let query = self.view.session_query.trim().to_owned();
+                self.open_command_center();
+                self.view.command_scope = Scope::Sessions;
+                self.view.command_query = query.clone();
+                self.command_tree.set_input_value("command_query", &query);
+                self.request_command_search();
             }
             UiAction::Clicked { id } if id == "toggle_archived_view" => {
                 self.view.show_archived = !self.view.show_archived;
@@ -22750,6 +22818,7 @@ impl AgentsWindow {
 
 impl eframe::App for AgentsWindow {
     fn on_exit(&mut self) {
+        self.file_drops.close_and_wait();
         self.revoke_all_external_grants();
         self.cancel_editor_loads();
         self.stop_dictation();
@@ -23029,6 +23098,12 @@ impl eframe::App for AgentsWindow {
         }
         if !window_focused || !self.view.show_command_center {
             early_changed |= self.command_tree.dismiss_context_menu();
+        }
+        early_changed |= self.poll_file_drops(&ctx);
+        if std::mem::take(&mut self.attention_pending) && !window_focused {
+            ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(
+                egui::UserAttentionType::Informational,
+            ));
         }
         early_changed |= self.sync_tour();
         let (mut frame, prepared_layout) =

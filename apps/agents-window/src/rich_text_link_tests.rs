@@ -408,3 +408,38 @@ fn links_wrap_inside_a_narrow_column_and_hint_their_destination() {
         assert!(!painted.iter().any(|text| text.contains("localhost:5173/")), "one hint at a time");
     }
 }
+
+#[test]
+fn inline_code_naming_a_workspace_file_opens_it_at_its_line() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(root.join("src/app.rs"), "fn main() {}\n").unwrap();
+    let source = format!(
+        "See `src/app.rs:42:7`, `./src/app.rs#L3-9`, `{}/src/app.rs`, `src/missing.rs`, `../etc/passwd` and `cargo test`.",
+        root.display()
+    );
+    let element = render_markdown_at_width(&source, 600.0);
+    let linked = link_workspace_paths(element, "assistant:s:0", &root.display().to_string());
+    let mut found = Vec::new();
+    spans(&linked, &mut found);
+    let opened = found
+        .iter()
+        .filter_map(|span| span.action.as_deref().and_then(workspace_path_from_action))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        opened,
+        [
+            (PathBuf::from("src/app.rs"), 42),
+            (PathBuf::from("src/app.rs"), 3),
+            (PathBuf::from("src/app.rs"), 0),
+        ]
+    );
+    let ids = found.iter().filter_map(|span| span.action.clone()).collect::<Vec<_>>();
+    assert_eq!(ids.len(), 3);
+    assert!(ids.iter().all(|id| ids.iter().filter(|other| *other == id).count() == 1));
+    // Without a workspace nothing is linked.
+    let mut plain = Vec::new();
+    spans(&link_workspace_paths(render_markdown_at_width(&source, 600.0), "s", ""), &mut plain);
+    assert!(plain.iter().all(|span| span.action.is_none()));
+}

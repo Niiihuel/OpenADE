@@ -40,6 +40,8 @@ pub struct NotificationSettings {
     pub toasts: bool,
     /// Desktop notifications while the window is in the background.
     pub system: bool,
+    /// A short chime with each notice.
+    pub sound: bool,
     /// Events are still listed, without cards or desktop notifications.
     pub do_not_disturb: bool,
 }
@@ -52,18 +54,20 @@ impl Default for NotificationSettings {
             approvals: true,
             toasts: true,
             system: true,
+            sound: true,
             do_not_disturb: false,
         }
     }
 }
 
 impl NotificationSettings {
-    pub const NAMES: [&'static str; 6] = [
+    pub const NAMES: [&'static str; 7] = [
         "turn_completed",
         "turn_failed",
         "approvals",
         "toasts",
         "system",
+        "sound",
         "do_not_disturb",
     ];
 
@@ -100,6 +104,7 @@ impl NotificationSettings {
             "approvals" => &mut self.approvals,
             "toasts" => &mut self.toasts,
             "system" => &mut self.system,
+            "sound" => &mut self.sound,
             "do_not_disturb" => &mut self.do_not_disturb,
             _ => return None,
         })
@@ -129,6 +134,10 @@ impl NotificationSettings {
 
     pub const fn uses_system(&self) -> bool {
         self.system && !self.do_not_disturb
+    }
+
+    pub const fn uses_sound(&self) -> bool {
+        self.sound && !self.do_not_disturb
     }
 }
 

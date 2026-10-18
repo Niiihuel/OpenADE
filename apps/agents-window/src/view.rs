@@ -12,7 +12,7 @@ use openide_harness::{
 use openide_ui::{
     ActiveHover, AlertDialog, Button, ButtonVariant, Card, CardDensity, Color, Component, ControlSize,
     DropdownMenu, DropdownMenuEntry, DropdownMenuItem, Element, Empty, FontFamily,
-    Icon, IconButton as UiIconButton, Kbd, ListRow, OutputBlock, PopoverPlacement, RadiusRole, ScrollArea, SegmentedControl,
+    Icon, IconButton as UiIconButton, Kbd, ListRow, OutputBlock, PopoverPlacement, RadiusRole, ScrollArea, SearchField, SegmentedControl,
     Separator, Skeleton, Tab, Text as UiText, TextRole, TextSpan, Tooltip, TooltipPlacement, TooltipSpec, TreeGuides,
     TreeRow,
 };
@@ -474,6 +474,8 @@ pub struct ViewState {
     pub(crate) composer_attachment_visuals:
         BTreeMap<String, crate::composer_attachments::AttachmentVisual>,
     pub composer_attachment_loading: bool,
+    /// Files from another application are being dragged over the window.
+    pub composer_files_over: bool,
     pub(crate) composer_image_viewer: Option<crate::composer_attachments::ImageGalleryView>,
     pub composer_add_menu_open: bool,
     pub composer_dictation: openide_ui::DictationState,
@@ -591,6 +593,8 @@ pub struct ViewState {
     /// It is the tree's own clipboard, never the system's.
     pub file_clipboard: Option<(Vec<String>, bool)>,
     pub show_archived: bool,
+    /// The sidebar's filter of tasks by title or project; empty shows all.
+    pub session_query: String,
     pub session_organization: SessionOrganization,
     pub session_sort: SessionSort,
     pub session_sort_menu_open: bool,
@@ -1571,6 +1575,25 @@ pub(crate) fn group_draft_row_index(state: &ViewState) -> Option<usize> {
 
 fn session_list_rows(state: &ViewState) -> Vec<SessionListRow> {
     let mut rows = Vec::new();
+    let query = state.session_query.trim().to_lowercase();
+    if !query.is_empty() {
+        rows.push(SessionListRow::Section("RESULTADOS"));
+        let found = state
+            .sessions
+            .iter()
+            .filter(|session| session.archived == state.show_archived)
+            .filter(|session| {
+                session.title.to_lowercase().contains(&query)
+                    || Path::new(&session.project)
+                        .file_name()
+                        .is_some_and(|name| name.to_string_lossy().to_lowercase().contains(&query))
+            });
+        rows.extend(found.cloned().map(SessionListRow::Session));
+        if rows.len() == 1 {
+            rows.push(SessionListRow::Empty("Ninguna tarea con ese título"));
+        }
+        return rows;
+    }
     // The archive lists archived tasks only; a pinned one keeps its mark there.
     let pinned = state
         .sessions
@@ -2087,6 +2110,22 @@ fn sidebar_for_height(state: &ViewState, width: f32, height: f32) -> Element {
             .gap(2.0)
             .size(None, Some(28.0)),
         );
+    }
+    toolbar.push(
+        SearchField::new("session_search", state.session_query.clone(), "Filtrar tareas", theme::component_palette())
+            .size(ControlSize::Dense)
+            .clearable(true)
+            .render(),
+    );
+    if !state.session_query.trim().is_empty() {
+        toolbar.push(sidebar_nav_action(
+            "session_search_messages",
+            Icon::Search,
+            "Buscar en los mensajes",
+            "",
+            width - 12.0,
+            false,
+        ));
     }
     let session_toolbar = Element::column(toolbar).gap(4.0).padding(6.0);
     let compact_usage = height < 440.0;
@@ -4231,6 +4270,7 @@ pub(crate) mod tests {
             composer_attachments: Vec::new(),
             composer_attachment_visuals: Default::default(),
             composer_attachment_loading: false,
+            composer_files_over: false,
             composer_image_viewer: None,
             message_edit: Default::default(),
             message_actions: Default::default(),
@@ -4323,6 +4363,7 @@ pub(crate) mod tests {
             file_delete: None,
             file_clipboard: None,
             show_archived: false,
+            session_query: String::new(),
             session_organization: SessionOrganization::Project,
             session_sort: SessionSort::Updated,
             session_sort_menu_open: false,
@@ -8346,6 +8387,46 @@ pub(crate) mod tests {
         );
         assert!(tree.focus("workspace"));
         assert!(tree.focus("workspace_apply"));
+    }
+
+    #[test]
+    fn the_sidebar_filter_lists_matching_titles_and_projects_flat() {
+        let mut state = empty_state();
+        let session = |id: &str, title: &str, project: &str, pinned: bool, archived: bool| SessionView {
+            id: id.into(),
+            title: title.into(),
+            project: project.into(),
+            backend: "native".into(),
+            pinned,
+            archived,
+            unread: false,
+            native_automation: None,
+        };
+        state.sessions = vec![
+            session("a", "Arreglar el login", "/work/web", false, false),
+            session("b", "Migrar tests", "/work/api", true, false),
+            session("c", "Login viejo", "/work/web", false, true),
+            session("d", "Docs", "/work/LoginKit", false, false),
+        ];
+        let titles = |state: &ViewState| {
+            session_list_rows(state)
+                .iter()
+                .map(|row| match row {
+                    SessionListRow::Section(title) | SessionListRow::Empty(title) => title.to_string(),
+                    SessionListRow::Session(session) => session.id.clone(),
+                    _ => "other".into(),
+                })
+                .collect::<Vec<_>>()
+        };
+        state.session_query = "  LOGIN ".into();
+        assert_eq!(titles(&state), ["RESULTADOS", "a", "d"]);
+        state.show_archived = true;
+        assert_eq!(titles(&state), ["RESULTADOS", "c"]);
+        state.show_archived = false;
+        state.session_query = "api".into();
+        assert_eq!(titles(&state), ["RESULTADOS", "b"]);
+        state.session_query = "nada".into();
+        assert_eq!(titles(&state), ["RESULTADOS", "Ninguna tarea con ese título"]);
     }
 
     #[test]

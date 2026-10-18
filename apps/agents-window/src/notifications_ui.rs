@@ -207,6 +207,7 @@ pub(crate) fn settings_group(center: &NotificationCenter, compact: bool) -> Elem
                 "Avisos del sistema",
                 "Notificación del escritorio cuando openADE no tiene el foco.",
             ),
+            row("sound", "Sonido", "Un sonido breve con cada aviso."),
             row(
                 "do_not_disturb",
                 "No molestar",

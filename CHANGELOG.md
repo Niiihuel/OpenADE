@@ -103,6 +103,17 @@ says 0.1.0.
 - `openade-graph`: an incremental index of the workspace's code that agents
   query over MCP or the command line instead of rereading files, with a hook
   that points CLI agents to it before they grep or read a large file
+- A file of the project named in an agent's reply as inline code
+  (`src/app.rs`, `src/app.rs:42`, `src/app.rs#L42`) is a link that opens it
+  in the dock, at that line
+- Files dragged from another application and dropped anywhere on a task's
+  page are attached to the composer, whose border lights up while they are
+  over the window; on Wayland they arrive through limn-dnd
+- The sidebar filters tasks by title or project as you type, and offers to
+  search the words inside the tasks in the command center
+- A short chime plays with each notice (Settings → Notificaciones → Sonido,
+  on by default), and a desktop notice also asks the window manager to mark
+  the window until it is seen
 
 ## 0.3.0 — 2026-10-16
 

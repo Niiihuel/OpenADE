@@ -474,7 +474,8 @@ fn message(
                 &scope,
                 *streaming,
             );
-            let mut rows = vec![rich_text::scope_web_links(preview.element, &scope)];
+            let element = rich_text::link_workspace_paths(preview.element, &scope, &state.workspace);
+            let mut rows = vec![rich_text::scope_web_links(element, &scope)];
             if preview.limited && !*streaming && crate::conversation_source_ui::available(state) {
                 // Keep actions outside the cached passive Markdown tree.
                 rows.push(crate::conversation_source_ui::open_button(
@@ -4404,6 +4405,7 @@ mod tests {
             composer_attachments: Vec::new(),
             composer_attachment_visuals: Default::default(),
             composer_attachment_loading: false,
+            composer_files_over: false,
             composer_image_viewer: None,
             message_edit: Default::default(),
             message_actions: Default::default(),
@@ -4496,6 +4498,7 @@ mod tests {
             file_delete: None,
             file_clipboard: None,
             show_archived: false,
+            session_query: String::new(),
             session_organization: crate::view::SessionOrganization::Project,
             session_sort: openide_core::SessionSort::Updated,
             session_sort_menu_open: false,

@@ -139,6 +139,7 @@ dependencies = [
  "image",
  "jsonwebtoken",
  "libc",
+ "limn-dnd",
  "limn-editor",
  "limn-egui",
  "limn-language",
@@ -3158,6 +3159,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "limn-dnd"
+version = "0.1.43"
+source = "git+https://github.com/Niiihuel/limn.git?rev=d8697a67f3dc606ad92b90e8b9999d4109c8fe50#d8697a67f3dc606ad92b90e8b9999d4109c8fe50"
+dependencies = [
+ "raw-window-handle",
+ "rustix 1.1.5",
+ "smithay-client-toolkit 0.20.0",
+ "wayland-backend",
+]
+
+[[package]]
 name = "limn-editor"
 version = "0.1.43"
 source = "git+https://github.com/Niiihuel/limn.git?rev=d8697a67f3dc606ad92b90e8b9999d4109c8fe50#d8697a67f3dc606ad92b90e8b9999d4109c8fe50"
@@ -4339,7 +4351,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.45.0",
 ]
 
 [[package]]

@@ -68,6 +68,8 @@ cpal = "0.17"
 whisper-rs = "0.16"
 
 [target.'cfg(target_os = "linux")'.dependencies]
+# Files dropped from other applications on Wayland, which winit does not receive.
+limn-dnd = { git = "https://github.com/Niiihuel/limn.git", rev = "d8697a67f3dc606ad92b90e8b9999d4109c8fe50" }
 ashpd = { version = "0.13.13", default-features = false, features = ["tokio", "file_chooser", "settings"] }
 # The project browser: Chromium embedded through CEF, which `shell.nix` provides.
 openide-cef = { path = "../../crates/openide-cef" }

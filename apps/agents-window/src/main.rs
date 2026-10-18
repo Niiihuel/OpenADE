@@ -51,6 +51,8 @@ mod command_center;
 #[cfg(test)]
 mod command_center_visual_tests;
 mod composer_attachments;
+mod file_drop;
+mod chime;
 mod composer_context_ui;
 mod composer_pending;
 mod composer_permissions_ui;
@@ -258,7 +260,9 @@ fn main() -> eframe::Result {
                     root,
                 ))));
             }
-            Ok(Box::new(AgentsWindow::new()))
+            let mut app = AgentsWindow::new();
+            app.file_drops = file_drop::FileDrops::attach(creation);
+            Ok(Box::new(app))
         }),
     )
 }

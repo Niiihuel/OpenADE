@@ -207,6 +207,7 @@ mod tests {
             attachments: &[],
             attachment_visuals: None,
             attachment_loading: false,
+            files_over: false,
             add_menu_open: false,
             dictation: openide_ui::DictationState::Idle,
             transcript: "",

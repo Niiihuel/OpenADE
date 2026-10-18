@@ -62,6 +62,7 @@ pub(crate) struct ComposerProps<'a> {
     pub attachment_visuals:
         Option<&'a BTreeMap<String, crate::composer_attachments::AttachmentVisual>>,
     pub attachment_loading: bool,
+    pub files_over: bool,
     pub add_menu_open: bool,
     pub dictation: DictationState,
     pub transcript: &'a str,
@@ -184,6 +185,7 @@ impl<'a> ComposerProps<'a> {
             attachments: &state.composer_attachments,
             attachment_visuals: Some(&state.composer_attachment_visuals),
             attachment_loading: state.composer_attachment_loading,
+            files_over: state.composer_files_over,
             add_menu_open: state.composer_add_menu_open,
             dictation: state.composer_dictation,
             transcript: &state.composer_transcript,
@@ -2210,7 +2212,9 @@ pub(crate) fn build_composer_with_height(
     .pill_controls(leading_actions(props), trailing_actions(props))
     .editor_font_size(13.0)
     .editor_highlights(link_highlights)
-    .border_color(if props.home {
+    .border_color(if props.files_over {
+        theme::LINK
+    } else if props.home {
         Color::rgb(48, 48, 48)
     } else {
         PILL_SURFACE
@@ -2434,6 +2438,7 @@ pub(crate) mod tests {
             attachments: &[],
             attachment_visuals: None,
             attachment_loading: false,
+            files_over: false,
             add_menu_open: false,
             dictation: DictationState::Idle,
             transcript: "",
