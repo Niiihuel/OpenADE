@@ -3064,4 +3064,4 @@ mod model_switch_app_tests;
 #[path = "background_resume_app_tests.rs"]
 mod background_resume_app_tests;
 #[path = "remote_app_tests.rs"]
-mod remote_app_tests;
+pub(super) mod remote_app_tests;

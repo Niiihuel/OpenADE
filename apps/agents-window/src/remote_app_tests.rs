@@ -8,7 +8,7 @@ use crate::app::remote_app::RemoteSettings;
 use openide_harness::LocalTool;
 
 /// The window's loop while a phone's request is out: serve it, run turns.
-fn serve_until<T>(app: &mut AgentsWindow, phone: std::thread::JoinHandle<T>) -> T {
+pub(crate) fn serve_until<T>(app: &mut AgentsWindow, phone: std::thread::JoinHandle<T>) -> T {
     let deadline = Instant::now() + DEADLINE;
     while !phone.is_finished() {
         assert!(Instant::now() < deadline, "the phone's request timed out: {}", app.view.status);
@@ -21,7 +21,7 @@ fn serve_until<T>(app: &mut AgentsWindow, phone: std::thread::JoinHandle<T>) -> 
 }
 
 /// The window's loop until the task's journal has an event `done` accepts.
-fn run_until(app: &mut AgentsWindow, task: &str, done: impl Fn(&AgentEventKind) -> bool) {
+pub(crate) fn run_until(app: &mut AgentsWindow, task: &str, done: impl Fn(&AgentEventKind) -> bool) {
     let deadline = Instant::now() + DEADLINE;
     loop {
         app.poll_run();
@@ -43,7 +43,7 @@ fn run_until(app: &mut AgentsWindow, task: &str, done: impl Fn(&AgentEventKind) 
     }
 }
 
-fn phone() -> reqwest::blocking::Client {
+pub(crate) fn phone() -> reqwest::blocking::Client {
     reqwest::blocking::Client::builder()
         .danger_accept_invalid_certs(true)
         .timeout(Duration::from_secs(10))
@@ -52,7 +52,7 @@ fn phone() -> reqwest::blocking::Client {
 }
 
 /// The server's address and a paired phone's token.
-fn paired(app: &mut AgentsWindow) -> (String, String) {
+pub(crate) fn paired(app: &mut AgentsWindow) -> (String, String) {
     app.set_remote_settings(RemoteSettings { enabled: true, port: 0, ..RemoteSettings::default() });
     let server = app.remote.server.as_ref().unwrap_or_else(|| panic!("{:?}", app.remote.error));
     let base = format!("https://127.0.0.1:{}", server.port());
@@ -101,7 +101,7 @@ fn start_task(app: &mut AgentsWindow, base: &str, token: &str, prompt: &'static 
     )
 }
 
-fn history(app: &mut AgentsWindow, base: &str, token: &str, task: &str) -> Value {
+pub(crate) fn history(app: &mut AgentsWindow, base: &str, token: &str, task: &str) -> Value {
     let url = format!("{base}/v2/tasks/{task}/history");
     let token = token.to_owned();
     serve_until(app, std::thread::spawn(move || phone().get(url).bearer_auth(&token).send().unwrap().json().unwrap()))
