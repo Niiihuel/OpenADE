@@ -11,6 +11,8 @@ editor-e2e = []
 openide-connections = { path = "../../crates/openide-connections" }
 # accesskit: what limn describes of each frame reaches screen readers.
 eframe = { version = "0.36.2", default-features = false, features = ["wgpu", "default_fonts", "links", "x11", "wayland", "accesskit"] }
+# The window runs through its own event loop (src/background.rs).
+winit = { version = "0.30", default-features = false }
 openide-core = { path = "../../crates/openide-core" }
 openide-harness = { path = "../../crates/openide-harness" }
 openide-cli = { path = "../../crates/openide-cli" }

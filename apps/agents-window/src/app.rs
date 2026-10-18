@@ -1577,6 +1577,8 @@ pub struct AgentsWindow {
     /// Whether the turn in progress used a tool that can change the project.
     turn_had_effects: bool,
     turn_check_run: Option<Receiver<(String, Result<(), String>)>>,
+    /// What the hidden window's wakes need (see `background`).
+    pub(crate) background: crate::background::Background,
     /// Session-start hook output, by (conversation, project, hook set).
     session_start_context: Option<((Option<String>, String, String), String)>,
     /// Model for the next turn only; see `start_run`.
@@ -7534,6 +7536,7 @@ impl AgentsWindow {
             turn_check_settings: crate::turn_check::TurnCheckSettings::load(&root).unwrap_or_default(),
             turn_had_effects: false,
             turn_check_run: None,
+            background: Default::default(),
             session_start_context: None,
             turn_model_override: None,
             window_focused: true,
@@ -22948,6 +22951,46 @@ impl AgentsWindow {
     }
 }
 
+impl AgentsWindow {
+    /// The part of `ui` that draws nothing, for the wakes of a window the
+    /// compositor stopped drawing (see `background`). Returns whether there
+    /// is work that needs further ticks.
+    pub(crate) fn background_tick(&mut self) -> bool {
+        let busy = self.active_run.is_some()
+            || !self.parked_runs.is_empty()
+            || !self.background_resumes.is_empty()
+            || !self.background_automation_runs.is_empty()
+            || !self.automation_queue.is_empty()
+            || !self.view.active_subagents.is_empty()
+            || !self.view.off_screen_turns.is_empty();
+        if self.background.last_ui_pass.elapsed() < crate::background::TICK {
+            return busy;
+        }
+        let Some(ctx) = self.background.ctx.clone() else {
+            return busy;
+        };
+        let changed = self.poll_run()
+            | self.serve_delegate_calls()
+            | self.poll_turn_check()
+            | self.poll_subagent_dispatches()
+            | self.poll_subagent_events()
+            | self.poll_subagent_sessions()
+            | self.poll_automations()
+            | self.poll_background_resumes()
+            | self.poll_parked_runs()
+            | self.poll_cli_status(&ctx)
+            | self.poll_pr_watch()
+            | self.poll_compact()
+            | self.poll_resume()
+            | self.poll_child_recovery()
+            | self.drain_turn_queue(&ctx);
+        if changed {
+            ctx.request_repaint();
+        }
+        busy
+    }
+}
+
 impl eframe::App for AgentsWindow {
     fn on_exit(&mut self) {
         self.file_drops.close_and_wait();
@@ -22993,6 +23036,8 @@ impl eframe::App for AgentsWindow {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.background.last_ui_pass = Instant::now();
+        self.background.ctx.get_or_insert_with(|| ui.ctx().clone());
         let composer_was_running = self.view.running || self.view.background_run_selected;
         let mut early_changed = self.poll_run();
         early_changed |= self.poll_message_edit_stop();

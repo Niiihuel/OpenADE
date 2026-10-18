@@ -1,6 +1,7 @@
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
 mod agent_cli_definitions;
+mod background;
 mod app_update;
 mod cli_profile_settings;
 mod agent_cursor;
@@ -242,40 +243,32 @@ fn main() -> eframe::Result {
         setup.power_preference = eframe::wgpu::PowerPreference::from_env()
             .unwrap_or(eframe::wgpu::PowerPreference::LowPower);
     }
-    eframe::run_native(
-        "openADE",
-        options,
-        Box::new(|creation| {
-            fonts::install(&creation.egui_ctx);
-            #[cfg(feature = "editor-e2e")]
-            if editor_fixture
-                .first()
-                .is_some_and(|arg| arg == "--editor-e2e")
-            {
-                let root = editor_fixture
-                    .get(1)
-                    .expect("editor fixture root is required");
-                return Ok(Box::new(AgentsWindow::editor_e2e(std::path::Path::new(
-                    root,
-                ))));
-            }
-            #[cfg(feature = "editor-e2e")]
-            if editor_fixture
-                .first()
-                .is_some_and(|arg| arg == "--browser-e2e")
-            {
-                let root = editor_fixture
-                    .get(1)
-                    .expect("browser fixture root is required");
-                return Ok(Box::new(AgentsWindow::browser_e2e(std::path::Path::new(
-                    root,
-                ))));
-            }
-            let mut app = AgentsWindow::new();
-            app.file_drops = file_drop::FileDrops::attach(creation);
-            Ok(Box::new(app))
-        }),
-    )
+    background::run(options, |creation| {
+        fonts::install(&creation.egui_ctx);
+        #[cfg(feature = "editor-e2e")]
+        if editor_fixture
+            .first()
+            .is_some_and(|arg| arg == "--editor-e2e")
+        {
+            let root = editor_fixture
+                .get(1)
+                .expect("editor fixture root is required");
+            return AgentsWindow::editor_e2e(std::path::Path::new(root));
+        }
+        #[cfg(feature = "editor-e2e")]
+        if editor_fixture
+            .first()
+            .is_some_and(|arg| arg == "--browser-e2e")
+        {
+            let root = editor_fixture
+                .get(1)
+                .expect("browser fixture root is required");
+            return AgentsWindow::browser_e2e(std::path::Path::new(root));
+        }
+        let mut app = AgentsWindow::new();
+        app.file_drops = file_drop::FileDrops::attach(creation);
+        app
+    })
 }
 
 #[cfg(test)]
