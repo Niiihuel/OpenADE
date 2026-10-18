@@ -22,6 +22,8 @@ use tokio::sync::mpsc;
 const JOURNAL_POLL: Duration = Duration::from_millis(150);
 /// A list whose only change is activity times is sent this often at most.
 const ACTIVITY_INTERVAL: Duration = Duration::from_secs(5);
+/// How often the list is rebuilt when the window has published nothing new.
+const LIST_INTERVAL: Duration = Duration::from_secs(1);
 
 /// The events of a journal, read as it grows.
 struct Tail {
@@ -120,17 +122,22 @@ async fn run(
     let mut tail = watch.as_ref().map(|id| Tail::new(sessions.join(format!("{id}.jsonl"))));
     let mut sent: Option<(Overview, Instant)> = None;
     let mut pending = None;
+    let mut listed: Option<Instant> = None;
+    let mut published = true;
     loop {
-        let overview = tasks::overview(sessions, &bridge.live());
-        let due = match &sent {
-            None => true,
-            Some((last, at)) => {
-                shape(last) != shape(&overview) || (*last != overview && at.elapsed() >= ACTIVITY_INTERVAL)
+        if published || listed.is_none_or(|at| at.elapsed() >= LIST_INTERVAL) {
+            listed = Some(Instant::now());
+            let overview = tasks::overview(sessions, &bridge.live());
+            let due = match &sent {
+                None => true,
+                Some((last, at)) => {
+                    shape(last) != shape(&overview) || (*last != overview && at.elapsed() >= ACTIVITY_INTERVAL)
+                }
+            };
+            if due {
+                sender.send(event("overview", &overview)).await?;
+                sent = Some((overview, Instant::now()));
             }
-        };
-        if due {
-            sender.send(event("overview", &overview)).await?;
-            sent = Some((overview, Instant::now()));
         }
         if let (Some(tail), Some(task)) = (tail.as_mut(), watch.as_deref()) {
             match tail.read() {
@@ -158,10 +165,10 @@ async fn run(
         if sender.is_closed() {
             return Ok(());
         }
-        tokio::select! {
-            _ = changes.changed() => {}
-            _ = tokio::time::sleep(JOURNAL_POLL) => {}
-        }
+        published = tokio::select! {
+            _ = changes.changed() => true,
+            _ = tokio::time::sleep(JOURNAL_POLL) => false,
+        };
     }
 }
 
