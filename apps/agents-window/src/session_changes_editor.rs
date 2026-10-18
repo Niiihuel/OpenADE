@@ -529,7 +529,7 @@ fn open_file_at(directory: &File, name: &str, flags: i32, mode: libc::mode_t) ->
             directory.as_raw_fd(),
             name.as_ptr(),
             flags | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-            mode,
+            mode as libc::c_uint,
         )
     };
     if descriptor < 0 {

@@ -4,6 +4,10 @@ Every release of openADE, newest first. The versions before 0.2.0 were tagged
 afterwards, on the last commit of each day of work; their `Cargo.toml` still
 says 0.1.0.
 
+## Unreleased
+
+- The macOS build compiles: a file mode is widened before `openat`
+
 ## 0.4.0 — 2026-10-18
 
 - Agents over the Agent Client Protocol: any agent of the public ACP
