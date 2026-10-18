@@ -593,6 +593,8 @@ pub struct ViewState {
     /// It is the tree's own clipboard, never the system's.
     pub file_clipboard: Option<(Vec<String>, bool)>,
     pub show_archived: bool,
+    /// openADE's child processes, while Settings shows them.
+    pub(crate) processes: Vec<crate::processes::ProcessRow>,
     /// The sidebar's filter of tasks by title or project; empty shows all.
     pub session_query: String,
     pub session_organization: SessionOrganization,
@@ -4367,6 +4369,7 @@ pub(crate) mod tests {
             file_delete: None,
             file_clipboard: None,
             show_archived: false,
+            processes: Vec::new(),
             session_query: String::new(),
             session_organization: SessionOrganization::Project,
             session_sort: SessionSort::Updated,

@@ -1544,6 +1544,8 @@ pub struct AgentsWindow {
     pr_watches: Vec<crate::pr_watch::Watch>,
     pr_watch_due: Instant,
     pr_watch_poll: Option<std::sync::mpsc::Receiver<Vec<pr_watch_app::WatchResult>>>,
+    process_sampler: crate::processes::ProcessSampler,
+    processes_polled: Option<Instant>,
     /// Where the HTML of replies is served from, once one is opened.
     html_previews: Option<crate::html_preview::HtmlPreviews>,
     /// The task worktree the environment's Git worker is creating.
@@ -7334,6 +7336,7 @@ impl AgentsWindow {
             turn_in_view: None,
             link_copied: None,
             show_archived: false,
+            processes: Vec::new(),
             session_query: String::new(),
             session_organization: sidebar_preferences.organization,
             session_sort: sidebar_preferences.sort,
@@ -7509,6 +7512,8 @@ impl AgentsWindow {
             pr_watches: crate::pr_watch::load(&root),
             pr_watch_due: Instant::now(),
             pr_watch_poll: None,
+            process_sampler: Default::default(),
+            processes_polled: None,
             html_previews: None,
             task_worktree: None,
             cli_handoffs: HashMap::new(),
@@ -14748,6 +14753,26 @@ impl AgentsWindow {
     /// Records a session event the user is not watching: the window is in
     /// the background, another task is on screen, or this one's conversation
     /// is under its maximized dock.
+    /// Settings' list of processes, sampled every two seconds while shown.
+    fn poll_processes(&mut self, ctx: &egui::Context) -> bool {
+        let shown = self.view.show_settings && self.view.settings_page == SettingsPage::Processes;
+        if !shown {
+            let changed = !self.view.processes.is_empty();
+            self.view.processes.clear();
+            self.processes_polled = None;
+            return changed;
+        }
+        let interval = Duration::from_secs(2);
+        if self.processes_polled.is_some_and(|at| at.elapsed() < interval) {
+            ctx.request_repaint_after(interval);
+            return false;
+        }
+        self.processes_polled = Some(Instant::now());
+        self.view.processes = self.process_sampler.sample();
+        ctx.request_repaint_after(interval);
+        true
+    }
+
     fn notify_session(
         &mut self,
         event: crate::notifications::Event,
@@ -19969,6 +19994,15 @@ impl AgentsWindow {
                 }
             }
             UiAction::Clicked { id } if id == "environment_task_worktree" => self.start_task_worktree(ctx),
+            UiAction::Clicked { id } if id.starts_with("process_end:") => {
+                if let Ok(pid) = id["process_end:".len()..].parse::<u32>() {
+                    self.view.status = match crate::processes::terminate(pid) {
+                        Ok(()) => format!("Se pidió terminar el proceso {pid}"),
+                        Err(error) => format!("No se pudo terminar el proceso {pid}: {error}"),
+                    };
+                    self.processes_polled = None;
+                }
+            }
             UiAction::Clicked { id } if id == "cli_mode_toggle" => {
                 self.view.cli_mode_open = !self.view.cli_mode_open;
             }
@@ -23047,6 +23081,7 @@ impl eframe::App for AgentsWindow {
             | self.poll_checkpoints()
             | self.poll_pr_watch()
             | self.poll_cli_handoffs(&ctx)
+            | self.poll_processes(&ctx)
             | self.poll_compact()
             | self.poll_resume()
             | self.poll_child_recovery()

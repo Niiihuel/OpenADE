@@ -59,6 +59,7 @@ mod checkpoints;
 mod pr_watch;
 mod worktree_tasks;
 mod html_preview;
+mod processes;
 mod composer_context_ui;
 mod composer_pending;
 mod composer_permissions_ui;

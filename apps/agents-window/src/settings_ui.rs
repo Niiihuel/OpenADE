@@ -65,6 +65,7 @@ pub enum SettingsPage {
     Hooks,
     Data,
     Usage,
+    Processes,
     Github,
     Shortcuts,
 }
@@ -93,6 +94,7 @@ const AGENT_PAGES: &[SettingsPage] = &[
 const DATA_PAGES: &[SettingsPage] = &[
     SettingsPage::Data,
     SettingsPage::Usage,
+    SettingsPage::Processes,
     SettingsPage::Github,
 ];
 
@@ -125,6 +127,7 @@ impl SettingsPage {
             Self::Hooks => "settings_page:hooks",
             Self::Data => "settings_page:data",
             Self::Usage => "settings_page:usage",
+            Self::Processes => "settings_page:processes",
             Self::Github => "settings_page:github",
             Self::Shortcuts => "settings_page:shortcuts",
         }
@@ -150,6 +153,7 @@ impl SettingsPage {
             "settings_page:hooks" => Some(Self::Hooks),
             "settings_page:data" => Some(Self::Data),
             "settings_page:usage" => Some(Self::Usage),
+            "settings_page:processes" => Some(Self::Processes),
             "settings_page:github" => Some(Self::Github),
             "settings_page:shortcuts" => Some(Self::Shortcuts),
             _ => None,
@@ -176,6 +180,7 @@ impl SettingsPage {
             Self::Hooks => "Hooks",
             Self::Data => "Datos y sesiones",
             Self::Usage => "Uso",
+            Self::Processes => "Procesos",
             Self::Github => "GitHub",
             Self::Shortcuts => "Atajos de teclado",
         }
@@ -201,6 +206,7 @@ impl SettingsPage {
             Self::Hooks => Icon::Bolt,
             Self::Data => Icon::Archive,
             Self::Usage => Icon::ChartBar,
+            Self::Processes => Icon::Grid,
             Self::Github => Icon::Github,
             Self::Shortcuts => Icon::Keyboard,
         }
@@ -239,6 +245,7 @@ impl SettingsPage {
             Self::Hooks => "pretooluse posttooluse evento event ejecutable",
             Self::Data => "tareas sesiones sessions agrupar group ordenar sort carpeta de datos data folder archivar archive",
             Self::Usage => "consumo tokens límites limits actividad activity costo cost",
+            Self::Processes => "procesos processes cpu memoria memory disco disk terminar kill matar diagnóstico diagnostics",
             Self::Github => "cuenta account pull request repositorio repository perfil profile",
             #[allow(unreachable_patterns)]
             _ => "",
@@ -266,6 +273,7 @@ impl SettingsPage {
             Self::Hooks => "Acciones asociadas a eventos del agente.",
             Self::Data => "Historial local y organización de tareas.",
             Self::Usage => "Suscripciones, saldo y límites de tus proveedores conectados.",
+            Self::Processes => "Lo que openADE tiene en marcha: agentes, terminales, servidores MCP y de lenguaje.",
             Self::Github => "Conexión de la cuenta y repositorio de GitHub.",
         }
     }
@@ -279,6 +287,47 @@ impl SettingsPage {
             _ => CapabilityStatus::Partial,
         }
     }
+}
+
+/// openADE's child processes, heaviest first, each with a way to end it.
+fn processes_page(state: &ViewState, compact: bool) -> Vec<Element> {
+    if state.processes.is_empty() {
+        return vec![settings_parts::settings_group(
+            "Procesos",
+            vec![Text::new(
+                if cfg!(target_os = "linux") { "openADE no tiene procesos en marcha." } else { "Disponible en Linux." },
+                theme::component_palette(),
+            )
+            .muted()
+            .render()],
+        )];
+    }
+    let mut processes = state.processes.clone();
+    processes.sort_by(|a, b| b.cpu_percent.total_cmp(&a.cpu_percent).then(b.memory_bytes.cmp(&a.memory_bytes)));
+    let rows = processes
+        .iter()
+        .map(|process| {
+            let value = format!(
+                "{:.0} % CPU · {} · E/S {} / {}",
+                process.cpu_percent,
+                crate::processes::bytes(process.memory_bytes),
+                crate::processes::bytes(process.read_bytes),
+                crate::processes::bytes(process.written_bytes),
+            );
+            let end = openide_ui::Button::new(format!("process_end:{}", process.pid), "Terminar", theme::component_palette())
+                .icon(Icon::Stop)
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Dense)
+                .render();
+            settings_parts::settings_row(
+                &format!("{} · {}", process.name, process.pid),
+                &if process.command.is_empty() { value.clone() } else { format!("{value}\n{}", process.command) },
+                end,
+                compact,
+            )
+        })
+        .collect();
+    vec![settings_parts::settings_group("Procesos de openADE", rows)]
 }
 
 fn section(value: &str) -> Element {
@@ -2727,6 +2776,7 @@ pub fn build_settings_page(
             usage
         }
         SettingsPage::Shortcuts => shortcuts_page(state, compact),
+        SettingsPage::Processes => processes_page(state, compact),
         _ => additional_page(state, page, compact),
     };
     let mut body = Vec::new();
@@ -3421,6 +3471,29 @@ mod tests {
     }
 
     #[test]
+    fn the_processes_page_lists_each_process_with_its_figures_and_a_way_to_end_it() {
+        let mut state = crate::view::tests::empty_state();
+        state.processes = vec![crate::processes::ProcessRow {
+            pid: 4242,
+            parent: 1,
+            name: "claude".into(),
+            command: "claude --resume abc".into(),
+            cpu_percent: 12.4,
+            memory_bytes: 3 * 1024 * 1024,
+            read_bytes: 0,
+            written_bytes: 2048,
+        }];
+        let frame = UiTree::new(Element::column(processes_page(&state, false))).layout(Size::new(720.0, 400.0));
+        assert!(frame.regions.iter().any(|region| region.id == "process_end:4242"));
+        let texts: Vec<String> = frame.commands.iter().filter_map(|command| match command {
+            DrawCommand::Text { text, .. } => Some(text.to_string()),
+            _ => None,
+        }).collect();
+        assert!(texts.iter().any(|text| text.contains("claude · 4242")), "{texts:?}");
+        assert!(texts.iter().any(|text| text.contains("12 % CPU · 3.0 MB")), "{texts:?}");
+    }
+
+    #[test]
     fn settings_routes_are_distinct_and_parseable() {
         let mut ids = std::collections::HashSet::new();
         for (_, pages) in SETTINGS_GROUPS {
@@ -3429,7 +3502,7 @@ mod tests {
                 assert!(ids.insert(page.action_id()), "duplicate settings route");
             }
         }
-        assert_eq!(ids.len(), 20);
+        assert_eq!(ids.len(), 21);
         assert_eq!(SettingsPage::from_action_id("settings_page:unknown"), None);
     }
 

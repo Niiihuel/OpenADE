@@ -4576,6 +4576,7 @@ mod tests {
             file_delete: None,
             file_clipboard: None,
             show_archived: false,
+            processes: Vec::new(),
             session_query: String::new(),
             session_organization: crate::view::SessionOrganization::Project,
             session_sort: openide_core::SessionSort::Updated,

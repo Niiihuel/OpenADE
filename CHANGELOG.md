@@ -185,6 +185,11 @@ says 0.1.0.
   commands), with wider step limits; without the sandbox (Bubblewrap on
   Linux) the switch stays off and the profile refuses to freeze. Read-only
   stays the default, and old automations keep it
+- Settings → Procesos lists what openADE has running under it (agents' CLIs,
+  terminal shells, MCP and language servers, the browser) with CPU, memory
+  and disk traffic, refreshed every two seconds while shown, and ends one
+  with SIGTERM after checking it is still openADE's. Linux reads `/proc`;
+  other systems say it is not available yet
 
 ## 0.3.0 — 2026-10-16
 
