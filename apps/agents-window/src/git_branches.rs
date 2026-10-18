@@ -380,6 +380,16 @@ pub(crate) fn git_error(output: &Output) -> String {
 /// Bound pipe reads and the whole process, including post-checkout hooks.
 /// No shell is involved, and Git's own conflict/worktree checks stay enabled.
 pub(crate) fn run_git(workspace: &Path, args: &[&str]) -> Result<Output, String> {
+    run_git_env(workspace, args, &[])
+}
+
+/// [`run_git`] with variables set after the inherited Git ones are removed,
+/// such as a private `GIT_INDEX_FILE`.
+pub(crate) fn run_git_env(
+    workspace: &Path,
+    args: &[&str],
+    env: &[(&str, &std::ffi::OsStr)],
+) -> Result<Output, String> {
     let mut command = crate::child_process::command_no_window("git");
     command
         .current_dir(workspace)
@@ -391,6 +401,7 @@ pub(crate) fn run_git(workspace: &Path, args: &[&str]) -> Result<Output, String>
         .env_remove("GIT_NAMESPACE")
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GCM_INTERACTIVE", "Never")
+        .envs(env.iter().copied())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

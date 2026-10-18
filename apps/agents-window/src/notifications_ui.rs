@@ -12,7 +12,7 @@ use crate::{theme, ui_sizing};
 
 const VISIBLE: usize = 8;
 
-fn age(at: SystemTime) -> String {
+pub(crate) fn age(at: SystemTime) -> String {
     let minutes = SystemTime::now()
         .duration_since(at)
         .map_or(0, |elapsed| elapsed.as_secs() / 60);

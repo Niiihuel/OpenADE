@@ -120,6 +120,15 @@ says 0.1.0.
   Code reports through hooks passed with `--settings`, which write to
   `OPENADE_CLI_STATUS`; Codex through its OSC 9 notifications, which the
   terminal now reads
+- Restore points: before each turn of any agent (native, ACP, headless or
+  terminal CLI) the project's working tree is committed under
+  `refs/openade/checkpoints/<task>/<n>` from a private copy of the index, so
+  HEAD, the index and branches stay as they are. The history button in a
+  task's header lists them and puts the files back as they were before a
+  turn, ignored files aside; the state just before is kept, and the same
+  menu undoes the restore. Refused while an agent works or the editor holds
+  unsaved changes; the last 50 points of a task are kept, and deleting the
+  task removes them
 
 ## 0.3.0 — 2026-10-16
 

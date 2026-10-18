@@ -246,6 +246,9 @@ pub(crate) fn header(
         ));
         top.push(cli_mode_menu(state, agent));
     }
+    if state.selected_session.is_some() && !recovery_decision_pending {
+        top.push(checkpoint_menu(state));
+    }
     if !recovery_decision_pending && width >= 300.0 {
         top.push(crate::view::window_mode_control(state));
         top.push(crate::environment_ui::header_control(state));
@@ -281,6 +284,64 @@ pub(crate) fn header(
         .trailing(top)
         .sizing(crate::ui_sizing::PANE_HEADER)
         .render()
+}
+
+/// The task's restore points, newest first: each puts the project's files
+/// back as they were before that turn, and the last restore can be undone.
+fn checkpoint_menu(state: &ViewState) -> Element {
+    use openide_ui::{DropdownMenuEntry, DropdownMenuItem};
+    let open = state.checkpoint_menu.is_some();
+    let trigger = UiIconButton::new(
+        "checkpoints_toggle",
+        Icon::History,
+        theme::action_palette(theme::BACKGROUND, theme::FOREGROUND),
+    )
+    .variant(ButtonVariant::Ghost)
+    .size(ControlSize::Dense)
+    .active(open)
+    .active_hover(openide_ui::ActiveHover::Palette)
+    .tooltip_with(
+        openide_ui::TooltipSpec::new("Puntos de restauración de los archivos")
+            .placement(TooltipPlacement::Below)
+            .suppressed(open),
+    )
+    .render();
+    let mut entries = vec![DropdownMenuEntry::Heading("Volver los archivos a antes de…".into())];
+    let record = state.checkpoint_menu.clone().unwrap_or_default();
+    if let Some(undo) = &record.undo {
+        entries.push(
+            DropdownMenuItem::new("checkpoint_undo", "Deshacer la última restauración")
+                .icon(Icon::Reply)
+                .description(crate::notifications_ui::age(at(undo.at_ms)))
+                .into(),
+        );
+        entries.push(DropdownMenuEntry::Separator);
+    }
+    if record.checkpoints.is_empty() {
+        entries.push(
+            DropdownMenuItem::new("checkpoints_none", "Todavía no hay puntos: se guarda uno antes de cada turno en un proyecto Git")
+                .disabled()
+                .into(),
+        );
+    }
+    for point in record.checkpoints.iter().rev() {
+        let age = crate::notifications_ui::age(at(point.at_ms));
+        entries.push(
+            DropdownMenuItem::new(format!("checkpoint_restore:{}", point.ordinal), format!("el turno {}", point.ordinal))
+                .icon(Icon::History)
+                .description(if point.label.is_empty() { age } else { format!("{age} · {}", point.label) })
+                .into(),
+        );
+    }
+    openide_ui::DropdownMenu::new(trigger, entries, open, "checkpoints_dismiss", theme::menu_palette())
+        .context_menu_style()
+        .placement(openide_ui::PopoverPlacement::BottomEnd)
+        .width(300.0)
+        .render()
+}
+
+fn at(ms: u64) -> std::time::SystemTime {
+    std::time::UNIX_EPOCH + std::time::Duration::from_millis(ms)
 }
 
 /// The permissions a CLI task starts its CLI with, chosen from its header;
@@ -4544,6 +4605,8 @@ mod tests {
             off_screen_turns: std::collections::BTreeMap::new(),
             cli_task_mode: Default::default(),
             cli_mode_open: false,
+            checkpoint_menu: None,
+            checkpoint_restoring: false,
             ide_folders: Vec::new(),
             turn_check_command: String::new(),
             turn_check_failure: None,

@@ -170,6 +170,8 @@ mod pause_app_tests;
 mod file_drop_app_tests;
 #[path = "cli_status_app.rs"]
 mod cli_status_app;
+#[path = "checkpoints_app.rs"]
+mod checkpoints_app;
 #[cfg(test)]
 #[path = "message_edit_app_tests.rs"]
 mod message_edit_app_tests;
@@ -1528,6 +1530,10 @@ pub struct AgentsWindow {
     /// The word each task's hooks last wrote, so one is acted on once.
     cli_status_words: HashMap<String, String>,
     cli_status_polled: Option<Instant>,
+    checkpoint_channel: (
+        std::sync::mpsc::Sender<checkpoints_app::CheckpointDone>,
+        std::sync::mpsc::Receiver<checkpoints_app::CheckpointDone>,
+    ),
     keyboard_paste_handled: bool,
     pending_text_paste: Option<text_input_app::TextPasteRequest>,
     attachment_viewer_generation: u64,
@@ -7125,6 +7131,8 @@ impl AgentsWindow {
             off_screen_turns: BTreeMap::new(),
             cli_task_mode: Default::default(),
             cli_mode_open: false,
+            checkpoint_menu: None,
+            checkpoint_restoring: false,
             ide_folders: Vec::new(),
             turn_check_command: String::new(),
             turn_check_failure: None,
@@ -7472,6 +7480,7 @@ impl AgentsWindow {
             cli_status: BTreeMap::new(),
             cli_status_words: HashMap::new(),
             cli_status_polled: None,
+            checkpoint_channel: std::sync::mpsc::channel(),
             keyboard_paste_handled: false,
             pending_text_paste: None,
             attachment_viewer_generation: 0,
@@ -14770,6 +14779,9 @@ impl AgentsWindow {
         };
         // Read back from the journal already: not told to the transcript twice.
         let seen = event.sequence <= self.last_sequence;
+        if let (false, AgentEventKind::TurnStarted { prompt }) = (seen, &event.kind) {
+            self.checkpoint_before_turn(&event.session_id, prompt);
+        }
         self.last_sequence = self.last_sequence.max(event.sequence);
         if native_run {
             // shortcut: an event queued before a journal reread counts twice
@@ -18395,6 +18407,9 @@ impl AgentsWindow {
         if matches!(&action, UiAction::Clicked { id } if id != "cli_mode_toggle") {
             self.view.cli_mode_open = false;
         }
+        if matches!(&action, UiAction::Clicked { id } if id != "checkpoints_toggle") {
+            self.view.checkpoint_menu = None;
+        }
         if matches!(&action, UiAction::Clicked { id } if id != "ide_folder_toggle") {
             self.view.ide.folders_open = false;
         }
@@ -18461,6 +18476,9 @@ impl AgentsWindow {
             return;
         }
         if self.apply_project_actions_action(&action, ctx) {
+            return;
+        }
+        if self.apply_checkpoint_action(&action) {
             return;
         }
         if self.apply_tool_navigation_action(&action, ctx) {
@@ -20551,6 +20569,7 @@ impl AgentsWindow {
                                                     store.storage_root(),
                                                     &removed.id,
                                                 );
+                                                self.forget_checkpoints(&removed.id);
                                                 let _ =
                                                     crate::session_changes_external::remove_marker(
                                                         store.storage_root(),
@@ -20587,6 +20606,7 @@ impl AgentsWindow {
                                             store.storage_root(),
                                             session_id,
                                         );
+                                        self.forget_checkpoints(session_id);
                                         let _ = crate::session_changes_external::remove_marker(
                                             store.storage_root(),
                                             session_id,
@@ -20639,6 +20659,7 @@ impl AgentsWindow {
                                             store.storage_root(),
                                             session_id,
                                         );
+                                        self.forget_checkpoints(session_id);
                                         let _ = crate::session_changes_external::remove_marker(
                                             store.storage_root(),
                                             session_id,
@@ -22945,6 +22966,7 @@ impl eframe::App for AgentsWindow {
             | self.poll_parked_runs()
             | self.poll_cli_session_probes()
             | self.poll_cli_status(&ctx)
+            | self.poll_checkpoints()
             | self.poll_compact()
             | self.poll_resume()
             | self.poll_child_recovery()

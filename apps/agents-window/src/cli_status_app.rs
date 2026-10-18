@@ -68,6 +68,9 @@ impl AgentsWindow {
                 }
                 _ => {}
             }
+            if before.is_none() && status == Some(false) {
+                self.checkpoint_before_turn(&session, "");
+            }
             if status != before {
                 match status {
                     Some(asks) => self.cli_status.insert(session, asks),
@@ -118,7 +121,7 @@ mod tests {
             .insert(7, ("task".into(), crate::cli_status::StatusReport::ClaudeHooks));
         let file = cli_status::status_file(&app.data_root, "task");
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
-        let mut look = |app: &mut AgentsWindow, word: &str| {
+        let look = |app: &mut AgentsWindow, word: &str| {
             std::fs::write(&file, word).unwrap();
             app.cli_status_polled = None;
             app.poll_cli_status(&ctx);
