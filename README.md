@@ -90,6 +90,15 @@ archive by hand:
 minisign -Vm openADE-0.4.0-linux-x86_64.tar.gz -P RWTBGPfzssEDLkqVR1Ybhr7FWSSMrF1JXh3xu47NTMhaEfoxUBh04tCD
 ```
 
+## Windows and macOS
+
+Releases after 0.3.0 also carry `openADE-<version>-windows-x86_64.zip` and
+`openADE-<version>-macos-aarch64.tar.gz` (an `openADE.app` for Apple Silicon),
+signed with the same minisign key. They are early builds: there is no embedded
+browser outside Linux, they are not code-signed by Microsoft or Apple (allow
+them once in SmartScreen or in System Settings > Privacy & Security), and
+openADE tells you about a new version instead of installing it.
+
 ## Building
 
 It needs stable Rust (1.95 or newer) and the platform's native build tools.

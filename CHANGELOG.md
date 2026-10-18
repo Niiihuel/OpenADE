@@ -157,6 +157,11 @@ says 0.1.0.
   and a progress bar; an update's card stays until it is dismissed
 - Release archives are signed; the `.minisig` beside each one is what the
   updater verifies
+- Releases also build a Windows zip and a macOS (Apple Silicon) app bundle,
+  signed the same way, without the embedded browser and without platform
+  code signing; their updater points to the release instead of installing
+  it. They are new and unproven, so a failure of theirs does not stop the
+  Linux release
 
 ## 0.3.0 — 2026-10-16
 
