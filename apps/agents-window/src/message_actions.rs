@@ -314,7 +314,7 @@ pub(crate) fn turn_actions(state: &ViewState, turn: &Turn<'_>) -> Element {
             .icon(crate::provider_icons::icon_for_acp_agent(&agent.id, &agent.name))
             .into()
     }));
-    entries.extend(state.agent_clis.iter().filter(|agent| agent.resolved.is_some()).map(|agent| {
+    entries.extend(state.terminal_agent_clis().map(|agent| {
         DropdownMenuItem::new(format!("turn_fork:{start}:cli:{}", agent.id), &agent.label)
             .icon(crate::provider_icons::icon_for_agent_cli(&agent.id))
             .into()

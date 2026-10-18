@@ -133,11 +133,7 @@ pub(crate) fn build_home_sized(
 /// Starts a task that runs an installed agent CLI, or an agent over ACP,
 /// instead of the native agent.
 fn cli_entry(state: &ViewState) -> Option<Element> {
-    let installed: Vec<_> = state
-        .agent_clis
-        .iter()
-        .filter(|agent| agent.resolved.is_some())
-        .collect();
+    let installed: Vec<_> = state.terminal_agent_clis().collect();
     if installed.is_empty() && state.acp_agents.is_empty() {
         return None;
     }
@@ -390,5 +386,27 @@ mod tests {
         assert!(submit.height >= 24.0);
         assert!(submit.y >= 48.0 && submit.y + submit.height <= viewport.height + 0.1);
         assert_eq!(tree.input_value("prompt"), Some(props.prompt));
+    }
+
+    #[test]
+    fn an_agent_offered_over_acp_is_not_offered_again_in_a_terminal() {
+        let mut state = crate::view::tests::empty_state();
+        state.agent_clis = ["claude", "codex", "opencode"]
+            .map(|id| crate::view::AgentCliRowView {
+                id: id.into(),
+                label: id.into(),
+                resolved: Some(format!("/usr/bin/{id}")),
+                manual: String::new(),
+            })
+            .into();
+        state.acp_agents = ["opencode", "codex-acp"]
+            .map(|id| crate::acp_run::AcpOffer {
+                id: id.into(),
+                name: id.into(),
+                command: openide_acp::AgentCommand { program: id.into(), args: Vec::new(), env: Vec::new() },
+            })
+            .into();
+        let terminal: Vec<_> = state.terminal_agent_clis().map(|agent| agent.id.as_str()).collect();
+        assert_eq!(terminal, ["claude"]);
     }
 }

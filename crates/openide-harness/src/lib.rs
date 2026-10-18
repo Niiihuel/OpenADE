@@ -119,7 +119,7 @@ pub use mcp_oauth_file::FileTokenStore;
 #[cfg(windows)]
 pub use mcp_oauth_windows::WindowsCredentialTokenStore;
 pub use mcp_tools::{
-    McpCompositeTools, McpServerBinding, McpToolAdapterError, McpToolClient, MCP_CALL_TOOL,
+    McpCompositeTools, McpServerBinding, McpToolAdapterError, McpToolClient, MCP_CALL_TOOL, MCP_TOOL_BUDGET,
     MCP_SEARCH_TOOL,
 };
 pub use model_stream::{

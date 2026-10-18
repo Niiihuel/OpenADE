@@ -517,7 +517,7 @@ mod tests {
             .unwrap();
         let base_count = base.tools().definitions().len();
         assert!(base_count > 3);
-        let capacity = openide_harness::MAX_ADVERTISED_TOOLS - base_count;
+        let capacity = openide_harness::MCP_TOOL_BUDGET - base_count;
         base.shutdown().await.unwrap();
         for count in [capacity + 1, capacity] {
             let mut selections = McpToolSelections::default();
@@ -536,7 +536,7 @@ mod tests {
                 .await
                 .unwrap();
             let definitions = prepared.tools().definitions();
-            assert_eq!(definitions.len(), openide_harness::MAX_ADVERTISED_TOOLS);
+            assert_eq!(definitions.len(), openide_harness::MCP_TOOL_BUDGET);
             assert!(prepared.notices().is_empty());
             let asked = prepared
                 .ask_tool_names()

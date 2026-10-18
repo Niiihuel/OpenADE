@@ -1089,6 +1089,17 @@ impl SessionRowContext {
 }
 
 impl ViewState {
+    /// Installed agent CLIs the menus offer in a terminal: one also offered
+    /// over ACP (`opencode`, `codex-acp`, `claude-acp`) shows only there.
+    pub(crate) fn terminal_agent_clis(&self) -> impl Iterator<Item = &AgentCliRowView> {
+        self.agent_clis.iter().filter(|agent| {
+            agent.resolved.is_some()
+                && !self.acp_agents.iter().any(|offer| {
+                    offer.id == agent.id || offer.id.strip_suffix("-acp") == Some(agent.id.as_str())
+                })
+        })
+    }
+
     /// Whether `id` comes from the user's registry file. Such a provider is
     /// offered like a connected one, with its key read from a variable.
     pub(crate) fn own_provider(&self, id: &str) -> bool {

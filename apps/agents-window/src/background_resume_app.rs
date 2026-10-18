@@ -307,6 +307,7 @@ impl AgentsWindow {
             let session_id = self.background_resumes[index].session_id.clone();
             // Opened while it continues: its transcript follows the journal.
             let shown = self.view.selected_session.as_deref() == Some(session_id.as_str());
+            let follow_tail = shown && self.following_selected_transcript();
             let mut transcript_changed = false;
             for event in events.iter().filter(|_| shown) {
                 if event.sequence > self.last_sequence {
@@ -317,6 +318,10 @@ impl AgentsWindow {
             if transcript_changed {
                 self.publish_transcript();
                 changed = true;
+            }
+            // Its end adds the turn's actions row, after the host stopped following.
+            if follow_tail && (transcript_changed || ended.is_some()) {
+                self.tree.scroll_to_end("transcript");
             }
             let Some(ended) = ended else {
                 index += 1;

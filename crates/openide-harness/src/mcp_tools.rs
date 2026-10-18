@@ -185,6 +185,10 @@ impl McpServerBinding {
 pub const MCP_SEARCH_TOOL: &str = "search_mcp_tools";
 pub const MCP_CALL_TOOL: &str = "call_mcp_tool";
 const MAX_SEARCH_HITS: usize = 10;
+/// Places left for tools the runner adds around this executor: goals (3),
+/// subagents (4), `update_plan`, `ask_user` and `switch_mode`, with spare.
+const LAYERED_TOOLS: usize = 16;
+pub const MCP_TOOL_BUDGET: usize = MAX_ADVERTISED_TOOLS - LAYERED_TOOLS;
 
 enum Route {
     Local,
@@ -294,8 +298,8 @@ impl McpCompositeTools {
             }
         }
         let mut deferred = Vec::new();
-        if definitions.len() + mcp_definitions.len() > MAX_ADVERTISED_TOOLS {
-            let kept = MAX_ADVERTISED_TOOLS.saturating_sub(definitions.len() + 2);
+        if definitions.len() + mcp_definitions.len() > MCP_TOOL_BUDGET {
+            let kept = MCP_TOOL_BUDGET.saturating_sub(definitions.len() + 2);
             for (server, definition) in mcp_definitions.split_off(kept.min(mcp_definitions.len())) {
                 let validator = crate::registry::compile_validator(&definition)?;
                 deferred.push(DeferredTool {
@@ -921,15 +925,16 @@ mod tests {
             (mock, binding)
         };
         // Everything fits: no meta-tools.
-        let (_, binding) = server(MAX_ADVERTISED_TOOLS - local_count).await;
+        let (_, binding) = server(MCP_TOOL_BUDGET - local_count).await;
         let full = McpCompositeTools::new(local.clone(), vec![binding]).unwrap();
-        assert_eq!(full.definitions().len(), MAX_ADVERTISED_TOOLS);
+        assert_eq!(full.definitions().len(), MCP_TOOL_BUDGET);
         assert!(full.catalog().get(MCP_CALL_TOOL).is_none());
 
         let (mock, binding) = server(170).await;
         let composite = McpCompositeTools::new(local, vec![binding]).unwrap();
-        let advertised = MAX_ADVERTISED_TOOLS - local_count - 2;
-        assert_eq!(composite.definitions().len(), MAX_ADVERTISED_TOOLS);
+        let advertised = MCP_TOOL_BUDGET - local_count - 2;
+        // The runner's own tools still fit around it.
+        assert_eq!(composite.definitions().len(), MAX_ADVERTISED_TOOLS - LAYERED_TOOLS);
         assert!(composite
             .catalog()
             .get(MCP_SEARCH_TOOL)

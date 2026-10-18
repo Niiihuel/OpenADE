@@ -1242,7 +1242,7 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
         )
         .await
         .unwrap();
-        let budget = openide_harness::MAX_ADVERTISED_TOOLS;
+        let budget = openide_harness::MCP_TOOL_BUDGET;
         assert_eq!(all.tools().definitions().len(), budget);
         // 3 local tools and the two meta-tools; the call asks, the search does not.
         assert_eq!(all.mcp_tool_names().len(), budget - 3 - 2 + 1);
