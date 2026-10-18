@@ -543,6 +543,23 @@ fn message(
                     state, item_index,
                 ));
             }
+            // HTML the reply wrote opens rendered, sandboxed, in the browser.
+            if !*streaming && content.contains("```") {
+                let blocks = crate::html_preview::html_blocks(content).len();
+                let buttons: Vec<Element> = (0..blocks)
+                    .map(|block| {
+                        let label = if blocks == 1 { "Ver HTML".to_owned() } else { format!("Ver HTML {}", block + 1) };
+                        Button::new(format!("chat_html:{item_index}:{block}"), label, theme::component_palette())
+                            .icon(Icon::Globe)
+                            .variant(ButtonVariant::Ghost)
+                            .size(ControlSize::Dense)
+                            .render()
+                    })
+                    .collect();
+                if !buttons.is_empty() {
+                    rows.push(Element::row(buttons).gap(4.0));
+                }
+            }
             Element::column(rows).gap(8.0)
         }
         TranscriptItem::Reasoning { .. } | TranscriptItem::ToolPreview { .. } => {

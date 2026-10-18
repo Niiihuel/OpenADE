@@ -1544,6 +1544,8 @@ pub struct AgentsWindow {
     pr_watches: Vec<crate::pr_watch::Watch>,
     pr_watch_due: Instant,
     pr_watch_poll: Option<std::sync::mpsc::Receiver<Vec<pr_watch_app::WatchResult>>>,
+    /// Where the HTML of replies is served from, once one is opened.
+    html_previews: Option<crate::html_preview::HtmlPreviews>,
     /// The task worktree the environment's Git worker is creating.
     task_worktree: Option<PathBuf>,
     /// Context for a forked CLI task, typed in once its CLI is ready.
@@ -7507,6 +7509,7 @@ impl AgentsWindow {
             pr_watches: crate::pr_watch::load(&root),
             pr_watch_due: Instant::now(),
             pr_watch_poll: None,
+            html_previews: None,
             task_worktree: None,
             cli_handoffs: HashMap::new(),
             delegations: HashMap::new(),
@@ -18589,6 +18592,7 @@ impl AgentsWindow {
                     self.open_chat_link(&url, target, ctx);
                 }
             }
+            UiAction::Clicked { id } if id.starts_with("chat_html:") => self.open_reply_html(&id, ctx),
             UiAction::Clicked { id } if id.starts_with("chat_path_open:") => {
                 if let Some((path, line)) = crate::rich_text::workspace_path_from_action(&id) {
                     self.open_reply_path(&path, line);

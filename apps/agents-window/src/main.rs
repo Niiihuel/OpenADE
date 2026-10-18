@@ -58,6 +58,7 @@ mod cli_status;
 mod checkpoints;
 mod pr_watch;
 mod worktree_tasks;
+mod html_preview;
 mod composer_context_ui;
 mod composer_pending;
 mod composer_permissions_ui;

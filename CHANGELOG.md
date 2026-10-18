@@ -174,6 +174,10 @@ says 0.1.0.
   `.openide/setup` (one command per line, `#` comments) runs in a terminal
   that goes with the task. Deleting the worktree's last task removes the
   worktree if nothing in it is uncommitted; its branch stays
+- A reply with ```html blocks gets "Ver HTML" under it: the block is served
+  from this machine at an unguessable address and opens rendered in the
+  integrated browser, sandboxed (opaque origin, scripts on, no forms and no
+  requests of its own)
 
 ## 0.3.0 — 2026-10-16
 
