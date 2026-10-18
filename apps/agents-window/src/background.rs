@@ -39,13 +39,16 @@ impl Waker {
 /// What the window keeps for its background ticks.
 pub(crate) struct Background {
     pub(crate) last_ui_pass: Instant,
+    /// The window has the keyboard: the person is at the PC. Kept from the
+    /// window's own events, which arrive while it draws nothing too.
+    pub(crate) focused: bool,
     pub(crate) ctx: Option<egui::Context>,
     pub(crate) waker: Option<Waker>,
 }
 
 impl Default for Background {
     fn default() -> Self {
-        Self { last_ui_pass: Instant::now(), ctx: None, waker: None }
+        Self { last_ui_pass: Instant::now(), focused: true, ctx: None, waker: None }
     }
 }
 
@@ -88,6 +91,11 @@ impl ApplicationHandler<UserEvent> for Loop<'_> {
         window_id: winit::window::WindowId,
         event: winit::event::WindowEvent,
     ) {
+        if let winit::event::WindowEvent::Focused(focused) = &event {
+            if let Some(Ok(mut window)) = self.window.borrow().as_ref().map(|window| window.try_borrow_mut()) {
+                window.background.focused = *focused;
+            }
+        }
         self.eframe.window_event(event_loop, window_id, event);
     }
 

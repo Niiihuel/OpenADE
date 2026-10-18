@@ -90,7 +90,12 @@ impl AgentsWindow {
 
     /// Send `prompt` as a turn of the existing task `session`, which is idle,
     /// and leave the person where they were; off screen it goes on parked.
-    pub(super) fn start_turn_off_screen(&mut self, session: &str, prompt: &str) -> Result<(), String> {
+    pub(super) fn start_turn_off_screen(
+        &mut self,
+        session: &str,
+        prompt: &str,
+        attachments: Vec<ComposerAttachmentView>,
+    ) -> Result<(), String> {
         let previous = self.view.selected_session.clone();
         let draft = (self.view.prompt.clone(), self.view.composer_attachments.clone());
         let here = previous.as_deref() == Some(session);
@@ -101,7 +106,7 @@ impl AgentsWindow {
             }
         }
         self.view.prompt = prompt.to_owned();
-        self.view.composer_attachments.clear();
+        self.view.composer_attachments = attachments;
         self.start_run();
         let started = self.active_run.is_some();
         let refusal = self.view.status.clone();

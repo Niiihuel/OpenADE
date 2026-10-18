@@ -18,7 +18,7 @@ const DRAFT: &str = "BORRADOR_SIN_ENVIAR";
 const CONTINUES: &str = "Límite renovado: el turno continúa";
 const MINUTE: u64 = 60_000;
 
-enum Reply {
+pub(super) enum Reply {
     /// HTTP 429 for a usage limit that renewed a minute ago: the pause is
     /// real and its continuation is due at once.
     Limit,
@@ -29,15 +29,15 @@ enum Reply {
 }
 
 /// A provider that answers each request as the script says.
-struct ScriptedProvider {
-    endpoint: String,
+pub(super) struct ScriptedProvider {
+    pub(super) endpoint: String,
     requests: Arc<Mutex<Vec<Value>>>,
     stop: Arc<AtomicBool>,
     worker: Option<std::thread::JoinHandle<()>>,
 }
 
 impl ScriptedProvider {
-    fn new(script: impl Fn(&Value) -> Reply + Send + 'static) -> Self {
+    pub(super) fn new(script: impl Fn(&Value) -> Reply + Send + 'static) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
@@ -123,7 +123,7 @@ impl ScriptedProvider {
         })
     }
 
-    fn requests(&self) -> Vec<Value> {
+    pub(super) fn requests(&self) -> Vec<Value> {
         self.requests.lock().unwrap().clone()
     }
 }
@@ -140,7 +140,7 @@ impl Drop for ScriptedProvider {
     }
 }
 
-fn app_at(root: &Path, endpoint: &str) -> AgentsWindow {
+pub(super) fn app_at(root: &Path, endpoint: &str) -> AgentsWindow {
     let mut app = AgentsWindow::with_data_root(root.join("data"));
     app.view.workspace = root.to_string_lossy().into_owned();
     app.view.selected_backend = "native".into();

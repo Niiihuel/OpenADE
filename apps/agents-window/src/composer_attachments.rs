@@ -330,7 +330,7 @@ fn remove_import(path: &Path) {
     }
 }
 
-fn import_file(root: &Path, source: &Path) -> Result<(PathBuf, bool), String> {
+pub(crate) fn import_file(root: &Path, source: &Path) -> Result<(PathBuf, bool), String> {
     let source = source
         .canonicalize()
         .map_err(|error| format!("No se pudo leer el archivo pegado: {error}"))?;

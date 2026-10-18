@@ -23,6 +23,7 @@ limn-egui = { git = "https://github.com/Niiihuel/limn.git", rev = "bb10b720e0a20
 openide-preview = { path = "../../crates/openide-preview" }
 openide-debug = { path = "../../crates/openide-debug" }
 openide-graph = { path = "../../crates/openide-graph" }
+openide-remote = { path = "../../crates/openide-remote" }
 openide-acp = { path = "../../crates/openide-acp" }
 openide-editor = { package = "limn-editor", git = "https://github.com/Niiihuel/limn.git", rev = "bb10b720e0a20684366319998d2fd2a7e7b67c3e" }
 openide-language = { package = "limn-language", git = "https://github.com/Niiihuel/limn.git", rev = "bb10b720e0a20684366319998d2fd2a7e7b67c3e" }

@@ -3063,3 +3063,5 @@ mod model_switch_app_tests;
 #[cfg(unix)]
 #[path = "background_resume_app_tests.rs"]
 mod background_resume_app_tests;
+#[path = "remote_app_tests.rs"]
+mod remote_app_tests;

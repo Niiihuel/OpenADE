@@ -201,7 +201,7 @@ impl AgentsWindow {
 
     /// `answer` is the user's answer with the images attached to it; `None`
     /// is the user skipping the question.
-    fn answer_question(&mut self, request_id: &str, answer: Option<(String, Vec<UserImage>)>) {
+    pub(super) fn answer_question(&mut self, request_id: &str, answer: Option<(String, Vec<UserImage>)>) {
         let (Some(session_id), Some(store)) =
             (self.view.selected_session.clone(), self.store.clone())
         else {

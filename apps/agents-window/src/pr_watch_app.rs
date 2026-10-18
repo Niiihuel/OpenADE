@@ -264,7 +264,7 @@ impl AgentsWindow {
                     self.save_turn_queues();
                     true
                 } else {
-                    self.start_turn_off_screen(session, prompt).is_ok()
+                    self.start_turn_off_screen(session, prompt, Vec::new()).is_ok()
                 }
             }
         }

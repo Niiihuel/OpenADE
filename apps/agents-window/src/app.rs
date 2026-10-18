@@ -1,3 +1,5 @@
+#[path = "remote_app.rs"]
+mod remote_app;
 #[path = "marketplace_app.rs"]
 mod marketplace_app;
 #[path = "app_update_app.rs"]
@@ -1579,6 +1581,8 @@ pub struct AgentsWindow {
     turn_check_run: Option<Receiver<(String, Result<(), String>)>>,
     /// What the hidden window's wakes need (see `background`).
     pub(crate) background: crate::background::Background,
+    /// The phone's server and what it asks for (see `remote_app`).
+    remote: remote_app::Remote,
     /// Session-start hook output, by (conversation, project, hook set).
     session_start_context: Option<((Option<String>, String, String), String)>,
     /// Model for the next turn only; see `start_run`.
@@ -6792,7 +6796,9 @@ impl AgentsWindow {
     }
 
     pub fn new() -> Self {
-        Self::with_data_root(data_root())
+        let mut window = Self::with_data_root(data_root());
+        window.apply_remote_settings();
+        window
     }
 
     fn with_data_root(root: PathBuf) -> Self {
@@ -7537,6 +7543,7 @@ impl AgentsWindow {
             turn_had_effects: false,
             turn_check_run: None,
             background: Default::default(),
+            remote: remote_app::Remote::new(&root),
             session_start_context: None,
             turn_model_override: None,
             window_focused: true,
@@ -14782,6 +14789,7 @@ impl AgentsWindow {
         title: &str,
         session_id: &str,
     ) {
+        self.remote.notify(event, title, session_id);
         let selected = self.view.selected_session.as_deref() == Some(session_id);
         let watching = self.window_focused && selected && !self.view.dock_maximized;
         if watching || !self.view.notifications.settings.allows(event) {
@@ -22971,6 +22979,7 @@ impl AgentsWindow {
         };
         let changed = self.poll_run()
             | self.serve_delegate_calls()
+            | self.serve_remote()
             | self.poll_turn_check()
             | self.poll_subagent_dispatches()
             | self.poll_subagent_events()
@@ -23066,6 +23075,7 @@ impl eframe::App for AgentsWindow {
         early_changed |= self.sync_external_approval(&ctx);
         early_changed |= self.serve_external_browser_calls(&ctx);
         early_changed |= self.serve_delegate_calls();
+        early_changed |= self.serve_remote();
         early_changed |= self.follow_file_tree(&ctx);
         early_changed |= self.follow_agent_clis();
         early_changed |= self.follow_ide_agent_tabs();
