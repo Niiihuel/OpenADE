@@ -17,6 +17,8 @@ pub enum Event {
     TurnCompleted,
     TurnFailed,
     Approval,
+    /// A watched pull request changed on GitHub.
+    PullRequest,
 }
 
 impl Event {
@@ -24,7 +26,7 @@ impl Event {
         match self {
             Self::TurnCompleted => Severity::Info,
             Self::TurnFailed => Severity::Error,
-            Self::Approval => Severity::Attention,
+            Self::Approval | Self::PullRequest => Severity::Attention,
         }
     }
 }
@@ -36,6 +38,7 @@ pub struct NotificationSettings {
     pub turn_completed: bool,
     pub turn_failed: bool,
     pub approvals: bool,
+    pub pull_requests: bool,
     /// Brief cards inside the window.
     pub toasts: bool,
     /// Desktop notifications while the window is in the background.
@@ -52,6 +55,7 @@ impl Default for NotificationSettings {
             turn_completed: true,
             turn_failed: true,
             approvals: true,
+            pull_requests: true,
             toasts: true,
             system: true,
             sound: true,
@@ -61,10 +65,11 @@ impl Default for NotificationSettings {
 }
 
 impl NotificationSettings {
-    pub const NAMES: [&'static str; 7] = [
+    pub const NAMES: [&'static str; 8] = [
         "turn_completed",
         "turn_failed",
         "approvals",
+        "pull_requests",
         "toasts",
         "system",
         "sound",
@@ -102,6 +107,7 @@ impl NotificationSettings {
             "turn_completed" => &mut self.turn_completed,
             "turn_failed" => &mut self.turn_failed,
             "approvals" => &mut self.approvals,
+            "pull_requests" => &mut self.pull_requests,
             "toasts" => &mut self.toasts,
             "system" => &mut self.system,
             "sound" => &mut self.sound,
@@ -125,6 +131,7 @@ impl NotificationSettings {
             Event::TurnCompleted => self.turn_completed,
             Event::TurnFailed => self.turn_failed,
             Event::Approval => self.approvals,
+            Event::PullRequest => self.pull_requests,
         }
     }
 

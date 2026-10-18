@@ -88,6 +88,38 @@ impl AgentsWindow {
         })
     }
 
+    /// Send `prompt` as a turn of the existing task `session`, which is idle,
+    /// and leave the person where they were; off screen it goes on parked.
+    pub(super) fn start_turn_off_screen(&mut self, session: &str, prompt: &str) -> Result<(), String> {
+        let previous = self.view.selected_session.clone();
+        let draft = (self.view.prompt.clone(), self.view.composer_attachments.clone());
+        let here = previous.as_deref() == Some(session);
+        if !here {
+            self.open_session(session);
+            if self.view.selected_session.as_deref() != Some(session) {
+                return Err(self.view.status.clone());
+            }
+        }
+        self.view.prompt = prompt.to_owned();
+        self.view.composer_attachments.clear();
+        self.start_run();
+        let started = self.active_run.is_some();
+        let refusal = self.view.status.clone();
+        match (&previous, here) {
+            (_, true) => {
+                (self.view.prompt, self.view.composer_attachments) = draft;
+                self.tree.set_input_value("prompt", &self.view.prompt);
+            }
+            (Some(id), false) => self.open_session(id),
+            (None, false) => {
+                self.new_session();
+                (self.view.prompt, self.view.composer_attachments) = draft;
+                self.save_draft();
+            }
+        }
+        if started { Ok(()) } else { Err(refusal) }
+    }
+
     /// Give the CLI waiting on `session` its answer once the turn ends.
     pub(super) fn answer_delegation(&mut self, session: &str, kind: &AgentEventKind) {
         let answer = match kind {

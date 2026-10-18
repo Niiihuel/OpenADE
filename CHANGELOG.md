@@ -138,6 +138,15 @@ says 0.1.0.
   tools); at most four run at once. The bridge raises the CLIs' MCP tool
   timeouts to an hour (Codex `tool_timeout_sec`, Claude `MCP_TOOL_TIMEOUT`)
   so a long task's answer is not dropped
+- The review panel merges (squash or merge commit, after a confirmation),
+  approves and comments on the branch's pull request
+- A task can watch its pull request: every 90 seconds openADE reads its
+  checks, comments, diff comments and reviews, and notifies when checks start
+  failing, someone else writes, or it is merged or closed (Settings →
+  Notificaciones → Pull requests vigilados). Optionally the news goes to the
+  task's agent: typed into its CLI's terminal once the CLI is idle, or sent as
+  a turn of the native or ACP agent, off screen or queued behind the running
+  one; watches are kept in `pr-watch.json`
 
 ## 0.3.0 — 2026-10-16
 

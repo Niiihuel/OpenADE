@@ -174,6 +174,8 @@ mod cli_status_app;
 mod checkpoints_app;
 #[path = "delegation_app.rs"]
 mod delegation_app;
+#[path = "pr_watch_app.rs"]
+mod pr_watch_app;
 #[cfg(test)]
 #[path = "message_edit_app_tests.rs"]
 mod message_edit_app_tests;
@@ -1532,6 +1534,10 @@ pub struct AgentsWindow {
     /// The word each task's hooks last wrote, so one is acted on once.
     cli_status_words: HashMap<String, String>,
     cli_status_polled: Option<Instant>,
+    /// Pull requests tasks watch, the next look and the one in flight.
+    pr_watches: Vec<crate::pr_watch::Watch>,
+    pr_watch_due: Instant,
+    pr_watch_poll: Option<std::sync::mpsc::Receiver<Vec<pr_watch_app::WatchResult>>>,
     /// Tasks a CLI delegated, waiting for their answer.
     delegations: HashMap<String, std::sync::mpsc::Sender<Result<String, String>>>,
     checkpoint_channel: (
@@ -6360,6 +6366,7 @@ impl AgentsWindow {
                         generation: self.review_generation,
                         account: self.github_query_account().map(str::to_owned),
                         create_pull: None,
+                        action: None,
                     })
                     .is_ok()
             });
@@ -7484,6 +7491,9 @@ impl AgentsWindow {
             cli_status: BTreeMap::new(),
             cli_status_words: HashMap::new(),
             cli_status_polled: None,
+            pr_watches: crate::pr_watch::load(&root),
+            pr_watch_due: Instant::now(),
+            pr_watch_poll: None,
             delegations: HashMap::new(),
             checkpoint_channel: std::sync::mpsc::channel(),
             keyboard_paste_handled: false,
@@ -18491,7 +18501,7 @@ impl AgentsWindow {
         if self.apply_project_actions_action(&action, ctx) {
             return;
         }
-        if self.apply_checkpoint_action(&action) {
+        if self.apply_checkpoint_action(&action) || self.apply_pull_action(&action) {
             return;
         }
         if self.apply_tool_navigation_action(&action, ctx) {
@@ -19682,6 +19692,7 @@ impl AgentsWindow {
                         generation: self.review_generation,
                         account: self.github_query_account().map(str::to_owned),
                         create_pull: Some(crate::github::PullDraft { draft: id == "github_pr_submit_draft", ..pull }),
+                        action: None,
                     };
                     if !self.github_in_flight && worker.submit(request).is_ok() {
                         // What was written stays until the pull request shows: a refusal keeps it to correct.
@@ -22981,6 +22992,7 @@ impl eframe::App for AgentsWindow {
             | self.poll_cli_session_probes()
             | self.poll_cli_status(&ctx)
             | self.poll_checkpoints()
+            | self.poll_pr_watch()
             | self.poll_compact()
             | self.poll_resume()
             | self.poll_child_recovery()

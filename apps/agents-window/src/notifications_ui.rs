@@ -198,6 +198,11 @@ pub(crate) fn settings_group(center: &NotificationCenter, compact: bool) -> Elem
                 "Cuando un agente o una CLI externa espera tu aprobación.",
             ),
             row(
+                "pull_requests",
+                "Pull requests vigilados",
+                "Cuando falla el CI o llega un comentario en un PR que vigila una tarea.",
+            ),
+            row(
                 "toasts",
                 "Avisos en la ventana",
                 "Una tarjeta breve en la esquina inferior derecha.",

@@ -55,6 +55,7 @@ mod file_drop;
 mod chime;
 mod cli_status;
 mod checkpoints;
+mod pr_watch;
 mod composer_context_ui;
 mod composer_pending;
 mod composer_permissions_ui;

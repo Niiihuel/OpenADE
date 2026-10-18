@@ -22,6 +22,18 @@ const STAT_END: f32 = 4.0;
 /// Below this a file row has room for two actions; from it, for three.
 const WIDE_ROW: f32 = 250.0;
 
+/// The state of the actions on the pull request shown.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct PullControls {
+    /// The comment being written, while its field is open.
+    pub comment: Option<String>,
+    pub merge_confirm: bool,
+    /// The selected task watches it; `Some(true)` also wakes its agent.
+    pub watch: Option<bool>,
+    /// A task is selected that could watch it.
+    pub watchable: bool,
+}
+
 /// What the panel keeps between frames besides the repository itself.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct GitPanelView {
@@ -40,6 +52,8 @@ pub(crate) struct GitPanelView {
     pub hunk: usize,
     /// The pull request being written, while its form is open.
     pub pull: Option<crate::github::PullDraft>,
+    /// What can be done to the pull request shown.
+    pub controls: PullControls,
     /// What the repository tab lists the changes of.
     pub origin: ReviewOrigin,
 }
@@ -972,7 +986,72 @@ fn status_line(state: &ViewState, width: f32) -> Option<Element> {
     })
 }
 
-fn github_footer(status: &GithubStatus, pull: Option<&crate::github::PullDraft>, surface: Color) -> Option<Element> {
+/// Merge, approve, comment and watch, for the pull request shown.
+fn pull_controls(number: u64, controls: &PullControls, palette: openide_ui::ComponentPalette) -> Vec<Element> {
+    let button = |id: &str, label: &str| {
+        Button::new(id, label, palette)
+            .variant(ButtonVariant::Ghost)
+            .sizing(crate::ui_sizing::SMALL_LABEL_BUTTON)
+            .render()
+    };
+    let switch = |id: &str, label: &str, on: bool| {
+        Element::row(vec![
+            openide_ui::Switch::new(id, on, theme::component_palette()).render(),
+            UiText::new(label, theme::component_palette()).role(TextRole::Micro).render().centered_y(),
+        ])
+        .gap(6.0)
+    };
+    let mut rows = Vec::new();
+    if controls.merge_confirm {
+        rows.push(
+            UiText::new(format!("¿Fusionar #{number}?"), theme::component_palette())
+                .role(TextRole::Micro)
+                .render(),
+        );
+        rows.push(Element::row(vec![
+            button("github_pr_merge_squash", "Squash"),
+            button("github_pr_merge_commit", "Commit de merge"),
+            button("github_pr_merge_cancel", "Cancelar"),
+        ]));
+    } else {
+        rows.push(Element::row(vec![
+            button("github_pr_merge", "Fusionar"),
+            button("github_pr_approve", "Aprobar"),
+            button("github_pr_comment", "Comentar"),
+        ]));
+    }
+    if let Some(comment) = &controls.comment {
+        rows.push(
+            TextArea::new(
+                "github_comment_body",
+                comment,
+                "Comentario para el pull request",
+                theme::action_palette(theme::BACKGROUND, theme::FOREGROUND),
+            )
+            .height(64.0)
+            .radius(RadiusRole::Surface)
+            .render(),
+        );
+        rows.push(Element::row(vec![
+            button("github_comment_submit", "Publicar"),
+            button("github_comment_cancel", "Cancelar"),
+        ]));
+    }
+    if controls.watchable {
+        rows.push(switch("github_pr_watch", "Vigilar CI y comentarios desde esta tarea", controls.watch.is_some()));
+        if let Some(wake) = controls.watch {
+            rows.push(switch("github_pr_watch_wake", "Pasarle las novedades al agente", wake));
+        }
+    }
+    rows
+}
+
+fn github_footer(
+    status: &GithubStatus,
+    pull: Option<&crate::github::PullDraft>,
+    controls: &PullControls,
+    surface: Color,
+) -> Option<Element> {
     let palette = theme::action_palette(surface, theme::FOREGROUND);
     match status {
         GithubStatus::Ready(github) => {
@@ -1012,6 +1091,7 @@ fn github_footer(status: &GithubStatus, pull: Option<&crate::github::PullDraft>,
                             .render(),
                     );
                 }
+                rows.extend(pull_controls(pull.number, controls, palette));
             } else if github.branch != "HEAD separado" {
                 let button = |id: &str, label: &str| {
                     Button::new(id, label, palette)
@@ -1555,7 +1635,7 @@ pub(super) fn navigator_body(state: &ViewState, width: f32) -> Element {
             .render(),
         );
     }
-    if let Some(footer) = github_footer(&review.github, state.git_panel.pull.as_ref(), surface) {
+    if let Some(footer) = github_footer(&review.github, state.git_panel.pull.as_ref(), &state.git_panel.controls, surface) {
         children.push(Separator::horizontal(theme::component_palette()).render());
         children.push(footer);
     }
@@ -2365,7 +2445,7 @@ mod tests {
             });
             let form = Some(crate::github::PullDraft::default());
             let ids = |form: Option<&crate::github::PullDraft>| {
-                let frame = UiTree::new(github_footer(&status, form, theme::BACKGROUND).unwrap()).layout(Size::new(320.0, 320.0));
+                let frame = UiTree::new(github_footer(&status, form, &Default::default(), theme::BACKGROUND).unwrap()).layout(Size::new(320.0, 320.0));
                 let ids: Vec<String> = frame.regions.iter().map(|region| region.id.to_string()).collect();
                 ids
             };
@@ -2393,8 +2473,41 @@ mod tests {
             pulls: vec![open],
             notice: None,
         });
-        let frame = UiTree::new(github_footer(&status, None, theme::BACKGROUND).unwrap()).layout(Size::new(320.0, 200.0));
+        let frame = UiTree::new(github_footer(&status, None, &Default::default(), theme::BACKGROUND).unwrap()).layout(Size::new(320.0, 200.0));
         assert!(texts(&frame).contains(&"Checks fallando"), "{:?}", texts(&frame));
+    }
+
+    #[test]
+    fn an_open_pull_request_offers_merge_approve_comment_and_watch() {
+        let status = GithubStatus::Ready(crate::github::GithubOverview {
+            repository: crate::github::parse_remote("git@github.com:team/project.git", "origin").unwrap(),
+            branch: "topic".into(),
+            pulls: vec![crate::github::GithubPull {
+                number: 7,
+                title: "Listo".into(),
+                url: "https://github.com/team/project/pull/7".into(),
+                author: "ana".into(),
+                base: "main".into(),
+                draft: false,
+                head: "abc123".into(),
+                checks: None,
+            }],
+            notice: None,
+        });
+        let ids = |controls: &PullControls| -> Vec<String> {
+            let frame = UiTree::new(github_footer(&status, None, controls, theme::BACKGROUND).unwrap())
+                .layout(Size::new(360.0, 400.0));
+            frame.regions.iter().map(|region| region.id.to_string()).collect()
+        };
+        let plain = ids(&PullControls::default());
+        for id in ["github_pr_merge", "github_pr_approve", "github_pr_comment"] {
+            assert!(plain.iter().any(|known| known == id), "{id} in {plain:?}");
+        }
+        assert!(!plain.iter().any(|id| id == "github_pr_watch"), "no task, no watch");
+        let open = ids(&PullControls { comment: Some(String::new()), merge_confirm: true, watch: Some(false), watchable: true });
+        for id in ["github_pr_merge_squash", "github_pr_merge_commit", "github_comment_body", "github_comment_submit", "github_pr_watch", "github_pr_watch_wake"] {
+            assert!(open.iter().any(|known| known == id), "{id} in {open:?}");
+        }
     }
 
     #[test]
@@ -2410,7 +2523,7 @@ mod tests {
             pulls: vec![],
             notice: None,
         });
-        let mut tree = UiTree::new(github_footer(&status, None, theme::BACKGROUND).unwrap());
+        let mut tree = UiTree::new(github_footer(&status, None, &Default::default(), theme::BACKGROUND).unwrap());
         let frame = tree.layout(Size::new(320.0, 44.0));
         let target = frame
             .regions

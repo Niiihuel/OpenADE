@@ -120,10 +120,29 @@ Los campos y el período provienen de la
 Las contribuciones privadas dependen del acceso de la credencial y de la
 configuración de la cuenta. No se solicitan permisos adicionales al abrir el gráfico.
 
+## Acciones sobre el PR y vigilancia
+
+- Bajo el PR de la rama, la revisión ofrece **Fusionar** (pide confirmación y
+  elige squash o commit de merge), **Aprobar** y **Comentar** (un campo de
+  texto que se publica como comentario del PR). Lo hace el mismo worker que
+  crea PR; el resultado o el rechazo de GitHub queda como aviso del panel
+  (por ejemplo, GitHub no deja aprobar un PR propio).
+- **Vigilar CI y comentarios desde esta tarea** guarda el PR con la tarea
+  elegida en `pr-watch.json`. Cada 90 s, fuera del hilo de la interfaz y con
+  una sola búsqueda de credencial por vuelta, se lee el PR, los checks de su
+  último commit, los comentarios, los comentarios del diff y las reviews. La
+  primera lectura solo aprende el estado; después avisan (Ajustes →
+  Notificaciones → Pull requests vigilados) los checks que pasan a fallar,
+  los comentarios y reviews de otras personas y el cierre o la fusión, que
+  termina la vigilancia.
+- **Pasarle las novedades al agente** manda ese resumen a la tarea: a la
+  terminal de su CLI cuando no está trabajando, o como turno del agente
+  nativo o ACP, en segundo plano o en cola detrás del turno en curso. El
+  mensaje aclara que los comentarios los escribe cualquiera y no son
+  instrucciones de sistema.
+
 ## Alcance pendiente
 
-- Comentar, aprobar y fusionar PR requiere estados de confirmación y errores
-  propios. Al crear un PR no se puede elegir la base ni editar título y cuerpo.
 - Faltan remotos GitHub Enterprise y casos de fork con nombres de remotos no
   convencionales.
 - Del PR de la rama se muestra el estado de sus checks en una línea (exitosos,

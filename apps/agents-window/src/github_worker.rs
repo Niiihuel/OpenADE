@@ -1,6 +1,6 @@
 //! Serial background GitHub requests. Network latency never holds the UI loop.
 
-use crate::github::{create_pull, load_overview, GithubOverview, PullDraft};
+use crate::github::{act_on_pull, create_pull, load_overview, GithubOverview, PullAction, PullDraft};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, SendError, Sender};
@@ -14,6 +14,8 @@ pub struct GithubRequest {
     pub account: Option<String>,
     /// Open this pull request for the current branch first.
     pub create_pull: Option<PullDraft>,
+    /// Or do this to the pull request shown first.
+    pub action: Option<PullAction>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -72,14 +74,22 @@ fn run_worker(request_rx: Receiver<GithubRequest>, result_tx: Sender<GithubRespo
             if next.generation >= request.generation {
                 // A read may replace a read; a pull request asked for is still opened.
                 let create_pull = next.create_pull.clone().or(request.create_pull);
-                request = GithubRequest { create_pull, ..next };
+                let action = next.action.clone().or(request.action);
+                request = GithubRequest { create_pull, action, ..next };
             }
         }
         let created = request.create_pull.as_ref().map(|draft| match request.account.as_deref() {
             Some(account) => create_pull(&request.workspace, account, draft),
             None => Err("Conectá una cuenta de GitHub para crear el pull request".to_owned()),
         });
+        let acted = request.action.as_ref().map(|action| match request.account.as_deref() {
+            Some(account) => act_on_pull(&request.workspace, account, action),
+            None => Err("Conectá una cuenta de GitHub para actuar sobre el pull request".to_owned()),
+        });
         let mut overview = load_overview(&request.workspace, request.account.as_deref());
+        if let (Some(overview), Some(acted)) = (&mut overview, acted) {
+            overview.notice = Some(acted.unwrap_or_else(|error| error));
+        }
         if let Some(overview) = &mut overview {
             match created {
                 // The list may not show a pull request opened a moment ago.
