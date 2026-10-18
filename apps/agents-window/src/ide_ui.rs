@@ -432,17 +432,11 @@ fn agent_new_menu(state: &ViewState) -> Element {
             .icon(Icon::Chat)
             .into(),
     ];
-    entries.extend(
-        state
-            .agent_clis
-            .iter()
-            .filter(|agent| agent.resolved.is_some())
-            .map(|agent| {
-                DropdownMenuItem::new(format!("cli_task:{}", agent.id), &agent.label)
-                    .icon(crate::provider_icons::icon_for_agent_cli(&agent.id))
-                    .into()
-            }),
-    );
+    entries.extend(state.terminal_agent_clis().map(|agent| {
+        DropdownMenuItem::new(format!("cli_task:{}", agent.id), &agent.label)
+            .icon(crate::provider_icons::icon_for_agent_cli(&agent.id))
+            .into()
+    }));
     entries.extend(state.acp_agents.iter().map(|agent| {
         DropdownMenuItem::new(format!("acp_task:{}", agent.id), &agent.name)
             .icon(crate::provider_icons::icon_for_acp_agent(&agent.id, &agent.name))
