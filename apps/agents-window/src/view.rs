@@ -12,7 +12,7 @@ use openide_harness::{
 use openide_ui::{
     ActiveHover, AlertDialog, Button, ButtonVariant, Card, CardDensity, Color, Component, ControlSize,
     DropdownMenu, DropdownMenuEntry, DropdownMenuItem, Element, Empty, FontFamily,
-    Icon, IconButton as UiIconButton, Kbd, ListRow, OutputBlock, PopoverPlacement, RadiusRole, ScrollArea, SegmentedControl,
+    Icon, IconButton as UiIconButton, Kbd, ListRow, OutputBlock, PopoverPlacement, RadiusRole, ScrollArea, SearchField, SegmentedControl,
     Separator, Skeleton, Tab, Text as UiText, TextRole, TextSpan, Tooltip, TooltipPlacement, TooltipSpec, TreeGuides,
     TreeRow,
 };
@@ -474,6 +474,8 @@ pub struct ViewState {
     pub(crate) composer_attachment_visuals:
         BTreeMap<String, crate::composer_attachments::AttachmentVisual>,
     pub composer_attachment_loading: bool,
+    /// Files from another application are being dragged over the window.
+    pub composer_files_over: bool,
     pub(crate) composer_image_viewer: Option<crate::composer_attachments::ImageGalleryView>,
     pub composer_add_menu_open: bool,
     pub composer_dictation: openide_ui::DictationState,
@@ -591,6 +593,10 @@ pub struct ViewState {
     /// It is the tree's own clipboard, never the system's.
     pub file_clipboard: Option<(Vec<String>, bool)>,
     pub show_archived: bool,
+    /// openADE's child processes, while Settings shows them.
+    pub(crate) processes: Vec<crate::processes::ProcessRow>,
+    /// The sidebar's filter of tasks by title or project; empty shows all.
+    pub session_query: String,
     pub session_organization: SessionOrganization,
     pub session_sort: SessionSort,
     pub session_sort_menu_open: bool,
@@ -629,6 +635,26 @@ pub struct ViewState {
     pub compat_hooks: Vec<CompatHookRowView>,
     pub plugin_skills: Vec<PluginSkillsRowView>,
     pub agent_clis: Vec<AgentCliRowView>,
+    /// Agents of the ACP registry this machine can run.
+    pub acp_agents: Vec<crate::acp_run::AcpOffer>,
+    /// Every agent of the ACP registry and how it runs here, for Settings.
+    pub acp_catalog: Vec<crate::acp_run::AcpEntry>,
+    pub acp_catalog_error: Option<String>,
+    /// The registry agent being downloaded.
+    pub acp_installing: Option<String>,
+    /// What the registry list of Settings is filtered by.
+    pub acp_query: String,
+    /// Conversations whose turn goes on off screen, and whether it waits for
+    /// an answer there.
+    pub off_screen_turns: BTreeMap<String, bool>,
+    /// The permissions the selected CLI task starts its CLI with.
+    pub cli_task_mode: crate::cli_tasks::CliMode,
+    pub cli_mode_open: bool,
+    /// The task's restore points while their header menu is open.
+    pub checkpoint_menu: Option<crate::checkpoints::Record>,
+    pub checkpoint_restoring: bool,
+    /// The folders the IDE works in, the active one first, as (path, label).
+    pub ide_folders: Vec<(String, String)>,
     /// The check command saved for the open project, shown in Settings.
     pub turn_check_command: String,
     pub turn_check_failure: Option<String>,
@@ -656,6 +682,7 @@ pub struct ViewState {
     pub(crate) appearance_font_query: [String; 2],
     pub(crate) custom_theme_ui: crate::custom_theme_ui::ThemeUiState,
     pub settings_reopen_last_workspace: bool,
+    pub update: crate::app_update::UpdateView,
     pub settings_terminal_shell: TerminalShell,
     pub settings_terminal_shell_draft: String,
     pub settings_terminal_shell_menu_open: bool,
@@ -1041,6 +1068,9 @@ struct SessionRowContext {
     selected_asked: bool,
     /// `en pausa · 03:10` for the sessions paused on a provider limit.
     pause_labels: BTreeMap<String, String>,
+    /// Conversations whose turn goes on off screen, and whether it waits for
+    /// an answer there.
+    off_screen_turns: BTreeMap<String, bool>,
 }
 
 impl SessionRowContext {
@@ -1053,7 +1083,8 @@ impl SessionRowContext {
             // A turn that runs on has what it asked, whatever the list knew.
             return self.selected_asked;
         }
-        self.session_recovery.get(&session.id) == Some(&SessionRecoveryView::Question)
+        self.off_screen_turns.get(&session.id) == Some(&true)
+            || self.session_recovery.get(&session.id) == Some(&SessionRecoveryView::Question)
     }
 }
 
@@ -1085,6 +1116,7 @@ impl From<&ViewState> for SessionRowContext {
             group_menu_id: state.group_menu_id.clone(),
             session_plans: state.session_plans.clone(),
             session_recovery: state.session_recovery.clone(),
+            off_screen_turns: state.off_screen_turns.clone(),
             selected_asked: state
                 .pending_permissions
                 .iter()
@@ -1185,12 +1217,15 @@ fn session_row_parts(
             .size(Some(6.0), Some(6.0))
             .background(theme::BRAND)
             .radius(3.0)
-    } else if selected && state.running {
+    } else if (selected && state.running) || state.off_screen_turns.contains_key(&session.id) {
         Element::icon(Icon::Clock).foreground(theme::FOREGROUND)
     } else if session.pinned {
         Element::icon(Icon::Pin).foreground(theme::FOREGROUND_SUBTLE)
     } else if let Some(agent) = session.backend.strip_prefix(CLI_BACKEND) {
         Element::icon(crate::provider_icons::icon_for_agent_cli(agent))
+            .foreground(theme::FOREGROUND_SUBTLE)
+    } else if let Some(agent) = session.backend.strip_prefix(crate::acp_run::ACP_BACKEND) {
+        Element::icon(crate::provider_icons::icon_for_acp_agent(agent, agent))
             .foreground(theme::FOREGROUND_SUBTLE)
     } else {
         Element::spacer()
@@ -1546,6 +1581,25 @@ pub(crate) fn group_draft_row_index(state: &ViewState) -> Option<usize> {
 
 fn session_list_rows(state: &ViewState) -> Vec<SessionListRow> {
     let mut rows = Vec::new();
+    let query = state.session_query.trim().to_lowercase();
+    if !query.is_empty() {
+        rows.push(SessionListRow::Section("RESULTADOS"));
+        let found = state
+            .sessions
+            .iter()
+            .filter(|session| session.archived == state.show_archived)
+            .filter(|session| {
+                session.title.to_lowercase().contains(&query)
+                    || Path::new(&session.project)
+                        .file_name()
+                        .is_some_and(|name| name.to_string_lossy().to_lowercase().contains(&query))
+            });
+        rows.extend(found.cloned().map(SessionListRow::Session));
+        if rows.len() == 1 {
+            rows.push(SessionListRow::Empty("Ninguna tarea con ese título"));
+        }
+        return rows;
+    }
     // The archive lists archived tasks only; a pinned one keeps its mark there.
     let pinned = state
         .sessions
@@ -2062,6 +2116,22 @@ fn sidebar_for_height(state: &ViewState, width: f32, height: f32) -> Element {
             .gap(2.0)
             .size(None, Some(28.0)),
         );
+    }
+    toolbar.push(
+        SearchField::new("session_search", state.session_query.clone(), "Filtrar tareas", theme::component_palette())
+            .size(ControlSize::Dense)
+            .clearable(true)
+            .render(),
+    );
+    if !state.session_query.trim().is_empty() {
+        toolbar.push(sidebar_nav_action(
+            "session_search_messages",
+            Icon::Search,
+            "Buscar en los mensajes",
+            "",
+            width - 12.0,
+            false,
+        ));
     }
     let session_toolbar = Element::column(toolbar).gap(4.0).padding(6.0);
     let compact_usage = height < 440.0;
@@ -4001,7 +4071,7 @@ fn confirmation_dialog(state: &ViewState, base: Element, viewport_width: f32) ->
         })
     } else if state.automations.quit_pending {
         Some((
-            "¿Salir con automatizaciones en curso?".to_owned(),
+            "¿Salir con agentes en curso?".to_owned(),
             "Las que están corriendo se cancelan, y ninguna tarea programada se ejecuta mientras openADE está cerrado.".to_owned(),
             "automation_quit_confirm".to_owned(),
             "automation_quit_cancel".to_owned(),
@@ -4172,6 +4242,37 @@ pub(crate) mod tests {
         )));
     }
 
+    /// What a screen reader is told of the main window: every control has a
+    /// name to say. An icon alone, with no name, is silent.
+    #[test]
+    fn every_control_of_the_main_window_has_a_name_for_a_screen_reader() {
+        use openide_ui::Role;
+        let mut state = empty_state();
+        state.sessions = vec![SessionView {
+            id: "a".into(),
+            title: "Arreglar el login".into(),
+            project: "C:/project".into(),
+            backend: "native".into(),
+            pinned: false,
+            archived: false,
+            unread: false,
+            native_automation: None,
+        }];
+        state.selected_session = Some("a".into());
+        let frame = UiTree::new(build_view(&state, 1280.0)).layout(Size::new(1280.0, 800.0));
+        let silent: Vec<String> = frame
+            .access
+            .iter()
+            .filter(|node| {
+                matches!(node.role, Role::Button | Role::Switch | Role::CheckBox | Role::TextInput | Role::MultilineTextInput | Role::SearchInput | Role::ComboBox | Role::Tab | Role::Link)
+                    && node.name.trim().is_empty()
+            })
+            .map(|node| format!("{:?} {}", node.role, node.id))
+            .collect();
+        assert!(silent.is_empty(), "controls without a name: {silent:#?}");
+        assert!(frame.access.iter().any(|node| node.name == "Nueva tarea"));
+    }
+
     pub(crate) fn empty_state() -> ViewState {
         ViewState {
             tour: Default::default(),
@@ -4206,6 +4307,7 @@ pub(crate) mod tests {
             composer_attachments: Vec::new(),
             composer_attachment_visuals: Default::default(),
             composer_attachment_loading: false,
+            composer_files_over: false,
             composer_image_viewer: None,
             message_edit: Default::default(),
             message_actions: Default::default(),
@@ -4298,6 +4400,8 @@ pub(crate) mod tests {
             file_delete: None,
             file_clipboard: None,
             show_archived: false,
+            processes: Vec::new(),
+            session_query: String::new(),
             session_organization: SessionOrganization::Project,
             session_sort: SessionSort::Updated,
             session_sort_menu_open: false,
@@ -4337,6 +4441,17 @@ pub(crate) mod tests {
             compat_hooks: Vec::new(),
             plugin_skills: Vec::new(),
             agent_clis: Vec::new(),
+            acp_agents: Vec::new(),
+            acp_catalog: Vec::new(),
+            acp_catalog_error: None,
+            acp_installing: None,
+            acp_query: String::new(),
+            off_screen_turns: BTreeMap::new(),
+            cli_task_mode: Default::default(),
+            cli_mode_open: false,
+            checkpoint_menu: None,
+            checkpoint_restoring: false,
+            ide_folders: Vec::new(),
             turn_check_command: String::new(),
             turn_check_failure: None,
             review_model: Default::default(),
@@ -4361,6 +4476,7 @@ pub(crate) mod tests {
             appearance_font_query: Default::default(),
             custom_theme_ui: Default::default(),
             settings_reopen_last_workspace: false,
+            update: Default::default(),
             settings_terminal_shell: TerminalShell::System,
             settings_terminal_shell_draft: String::new(),
             settings_terminal_shell_menu_open: false,
@@ -7245,17 +7361,14 @@ pub(crate) mod tests {
                     delta_y: -180.0,
                 });
             }
-            assert!(
-                tree.scroll_offset(scroll_id) > 0.0,
-                "metadata must scroll at {width}"
-            );
+            // The body is sized to its content: it scrolls only where it has to.
             for exact in [
-                "131072 tokens",
-                "120000 tokens",
-                "8192 tokens",
-                "US$ 1.2500",
-                "US$ 4.5000",
-                "US$ 0.2500",
+                "131 072",
+                "120 000",
+                "8 192",
+                "US$ 1.25",
+                "US$ 4.5",
+                "US$ 0.25",
             ] {
                 assert!(observed.contains(exact), "{exact} at {width}");
             }
@@ -8318,6 +8431,46 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn the_sidebar_filter_lists_matching_titles_and_projects_flat() {
+        let mut state = empty_state();
+        let session = |id: &str, title: &str, project: &str, pinned: bool, archived: bool| SessionView {
+            id: id.into(),
+            title: title.into(),
+            project: project.into(),
+            backend: "native".into(),
+            pinned,
+            archived,
+            unread: false,
+            native_automation: None,
+        };
+        state.sessions = vec![
+            session("a", "Arreglar el login", "/work/web", false, false),
+            session("b", "Migrar tests", "/work/api", true, false),
+            session("c", "Login viejo", "/work/web", false, true),
+            session("d", "Docs", "/work/LoginKit", false, false),
+        ];
+        let titles = |state: &ViewState| {
+            session_list_rows(state)
+                .iter()
+                .map(|row| match row {
+                    SessionListRow::Section(title) | SessionListRow::Empty(title) => title.to_string(),
+                    SessionListRow::Session(session) => session.id.clone(),
+                    _ => "other".into(),
+                })
+                .collect::<Vec<_>>()
+        };
+        state.session_query = "  LOGIN ".into();
+        assert_eq!(titles(&state), ["RESULTADOS", "a", "d"]);
+        state.show_archived = true;
+        assert_eq!(titles(&state), ["RESULTADOS", "c"]);
+        state.show_archived = false;
+        state.session_query = "api".into();
+        assert_eq!(titles(&state), ["RESULTADOS", "b"]);
+        state.session_query = "nada".into();
+        assert_eq!(titles(&state), ["RESULTADOS", "Ninguna tarea con ese título"]);
+    }
+
+    #[test]
     fn grouped_sidebar_keeps_empty_groups_and_places_members_under_their_header() {
         let mut state = empty_state();
         state.session_organization = SessionOrganization::Group;
@@ -8812,6 +8965,15 @@ pub(crate) mod tests {
         assert_eq!(marks(&live, &session("live", false)), waiting);
         // Only on its own row.
         assert_eq!(marks(&live, &session("another", false)), (vec![], false, false));
+        // A turn going on off screen wears the clock on its own row, and the
+        // question's mark once it waits for an answer there.
+        let mut away = empty_state();
+        away.selected_session = Some("live".into());
+        away.off_screen_turns.insert("away".into(), false);
+        assert_eq!(marks(&away, &session("away", false)), running);
+        assert_eq!(marks(&away, &session("live", false)), (vec![], false, false));
+        away.off_screen_turns.insert("away".into(), true);
+        assert_eq!(marks(&away, &session("away", false)), waiting);
         // A permission prompt is not a question.
         live.pending_permissions[0].tool_name = "run_command".into();
         assert_eq!(marks(&live, &session("live", false)), running);

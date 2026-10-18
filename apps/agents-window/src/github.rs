@@ -307,23 +307,34 @@ fn fetch_pulls(
     // Only the pull request the panel shows; a failure to read its checks
     // leaves it without a verdict rather than without the pull request.
     if let Some(pull) = pulls.first_mut().filter(|pull| !pull.head.is_empty()) {
-        let report = |path: &str| -> Option<Value> {
-            let mut request = client
-                .get(format!("https://api.github.com/repos/{}/{}/commits/{}/{path}", repository.owner, repository.name, pull.head))
-                .query(&[("per_page", "100")])
-                .header(reqwest::header::USER_AGENT, "OpenIDE-Agent-Window")
-                .header(reqwest::header::ACCEPT, "application/vnd.github+json");
-            if let Some(token) = account.and_then(crate::github_account::auth_token_for_account) {
-                request = request.bearer_auth(token);
-            }
-            let response = request.send().ok().filter(|response| response.status().is_success())?;
-            let mut bytes = Vec::new();
-            response.take(MAX_RESPONSE_BYTES + 1).read_to_end(&mut bytes).ok()?;
-            (bytes.len() as u64 <= MAX_RESPONSE_BYTES).then(|| serde_json::from_slice(&bytes).ok()).flatten()
-        };
-        pull.checks = report("check-runs").zip(report("status")).map(|(runs, status)| checks_of(&runs, &status));
+        let token = account.and_then(crate::github_account::auth_token_for_account);
+        pull.checks = commit_checks(&client, repository, &pull.head, token.as_deref());
     }
     Ok(pulls)
+}
+
+/// How the checks of commit `sha` stand; `None` when they could not be read.
+pub(crate) fn commit_checks(
+    client: &reqwest::blocking::Client,
+    repository: &GithubRepository,
+    sha: &str,
+    token: Option<&str>,
+) -> Option<PullChecks> {
+    let report = |path: &str| -> Option<Value> {
+        let mut request = client
+            .get(format!("https://api.github.com/repos/{}/{}/commits/{sha}/{path}", repository.owner, repository.name))
+            .query(&[("per_page", "100")])
+            .header(reqwest::header::USER_AGENT, "OpenIDE-Agent-Window")
+            .header(reqwest::header::ACCEPT, "application/vnd.github+json");
+        if let Some(token) = token {
+            request = request.bearer_auth(token);
+        }
+        let response = request.send().ok().filter(|response| response.status().is_success())?;
+        let mut bytes = Vec::new();
+        response.take(MAX_RESPONSE_BYTES + 1).read_to_end(&mut bytes).ok()?;
+        (bytes.len() as u64 <= MAX_RESPONSE_BYTES).then(|| serde_json::from_slice(&bytes).ok()).flatten()
+    };
+    report("check-runs").zip(report("status")).map(|(runs, status)| checks_of(&runs, &status))
 }
 
 /// What GitHub is asked to open: the branch into `base`, described by the
@@ -373,7 +384,7 @@ fn pull_refusal(status: u16, body: &[u8]) -> String {
     }
 }
 
-fn api_json(request: reqwest::blocking::RequestBuilder, token: &str) -> Result<(u16, Vec<u8>), String> {
+pub(crate) fn api_json(request: reqwest::blocking::RequestBuilder, token: &str) -> Result<(u16, Vec<u8>), String> {
     let response = request
         .bearer_auth(token)
         .header(reqwest::header::USER_AGENT, "OpenIDE-Agent-Window")
@@ -449,6 +460,72 @@ pub fn create_pull(workspace: &Path, account: &str, draft: &PullDraft) -> Result
     parse_pulls(&Value::Array(vec![created]), &repository, &branch)
         .pop()
         .ok_or_else(|| "GitHub devolvió una respuesta no válida".to_owned())
+}
+
+/// What the person does to the pull request the review panel shows.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PullAction {
+    /// Squash its commits into one, or keep them under a merge commit.
+    Merge { number: u64, squash: bool },
+    Comment { number: u64, body: String },
+    Approve { number: u64 },
+}
+
+/// GitHub's reason for refusing an action, in the user's terms where known.
+fn action_refusal(status: u16, body: &[u8]) -> String {
+    let reason: String = serde_json::from_slice::<Value>(body)
+        .ok()
+        .and_then(|value| value.get("message")?.as_str().map(str::to_owned))
+        .unwrap_or_default()
+        .chars()
+        .filter(|ch| !ch.is_control())
+        .take(200)
+        .collect();
+    match status {
+        401 | 403 => "La cuenta de GitHub no tiene permiso para esto".to_owned(),
+        404 => "El pull request no está disponible con las credenciales actuales".to_owned(),
+        405 => format!("GitHub todavía no permite fusionarlo. {reason}"),
+        409 => "La rama cambió mientras tanto: actualizá y probá de nuevo".to_owned(),
+        422 if reason.contains("own pull request") => "GitHub no deja aprobar un pull request propio".to_owned(),
+        _ => format!("GitHub respondió HTTP {status}. {reason}"),
+    }
+}
+
+/// Does `action` on GitHub and says what happened.
+pub fn act_on_pull(workspace: &Path, account: &str, action: &PullAction) -> Result<String, String> {
+    let repository = discover_repository(workspace).ok_or("Este proyecto no tiene un remoto de GitHub")?;
+    let token = crate::github_account::auth_token_for_account(account)
+        .ok_or_else(|| format!("Reconecta la cuenta {account} para actuar en GitHub."))?;
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|_| "No se pudo preparar la conexión con GitHub".to_owned())?;
+    let api = format!("https://api.github.com/repos/{}/{}", repository.owner, repository.name);
+    let (request, expected, done) = match action {
+        PullAction::Merge { number, squash } => (
+            client
+                .put(format!("{api}/pulls/{number}/merge"))
+                .json(&serde_json::json!({ "merge_method": if *squash { "squash" } else { "merge" } })),
+            200,
+            format!("Pull request #{number} fusionado"),
+        ),
+        PullAction::Comment { number, body } => (
+            client.post(format!("{api}/issues/{number}/comments")).json(&serde_json::json!({ "body": body })),
+            201,
+            format!("Comentario publicado en #{number}"),
+        ),
+        PullAction::Approve { number } => (
+            client.post(format!("{api}/pulls/{number}/reviews")).json(&serde_json::json!({ "event": "APPROVE" })),
+            200,
+            format!("Pull request #{number} aprobado"),
+        ),
+    };
+    let (status, bytes) = api_json(request, &token)?;
+    if status == expected {
+        Ok(done)
+    } else {
+        Err(action_refusal(status, &bytes))
+    }
 }
 
 pub fn load_overview(workspace: &Path, account: Option<&str>) -> Option<GithubOverview> {

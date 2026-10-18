@@ -41,6 +41,27 @@ pub const PROVIDERS: &[(&str, &str, &str)] = &[
     ),
 ];
 
+/// Providers of the native agent that Settings connects with an API key
+/// kept here, read back through their key variable: the agent's routes
+/// still see them as providers with a key, not as accounts.
+pub const KEY_PROVIDERS: &[(&str, &str, &str)] = &[
+    ("openai", "OpenAI", "Modelos GPT con tu clave de API"),
+    ("anthropic", "Anthropic", "Modelos Claude con tu clave de API"),
+    ("xai", "xAI", "Modelos Grok con tu clave de API"),
+    ("deepseek", "DeepSeek", "Modelos DeepSeek con tu clave de API"),
+    ("mistral", "Mistral", "Modelos Mistral con tu clave de API"),
+    ("groq", "Groq", "Modelos abiertos servidos por Groq con tu clave de API"),
+];
+
+pub fn key_connectable(id: &str) -> bool {
+    KEY_PROVIDERS.iter().any(|row| row.0 == id)
+}
+
+/// Whether Settings offers a connection for `id`: an account, or a key.
+pub fn connectable(id: &str) -> bool {
+    supported(id) || key_connectable(id)
+}
+
 pub const AUTH_ORIGIN: &str = "https://auth.openai.com";
 pub const TOKEN_URL: &str = "https://auth.openai.com/api/accounts/oauth/token";
 pub const RESOURCE: &str = "https://api.openai.com/v1";
@@ -59,6 +80,12 @@ pub fn key_provider(env: &str) -> Option<&'static str> {
         "NVIDIA_API_KEY" => Some("nvidia"),
         "MINIMAX_API_KEY" => Some("minimax"),
         "ZAI_API_KEY" => Some("zai"),
+        "OPENAI_API_KEY" => Some("openai"),
+        "ANTHROPIC_API_KEY" => Some("anthropic"),
+        "XAI_API_KEY" => Some("xai"),
+        "DEEPSEEK_API_KEY" => Some("deepseek"),
+        "MISTRAL_API_KEY" => Some("mistral"),
+        "GROQ_API_KEY" => Some("groq"),
         _ => None,
     }
 }
@@ -99,7 +126,13 @@ pub struct Credential {
     pub oauth: bool,
     pub disabled: bool,
     pub welcome_seen: bool,
+    /// The name this app registered its OAuth client under; a record from
+    /// before the rename has none, and registers again.
+    pub agent_name: Option<String>,
 }
+
+/// What ChatGPT shows as the agent asking for access.
+pub const AGENT_NAME: &str = "openADE";
 
 pub fn credential_dir(root: &Path) -> Result<PathBuf, String> {
     let dir = root.join("provider-credentials");
@@ -117,7 +150,7 @@ pub fn credential_dir(root: &Path) -> Result<PathBuf, String> {
 }
 
 pub fn load(root: &Path, id: &str) -> Result<Option<Credential>, String> {
-    if !supported(id) {
+    if !connectable(id) {
         return Err("Proveedor no disponible".into());
     }
     let dir = root.join("provider-credentials");
@@ -180,7 +213,7 @@ pub fn load(root: &Path, id: &str) -> Result<Option<Credential>, String> {
 }
 
 pub fn save(root: &Path, record: &Credential) -> Result<(), String> {
-    if !supported(&record.provider_id) || record.version != 1 {
+    if !connectable(&record.provider_id) || record.version != 1 {
         return Err("Conexión guardada inválida".into());
     }
     let dir = credential_dir(root)?;
@@ -221,7 +254,7 @@ impl Drop for RecordLock {
     }
 }
 pub fn lock(root: &Path, id: &str, cancel: &AtomicBool) -> Result<RecordLock, String> {
-    if !supported(id) {
+    if !connectable(id) {
         return Err("Proveedor no disponible".into());
     }
     let dir = credential_dir(root)?;

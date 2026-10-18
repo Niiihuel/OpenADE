@@ -10,6 +10,14 @@ impl AgentsWindow {
             && self.view.main_page == MainPage::Workspace
     }
 
+    /// The model and effort menus also serve an ACP agent's own options.
+    pub(super) fn composer_model_editable(&self) -> bool {
+        self.composer_choices_editable()
+            || (crate::acp_run::agent_id(&self.view.selected_backend).is_some()
+                && !self.view.show_settings
+                && self.view.main_page == MainPage::Workspace)
+    }
+
     pub(super) fn composer_selection_busy(&self) -> bool {
         self.view.running
             || self.view.background_run_selected

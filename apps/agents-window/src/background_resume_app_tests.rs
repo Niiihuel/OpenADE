@@ -24,6 +24,8 @@ enum Reply {
     Limit,
     Text(&'static str),
     Tool(&'static str, Value),
+    /// HTTP 400: the turn fails there and then.
+    Error,
 }
 
 /// A provider that answers each request as the script says.
@@ -68,6 +70,11 @@ impl ScriptedProvider {
                         }})
                         .to_string(),
                     ),
+                    Reply::Error => (
+                        "400 Bad Request",
+                        "application/json",
+                        json!({"error": {"type": "invalid_request_error", "message": "roto"}}).to_string(),
+                    ),
                     reply => {
                         let (delta, finish) = match reply {
                             Reply::Tool(name, arguments) => {
@@ -79,7 +86,7 @@ impl ScriptedProvider {
                                 )
                             }
                             Reply::Text(text) => (json!({"content": text}), "stop"),
-                            Reply::Limit => unreachable!(),
+                            Reply::Limit | Reply::Error => unreachable!(),
                         };
                         (
                             "200 OK",
@@ -155,6 +162,7 @@ fn settle(app: &mut AgentsWindow, mut done: impl FnMut(&AgentsWindow) -> bool) {
         app.poll_run();
         app.poll_subagent_events();
         app.poll_background_resumes();
+        app.poll_parked_runs();
         if done(app) {
             return;
         }
@@ -638,6 +646,7 @@ fn a_paused_automation_continues_off_screen_under_its_frozen_authority() {
                 prompt: TASK.into(),
                 backend: "native".into(),
                 native_provider: Some(native_provider),
+                allow_changes: false,
                 schedule: AutomationSchedule::Once { at_ms: now + 1 },
             },
             now,
@@ -780,4 +789,86 @@ fn the_effort_of_a_paused_turn_comes_from_its_journaled_profile_not_from_the_com
         app.journaled_route_backend(&connection, &foreign).err().as_deref(),
         Some("La ruta del modelo cambió desde que el turno quedó en pausa")
     );
+}
+
+/// A provider that holds its answer until the test lets it go, then answers
+/// as `reply` says.
+fn held(reply: impl Fn() -> Reply + Send + 'static) -> (ScriptedProvider, Arc<AtomicBool>) {
+    let gate = Arc::new(AtomicBool::new(false));
+    let waiting = gate.clone();
+    let provider = ScriptedProvider::new(move |_| {
+        while !waiting.load(Ordering::Acquire) {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        reply()
+    });
+    (provider, gate)
+}
+
+#[test]
+fn a_turn_goes_on_off_screen_when_another_conversation_is_opened_and_is_back_with_it() {
+    let root = tempfile::tempdir().unwrap();
+    let (provider, gate) = held(|| Reply::Text("LISTO"));
+    let mut app = app_at(root.path(), &provider.endpoint);
+    app.view.prompt = TASK.into();
+    app.start_run();
+    assert!(app.view.running, "{}", app.view.status);
+    let away = app.view.selected_session.clone().unwrap();
+
+    // Another conversation opens over it: the turn is parked, not stopped.
+    let on_screen = look_elsewhere(&mut app, root.path());
+    assert_eq!(app.parked_runs.len(), 1);
+    assert_eq!(app.off_screen_busy(&away), Some("Espera a que termine el turno"));
+    assert_eq!(app.view.off_screen_turns.get(&away), Some(&false));
+    assert!(!app.view.session_recovery.contains_key(&away), "a turn going on is nothing to recover");
+    assert_screen_untouched(&app, &on_screen);
+
+    // Back before it ends, it is the turn on screen again.
+    app.open_session(&away);
+    assert!(app.view.running && app.active_run.is_some(), "{}", app.view.status);
+    assert!(app.parked_runs.is_empty() && app.view.off_screen_turns.is_empty());
+    app.open_session(&on_screen);
+    tick(&mut app);
+    assert_eq!(app.parked_runs.len(), 1);
+    assert_eq!(app.view.prompt, DRAFT);
+
+    gate.store(true, Ordering::Release);
+    settle(&mut app, |app| app.parked_runs.is_empty());
+    let events = journal(&app, &away);
+    assert!(matches!(events.last().unwrap().kind, AgentEventKind::TurnCompleted { .. }), "{events:?}");
+    assert_eq!(told(&app, &away), [("Turno completado".to_owned(), 1)]);
+    assert!(app.view.sessions.iter().any(|session| session.id == away && session.unread), "left unread");
+    assert!(app.view.off_screen_turns.is_empty());
+    assert_eq!(app.view.selected_session.as_deref(), Some(on_screen.as_str()));
+    assert!(!app.view.running && app.active_run.is_none());
+    assert!(journal(&app, &on_screen).is_empty(), "nothing was sent for the conversation on screen");
+    assert_eq!(provider.requests().len(), 1);
+
+    // Opened afterwards, it reads as finished, with its reply.
+    app.open_session(&away);
+    assert!(!app.view.running && app.active_run.is_none());
+    assert!(format!("{:?}", app.view.transcript).contains("LISTO"));
+}
+
+#[test]
+fn a_turn_that_fails_off_screen_gives_its_message_back_to_its_own_draft() {
+    let root = tempfile::tempdir().unwrap();
+    let (provider, gate) = held(|| Reply::Error);
+    let mut app = app_at(root.path(), &provider.endpoint);
+    app.view.prompt = TASK.into();
+    app.start_run();
+    assert!(app.view.running, "{}", app.view.status);
+    let away = app.view.selected_session.clone().unwrap();
+    let on_screen = look_elsewhere(&mut app, root.path());
+
+    gate.store(true, Ordering::Release);
+    settle(&mut app, |app| app.parked_runs.is_empty());
+    let events = journal(&app, &away);
+    assert!(matches!(events.last().unwrap().kind, AgentEventKind::TurnFailed { .. }), "{events:?}");
+    assert_eq!(told(&app, &away), [("Turno fallido".to_owned(), 1)]);
+    assert_screen_untouched(&app, &on_screen);
+
+    app.open_session(&away);
+    assert!(!app.view.running);
+    assert_eq!(app.view.prompt, TASK, "the message nobody answered is back in its composer");
 }

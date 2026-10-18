@@ -104,6 +104,7 @@ fn overview(state: &ViewState, compact: bool) -> Vec<Element> {
     for (title, active) in [("Conectados", true), ("Disponibles", false)] {
         let providers = provider_connections::PROVIDERS
             .iter()
+            .chain(provider_connections::KEY_PROVIDERS)
             .filter(|(id, name, _)| {
                 connected(state, id) == active
                     && (query.is_empty() || name.to_lowercase().contains(&query))
@@ -672,26 +673,27 @@ fn catalog_status_lines(state: &ViewState, id: &str) -> Vec<String> {
         .and_then(|catalog| catalog.providers.get(id))
         .map(|provider| provider.name.as_str())
         .unwrap_or(id);
-    let mut lines = vec![if id == "codex" {
-        "Catálogo de tu cuenta".into()
+    // The source and its state on one line; a failed refresh gets its own.
+    let title = if id == "codex" {
+        "Catálogo de tu cuenta".to_owned()
     } else {
         format!("Modelos de {provider_name}")
-    }];
-    if let Some(status) = status
+    };
+    let state_of = match status
         .filter(|status| status.source == CatalogSource::OfficialApi && status.verified_at_ms > 0)
     {
-        lines.push(format!(
+        Some(status) => format!(
             "{} · {}",
             if status.last_error.is_some() {
-                "Última actualización"
+                "última actualización"
             } else {
-                "Actualizado"
+                "actualizado"
             },
             catalog_check_time(status.verified_at_ms)
-        ));
-    } else {
-        lines.push("Catálogo sin verificar".into());
-    }
+        ),
+        None => "catálogo sin verificar".to_owned(),
+    };
+    let mut lines = vec![format!("{title} · {state_of}")];
     if let Some(status) =
         status.filter(|status| status.last_error.is_some() && status.attempted_at_ms > 0)
     {
@@ -721,7 +723,7 @@ fn catalog_status(state: &ViewState, id: &str) -> Element {
 
 pub(super) fn page(state: &ViewState, compact: bool, width: f32) -> Vec<Element> {
     let id = state.catalog_browse_provider.as_str();
-    if !provider_connections::supported(id) {
+    if !provider_connections::connectable(id) {
         let mut sections = overview(state, compact);
         if show_output_settings(state) {
             sections.push(output_settings(state, compact));
@@ -792,27 +794,41 @@ pub(super) fn page(state: &ViewState, compact: bool, width: f32) -> Vec<Element>
             .render(),
     ])
     .gap(6.0);
-    sections.push(settings_parts::settings_group(
-        "Modelos",
-        vec![
-            catalog_status(state, id),
-            Element::column(vec![search, filters])
-                .gap(6.0)
-                .padding(10.0),
-            model_list(state, id, width),
-        ],
-    ));
-    if let Some(error) = state
-        .catalog
-        .as_ref()
-        .and_then(|c| c.provider_status.get(id))
-        .and_then(|s| s.last_error.as_ref())
-    {
-        sections.push(settings_parts::feedback_banner(
-            error,
-            FeedbackTone::Error,
-            None,
-            compact,
+    if is_connected {
+        sections.push(settings_parts::settings_group(
+            "Modelos",
+            vec![
+                catalog_status(state, id),
+                Element::column(vec![search, filters])
+                    .gap(6.0)
+                    .padding(10.0),
+                model_list(state, id, width),
+            ],
+        ));
+        if let Some(error) = state
+            .catalog
+            .as_ref()
+            .and_then(|c| c.provider_status.get(id))
+            .and_then(|s| s.last_error.as_ref())
+        {
+            sections.push(settings_parts::feedback_banner(
+                error,
+                FeedbackTone::Error,
+                None,
+                compact,
+            ));
+        }
+    } else {
+        // Nothing to list or search yet: the connection is the one step.
+        sections.push(settings_parts::settings_group(
+            "Modelos",
+            vec![ActionRow::new(
+                format!("Conectá {} para ver sus modelos", provider_connections::name(id)),
+                control_palette(),
+            )
+            .subtitle("Los modelos de tu cuenta aparecen aquí con la conexión hecha.")
+            .icon(Icon::InfoCircle)
+            .render()],
         ));
     }
     if is_connected && state.provider_usage.contains_key(id) {
@@ -820,7 +836,7 @@ pub(super) fn page(state: &ViewState, compact: bool, width: f32) -> Vec<Element>
             sections.push(card);
         }
     }
-    if is_connected && provider_connections::supported(id) {
+    if is_connected && provider_connections::connectable(id) {
         sections.push(settings_parts::settings_group(
             "Cuenta",
             vec![
@@ -959,51 +975,28 @@ pub(super) fn value(label: &str, val: impl Into<String>) -> Element {
     ActionRow::new(label, control_palette()).value(val).render()
 }
 fn tokens(value: Option<u64>) -> String {
-    value.map_or_else(|| "Dato no disponible".into(), |v| format!("{v} tokens"))
+    let Some(value) = value else {
+        return "—".into();
+    };
+    // Thousands apart, so 272 000 reads at a glance.
+    let digits = value.to_string();
+    let mut grouped = String::new();
+    for (index, digit) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index) % 3 == 0 {
+            grouped.push(' ');
+        }
+        grouped.push(digit);
+    }
+    grouped
 }
 fn cost(value: Option<f64>) -> String {
-    value
-        .filter(|v| v.is_finite() && *v >= 0.0)
-        .map_or_else(|| "Dato no disponible".into(), |v| format!("US$ {v:.4}"))
-}
-fn modalities(kinds: &[String]) -> Element {
-    if kinds.is_empty() {
-        return Text::new("Dato no disponible", theme::component_palette())
-            .role(TextRole::Small)
-            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
-            .render();
-    }
-    Element::row(
-        kinds
-            .iter()
-            .map(|kind| {
-                let (icon, label) = match kind.as_str() {
-                    "text" => (Icon::Text, "Texto"),
-                    "image" => (Icon::Image, "Imagen"),
-                    "audio" => (Icon::Audio, "Audio"),
-                    "video" => (Icon::Video, "Video"),
-                    "file" | "pdf" => (Icon::File, "Archivo"),
-                    _ => (Icon::File, kind.as_str()),
-                };
-                Element::row(vec![
-                    Element::icon(icon).foreground(theme::FOREGROUND_SUBTLE),
-                    Text::new(label, theme::component_palette())
-                        .role(TextRole::Small)
-                        .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
-                        .render(),
-                ])
-                .gap(5.0)
-            })
-            .collect(),
+    value.filter(|v| v.is_finite() && *v >= 0.0).map_or_else(
+        || "—".into(),
+        |v| {
+            let text = format!("{v:.4}");
+            format!("US$ {}", text.trim_end_matches('0').trim_end_matches('.'))
+        },
     )
-    .gap(10.0)
-}
-fn capability(value: Option<bool>) -> &'static str {
-    match value {
-        Some(true) => "Sí",
-        Some(false) => "No",
-        None => "Dato no disponible",
-    }
 }
 pub(super) fn details_modal(state: &ViewState, base: Element, viewport_width: f32) -> Element {
     if !state.show_settings || state.settings_page != super::SettingsPage::Providers {
@@ -1075,29 +1068,102 @@ pub(super) fn details_modal(state: &ViewState, base: Element, viewport_width: f3
         || model.limit.as_ref().and_then(|limit| limit.output),
         |value| value.max_output_tokens,
     );
+    // What the model takes and does, as chips; what it lacks is not listed.
+    let chip = |id: &str, icon: Icon, label: &str| {
+        openide_ui::Marker::new(format!("model_detail:{id}"), label, control_palette())
+            .icon(icon)
+            .variant(openide_ui::MarkerVariant::Border)
+            .render()
+    };
+    fn modality(kind: &str) -> (Icon, &str) {
+        match kind {
+            "text" => (Icon::Text, "Texto"),
+            "image" => (Icon::Image, "Imagen"),
+            "audio" => (Icon::Audio, "Audio"),
+            "video" => (Icon::Video, "Video"),
+            "file" | "pdf" => (Icon::File, "Archivo"),
+            _ => (Icon::File, kind),
+        }
+    }
+    let mut takes: Vec<Element> = input
+        .iter()
+        .map(|kind| {
+            let (icon, label) = modality(kind);
+            chip(&format!("in-{kind}"), icon, label)
+        })
+        .collect();
+    if images == Some(true) && !input.iter().any(|kind| kind == "image") {
+        takes.push(chip("images", Icon::Image, "Imagen"));
+    }
+    let mut does: Vec<Element> = Vec::new();
+    if tools == Some(true) {
+        does.push(chip("tools", Icon::Terminal, "Herramientas"));
+    }
+    if thinking == Some(true) {
+        does.push(chip("thinking", Icon::Plan, "Thinking"));
+    }
+    if structured == Some(true) {
+        does.push(chip("structured", Icon::Code, "Salida estructurada"));
+    }
+    for kind in output.iter().filter(|kind| *kind != "text") {
+        let (icon, label) = modality(kind);
+        does.push(chip(&format!("out-{kind}"), icon, &format!("Genera {}", label.to_lowercase())));
+    }
+    // A narrow modal stacks what a wide one puts side by side.
+    let compact = viewport_width < 470.0;
+    let chips = |label: &str, chips: Vec<Element>| {
+        let row = if chips.is_empty() {
+            Text::new("Sin datos", theme::component_palette())
+                .role(TextRole::Small)
+                .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                .render()
+        } else {
+            Element::row(chips).gap(6.0)
+        };
+        let label = Text::new(label, theme::component_palette())
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .render();
+        if compact {
+            Element::column(vec![label, row]).gap(4.0)
+        } else {
+            Element::row(vec![label.size(Some(64.0), None), row.flex(1.0)]).gap(10.0)
+        }
+    };
+    let tile = |label: &str, val: String| {
+        Element::column(vec![
+            Text::new(label, theme::component_palette())
+                .role(TextRole::Small)
+                .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                .render(),
+            Text::new(val, theme::component_palette()).render(),
+        ])
+        .gap(2.0)
+        .flex(1.0)
+    };
+    let tiles = |items: [(&str, String); 3]| {
+        if compact {
+            Element::column(items.into_iter().map(|(label, val)| value(label, val)).collect())
+        } else {
+            Element::row(items.into_iter().map(|(label, val)| tile(label, val)).collect())
+                .gap(12.0)
+                .padding(12.0)
+        }
+    };
     let mut groups = vec![
         settings_parts::settings_group(
             "Capacidades",
-            vec![
-                ActionRow::new("Entradas", control_palette())
-                    .trailing(modalities(input))
-                    .render(),
-                ActionRow::new("Salidas", control_palette())
-                    .trailing(modalities(output))
-                    .render(),
-                value("Herramientas", capability(tools)),
-                value("Imágenes", capability(images)),
-                value("Thinking", capability(thinking)),
-                value("Salida estructurada", capability(structured)),
-            ],
+            vec![Element::column(vec![chips("Recibe", takes), chips("Hace", does)])
+                .gap(8.0)
+                .padding(12.0)],
         ),
         settings_parts::settings_group(
-            "Límites",
-            vec![
-                value("Contexto", tokens(context)),
-                value("Entrada máxima", tokens(max_input)),
-                value("Salida máxima", tokens(max_output)),
-            ],
+            "Límites · tokens",
+            vec![tiles([
+                ("Contexto", tokens(context)),
+                ("Entrada máxima", tokens(max_input)),
+                ("Salida máxima", tokens(max_output)),
+            ])],
         ),
     ];
     if id == "codex" {
@@ -1111,14 +1177,11 @@ pub(super) fn details_modal(state: &ViewState, base: Element, viewport_width: f3
     } else {
         groups.push(settings_parts::settings_group(
             "Precio por millón de tokens · USD",
-            vec![
-                value("Entrada", cost(model.cost.as_ref().and_then(|c| c.input))),
-                value("Salida", cost(model.cost.as_ref().and_then(|c| c.output))),
-                value(
-                    "Lectura de caché",
-                    cost(model.cost.as_ref().and_then(|c| c.cache_read)),
-                ),
-            ],
+            vec![tiles([
+                ("Entrada", cost(model.cost.as_ref().and_then(|c| c.input))),
+                ("Salida", cost(model.cost.as_ref().and_then(|c| c.output))),
+                ("Lectura de caché", cost(model.cost.as_ref().and_then(|c| c.cache_read))),
+            ])],
         ));
     }
     groups.push(Text::new("Datos disponibles para este ID exacto. Un modelo listado no garantiza acceso a generación.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
@@ -1141,7 +1204,6 @@ pub(super) fn details_modal(state: &ViewState, base: Element, viewport_width: f3
         theme::component_palette(),
     )
     .width((viewport_width - 32.0).clamp(280.0, 640.0))
-    .height(600.0)
     .body(Element::column(groups).gap(12.0))
     .footer(
         ButtonGroup::new(vec![
@@ -1220,28 +1282,41 @@ pub(super) fn connect_modal(state: &ViewState, base: Element, viewport_width: f3
                 body.push(Text::new("Usa una clave de la API general de Z.ai. Los modelos se muestran según su documentación; el acceso se comprueba al enviar una solicitud.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
             } else if id == "minimax" {
                 body.push(Text::new("Usa la clave de tu cuenta de MiniMax. openADE consulta sus modelos disponibles antes de guardar la conexión.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
+            } else if let Some(subscription) = match id {
+                // A key pays per use; the subscription each company sells is
+                // used through its own agent, which signs in by itself.
+                "anthropic" => Some("Clave de la API de Anthropic, pago por uso. Tu suscripción de Claude se usa desde Claude Code."),
+                "xai" => Some("Clave de la API de xAI, pago por uso. Tu suscripción de Grok se usa desde Grok Build."),
+                "openai" => Some("Clave de la API de OpenAI, pago por uso. Tu plan de ChatGPT se usa desde la conexión de Codex."),
+                _ => None,
+            } {
+                body.push(Text::new(subscription, theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
             }
+            // The label and where to get a key share one line over the field.
             body.push(
-                Text::new("Clave de API", theme::component_palette())
-                    .role(TextRole::Small)
-                    .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                Element::row(vec![
+                    Text::new("Clave de API", theme::component_palette())
+                        .role(TextRole::Small)
+                        .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                        .render()
+                        .centered_y()
+                        .flex(1.0),
+                    Button::new(
+                        format!("provider_account:{id}"),
+                        "Obtener clave de API",
+                        control_palette(),
+                    )
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Compact)
                     .render(),
+                ])
+                .gap(8.0),
             );
             body.push(
                 TextField::new("provider_api_key", "", "Pega tu clave…", control_palette())
                     .size(ControlSize::Compact)
                     .password(true)
                     .render(),
-            );
-            body.push(
-                Button::new(
-                    format!("provider_account:{id}"),
-                    "Obtener clave de API",
-                    control_palette(),
-                )
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Compact)
-                .render(),
             );
             body.push(Text::new("La clave se guarda de forma privada en este equipo. El acceso a generación se comprueba al usar un modelo.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
         } else {
@@ -1326,13 +1401,6 @@ pub(super) fn connect_modal(state: &ViewState, base: Element, viewport_width: f3
         theme::component_palette(),
     )
     .width((viewport_width - 32.0).clamp(280.0, 540.0))
-    .height(if id == "opencode" && entry {
-        500.0
-    } else if matches!(id, "minimax" | "zai") && entry {
-        400.0
-    } else {
-        340.0
-    })
     .body(Element::column(body).gap(10.0))
     .footer(
         ButtonGroup::new(footer)
@@ -1441,17 +1509,16 @@ mod tests {
     {
         let mut state = ordered_codex_fixture();
         let verified = catalog_status_lines(&state, "codex");
-        assert_eq!(verified[0], "Catálogo de tu cuenta");
-        assert!(verified[1].starts_with("Actualizado · "));
-        assert_eq!(verified.len(), 2);
+        assert!(verified[0].starts_with("Catálogo de tu cuenta · actualizado · "), "{verified:?}");
+        assert_eq!(verified.len(), 1);
         let catalog = Arc::make_mut(state.catalog.as_mut().unwrap());
         let status = catalog.provider_status.get_mut("codex").unwrap();
         status.last_error = Some("HTTP 503".into());
         status.attempted_at_ms += 60_000;
         let failed = catalog_status_lines(&state, "codex");
-        assert!(failed[1].starts_with("Última actualización · "));
-        assert!(failed[2].starts_with("No se pudo actualizar · "));
-        assert_ne!(failed[1].split('·').nth(1), failed[2].split('·').nth(1));
+        assert!(failed[0].starts_with("Catálogo de tu cuenta · última actualización · "), "{failed:?}");
+        assert!(failed[1].starts_with("No se pudo actualizar · "));
+        assert_ne!(failed[0].split('·').nth(2), failed[1].split('·').nth(1));
         for width in [360.0, 900.0] {
             let mut tree = list_tree(catalog_status(&state, "codex"));
             let frame = tree.layout(Size::new(width, 350.0));
@@ -1459,7 +1526,7 @@ mod tests {
                 .split_whitespace()
                 .collect::<Vec<_>>()
                 .join(" ");
-            assert!(rendered.contains("Última actualización"), "{rendered}");
+            assert!(rendered.contains("última actualización"), "{rendered}");
             assert!(rendered.contains("No se pudo actualizar"), "{rendered}");
             assert!(
                 frame
@@ -1470,8 +1537,7 @@ mod tests {
         }
         Arc::make_mut(state.catalog.as_mut().unwrap()).clear_account_models("codex");
         let cleared = catalog_status_lines(&state, "codex");
-        assert!(cleared.iter().any(|line| line == "Catálogo sin verificar"));
-        assert!(!cleared.iter().any(|line| line.starts_with("Actualizado")));
+        assert_eq!(cleared, ["Catálogo de tu cuenta · catálogo sin verificar"]);
     }
 
     #[test]
@@ -2254,7 +2320,10 @@ mod tests {
                         ("opencode", vec![0.0]),
                         ("nvidia", vec![0.0]),
                         ("minimax", vec![0.0]),
-                        ("zai", vec![0.0, 0.0, 8.0, 8.0]),
+                        ("zai", vec![0.0]),
+                        // The providers connected with a key follow the accounts.
+                        ("openai", vec![0.0]),
+                        ("groq", vec![0.0, 0.0, 8.0, 8.0]),
                     ],
                 ),
                 ("nvidia", vec![("nvidia", vec![8.0])]),
@@ -2491,8 +2560,8 @@ mod tests {
                 });
             }
             assert!(observed.contains("Entrada máxima"), "{observed}");
-            assert!(observed.contains("100000 tokens"), "{observed}");
-            assert!(observed.contains("8192 tokens"), "{observed}");
+            assert!(observed.contains("100 000"), "{observed}");
+            assert!(observed.contains("8 192"), "{observed}");
             let frame = modal.layout(Size::new(width, 720.0));
             assert_eq!(
                 click(&mut modal, &frame, "provider_details_select"),
@@ -2563,8 +2632,8 @@ mod tests {
                     delta_y: -140.0,
                 });
             }
-            assert!(observed.contains("100000 tokens"), "{observed}");
-            for old in ["123456 tokens", "200000 tokens", "8192 tokens"] {
+            assert!(observed.contains("100 000"), "{observed}");
+            for old in ["123 456", "200 000", "8 192"] {
                 assert!(!observed.contains(old), "{observed}");
             }
             assert!(
@@ -2632,6 +2701,33 @@ mod tests {
                     "{observed}"
                 );
             }
+        }
+    }
+
+    /// Renders the details modal of a model, at both widths, as PNG files
+    /// under `OPENADE_VISUAL_DIR`, to look at.
+    #[test]
+    #[ignore = "visual review: OPENADE_VISUAL_DIR=<dir> cargo test export_model_details_visual_review -- --ignored"]
+    fn export_model_details_visual_review() {
+        let out = std::path::PathBuf::from(std::env::var_os("OPENADE_VISUAL_DIR").expect("OPENADE_VISUAL_DIR"));
+        std::fs::create_dir_all(&out).unwrap();
+        let mut state = visible_fixture();
+        state.catalog_browse_provider = VISIBLE_PROVIDER.into();
+        state.catalog_expanded_model = Some(MODEL.into());
+        for (name, width) in [("model-details-wide", 900.0), ("model-details-narrow", 360.0)] {
+            let height = 720.0;
+            let mut tree = UiTree::new(details_modal(&state, Element::text("behind"), width));
+            tree.set_reduced_motion(true);
+            let frame = tree.layout(Size::new(width, height));
+            let path = out.join(format!("{name}.svg"));
+            crate::settings_ui::visual_qa::write_native_frame_svg(&frame, &path, width, height).unwrap();
+            let svg = std::fs::read_to_string(&path).unwrap();
+            let options = crate::settings_ui::visual_qa::native_svg_options();
+            let parsed = resvg::usvg::Tree::from_str(&svg, &options).unwrap();
+            let mut pixmap = resvg::tiny_skia::Pixmap::new(width as u32, height as u32).unwrap();
+            resvg::render(&parsed, resvg::tiny_skia::Transform::identity(), &mut pixmap.as_mut());
+            pixmap.save_png(path.with_extension("png")).unwrap();
+            eprintln!("{}", path.with_extension("png").display());
         }
     }
 }

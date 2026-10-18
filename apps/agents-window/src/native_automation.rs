@@ -43,6 +43,27 @@ fn readonly_v1_limits() -> RunLimits {
     }
 }
 
+const READ_ONLY_V1: &str = "read_only_v1";
+/// Edits inside the workspace; commands only in the host's sandbox, which
+/// writes nowhere else and opens no socket. Opted into per automation.
+const WORKSPACE_WRITE_V1: &str = "workspace_write_v1";
+
+fn workspace_write_v1_limits() -> RunLimits {
+    RunLimits {
+        max_model_steps: 48,
+        max_tool_calls: 128,
+        max_tool_output_chars: 16_000,
+    }
+}
+
+fn profile_limits(profile: &str) -> RunLimits {
+    if profile == WORKSPACE_WRITE_V1 {
+        workspace_write_v1_limits()
+    } else {
+        readonly_v1_limits()
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct FrozenCapabilities {
@@ -236,7 +257,33 @@ fn readonly_tools() -> Arc<dyn ToolExecutor> {
 }
 
 fn readonly_catalog() -> Result<ToolCatalog, String> {
-    let mut definitions = readonly_tools().definitions();
+    profile_catalog(READ_ONLY_V1)
+}
+
+fn workspace_write_tools() -> Arc<dyn ToolExecutor> {
+    Arc::new(
+        LocalTools::new()
+            .with_permissions(ToolPermissions {
+                read_file: true,
+                list_files: true,
+                search_files: true,
+                write_file: true,
+                run_command: true,
+            })
+            .with_command_isolation(openide_harness::CommandIsolation::WorkspaceWriteOffline),
+    )
+}
+
+fn profile_tools(profile: &str) -> Arc<dyn ToolExecutor> {
+    if profile == WORKSPACE_WRITE_V1 {
+        workspace_write_tools()
+    } else {
+        readonly_tools()
+    }
+}
+
+fn profile_catalog(profile: &str) -> Result<ToolCatalog, String> {
+    let mut definitions = profile_tools(profile).definitions();
     definitions.push(update_plan_tool_definition());
     ToolCatalog::new(definitions).map_err(|e| e.to_string())
 }
@@ -267,7 +314,13 @@ impl FrozenNativeAutomationAuthorityV1 {
         instructions: String,
         prompt: String,
         run_id: &str,
+        allow_changes: bool,
     ) -> Result<Self, String> {
+        // Never wider than asked: without the sandbox there is no write profile.
+        if allow_changes && !openide_harness::CommandIsolation::WorkspaceWriteOffline.is_available_on_host() {
+            return Err("Este equipo no tiene el aislamiento de comandos: la automatización no puede hacer cambios".into());
+        }
+        let profile = if allow_changes { WORKSPACE_WRITE_V1 } else { READ_ONLY_V1 };
         let adapter = native_provider::adapter_at(data_root, provider_id)?
             .ok_or("Proveedor nativo no registrado")?;
         if adapter.wire_api != connection.wire_api {
@@ -302,7 +355,7 @@ impl FrozenNativeAutomationAuthorityV1 {
         }
         let snapshot = Self {
             version: 1,
-            authority_profile: "read_only_v1".into(),
+            authority_profile: profile.into(),
             mode: TurnMode::Build,
             provider_id: adapter.id,
             credential_env: adapter.key_env,
@@ -326,7 +379,7 @@ impl FrozenNativeAutomationAuthorityV1 {
                 .map(HostedWebSearchConfig::new)
                 .map(Into::into),
             budget: budget.map(Into::into),
-            limits: readonly_v1_limits().into(),
+            limits: profile_limits(profile).into(),
             instructions_digest: system_instructions_digest(&instructions)
                 .ok_or("Las instrucciones superan el límite")?,
             instructions,
@@ -334,7 +387,7 @@ impl FrozenNativeAutomationAuthorityV1 {
             prompt,
             first_turn_id: native_automation_first_turn_id(run_id).map_err(|e| e.to_string())?,
             backend_profile_fingerprint: hex(&fingerprint),
-            catalog_digest: readonly_catalog()?.digest_hex(),
+            catalog_digest: profile_catalog(profile)?.digest_hex(),
             permission_policy_digest: PermissionPolicy::new().digest_hex(),
             hooks_digest: CommandHooks::default()
                 .digest_hex()
@@ -346,7 +399,7 @@ impl FrozenNativeAutomationAuthorityV1 {
 
     pub(crate) fn validate(&self) -> Result<(), String> {
         if self.version != 1
-            || self.authority_profile != "read_only_v1"
+            || !matches!(self.authority_profile.as_str(), READ_ONLY_V1 | WORKSPACE_WRITE_V1)
             || self.mode != TurnMode::Build
             || self.effort.is_some()
         {
@@ -494,8 +547,8 @@ impl FrozenNativeAutomationAuthorityV1 {
             );
         }
         native_provider::validate_transport_settings(self.wire_api, &self.auth, &self.headers)?;
-        if self.limits != FrozenLimits::from(readonly_v1_limits()) {
-            return Err("Límites de ejecución incompatibles con ReadOnlyV1".into());
+        if self.limits != FrozenLimits::from(profile_limits(&self.authority_profile)) {
+            return Err("Límites de ejecución incompatibles con el perfil de la automatización".into());
         }
         if let Some(budget) = &self.budget {
             if budget.input_limit_tokens == Some(0)
@@ -511,14 +564,14 @@ impl FrozenNativeAutomationAuthorityV1 {
                 return Err("Presupuesto de contexto congelado inválido".into());
             }
         }
-        if self.catalog_digest != readonly_catalog()?.digest_hex()
+        if self.catalog_digest != profile_catalog(&self.authority_profile)?.digest_hex()
             || self.permission_policy_digest != PermissionPolicy::new().digest_hex()
             || self.hooks_digest
                 != CommandHooks::default()
                     .digest_hex()
                     .map_err(|e| e.to_string())?
         {
-            return Err("El catálogo, los permisos o hooks no corresponden a ReadOnlyV1".into());
+            return Err("El catálogo, los permisos o hooks no corresponden al perfil de la automatización".into());
         }
         let model = self.build_model(None)?;
         if model
@@ -667,7 +720,12 @@ impl FrozenNativeAutomationAuthorityV1 {
         {
             return Err("La autoridad corresponde a otro dispatch".into());
         }
-        NativeAutomationOrigin::new(
+        NativeAutomationOrigin::new_with_profile(
+            if self.allows_changes() {
+                openide_core::NativeAutomationAuthorityProfile::WorkspaceWriteV1
+            } else {
+                openide_core::NativeAutomationAuthorityProfile::ReadOnlyV1
+            },
             automation_id,
             run_id,
             scheduled_at_ms,
@@ -708,11 +766,15 @@ impl FrozenNativeAutomationAuthorityV1 {
     }
 
     pub(crate) fn tools(&self) -> Arc<dyn ToolExecutor> {
-        readonly_tools()
+        profile_tools(&self.authority_profile)
     }
     pub(crate) fn catalog(&self) -> Result<ToolCatalog, String> {
         self.validate()?;
-        readonly_catalog()
+        profile_catalog(&self.authority_profile)
+    }
+    /// Whether the run may edit the workspace and run sandboxed commands.
+    pub(crate) fn allows_changes(&self) -> bool {
+        self.authority_profile == WORKSPACE_WRITE_V1
     }
     pub(crate) fn policy(&self) -> PermissionPolicy {
         PermissionPolicy::new()

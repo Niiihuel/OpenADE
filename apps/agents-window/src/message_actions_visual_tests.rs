@@ -233,12 +233,15 @@ fn the_menu_offers_activity_and_a_retry_only_where_they_are_real() {
         assert!(button(&frame, "turn_retry:1").is_none(), "{block}");
     }
 
-    // Sessions whose history is never rewound have nothing to retry or edit.
+    // Sessions whose history is never rewound have nothing to retry or edit;
+    // their menu only forks.
     let mut state = two_turns();
     state.message_edit.turns.clear();
+    apply_action(&mut state, "turn_actions:7:more");
     let (_context, mut tree) = native_tree(root(&state, WIDE));
     let frame = tree.layout(WIDE);
-    assert!(button(&frame, "turn_actions:7:more").is_none() && button(&frame, "user_edit:6").is_none());
+    assert!(button(&frame, "turn_retry:1").is_none() && button(&frame, "user_edit:6").is_none());
+    assert!(button(&frame, "turn_fork:7:native").is_some());
     assert!(button(&frame, "turn_copy:7").is_some() && button(&frame, "user_copy:6").is_some());
 }
 
@@ -282,7 +285,8 @@ fn a_turn_in_progress_has_no_row_and_one_that_ended_badly_offers_the_retry() {
     assert!(button(&frame, "turn_copy:7").is_none(), "nothing to copy");
     let retry = button(&frame, "turn_retry:1").expect("the retry is a button of the row");
     assert!(painted(&frame, retry, Icon::Refresh));
-    assert!(button(&frame, "turn_actions:7:more").is_none());
+    // The menu keeps what is left: forking from here.
+    assert!(button(&frame, "turn_actions:7:more").is_some());
 
     // Cancelled half way: what exists can be copied.
     state.transcript.insert(8, prose("Empecé a corregirlo"));

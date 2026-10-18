@@ -348,6 +348,9 @@ fn agent_home(state: &ViewState, width: f32, height: f32) -> Element {
 
 /// The mark of a task: its CLI, or a conversation with the native agent.
 fn task_icon(backend: &str) -> Icon {
+    if let Some(agent) = backend.strip_prefix(crate::acp_run::ACP_BACKEND) {
+        return crate::provider_icons::icon_for_acp_agent(agent, agent);
+    }
     backend
         .strip_prefix(crate::view::CLI_BACKEND)
         .map_or(Icon::Chat, crate::provider_icons::icon_for_agent_cli)
@@ -440,6 +443,11 @@ fn agent_new_menu(state: &ViewState) -> Element {
                     .into()
             }),
     );
+    entries.extend(state.acp_agents.iter().map(|agent| {
+        DropdownMenuItem::new(format!("acp_task:{}", agent.id), &agent.name)
+            .icon(crate::provider_icons::icon_for_acp_agent(&agent.id, &agent.name))
+            .into()
+    }));
     DropdownMenu::new(
         trigger,
         entries,

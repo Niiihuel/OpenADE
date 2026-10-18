@@ -1,7 +1,11 @@
 name: Release
 
-# A tag v* builds the Linux archive and attaches it to that tag's release.
-# Run by hand, it builds the same archive as a workflow artifact only.
+# A tag v* builds the Linux archive, signs it and attaches both to that tag's
+# release, where the app's updater finds them. Windows and macOS builds come
+# along: they have no embedded browser (CEF is built for Linux alone) and
+# the updater only points them to the release. They have not been through a
+# release yet, so their failure does not hold the Linux one back. Run by
+# hand, the workflow builds the same archives as workflow artifacts only.
 on:
   push:
     tags: ["v*"]
@@ -55,6 +59,21 @@ jobs:
       # The archive's own launcher, with its own CEF: the first frame of a
       # windowless page, without a display or a GPU.
       - run: dist/openADE-$VERSION-linux-x86_64/openade --cef-probe
+      # What the app's updater checks before it unpacks a download: a minisign
+      # signature by the key built into the app, with the archive's name as
+      # its trusted comment. A release without the secret key fails here.
+      - name: Sign
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          : "${MINISIGN_SECRET_KEY:?the MINISIGN_SECRET_KEY secret is not set}"
+          cargo install rsign2 --version 0.6.5 --locked
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > "$RUNNER_TEMP/minisign.key"
+          archive=openADE-$VERSION-linux-x86_64.tar.gz
+          rsign sign -W -s "$RUNNER_TEMP/minisign.key" -t "$archive" -x "dist/$archive.minisig" "dist/$archive"
+          rm "$RUNNER_TEMP/minisign.key"
+          key=$(sed -n 's/^pub const PUBLIC_KEY: &str = "\(.*\)";$/\1/p' apps/agents-window/src/app_update.rs)
+          rsign verify -P "$key" -x "dist/$archive.minisig" "dist/$archive"
       - uses: actions/upload-artifact@v4
         with:
           name: openADE-${{ env.VERSION }}-linux-x86_64
@@ -66,4 +85,79 @@ jobs:
         run: |
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 ||
             gh release create "$GITHUB_REF_NAME" --title "openADE $GITHUB_REF_NAME" --notes "See CHANGELOG.md."
-          gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.tar.gz.sha256 --clobber
+          gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.tar.gz.sha256 dist/*.tar.gz.minisig --clobber
+
+  other:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows-x86_64
+          - os: macos-14
+            platform: macos-aarch64
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - run: cargo build --profile desktop -p agents-window
+      - name: Package
+        shell: bash
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "agents-window") | .version')
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          name="openADE-$version-${{ matrix.platform }}"
+          mkdir -p dist
+          if [ "${{ runner.os }}" = Windows ]; then
+            mkdir "dist/$name"
+            cp target/desktop/agents-window.exe "dist/$name/openADE.exe"
+            cp LICENSE* README.md "dist/$name/" 2>/dev/null || true
+            (cd dist && 7z a "$name.zip" "$name" >/dev/null)
+            echo "ARCHIVE=$name.zip" >> "$GITHUB_ENV"
+          else
+            # A minimal, unsigned bundle: Finder opens it after the person
+            # allows it once in System Settings > Privacy & Security.
+            app="dist/$name/openADE.app/Contents"
+            mkdir -p "$app/MacOS"
+            cp target/desktop/agents-window "$app/MacOS/openade"
+            sed "s/@VERSION@/$version/" > "$app/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>CFBundleName</key><string>openADE</string>
+            <key>CFBundleIdentifier</key><string>dev.openade.app</string>
+            <key>CFBundleExecutable</key><string>openade</string>
+            <key>CFBundleShortVersionString</key><string>@VERSION@</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>NSHighResolutionCapable</key><true/>
+            <key>NSMicrophoneUsageDescription</key><string>openADE transcribes dictation on this computer.</string>
+          </dict></plist>
+          PLIST
+            tar -czf "dist/$name.tar.gz" -C "dist/$name" openADE.app
+            echo "ARCHIVE=$name.tar.gz" >> "$GITHUB_ENV"
+          fi
+      - name: Sign
+        shell: bash
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          : "${MINISIGN_SECRET_KEY:?the MINISIGN_SECRET_KEY secret is not set}"
+          cargo install rsign2 --version 0.6.5 --locked
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > "$RUNNER_TEMP/minisign.key"
+          rsign sign -W -s "$RUNNER_TEMP/minisign.key" -t "$ARCHIVE" -x "dist/$ARCHIVE.minisig" "dist/$ARCHIVE"
+          rm "$RUNNER_TEMP/minisign.key"
+          (cd dist && { sha256sum "$ARCHIVE" 2>/dev/null || shasum -a 256 "$ARCHIVE"; } > "$ARCHIVE.sha256")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openADE-${{ env.VERSION }}-${{ matrix.platform }}
+          path: dist/${{ env.ARCHIVE }}*
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" --title "openADE $GITHUB_REF_NAME" --notes "See CHANGELOG.md."
+          gh release upload "$GITHUB_REF_NAME" "dist/$ARCHIVE" "dist/$ARCHIVE.sha256" "dist/$ARCHIVE.minisig" --clobber

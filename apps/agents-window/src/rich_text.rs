@@ -7,13 +7,16 @@
 
 use std::{
     cell::RefCell,
-    collections::hash_map::DefaultHasher,
+    collections::{hash_map::DefaultHasher, HashMap},
     hash::{Hash, Hasher},
+    path::{Component as PathComponent, Path, PathBuf},
+    time::{Duration, Instant},
 };
 
 use openide_ui::{
     Button, ButtonVariant, Component, ControlSize, Diagram, DiagramViewer, Element, ElementKind,
-    Markdown, MarkdownColors, MarkdownLabels, MarkdownPreview, RadiusRole, TextHighlight, Tooltip,
+    FontFamily, Markdown, MarkdownColors, MarkdownLabels, MarkdownPreview, RadiusRole,
+    TextHighlight, Tooltip,
 };
 
 use crate::theme;
@@ -23,6 +26,7 @@ use crate::theme;
 mod link_tests;
 
 const LINK_ACTION_PREFIX: &str = "chat_link_open:";
+const PATH_ACTION_PREFIX: &str = "chat_path_open:";
 pub(crate) const DIAGRAM_ACTION_PREFIX: &str = "chat_diagram_source:";
 
 thread_local! {
@@ -181,6 +185,119 @@ pub(crate) fn scope_web_links(mut element: Element, scope: &str) -> Element {
     }
     visit(&mut element, source_hash(scope), &mut 0);
     element
+}
+
+/// Inline code that names a file of `workspace`, as written by an agent
+/// (`src/app.rs`, `src/app.rs:42:7`, `src/app.rs#L42`), becomes an action
+/// that opens it. Only files that exist when shown are linked; the click
+/// resolves the path again, inside the workspace.
+pub(crate) fn link_workspace_paths(mut element: Element, scope: &str, workspace: &str) -> Element {
+    fn visit(element: &mut Element, scope: u64, root: &Path, ordinal: &mut usize) {
+        match &mut element.kind {
+            ElementKind::Column(children) | ElementKind::Row(children) => {
+                for child in children {
+                    visit(child, scope, root, ordinal);
+                }
+            }
+            ElementKind::Panel(child) => visit(child, scope, root, ordinal),
+            ElementKind::FormattedText(spans) => {
+                for span in spans {
+                    if span.action.is_some() || span.font_family != FontFamily::Monospace {
+                        continue;
+                    }
+                    let Some((path, line)) = workspace_path(root, &span.text) else {
+                        continue;
+                    };
+                    span.action = Some(format!(
+                        "{PATH_ACTION_PREFIX}{scope:x}:{ordinal}:{line}:{}",
+                        path.display()
+                    ));
+                    span.color = theme::LINK;
+                    *ordinal += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    if !workspace.is_empty() {
+        visit(&mut element, source_hash(scope), Path::new(workspace), &mut 0);
+    }
+    element
+}
+
+/// The workspace-relative path and 1-based line (0 when none) of a
+/// [`link_workspace_paths`] action.
+pub(crate) fn workspace_path_from_action(action: &str) -> Option<(PathBuf, u32)> {
+    let mut parts = action.strip_prefix(PATH_ACTION_PREFIX)?.splitn(4, ':');
+    u64::from_str_radix(parts.next()?, 16).ok()?;
+    parts.next()?.parse::<usize>().ok()?;
+    let line = parts.next()?.parse().ok()?;
+    Some((PathBuf::from(parts.next()?), line))
+}
+
+fn workspace_path(root: &Path, text: &str) -> Option<(PathBuf, u32)> {
+    if text.is_empty() || text.len() > 512 || text.chars().any(char::is_whitespace) {
+        return None;
+    }
+    let (path, line) = split_line(text);
+    let path = Path::new(path);
+    let relative = path.strip_prefix(root).unwrap_or(path);
+    let relative: PathBuf = relative
+        .components()
+        .filter(|component| *component != PathComponent::CurDir)
+        .collect();
+    if relative.as_os_str().is_empty()
+        || !relative.components().all(|component| matches!(component, PathComponent::Normal(_)))
+    {
+        return None;
+    }
+    file_exists(&root.join(&relative)).then_some((relative, line))
+}
+
+/// `path:12`, `path:12:3`, `path:12-20` and `path#L12` name line 12.
+fn split_line(text: &str) -> (&str, u32) {
+    let first = |numbers: &str| numbers.split('-').next().and_then(|n| n.parse().ok());
+    if let Some((path, anchor)) = text.rsplit_once("#L") {
+        if let Some(line) = first(anchor) {
+            return (path, line);
+        }
+    }
+    let mut path = text;
+    let mut line = 0;
+    for _ in 0..2 {
+        match path.rsplit_once(':') {
+            Some((head, tail)) if !head.is_empty() => match first(tail) {
+                Some(number) => {
+                    line = number;
+                    path = head;
+                }
+                None => break,
+            },
+            _ => break,
+        }
+    }
+    (path, line)
+}
+
+/// Replies are laid out every frame; a stat per visible path is cheap, but
+/// not at 60 Hz. A file created after a reply is linked within two seconds.
+fn file_exists(path: &Path) -> bool {
+    thread_local! {
+        static SEEN: RefCell<HashMap<PathBuf, (Instant, bool)>> = RefCell::new(HashMap::new());
+    }
+    SEEN.with_borrow_mut(|seen| {
+        if let Some((at, exists)) = seen.get(path) {
+            if at.elapsed() < Duration::from_secs(2) {
+                return *exists;
+            }
+        }
+        if seen.len() >= 2048 {
+            seen.clear();
+        }
+        let exists = path.is_file();
+        seen.insert(path.to_path_buf(), (Instant::now(), exists));
+        exists
+    })
 }
 
 /// Compact link affordances are separate from the editor's immutable source

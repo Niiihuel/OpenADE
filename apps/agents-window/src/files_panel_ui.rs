@@ -321,13 +321,26 @@ fn build_contents(state: &ViewState, width: f32, surface: Color, compact: bool) 
     .placement(TooltipPlacement::Below)
     .render()
     .flex(1.0);
-    let actions = vec![IconButton::new("files_search", Icon::Search, palette)
-        .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Dense)
-        .tooltip_with(
-            TooltipSpec::new("Buscar archivos del proyecto").placement(TooltipPlacement::Below),
-        )
-        .render()];
+    // Beside the name, the folders the IDE works in.
+    let folders = folders_menu(
+        state,
+        IconButton::new("ide_folder_toggle", Icon::ChevronDown, palette)
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .active(state.ide.folders_open)
+            .tooltip_with(TooltipSpec::new("Carpetas del IDE").placement(TooltipPlacement::Below))
+            .render(),
+    );
+    let actions = vec![
+        folders,
+        IconButton::new("files_search", Icon::Search, palette)
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .tooltip_with(
+                TooltipSpec::new("Buscar archivos del proyecto").placement(TooltipPlacement::Below),
+            )
+            .render(),
+    ];
     let header = openide_ui::PanelHeader::new("", palette)
         .leading(workspace_title)
         .trailing(if compact {
@@ -527,11 +540,79 @@ fn build_contents(state: &ViewState, width: f32, surface: Color, compact: bool) 
             .flex(1.0),
         );
     }
+    // The other folders the IDE works in, each a root to switch to.
+    if state.ide_folders.len() > 1 {
+        let mut rows = vec![Text::new("Otras carpetas", theme::component_palette())
+            .muted()
+            .render()];
+        rows.extend(state.ide_folders.iter().enumerate().skip(1).map(|(index, (path, label))| {
+            let row = Element::row(vec![
+                Element::icon(Icon::ChevronRight)
+                    .foreground(theme::FOREGROUND_SUBTLE)
+                    .size(Some(14.0), Some(14.0)),
+                Element::icon(openide_ui::folder_icon(label, false)).size(Some(16.0), Some(ROW_HEIGHT)),
+                Element::faded_text(label, 12.0)
+                    .font_family(FontFamily::Sans)
+                    .font_size(13.0)
+                    .foreground(theme::FOREGROUND)
+                    .flex(1.0)
+                    .size(None, Some(ROW_HEIGHT)),
+            ])
+            .gap(6.0);
+            Tooltip::for_path(
+                palette
+                    .interactive_surface(Element::clickable(format!("ide_folder_select:{index}"), row))
+                    .size(Some(inner), Some(ROW_HEIGHT)),
+                format!("ide_folder:{index}"),
+                path,
+                theme::component_palette(),
+            )
+            .placement(TooltipPlacement::Right)
+            .render()
+        }));
+        content.push(Element::column(rows).gap(2.0));
+    }
     let can_paste = state.file_clipboard.is_some();
     let content = Element::column(content)
         .gap(crate::sidebar_chrome::GAP)
         .flex(1.0);
     root_menu(content.padding(inset).background(surface), can_paste)
+}
+
+/// The folders the IDE works in, the active one first; another is switched
+/// to, a folder from disk joins them through the dialog, and the active one
+/// can leave the list.
+fn folders_menu(state: &ViewState, trigger: Element) -> Element {
+    let mut entries = vec![openide_ui::DropdownMenuEntry::Heading("Carpetas".into())];
+    entries.extend(state.ide_folders.iter().enumerate().map(|(index, (_, label))| {
+        openide_ui::DropdownMenuItem::new(format!("ide_folder_select:{index}"), label)
+            .icon(openide_ui::folder_icon(label, index == 0))
+            .selected(index == 0)
+            .into()
+    }));
+    entries.push(
+        openide_ui::DropdownMenuItem::new("ide_folder_browse", "Añadir carpeta…")
+            .icon(Icon::Folder)
+            .into(),
+    );
+    if state.ide_folders.len() > 1 {
+        entries.push(
+            openide_ui::DropdownMenuItem::new("ide_folder_remove", "Quitar esta carpeta del IDE")
+                .icon(Icon::Trash)
+                .into(),
+        );
+    }
+    openide_ui::DropdownMenu::new(
+        trigger,
+        entries,
+        state.ide.folders_open,
+        "ide_folder_dismiss",
+        theme::menu_palette(),
+    )
+    .context_menu_style()
+    .placement(openide_ui::PopoverPlacement::BottomStart)
+    .width(260.0)
+    .render()
 }
 
 #[cfg(test)]

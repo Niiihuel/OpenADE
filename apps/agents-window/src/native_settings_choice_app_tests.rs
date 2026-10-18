@@ -592,6 +592,7 @@ fn a_cli_task_is_created_from_the_home_screen_and_is_its_terminal() {
     std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).unwrap();
     let mut app = AgentsWindow::with_data_root(root.path().join("state"));
     app.view.workspace = project.to_string_lossy().into_owned();
+    app.cli_homes.claude = Some(root.path().join("claude"));
     let ctx = egui::Context::default();
     let home_ids = |app: &AgentsWindow| {
         let mut tree =
@@ -647,8 +648,13 @@ fn a_cli_task_is_created_from_the_home_screen_and_is_its_terminal() {
     let terminals = app.dock.terminal_tabs(&app.dock_scope());
     assert_eq!(terminals.len(), 1);
     let terminal = terminals[0].id.get();
-    let (program, _, _) = app.agent_terminal_command(terminal).unwrap().unwrap();
+    let (program, args, _) = app.agent_terminal_command(terminal).unwrap().unwrap();
     assert_eq!(program, binary.as_os_str());
+    // Claude Code is given the task's own session to write, and asks as usual.
+    let named = args.iter().position(|arg| arg == "--session-id").expect("a session is named");
+    let session_name = args[named + 1].to_string_lossy().into_owned();
+    assert!(uuid::Uuid::parse_str(&session_name).is_ok(), "{session_name}");
+    assert!(!args.iter().any(|arg| arg == "--permission-mode"), "{args:?}");
     // What actually runs in the terminal is the CLI, not a shell.
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
@@ -692,7 +698,11 @@ fn a_cli_task_is_created_from_the_home_screen_and_is_its_terminal() {
         "no bottom panel chrome: {shown:?}"
     );
 
-    // Restarting replaces the terminal with a new one for the same CLI.
+    // The permissions chosen in the header reach the CLI at its next start;
+    // restarting replaces the terminal with a new one for the same CLI.
+    app.apply_action(UiAction::Clicked { id: "cli_mode:read_only".into() }, &ctx);
+    assert_eq!(app.view.cli_task_mode, crate::cli_tasks::CliMode::ReadOnly);
+    assert!(app.view.status.contains("al reiniciar la CLI"), "{}", app.view.status);
     app.apply_action(
         UiAction::Clicked {
             id: "cli_task_restart".into(),
@@ -702,11 +712,26 @@ fn a_cli_task_is_created_from_the_home_screen_and_is_its_terminal() {
     let restarted = app.dock.terminal_tabs(&app.dock_scope());
     assert_eq!(restarted.len(), 1);
     assert_ne!(restarted[0].id.get(), terminal);
-    let (program, _, _) = app
+    let (program, args, _) = app
         .agent_terminal_command(restarted[0].id.get())
         .unwrap()
         .unwrap();
     assert_eq!(program, binary.as_os_str());
+    let args: Vec<String> = args.iter().map(|arg| arg.to_string_lossy().into_owned()).collect();
+    assert!(args.windows(2).any(|pair| pair == ["--permission-mode", "plan"]), "{args:?}");
+    assert!(
+        args.windows(2).any(|pair| pair == ["--session-id", session_name.as_str()]),
+        "named again until it is written: {args:?}"
+    );
+    // Once Claude Code has written the conversation, a start resumes it.
+    let project_sessions = root.path().join("claude/projects/-project");
+    std::fs::create_dir_all(&project_sessions).unwrap();
+    std::fs::write(project_sessions.join(format!("{session_name}.jsonl")), "{}\n").unwrap();
+    app.apply_action(UiAction::Clicked { id: "cli_task_restart".into() }, &ctx);
+    let again = app.dock.terminal_tabs(&app.dock_scope());
+    let (_, args, _) = app.agent_terminal_command(again[0].id.get()).unwrap().unwrap();
+    let args: Vec<String> = args.iter().map(|arg| arg.to_string_lossy().into_owned()).collect();
+    assert!(args.windows(2).any(|pair| pair == ["--resume", session_name.as_str()]), "{args:?}");
 
     // Selecting the task again reuses its terminal instead of starting another.
     app.open_session(&session);
@@ -918,4 +943,37 @@ fn a_cli_task_takes_the_name_the_cli_gives_its_conversation() {
     );
     let stored = app.store.as_ref().unwrap().load(&session).unwrap().unwrap();
     assert_eq!(stored.session.title.as_deref(), Some("Arreglar el login"));
+}
+
+#[test]
+fn the_ide_keeps_the_folders_it_worked_in_and_switches_between_them_from_its_explorer() {
+    let root = tempfile::tempdir().unwrap();
+    let (a, b) = (root.path().join("a"), root.path().join("b"));
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+    let (a, b) = (a.display().to_string(), b.display().to_string());
+    let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+    app.view.workspace = a.clone();
+    app.view.ide.mode = crate::ide_workspace::WindowMode::Ide;
+    app.refresh_composer_projects();
+    assert_eq!(app.view.ide_folders.len(), 1);
+    let ctx = egui::Context::default();
+    let paths = |app: &AgentsWindow| app.view.ide_folders.iter().map(|(path, _)| path.clone()).collect::<Vec<_>>();
+
+    // Working in another folder keeps the first among the IDE's folders, and
+    // the explorer offers it as a root to switch to.
+    app.change_workspace(b.clone());
+    assert_eq!(paths(&app), [b.clone(), a.clone()]);
+    let mut tree = openide_ui::UiTree::new(crate::view::build_view_sized(&app.view, 1400.0, 800.0));
+    let ids: Vec<_> = tree.layout(Size::new(1400.0, 800.0)).regions.iter().map(|region| region.id.clone()).collect();
+    assert!(ids.iter().any(|id| id == "ide_folder_toggle") && ids.iter().any(|id| id == "ide_folder_select:1"), "{ids:?}");
+
+    // Switching back from the explorer; the list survives a restart.
+    app.apply_action(UiAction::Clicked { id: "ide_folder_select:1".into() }, &ctx);
+    assert_eq!(app.view.workspace, a);
+    assert_eq!(paths(&app), [a.clone(), b.clone()]);
+    assert_eq!(crate::ide_workspace::IdeWorkspaceState::load(&root.path().join("data")).folders, [a.clone(), b.clone()]);
+    app.apply_action(UiAction::Clicked { id: "ide_folder_remove".into() }, &ctx);
+    assert_eq!(crate::ide_workspace::IdeWorkspaceState::load(&root.path().join("data")).folders, [b.clone()]);
+    assert_eq!(paths(&app), [a.clone(), b.clone()], "the folder stays open until another is chosen");
 }

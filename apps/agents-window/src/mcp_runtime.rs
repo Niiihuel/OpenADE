@@ -369,7 +369,7 @@ async fn discover_mcp_runtime_inner(
             let _ = shutdown_all(&clients[clients.len() - 1..]).await;
             clients.pop();
             all_resume_safe = false;
-            skipped.push((server.id.clone(), format!("No se puede anunciar MCP {} al modelo: {error}. El presupuesto es de {} herramientas entre locales y MCP; inspeccioná el servidor y guardá una selección explícita compatible.",server.id,openide_harness::MAX_ADVERTISED_TOOLS)));
+            skipped.push((server.id.clone(), format!("No se puede anunciar MCP {} al modelo: {error}.", server.id)));
             continue;
         }
         let verified_identity = match &clients.last().expect("connected MCP client").1 {
@@ -1230,7 +1230,7 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
     }
 
     #[tokio::test]
-    async fn a_large_server_is_isolated_until_an_explicit_selection_fits_the_model_catalog() {
+    async fn a_large_server_is_advertised_up_to_the_budget_and_searched_past_it() {
         let workspace = tempfile::tempdir().unwrap();
         let tools: Vec<serde_json::Value> = (0..170).map(|index| json!({"name":format!("tool_{index}"),"description":"Fixture","inputSchema":{"type":"object"}})).collect();
         let fixture = crate::mcp_inspection::tests::HttpFixture::with_tools(false, tools);
@@ -1242,14 +1242,14 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
         )
         .await
         .unwrap();
-        assert!(all.mcp_tool_names().is_empty());
-        assert_eq!(
-            all.tools().definitions().len(),
-            3,
-            "local tools survive a server that cannot be advertised"
-        );
-        assert!(PreparedToolSession::notices(&all)[0].1.contains("128"));
-        assert!(all.mcp_resume_identity_digest().is_none());
+        let budget = openide_harness::MAX_ADVERTISED_TOOLS;
+        assert_eq!(all.tools().definitions().len(), budget);
+        // 3 local tools and the two meta-tools; the call asks, the search does not.
+        assert_eq!(all.mcp_tool_names().len(), budget - 3 - 2 + 1);
+        assert!(all
+            .mcp_tool_names()
+            .contains(&openide_harness::MCP_CALL_TOOL.to_owned()));
+        assert!(PreparedToolSession::notices(&all).is_empty());
         all.shutdown().await.unwrap();
 
         let mut selections = McpToolSelections::default();

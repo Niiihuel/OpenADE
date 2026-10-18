@@ -12,6 +12,8 @@ pub(crate) const REPLACE: Icon = Icon::Custom(include_str!("../assets/openide/re
 pub(crate) const REPLACE_ALL: Icon =
     Icon::Custom(include_str!("../assets/openide/replace-all.svg"));
 pub(crate) const LOCK: Icon = Icon::Custom(include_str!("../assets/bootstrap/lock.svg"));
+/// The composer's model selector: the models, not any one provider's mark.
+pub(crate) const MODEL: Icon = Icon::Custom(include_str!("../assets/bootstrap/hdd-stack.svg"));
 /// The marketplace, wherever it is offered.
 pub(crate) const SHOP: Icon = Icon::Custom(include_str!("../assets/bootstrap/shop.svg"));
 /// The debugger's activity, and its form while that activity is shown.

@@ -238,12 +238,16 @@ pub(crate) fn header(
         .shrink_to_fit()
         .size(None, Some(HEADER_ACTION_SIZE));
     let mut top = Vec::new();
-    if cli.is_some() {
+    if let Some(agent) = cli {
         top.push(header_action(
             "cli_task_restart",
             Icon::Refresh,
             "Reiniciar la CLI en una terminal nueva",
         ));
+        top.push(cli_mode_menu(state, agent));
+    }
+    if state.selected_session.is_some() && !recovery_decision_pending {
+        top.push(checkpoint_menu(state));
     }
     if !recovery_decision_pending && width >= 300.0 {
         top.push(crate::view::window_mode_control(state));
@@ -280,6 +284,113 @@ pub(crate) fn header(
         .trailing(top)
         .sizing(crate::ui_sizing::PANE_HEADER)
         .render()
+}
+
+/// The task's restore points, newest first: each puts the project's files
+/// back as they were before that turn, and the last restore can be undone.
+fn checkpoint_menu(state: &ViewState) -> Element {
+    use openide_ui::{DropdownMenuEntry, DropdownMenuItem};
+    let open = state.checkpoint_menu.is_some();
+    let trigger = UiIconButton::new(
+        "checkpoints_toggle",
+        Icon::History,
+        theme::action_palette(theme::BACKGROUND, theme::FOREGROUND),
+    )
+    .variant(ButtonVariant::Ghost)
+    .size(ControlSize::Dense)
+    .active(open)
+    .active_hover(openide_ui::ActiveHover::Palette)
+    .tooltip_with(
+        openide_ui::TooltipSpec::new("Puntos de restauración de los archivos")
+            .placement(TooltipPlacement::Below)
+            .suppressed(open),
+    )
+    .render();
+    let mut entries = vec![DropdownMenuEntry::Heading("Volver los archivos a antes de…".into())];
+    let record = state.checkpoint_menu.clone().unwrap_or_default();
+    if let Some(undo) = &record.undo {
+        entries.push(
+            DropdownMenuItem::new("checkpoint_undo", "Deshacer la última restauración")
+                .icon(Icon::Reply)
+                .description(crate::notifications_ui::age(at(undo.at_ms)))
+                .into(),
+        );
+        entries.push(DropdownMenuEntry::Separator);
+    }
+    if record.checkpoints.is_empty() {
+        entries.push(
+            DropdownMenuItem::new("checkpoints_none", "Todavía no hay puntos: se guarda uno antes de cada turno en un proyecto Git")
+                .disabled()
+                .into(),
+        );
+    }
+    for point in record.checkpoints.iter().rev() {
+        let age = crate::notifications_ui::age(at(point.at_ms));
+        entries.push(
+            DropdownMenuItem::new(format!("checkpoint_restore:{}", point.ordinal), format!("el turno {}", point.ordinal))
+                .icon(Icon::History)
+                .description(if point.label.is_empty() { age } else { format!("{age} · {}", point.label) })
+                .into(),
+        );
+    }
+    openide_ui::DropdownMenu::new(trigger, entries, open, "checkpoints_dismiss", theme::menu_palette())
+        .context_menu_style()
+        .placement(openide_ui::PopoverPlacement::BottomEnd)
+        .width(300.0)
+        .render()
+}
+
+fn at(ms: u64) -> std::time::SystemTime {
+    std::time::UNIX_EPOCH + std::time::Duration::from_millis(ms)
+}
+
+/// The permissions a CLI task starts its CLI with, chosen from its header;
+/// a CLI already running takes them at its next start.
+fn cli_mode_menu(state: &ViewState, agent: &str) -> Element {
+    use crate::cli_tasks::CliMode;
+    let definition = crate::agent_cli_definitions::profile(agent).map(|(agent, _)| agent);
+    let icon = |mode: CliMode| match mode {
+        CliMode::Ask => Icon::CheckCircle,
+        CliMode::ReadOnly => Icon::File,
+        CliMode::FullAccess => Icon::WarningTriangle,
+    };
+    let trigger = UiIconButton::new(
+        "cli_mode_toggle",
+        icon(state.cli_task_mode),
+        theme::action_palette(theme::BACKGROUND, theme::FOREGROUND),
+    )
+    .variant(ButtonVariant::Ghost)
+    .size(ControlSize::Dense)
+    .active(state.cli_mode_open)
+    .active_hover(openide_ui::ActiveHover::Palette)
+    .tooltip_with(
+        openide_ui::TooltipSpec::new(format!("Permisos al iniciar la CLI: {}", state.cli_task_mode.label()))
+            .placement(TooltipPlacement::Below),
+    )
+    .render();
+    let mut entries = vec![openide_ui::DropdownMenuEntry::Heading("Permisos al iniciar la CLI".into())];
+    entries.extend(CliMode::ALL.into_iter().map(|mode| {
+        let item = openide_ui::DropdownMenuItem::new(mode.action(), mode.label())
+            .icon(icon(mode))
+            .selected(state.cli_task_mode == mode);
+        if definition.is_some_and(|agent| mode.offered_by(agent)) {
+            item
+        } else {
+            item.disabled()
+        }
+        .into()
+    }));
+    openide_ui::DropdownMenu::new(
+        trigger,
+        entries,
+        state.cli_mode_open,
+        "cli_mode_dismiss",
+        theme::menu_palette(),
+    )
+    .context_menu_style()
+    .placement(openide_ui::PopoverPlacement::BottomEnd)
+    .width(220.0)
+    .render()
 }
 
 /// A user's message. It stays at the top of the transcript while its turn
@@ -424,12 +535,30 @@ fn message(
                 &scope,
                 *streaming,
             );
-            let mut rows = vec![rich_text::scope_web_links(preview.element, &scope)];
+            let element = rich_text::link_workspace_paths(preview.element, &scope, &state.workspace);
+            let mut rows = vec![rich_text::scope_web_links(element, &scope)];
             if preview.limited && !*streaming && crate::conversation_source_ui::available(state) {
                 // Keep actions outside the cached passive Markdown tree.
                 rows.push(crate::conversation_source_ui::open_button(
                     state, item_index,
                 ));
+            }
+            // HTML the reply wrote opens rendered, sandboxed, in the browser.
+            if !*streaming && content.contains("```") {
+                let blocks = crate::html_preview::html_blocks(content).len();
+                let buttons: Vec<Element> = (0..blocks)
+                    .map(|block| {
+                        let label = if blocks == 1 { "Ver HTML".to_owned() } else { format!("Ver HTML {}", block + 1) };
+                        Button::new(format!("chat_html:{item_index}:{block}"), label, theme::component_palette())
+                            .icon(Icon::Globe)
+                            .variant(ButtonVariant::Ghost)
+                            .size(ControlSize::Dense)
+                            .render()
+                    })
+                    .collect();
+                if !buttons.is_empty() {
+                    rows.push(Element::row(buttons).gap(4.0));
+                }
             }
             Element::column(rows).gap(8.0)
         }
@@ -2869,7 +2998,7 @@ fn recoverable_subagent_card(run: &SubagentRunView) -> Element {
 fn native_recovery_card(session_id: &str, recovery: &SessionRecoveryView, error: Option<&str>) -> Element {
     let message = match recovery {
         SessionRecoveryView::StartAutomation => {
-            "La sesión se registró antes de iniciar el agente. Se usará el perfil original de sólo lectura y la ruta guardada, sin ampliar permisos desde Settings."
+            "La sesión se registró antes de iniciar el agente. Se usará el perfil original de la automatización y la ruta guardada, sin ampliar permisos desde Settings."
         }
         SessionRecoveryView::Resume => "El turno quedó interrumpido y puede reanudarse.",
         SessionRecoveryView::Permission => {
@@ -4354,6 +4483,7 @@ mod tests {
             composer_attachments: Vec::new(),
             composer_attachment_visuals: Default::default(),
             composer_attachment_loading: false,
+            composer_files_over: false,
             composer_image_viewer: None,
             message_edit: Default::default(),
             message_actions: Default::default(),
@@ -4446,6 +4576,8 @@ mod tests {
             file_delete: None,
             file_clipboard: None,
             show_archived: false,
+            processes: Vec::new(),
+            session_query: String::new(),
             session_organization: crate::view::SessionOrganization::Project,
             session_sort: openide_core::SessionSort::Updated,
             session_sort_menu_open: false,
@@ -4483,6 +4615,17 @@ mod tests {
             compat_hooks: Vec::new(),
             plugin_skills: Vec::new(),
             agent_clis: Vec::new(),
+            acp_agents: Vec::new(),
+            acp_catalog: Vec::new(),
+            acp_catalog_error: None,
+            acp_installing: None,
+            acp_query: String::new(),
+            off_screen_turns: std::collections::BTreeMap::new(),
+            cli_task_mode: Default::default(),
+            cli_mode_open: false,
+            checkpoint_menu: None,
+            checkpoint_restoring: false,
+            ide_folders: Vec::new(),
             turn_check_command: String::new(),
             turn_check_failure: None,
             review_model: Default::default(),
@@ -4501,6 +4644,7 @@ mod tests {
             native_hooks: Default::default(),
             settings_reduced_motion: false,
             settings_reopen_last_workspace: false,
+            update: Default::default(),
             settings_terminal_shell: crate::settings_preferences::TerminalShell::System,
             settings_terminal_shell_draft: String::new(),
             settings_terminal_shell_menu_open: false,

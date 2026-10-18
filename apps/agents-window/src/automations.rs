@@ -207,6 +207,8 @@ pub struct AutomationDraft {
     pub backend: String,
     /// Frozen native connection choice. Credentials remain in the environment.
     pub native_provider: Option<NativeProviderSettings>,
+    /// A native run may edit the project and run sandboxed commands.
+    pub allow_changes: bool,
     pub schedule: AutomationSchedule,
 }
 
@@ -287,6 +289,8 @@ pub struct Automation {
     pub backend: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_provider: Option<NativeProviderSettings>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub allow_changes: bool,
     pub schedule: AutomationSchedule,
     pub enabled: bool,
     pub next_run_at: Option<i64>,
@@ -328,6 +332,7 @@ pub struct AutomationDispatch {
     pub workspace_path: PathBuf,
     pub backend: String,
     pub native_provider: Option<NativeProviderSettings>,
+    pub allow_changes: bool,
     pub prompt: String,
     /// The task's name, which the session of the run takes.
     pub title: String,
@@ -517,6 +522,7 @@ impl AutomationStore {
             prompt: draft.prompt.trim().to_owned(),
             backend: draft.backend.trim().to_owned(),
             native_provider: draft.native_provider,
+            allow_changes: draft.allow_changes,
             schedule: draft.schedule,
             enabled: true,
             next_run_at,
@@ -570,6 +576,7 @@ impl AutomationStore {
         automation.prompt = draft.prompt.trim().to_owned();
         automation.backend = draft.backend.trim().to_owned();
         automation.native_provider = draft.native_provider;
+        automation.allow_changes = draft.allow_changes;
         automation.schedule = draft.schedule;
         automation.next_run_at = next_run_at;
         automation.updated_at = now_ms;
@@ -982,6 +989,7 @@ fn dispatch_for(
         workspace_path: workspace_path.to_path_buf(),
         backend: automation.backend.clone(),
         native_provider: automation.native_provider.clone(),
+        allow_changes: automation.allow_changes,
         prompt: automation.prompt.clone(),
         title: automation.title.clone(),
         scheduled_at,
@@ -1015,6 +1023,7 @@ fn validate_document(document: &Document) -> Result<(), AutomationError> {
             prompt: automation.prompt.clone(),
             backend: automation.backend.clone(),
             native_provider: automation.native_provider.clone(),
+            allow_changes: false,
             schedule: automation.schedule.clone(),
         }
         .validate_structure()?;
@@ -1091,6 +1100,7 @@ pub(crate) mod tests {
             prompt: "Resume los cambios del proyecto".to_owned(),
             backend: "codex".to_owned(),
             native_provider: None,
+            allow_changes: false,
             schedule,
         }
     }
@@ -1306,6 +1316,7 @@ pub(crate) mod tests {
                     prompt: "Inspect the original project without external effects.".into(),
                     backend: "native".into(),
                     native_provider: Some(settings.clone()),
+                    allow_changes: false,
                     schedule: AutomationSchedule::Once { at_ms: 2_000_000 },
                 },
                 1_000_000,
@@ -1328,6 +1339,7 @@ pub(crate) mod tests {
             "Original project instructions, ñ and 🦀.\n".into(),
             dispatch.prompt.clone(),
             &dispatch.run_id,
+            false,
         )
         .unwrap();
         let sessions = SessionStore::open(root.join("sessions")).unwrap();

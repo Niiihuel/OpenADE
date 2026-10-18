@@ -520,6 +520,8 @@ pub struct GraphView {
     link_alpha: Vec<f32>,
     scale: f32,
     target_scale: f32,
+    /// The camera keeps the whole graph in view until the person moves it.
+    auto_fit: bool,
     /// Where the origin of the layout is, from the canvas's top-left corner.
     pan: (f32, f32),
     /// Pan speed in pixels per millisecond, carried on after a quick release.
@@ -562,6 +564,7 @@ impl Default for GraphView {
             link_alpha: Vec::new(),
             scale: 1.0,
             target_scale: 1.0,
+            auto_fit: true,
             pan: (0.0, 0.0),
             pan_velocity: (0.0, 0.0),
             zoom_anchor: None,
@@ -667,6 +670,9 @@ impl GraphView {
             self.sequence = published.sequence;
             if published.generation == self.generation {
                 self.positions = published.positions.to_vec();
+                if self.auto_fit {
+                    self.fit_whole();
+                }
                 self.moving = published.moving;
                 self.idle_frames = 0;
             }
@@ -720,6 +726,7 @@ impl GraphView {
         self.hover = None;
         self.drag = None;
         self.generation += 1;
+        self.auto_fit = true;
         if let Some(worker) = &self.worker {
             worker.send(Command::Data {
                 ids: next.nodes.iter().map(|node| self.data.files[node.file].path.clone()).collect(),
@@ -790,7 +797,30 @@ impl GraphView {
         self.rect = Some(rect);
     }
 
+    /// Puts the whole graph in view, as Obsidian opens one: every node on
+    /// screen with a margin, the labels left to the zoom.
+    fn fit_whole(&mut self) {
+        let Some(rect) = self.rect else {
+            return;
+        };
+        let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+        for [x, y] in self.positions.iter().filter(|[x, y]| x.is_finite() && y.is_finite()) {
+            (x0, y0, x1, y1) = (x0.min(*x), y0.min(*y), x1.max(*x), y1.max(*y));
+        }
+        if x0 > x1 || rect.width <= 0.0 || rect.height <= 0.0 {
+            return;
+        }
+        let span = ((x1 - x0).max(1.0), (y1 - y0).max(1.0));
+        // Never closer than 1:1: a few nodes are not blown up to fill the view.
+        let fit = graph_layout::clamp_zoom((rect.width / span.0).min(rect.height / span.1) * 0.9).min(1.0);
+        self.scale = fit;
+        self.target_scale = fit;
+        self.zoom_anchor = None;
+        self.pan = (rect.width / 2.0 - (x0 + x1) / 2.0 * fit, rect.height / 2.0 - (y0 + y1) / 2.0 * fit);
+    }
+
     fn zoom_by(&mut self, factor: f32, anchor: Option<Point>) {
+        self.auto_fit = false;
         self.target_scale = graph_layout::clamp_zoom(self.target_scale * factor);
         // Zooming in keeps the point under the pointer; out, the view's center.
         self.zoom_anchor = anchor.filter(|_| factor > 1.0);
@@ -817,6 +847,7 @@ impl GraphView {
             UiEvent::Scroll2D { position, delta_x, delta_y, .. } if over_canvas => {
                 self.pan.0 += delta_x;
                 self.pan.1 += delta_y;
+                self.auto_fit = false;
                 self.idle_frames = 0;
                 consumed
             }
@@ -840,6 +871,7 @@ impl GraphView {
                         if let Some((last, at, _)) = self.last_move {
                             let (dx, dy) = (point.x - last.x, point.y - last.y);
                             self.pan.0 += dx;
+                            self.auto_fit = false;
                             self.pan.1 += dy;
                             let elapsed = now.duration_since(at).as_secs_f32() * 1000.0;
                             let speed = (dx / elapsed.max(1.0), dy / elapsed.max(1.0));
@@ -1270,6 +1302,28 @@ mod tests {
         assert_eq!(view.positions[0], [60.0, 30.0]);
         let outcome = view.handle_event(&UiEvent::PointerUp(Point::new(260.0, 230.0)), &options, true);
         assert_eq!(outcome.open, None);
+    }
+
+    #[test]
+    fn the_whole_graph_stays_in_view_until_the_camera_is_moved() {
+        let mut view = GraphView {
+            rect: Some(Rect::new(0.0, 0.0, 500.0, 500.0)),
+            positions: vec![[-1000.0, 0.0], [1000.0, 0.0], [0.0, 500.0], [f32::NAN, f32::NAN]],
+            ..Default::default()
+        };
+        view.fit_whole();
+        assert!((view.scale - 0.225).abs() < 1e-3, "{}", view.scale);
+        assert_eq!(view.target_scale, view.scale);
+        // The graph's center lands on the canvas's.
+        assert!((view.pan.0 - 250.0).abs() < 1e-3 && (view.pan.1 - (250.0 - 250.0 * view.scale)).abs() < 1e-3, "{:?}", view.pan);
+        // A few nodes close together are not blown up past 1:1.
+        view.positions = vec![[0.0, 0.0], [10.0, 0.0]];
+        view.fit_whole();
+        assert_eq!(view.scale, 1.0);
+        // Once the person zooms, the camera is theirs.
+        assert!(view.auto_fit);
+        view.zoom_by(2.0, None);
+        assert!(!view.auto_fit);
     }
 
     #[test]

@@ -66,6 +66,7 @@ fn automation_rejects_replaced_workspace_before_admission_and_worker_effects_but
             "ORIGINAL_FROZEN_PROJECT_INSTRUCTIONS".into(),
             PROMPT.into(),
             &run_id,
+            false,
         )
         .unwrap();
         // Build the model before replacing the directory, so the direct worker

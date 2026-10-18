@@ -22,6 +22,9 @@ pub(crate) const NATIVE_AUTOMATION_SESSION_PREFIX: &str = "auto-";
 #[serde(rename_all = "snake_case")]
 pub enum NativeAutomationAuthorityProfile {
     ReadOnlyV1,
+    /// Edits inside the workspace and commands in the host's sandbox, as
+    /// the host's snapshot of the profile records.
+    WorkspaceWriteV1,
 }
 
 /// Private metadata, retained independently of the bounded scheduler ledger.
@@ -75,6 +78,29 @@ impl NativeAutomationOrigin {
         prompt: &str,
         model: &str,
     ) -> Result<Self, NativeAutomationOriginError> {
+        Self::new_with_profile(
+            NativeAutomationAuthorityProfile::ReadOnlyV1,
+            automation_id,
+            run_id,
+            scheduled_at_ms,
+            manual,
+            authority_snapshot_json,
+            prompt,
+            model,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_profile(
+        authority_profile: NativeAutomationAuthorityProfile,
+        automation_id: impl Into<String>,
+        run_id: impl Into<String>,
+        scheduled_at_ms: i64,
+        manual: bool,
+        authority_snapshot_json: impl Into<String>,
+        prompt: &str,
+        model: &str,
+    ) -> Result<Self, NativeAutomationOriginError> {
         let run_id = run_id.into();
         let authority_snapshot_json = authority_snapshot_json.into();
         let origin = Self {
@@ -84,7 +110,7 @@ impl NativeAutomationOrigin {
             run_id,
             scheduled_at_ms,
             manual,
-            authority_profile: NativeAutomationAuthorityProfile::ReadOnlyV1,
+            authority_profile,
             authority_snapshot_version: NATIVE_AUTOMATION_AUTHORITY_SNAPSHOT_VERSION,
             authority_snapshot_digest: native_automation_snapshot_digest(&authority_snapshot_json)?,
             authority_snapshot_json,

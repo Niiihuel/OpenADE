@@ -9,7 +9,9 @@ use std::path::Path;
 
 const FILE_NAME: &str = "mcp-tool-selections.json";
 const MAX_BYTES: u64 = 64 * 1024;
-pub(crate) const MAX_SELECTED_TOOLS: usize = openide_harness::MAX_ADVERTISED_TOOLS;
+/// The discovery bound: a selection past the model's catalog is deferred
+/// behind `search_mcp_tools`, not refused.
+pub(crate) const MAX_SELECTED_TOOLS: usize = openide_harness::MAX_MCP_TOOLS;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct McpToolSelections {
@@ -41,7 +43,7 @@ fn registration_digest(server: &McpServerSettings) -> String {
 
 fn validate_names(names: &[String]) -> Result<(), String> {
     if names.len() > MAX_SELECTED_TOOLS {
-        return Err(format!("La selección MCP supera {MAX_SELECTED_TOOLS} herramientas. El presupuesto del modelo también incluye herramientas locales y otros servidores."));
+        return Err(format!("La selección MCP supera {MAX_SELECTED_TOOLS} herramientas."));
     }
     let mut unique = BTreeSet::new();
     if names.iter().any(|name| {
@@ -344,7 +346,7 @@ mod tests {
         for names in [
             vec!["duplicate".into(), "duplicate".into()],
             vec!["invalid name".into()],
-            (0..129).map(|i| format!("tool_{i}")).collect(),
+            (0..=MAX_SELECTED_TOOLS).map(|i| format!("tool_{i}")).collect(),
         ] {
             assert!(selections.set_for(&server, Some(names)).is_err());
         }

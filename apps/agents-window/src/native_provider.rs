@@ -1005,7 +1005,30 @@ pub(crate) fn fetch_model_listing_pages(
             };
         }
         if !response.status().is_success() {
-            return Err(format!("HTTP {}", response.status().as_u16()));
+            // The provider's own words say why: a key of another kind, a
+            // plan without access.
+            let status = response.status().as_u16();
+            let mut body = String::new();
+            let _ = response.take(4096).read_to_string(&mut body);
+            let detail = serde_json::from_str::<serde_json::Value>(&body)
+                .ok()
+                .and_then(|json| {
+                    ["/error/message", "/message", "/error"]
+                        .iter()
+                        .find_map(|pointer| json.pointer(pointer)?.as_str().map(str::to_owned))
+                })
+                .map(|message| {
+                    message
+                        .chars()
+                        .filter(|character| !character.is_control())
+                        .take(200)
+                        .collect::<String>()
+                })
+                .filter(|message| !message.trim().is_empty());
+            return Err(match detail {
+                Some(detail) => format!("HTTP {status}: {detail}"),
+                None => format!("HTTP {status}"),
+            });
         }
         let allowance = max_bytes
             .checked_sub(total_bytes)

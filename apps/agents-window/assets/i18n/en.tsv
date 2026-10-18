@@ -385,6 +385,7 @@ Añadido	Added
 Añadir	Add
 Añadir al chat	Add to chat
 Añadir al mensaje	Add to message
+Añadir carpeta…	Add folder…
 Añadir cursor abajo	Add cursor below
 Añadir cursor arriba	Add cursor above
 Aún no hay ejecuciones de esta tarea.	There are no runs of this task yet.
@@ -633,8 +634,10 @@ Carpeta instalada	Installed folder
 Carpeta local	Local folder
 Carpeta que contiene openide-plugin.json	Folder containing openide-plugin.json
 Carpeta vacía	Empty folder
+Carpetas	Folders
 Carpetas de instrucciones	Instruction folders
 Carpetas de trabajo	Working folders
+Carpetas del IDE	IDE folders
 Casilla cambiada	Checkbox toggled
 Casilla en página	Checkbox on page
 Categoría	Category
@@ -705,6 +708,9 @@ Claude Code ya tiene una línea de estado configurada	Claude Code already has a 
 Claude Code, Codex y otras CLIs iniciadas desde openADE reciben las herramientas activadas abajo. Desactivado, ninguna llamada externa llega a openADE.	Claude Code, Codex and other CLIs started from openADE get the tools turned on below. When it is off, no outside call reaches openADE.
 Clave de API	API key
 Clave de firma inválida	Invalid signing key
+Clave de la API de Anthropic, pago por uso. Tu suscripción de Claude se usa desde Claude Code.	Anthropic API key, paid per use. Your Claude subscription is used through Claude Code.
+Clave de la API de OpenAI, pago por uso. Tu plan de ChatGPT se usa desde la conexión de Codex.	OpenAI API key, paid per use. Your ChatGPT plan is used through the Codex connection.
+Clave de la API de xAI, pago por uso. Tu suscripción de Grok se usa desde Grok Build.	xAI API key, paid per use. Your Grok subscription is used through Grok Build.
 Clave de {} guardada. El acceso se comprobará al usar un modelo.	{} key saved. Access will be checked when a model is used.
 Clave guardada	Key saved
 Claves de firma de ChatGPT inválidas	Invalid ChatGPT signing keys
@@ -847,6 +853,7 @@ Conectar otra cuenta	Connect another account
 Conectar proveedor	Connect provider
 Conectá el proveedor del modelo para generar el mensaje.	Connect the model provider to generate the message.
 Conectá una cuenta de GitHub para crear el pull request	Connect a GitHub account to create the pull request
+Conectá {} para ver sus modelos	Connect {} to see its models
 Conexiones a herramientas externas, locales o por HTTP.	Connections to external tools, local or over HTTP.
 Conexión	Connection
 Conexión MCP copiada; estará disponible mientras esta pestaña permanezca abierta	MCP connection copied; it will be available while this tab stays open
@@ -1034,6 +1041,7 @@ Copiar y abrir navegador	Copy and open browser
 Copias guardadas por turno	Copies saved per turn
 Corregir	Fix
 Corregí el archivo de reglas antes de editarlo	Fix the rules file before editing it
+Corregí las reglas de comandos antes de añadir una: {}	Fix the command rules before adding one: {}
 Corregí las reglas de comandos antes de ejecutar el agente nativo: {error}	Fix the command rules before running the native agent: {error}
 Corrige la configuración MCP antes de guardarla: {error}	Fix the MCP configuration before saving it: {error}
 Corrige la configuración de hooks antes de guardarla: {error}	Fix the hooks configuration before saving it: {error}
@@ -1402,6 +1410,7 @@ Ejecutando	Running
 Ejecutando MCP	Running MCP
 Ejecutando script	Running script
 Ejecutando {} en una terminal nueva	Running {} in a new terminal
+Ejecutando...	Running...
 Ejecutar	Run
 Ejecutar JavaScript en la página	Run JavaScript on the page
 Ejecutar ahora	Run now
@@ -2038,6 +2047,7 @@ Enviar entrada a un comando	Send input to a command
 Enviar respuesta	Send answer
 Enviar sin imágenes	Send without images
 Enviar todos a la papelera…	Move all to trash…
+Enviá o borrá el mensaje escrito antes de reanudar	Send or clear the written message before resuming
 Enviá o borrá lo que estás escribiendo antes de traer un mensaje de la cola	Send or clear what you're typing before bringing back a queued message
 Equilibrada	Balanced
 Equipo	Machine
@@ -2118,6 +2128,7 @@ Espera a que termine el cambio de rama antes de eliminar esta tarea	Wait for the
 Espera a que termine el cambio de rama para enviar el mensaje	Wait for the branch switch to finish to send the message
 Espera a que termine el cambio de rama.	Wait for the branch switch to finish.
 Espera a que termine el guardado	Wait for the save to finish
+Espera a que termine el turno	Wait for the turn to finish
 Espera a que termine el turno antes de compactar	Wait for the turn to finish before compacting
 Espera a que termine el turno para cambiar el modo o las skills	Wait for the turn to finish to change the mode or the skills
 Espera a que termine la automatización	Wait for the automation to finish
@@ -2134,6 +2145,8 @@ Espera a que termine la operación actual	Wait for the current operation to fini
 Espera a que termine la operación de Git.	Wait for the Git operation to finish.
 Espera a que termine la operación de archivos en curso	Wait for the current file operation to finish
 Espera a que termine la preparación de archivos.	Wait for file preparation to finish.
+Espera a que termine la recuperación para cambiar de proyecto	Wait for the recovery to finish before switching project
+Espera a que termine la recuperación para cambiar de sesión	Wait for the recovery to finish before switching session
 Espera a que termine la respuesta.	Wait for the response to finish.
 Espera a que termine la tarea para cambiar la meta	Wait for the task to finish to change the goal
 Espera a que terminen los agentes para desinstalar plugins.	Wait for agents to finish before uninstalling plugins.
@@ -2382,6 +2395,7 @@ Fuentes	Sources
 Fuentes y herramientas	Sources and tools
 Funciona con Claude Code y Codex iniciados desde el menú de perfiles de la terminal. Los subagentes de openADE todavía no se ofrecen a una CLI externa.	Works with Claude Code and Codex started from the terminal's profile menu. openADE subagents are not offered to an external CLI yet.
 Funciona con Claude Code y Codex iniciados desde el menú de perfiles de la terminal. Los subagentes todavía no se ofrecen: su interruptor se guarda para cuando estén disponibles.	Works with Claude Code and Codex started from the terminal profiles menu. Subagents are not offered yet: their switch is saved for when they are available.
+Genera {}	Generates {}
 Generación de imagen	Image generation
 Generación de imágenes	Image generation
 Generación de imágenes guardada	Image generation saved
@@ -2459,6 +2473,7 @@ HEAD separado: no hay una rama para buscar PR	Detached HEAD: there is no branch 
 HTTP sólo se permite en localhost	HTTP is only allowed on localhost
 HTTPS; HTTP sólo para localhost o loopback. Sin credenciales, búsqueda ni fragmento.	HTTPS; HTTP only for localhost or loopback. No credentials, query or fragment.
 Habilitado · sin probar	Enabled · untested
+Hace	Does
 Hacer push	Push
 Hay acciones con identificadores duplicados.	Some actions have duplicate identifiers.
 Hay archivos sin guardar	There are unsaved files
@@ -2788,6 +2803,7 @@ La carpeta del worktree ya existe. Elegí una carpeta nueva.	The worktree folder
 La carpeta destino apareció durante la instalación	The destination folder appeared during installation
 La carpeta destino ya existe	The destination folder already exists
 La carpeta no está disponible dentro del proyecto	The folder is not available inside the project
+La carpeta sigue abierta hasta que cambies a otra	The folder stays open until you switch to another
 La carpeta «{path}» y todo su contenido irán a la papelera del sistema.	The folder «{path}» and all its contents will go to the system trash.
 La clave se guarda de forma privada en este equipo. El acceso a generación se comprueba al usar un modelo.	The key is stored privately on this machine. Generation access is checked when a model is used.
 La cola de entrada está llena. Esperá y volvé a intentar; esta entrada no se envió.	The input queue is full. Wait and try again; this input was not sent.
@@ -3206,6 +3222,7 @@ Los límites de esta conexión se administran en tu plan de ChatGPT	This connect
 Los límites de la automatización difieren del snapshot original	The automation limits differ from the original snapshot
 Los límites y el saldo pertenecen a cada proveedor. El contexto de una conversación y los precios del catálogo no representan el consumo de tu suscripción.	Limits and balance belong to each provider. A conversation's context and catalog prices do not represent your subscription usage.
 Los mensajes quitados ya no están disponibles.	The removed messages are no longer available.
+Los modelos de tu cuenta aparecen aquí con la conexión hecha.	The models of your account appear here once connected.
 Los niveles que admite el modelo elegido. Más calidad tarda más y cuesta más.	The levels the chosen model supports. More quality takes longer and costs more.
 Los nuevos turnos nativos leen AGENTS.md o AGENTS.override.md y las skills activas del proyecto. Antes de consultar al modelo, se guarda una copia exacta de esas instrucciones adicionales; el motor compone también sus propias instrucciones de modo y herramientas.	New native turns read AGENTS.md or AGENTS.override.md and the project's active skills. Before querying the model, an exact copy of those additional instructions is saved; the engine also composes its own mode and tool instructions.
 Los perfiles de CLI no son válidos: {error}	The CLI profiles are not valid: {error}
@@ -3243,6 +3260,7 @@ Límites de salida inválidos: {error}	Invalid output limits: {error}
 Límites de tu última sesión de Claude Code.	Limits from your last Claude Code session.
 Límites de tu última sesión local de Codex.	Limits from your last local Codex session.
 Límites del proveedor	Provider limits
+Límites · tokens	Limits · tokens
 Línea:columna	Line:column
 MCP configurado para próximos turnos	MCP configured for upcoming turns
 MCP ejecutado	MCP executed
@@ -3312,8 +3330,14 @@ Modelo y esfuerzo para el próximo mensaje.	Model and effort for the next messag
 Modelo y presupuesto	Model and budget
 Modelo: {}	Model: {}
 Modelos	Models
+Modelos Claude con tu clave de API	Claude models with your API key
+Modelos DeepSeek con tu clave de API	DeepSeek models with your API key
 Modelos GLM con la API general de Z.ai	GLM models with the general Z.ai API
+Modelos GPT con tu clave de API	GPT models with your API key
+Modelos Grok con tu clave de API	Grok models with your API key
 Modelos MiniMax con tu clave de API	MiniMax models with your API key
+Modelos Mistral con tu clave de API	Mistral models with your API key
+Modelos abiertos servidos por Groq con tu clave de API	Open models served by Groq with your API key
 Modelos alojados en NVIDIA API Catalog	Models hosted on NVIDIA API Catalog
 Modelos de OpenCode Zen y Go	OpenCode Zen and Go models
 Modelos de ese proveedor que pueden correr un turno.	Models from that provider that can run a turn.
@@ -3720,6 +3744,7 @@ No se pudo guardar el borrador de intervención: {error}	Couldn't save the inter
 No se pudo guardar el chequeo del proyecto: {error}	Could not save the project check: {error}
 No se pudo guardar el esfuerzo elegido. Elige de nuevo o deshaz el cambio.	Could not save the chosen effort. Choose again or undo the change.
 No se pudo guardar el esfuerzo elegido: {error}	Couldn't save the chosen effort: {error}
+No se pudo guardar el estado de la tarea CLI: {}	The CLI task's state could not be saved: {}
 No se pudo guardar el idioma: {error}	Could not save the language: {error}
 No se pudo guardar el límite de contexto: {error}	Could not save the context limit: {error}
 No se pudo guardar el límite de salida: {error}	Could not save the output limit: {error}
@@ -4043,6 +4068,7 @@ Otra captura o guardado usa esta carpeta; reintentá guardar	Another capture or 
 Otra instancia está actualizando esta conexión	Another instance is updating this connection
 Otra respuesta	Another answer
 Otra ventana está usando la recuperación del editor: {e}	Another window is using editor recovery: {e}
+Otras carpetas	Other folders
 Otras conversaciones	Other conversations
 Otro servicio	Another service
 PTY observada	PTY observed
@@ -4111,6 +4137,8 @@ Permiso pendiente	Pending permission
 Permiso pendiente en turno interrumpido; requiere recuperación antes de continuar	Permission pending in interrupted turn; recovery required before continuing
 Permiso pendiente · turno interrumpido	Permission pending · turn interrupted
 Permisos	Permissions
+Permisos al iniciar la CLI	Permissions when the CLI starts
+Permisos al iniciar la CLI: {}	Permissions when the CLI starts: {}
 Permisos de sesión	Session permissions
 Permisos del proveedor	Provider permissions
 Permisos pendientes	Pending permissions
@@ -4122,6 +4150,7 @@ Permitido · resultado confirmado	Allowed · result confirmed
 Permitir	Allow
 Permitir en esta sesión	Allow in this session
 Permitir siempre	Always allow
+Permitir siempre `{}`	Always allow `{}`
 Permitir siempre en {}	Always allow in {}
 Permitir todo	Allow everything
 Permitir una vez	Allow once
@@ -4326,6 +4355,7 @@ Quitar del grupo	Remove from group
 Quitar división	Remove split
 Quitar división · conservar ambas sesiones	Remove split · keep both sessions
 Quitar el permiso propio de {}	Remove the own permission for {}
+Quitar esta carpeta del IDE	Remove this folder from the IDE
 Quitar filtro	Remove filter
 Quitar origen	Remove source
 Quitar perfil	Remove profile
@@ -4369,6 +4399,7 @@ Recargar desde disco	Reload from disk
 Recargar página	Reload page
 Rechazada antes del efecto	Rejected before the effect
 Rechazar	Reject
+Recibe	Takes
 Recibiendo commits…	Pulling commits…
 Recibir (pull, solo avance rápido)	Pull (fast-forward only)
 Recibir {} de {upstream}	Pull {} from {upstream}
@@ -4734,6 +4765,7 @@ Secuencia inválida en el resultado de automatización	Invalid sequence in the a
 Seguir a la CLI	Follow the CLI
 Seguir a la CLI: si la iniciaste en modo aceptar todo, las herramientas de openADE tampoco preguntan. En cualquier otro modo, openADE pide aprobación.	Follow the CLI: if you started it in accept-all mode, openADE tools don't ask either. In any other mode, openADE asks for approval.
 Seguir editando	Keep editing
+Seguí con lo que estabas haciendo: la aplicación se cerró en medio de tu turno anterior.	Go on with what you were doing: the application was closed in the middle of your previous turn.
 Selecciona el modelo del turno interrumpido	Select the model of the interrupted turn
 Selecciona el modelo original del subagente	Select the subagent's original model
 Selecciona instrucciones del catálogo de este proyecto para incluirlas en los próximos turnos del agente nativo.	Select instructions from this project's catalog to include them in the next native agent turns.
@@ -4846,6 +4878,7 @@ Sin conversación	No conversation
 Sin copia	No copy
 Sin copia guardada	No saved copy
 Sin crédito en {provider}	No credit on {provider}
+Sin datos	No data
 Sin datos de consumo disponibles	No usage data available
 Sin desglose	No breakdown
 Sin diferencias	No differences
@@ -5357,11 +5390,13 @@ Ya se está compactando una sesión	A session is already being compacted
 [{omitted} bytes de salida omitidos]	[{omitted} bytes of output omitted]
 `{command}` no terminó en {} segundos y fue detenido.\n{}	`{command}` did not finish in {} seconds and was stopped.\n{}
 `{command}` terminó con código {}.\n{}	`{command}` finished with code {}.\n{}
+`{}` se permite sin preguntar desde el próximo turno	`{}` runs without asking from the next turn on
 abierta	open
 abiertas	open
 abr	Apr
 activada	enabled
 actividad	activity
+actualizado	updated
 agente	agent
 agentes	agents
 ahora	now
@@ -5387,6 +5422,7 @@ cancelado	cancelled
 captura incompleta	incomplete capture
 casilla	checkbox
 catálogo models.dev	models.dev catalog
+catálogo sin verificar	catalog unverified
 celda	cell
 cerrada	closed
 comando	command
@@ -5731,7 +5767,6 @@ ya no existe	it no longer exists
 {}{} líneas encontradas	{}{} lines found
 «.» y «..» no son nombres válidos	«.» and «..» are not valid names
 «Permitir todo» está elegido en el compositor: escribe y ejecuta sin pedir aprobación. Se cambia desde el selector de permisos del compositor.	“Allow all” is chosen in the composer: it writes and runs without asking for approval. Change it from the composer's permission selector.
-«Permitir» no restringe el prefijo ni salta la aprobación: el permiso de comandos del agente sigue decidiendo si se pregunta antes de ejecutarlo.	“Allow” neither restricts the prefix nor skips approval: the agent's command permission still decides whether it asks before running it.
 «{path}» irá a la papelera del sistema.	«{path}» will go to the system trash.
 «{}» ya no es un archivo sin seguimiento	«{}» is no longer an untracked file
 «{}»\n\nSe eliminará esta conversación, sus subagentes y su historial. Los archivos del proyecto se conservarán. Esta acción no se puede deshacer.	«{}»\n\nThis conversation, its subagents, and its history will be deleted. Project files will be kept. This action cannot be undone.
@@ -5757,7 +5792,6 @@ ya no existe	it no longer exists
 ¿Qué hará esta tarea?	What will this task do?
 ¿Qué tenemos en la agenda hoy?	What's on the agenda today?
 ¿Recargar el archivo?	Reload the file?
-¿Salir con automatizaciones en curso?	Exit with automations running?
 ¿Un recorrido rápido?	A quick tour?
 Árbol de GitHub inválido	Invalid GitHub tree
 Éxito	Success
@@ -6010,3 +6044,52 @@ Carpetas y repositorios donde se descubren skills.	Folders and repositories wher
 Consulta sus instrucciones, procedencia y opciones de instalación.	View its instructions, provenance, and installation options.
 Un origen necesita atención	A source needs attention
 Volver al catálogo	Back to catalog
+{} no aceptó el modo {}: {}	{} did not accept the mode {}: {}
+{} no tiene un modo plan: sigue en su modo normal	{} has no plan mode: it stays in its normal mode
+{}: se aplica al iniciar la CLI	{}: applies when the CLI starts
+{}: se aplica al reiniciar la CLI	{}: applies when the CLI is restarted
+«Permitir» ejecuta sin preguntar los comandos que empiezan exactamente con este prefijo cuando el agente está en «Pedir aprobación». No abre nada en «Sólo lectura», y un shell que ejecute otra cosa (sh -c, env) sigue preguntando.	«Allow» runs the commands that start exactly with this prefix without asking while the agent is in «Ask for approval». It opens nothing in «Read only», and a shell that runs something else (sh -c, env) still asks.
+¿Salir con agentes en curso?	Exit with agents running?
+última actualización	last update
+Actualizaciones	Updates
+Descargar e instalar	Download and install
+Ver la versión	View the release
+Reiniciar ahora	Restart now
+Novedades	Release notes
+Actualizar automáticamente	Update automatically
+Busca versiones nuevas cada 6 horas.	Checks for new versions every 6 hours.
+La búsqueda automática está desactivada.	Automatic checks are off.
+Es la versión más reciente.	This is the latest version.
+Descarga cada versión nueva en segundo plano y la instala al reiniciar.	Downloads each new version in the background and installs it on restart.
+Avisa cuando hay una versión nueva. Esta copia no se reemplaza sola: se actualiza con el archivo de cada versión.	Tells you when there is a new version. This copy does not replace itself: update it with each version's archive.
+Se descarga en segundo plano y se instala al reiniciar.	It downloads in the background and installs on restart.
+Esta copia no se actualiza sola: descargá la versión nueva desde GitHub.	This copy does not update itself: download the new version from GitHub.
+Se instala al reiniciar, o la próxima vez que cierres openADE.	It installs on restart, or the next time you quit openADE.
+No se pudo actualizar openADE	openADE could not be updated
+Preferencia de actualizaciones guardada	Update preference saved
+La comprobación se interrumpió	The check was interrupted
+openADE {version} está disponible.	openADE {version} is available.
+openADE {version} está disponible	openADE {version} is available
+openADE {version} está disponible en GitHub.	openADE {version} is available on GitHub.
+openADE {version} está lista	openADE {version} is ready
+openADE {version} se instala al reiniciar o al cerrar openADE.	openADE {version} installs on restart or when you quit openADE.
+openADE {version} es la versión más reciente	openADE {version} is the latest version
+Descargando openADE {version}	Downloading openADE {version}
+Descargando openADE {version}: {percent} %	Downloading openADE {version}: {percent}%
+Descargando openADE {version}…	Downloading openADE {version}…
+{percent} % de {size} MB	{percent}% of {size} MB
+No se pudo conectar con GitHub: {error}	Could not connect to GitHub: {error}
+GitHub respondió {status}	GitHub answered {status}
+La respuesta de GitHub es demasiado grande	GitHub's response is too large
+Respuesta de GitHub inválida: {error}	Invalid response from GitHub: {error}
+La versión «{tag}» no es válida	The version “{tag}” is not valid
+El archivo de la actualización es demasiado grande	The update archive is too large
+La descarga se interrumpió: {error}	The download was interrupted: {error}
+La firma de la actualización no es válida	The update's signature is not valid
+La firma de la actualización no es texto	The update's signature is not text
+No se pudo descomprimir la actualización: {error}	Could not unpack the update: {error}
+La actualización no tiene los archivos esperados	The update does not have the expected files
+No se encontró la versión descargada	The downloaded version was not found
+openADE no terminó de cerrarse; la actualización se instala la próxima vez	openADE did not finish quitting; the update installs next time
+No se pudo apartar la versión instalada: {error}	Could not move the installed version aside: {error}
+No se pudo instalar la versión nueva: {error}	Could not install the new version: {error}

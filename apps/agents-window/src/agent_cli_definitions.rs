@@ -19,11 +19,40 @@ pub(crate) struct AgentCliDefinition {
     /// Arguments that start the CLI without approval prompts. Empty means
     /// OpenIDE offers no accept-all profile for it.
     pub accept_all_args: Vec<String>,
+    /// Arguments that start the CLI in its read-only or plan mode. Empty
+    /// means it has none.
+    #[serde(default)]
+    pub read_only_args: Vec<String>,
+    /// Arguments that open a new conversation under the name openADE gives,
+    /// `{session}`; empty when the CLI names its own.
+    #[serde(default)]
+    pub new_session_args: Vec<String>,
+    /// Arguments that reopen the conversation `{session}`.
+    #[serde(default)]
+    pub resume_args: Vec<String>,
+    /// How the CLI's own session is known after a start.
+    #[serde(default)]
+    pub sessions: Option<SessionDiscovery>,
     /// How OpenIDE hands this CLI its tools. `None` starts it unconnected.
     pub bridge: Option<BridgeKind>,
+    /// How a task's CLI tells the app it is working, waiting for the person
+    /// or done. `None` shows no status.
+    #[serde(default)]
+    pub status: Option<crate::cli_status::StatusReport>,
     /// What is typed into the CLI's prompt for a selection of a file:
     /// `{path}` is relative to the project and `{lines}` is `12` or `12-30`.
     pub selection_reference: String,
+}
+
+/// How a CLI's own session is known: Claude Code takes the name openADE
+/// gives and writes it under `projects/`; Codex and opencode name their own,
+/// read back from Codex's rollout files or opencode's session list.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum SessionDiscovery {
+    ClaudeProjects,
+    CodexRollouts,
+    OpencodeList,
 }
 
 #[derive(Deserialize)]

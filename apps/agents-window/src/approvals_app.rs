@@ -46,6 +46,26 @@ impl AgentsWindow {
                 }
                 PermissionChoice::Allow
             }
+            // The prefix is read again from the request: a rule for it, for
+            // the next turns, and the session's grant for this one.
+            "allow_command" => {
+                let prefix = self
+                    .view
+                    .pending_permissions
+                    .iter()
+                    .find(|permission| permission.request_id == target.request_id)
+                    .and_then(|permission| approval_ui::command_prefix(&permission.tool_name, &permission.arguments));
+                let Some(prefix) = prefix.filter(|_| target.child_session_id.is_none()) else {
+                    return true;
+                };
+                if let Err(error) = self.allow_command_always(&prefix) {
+                    self.view.status = error;
+                    return true;
+                }
+                self.answer_permission_for_session(&target.request_id);
+                self.view.status = format!("`{}` se permite sin preguntar desde el próximo turno", prefix.join(" "));
+                return true;
+            }
             "allow_once" => PermissionChoice::Allow,
             "allow_session" => PermissionChoice::AllowSession,
             "deny" => PermissionChoice::Deny,

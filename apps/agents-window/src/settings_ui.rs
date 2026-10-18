@@ -65,6 +65,7 @@ pub enum SettingsPage {
     Hooks,
     Data,
     Usage,
+    Processes,
     Github,
     Shortcuts,
 }
@@ -93,6 +94,7 @@ const AGENT_PAGES: &[SettingsPage] = &[
 const DATA_PAGES: &[SettingsPage] = &[
     SettingsPage::Data,
     SettingsPage::Usage,
+    SettingsPage::Processes,
     SettingsPage::Github,
 ];
 
@@ -125,6 +127,7 @@ impl SettingsPage {
             Self::Hooks => "settings_page:hooks",
             Self::Data => "settings_page:data",
             Self::Usage => "settings_page:usage",
+            Self::Processes => "settings_page:processes",
             Self::Github => "settings_page:github",
             Self::Shortcuts => "settings_page:shortcuts",
         }
@@ -150,6 +153,7 @@ impl SettingsPage {
             "settings_page:hooks" => Some(Self::Hooks),
             "settings_page:data" => Some(Self::Data),
             "settings_page:usage" => Some(Self::Usage),
+            "settings_page:processes" => Some(Self::Processes),
             "settings_page:github" => Some(Self::Github),
             "settings_page:shortcuts" => Some(Self::Shortcuts),
             _ => None,
@@ -176,6 +180,7 @@ impl SettingsPage {
             Self::Hooks => "Hooks",
             Self::Data => "Datos y sesiones",
             Self::Usage => "Uso",
+            Self::Processes => "Procesos",
             Self::Github => "GitHub",
             Self::Shortcuts => "Atajos de teclado",
         }
@@ -201,6 +206,7 @@ impl SettingsPage {
             Self::Hooks => Icon::Bolt,
             Self::Data => Icon::Archive,
             Self::Usage => Icon::ChartBar,
+            Self::Processes => Icon::Grid,
             Self::Github => Icon::Github,
             Self::Shortcuts => Icon::Keyboard,
         }
@@ -220,7 +226,7 @@ impl SettingsPage {
     /// a row is found by what it does, not only by its page's name.
     const fn keywords(self) -> &'static str {
         match self {
-            Self::General => "notificaciones notifications avisos recorrido tour proyecto project carpeta folder inicio startup no molestar do not disturb",
+            Self::General => "notificaciones notifications avisos recorrido tour proyecto project carpeta folder inicio startup no molestar do not disturb actualizaciones updates actualizar update versión version reiniciar restart",
             Self::Appearance => "fuente font tipografía typography densidad density tinte tint tono hue intensidad intensity transparencia transparency contraste contrast código code wrap diferencias diff privacidad privacy correo email tema theme claro light oscuro dark sistema system idioma language english español inglés movimiento motion animaciones",
             Self::Editor => "ajuste de línea wrap minimapa minimap sangría indent tabulaciones tabs espacios spaces pares pairs código code números de línea line numbers guías guides línea actual current line espacios en blanco whitespace regla ruler cursor caret parpadeo blink fuente font guardar save vim",
             Self::Providers => "modelo model api key clave cuenta account catálogo catalog salida output límite openai anthropic proveedor propio custom provider endpoint url base protocolo protocol variable de entorno environment agregar add",
@@ -239,6 +245,7 @@ impl SettingsPage {
             Self::Hooks => "pretooluse posttooluse evento event ejecutable",
             Self::Data => "tareas sesiones sessions agrupar group ordenar sort carpeta de datos data folder archivar archive",
             Self::Usage => "consumo tokens límites limits actividad activity costo cost",
+            Self::Processes => "procesos processes cpu memoria memory disco disk terminar kill matar diagnóstico diagnostics",
             Self::Github => "cuenta account pull request repositorio repository perfil profile",
             #[allow(unreachable_patterns)]
             _ => "",
@@ -266,6 +273,7 @@ impl SettingsPage {
             Self::Hooks => "Acciones asociadas a eventos del agente.",
             Self::Data => "Historial local y organización de tareas.",
             Self::Usage => "Suscripciones, saldo y límites de tus proveedores conectados.",
+            Self::Processes => "Lo que openADE tiene en marcha: agentes, terminales, servidores MCP y de lenguaje.",
             Self::Github => "Conexión de la cuenta y repositorio de GitHub.",
         }
     }
@@ -279,6 +287,47 @@ impl SettingsPage {
             _ => CapabilityStatus::Partial,
         }
     }
+}
+
+/// openADE's child processes, heaviest first, each with a way to end it.
+fn processes_page(state: &ViewState, compact: bool) -> Vec<Element> {
+    if state.processes.is_empty() {
+        return vec![settings_parts::settings_group(
+            "Procesos",
+            vec![Text::new(
+                if cfg!(target_os = "linux") { "openADE no tiene procesos en marcha." } else { "Disponible en Linux." },
+                theme::component_palette(),
+            )
+            .muted()
+            .render()],
+        )];
+    }
+    let mut processes = state.processes.clone();
+    processes.sort_by(|a, b| b.cpu_percent.total_cmp(&a.cpu_percent).then(b.memory_bytes.cmp(&a.memory_bytes)));
+    let rows = processes
+        .iter()
+        .map(|process| {
+            let value = format!(
+                "{:.0} % CPU · {} · E/S {} / {}",
+                process.cpu_percent,
+                crate::processes::bytes(process.memory_bytes),
+                crate::processes::bytes(process.read_bytes),
+                crate::processes::bytes(process.written_bytes),
+            );
+            let end = openide_ui::Button::new(format!("process_end:{}", process.pid), "Terminar", theme::component_palette())
+                .icon(Icon::Stop)
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Dense)
+                .render();
+            settings_parts::settings_row(
+                &format!("{} · {}", process.name, process.pid),
+                &if process.command.is_empty() { value.clone() } else { format!("{value}\n{}", process.command) },
+                end,
+                compact,
+            )
+        })
+        .collect();
+    vec![settings_parts::settings_group("Procesos de openADE", rows)]
 }
 
 fn section(value: &str) -> Element {
@@ -569,9 +618,83 @@ fn general_page(state: &ViewState, compact: bool) -> Vec<Element> {
                 ),
             ],
         ),
-            crate::notifications_ui::settings_group(&state.notifications, compact),
+        updates_group(&state.update, compact),
+        crate::notifications_ui::settings_group(&state.notifications, compact),
         crate::tour_ui::settings_group(compact),
     ]
+}
+
+/// This version, what a check found and the one action that follows from it.
+pub(crate) fn updates_group(update: &crate::app_update::UpdateView, compact: bool) -> Element {
+    use crate::app_update::UpdateStatus;
+    let check = || outline("update_check", "Buscar actualizaciones").icon(Icon::Refresh).render();
+    let (status, control) = match &update.status {
+        UpdateStatus::Idle => (
+            if update.automatic {
+                "Busca versiones nuevas cada 6 horas.".to_owned()
+            } else {
+                "La búsqueda automática está desactivada.".to_owned()
+            },
+            check(),
+        ),
+        UpdateStatus::UpToDate => ("Es la versión más reciente.".to_owned(), check()),
+        UpdateStatus::Checking => (
+            "Buscando actualizaciones…".to_owned(),
+            outline("update_check", "Buscando…").loading(true).disabled().render(),
+        ),
+        UpdateStatus::Available { version, signed, .. } if update.installable && *signed => (
+            format!("openADE {version} está disponible."),
+            outline("update_download", "Descargar e instalar").icon(Icon::ArrowDown).render(),
+        ),
+        UpdateStatus::Available { version, .. } => (
+            format!("openADE {version} está disponible en GitHub."),
+            outline("update_notes", "Ver la versión").icon(Icon::ArrowRight).render(),
+        ),
+        UpdateStatus::Downloading { version, received, total } => (
+            match (received * 100).checked_div(*total) {
+                Some(percent) => format!("Descargando openADE {version}: {percent} %"),
+                None => format!("Descargando openADE {version}…"),
+            },
+            openide_ui::Progress::new(
+                if *total > 0 { *received as f32 / *total as f32 } else { 0.0 },
+                theme::component_palette(),
+            )
+            .width(140.0)
+            .render()
+            .centered_y(),
+        ),
+        UpdateStatus::Ready { version, .. } => (
+            format!("openADE {version} se instala al reiniciar o al cerrar openADE."),
+            outline("update_restart", "Reiniciar ahora").icon(Icon::Refresh).render(),
+        ),
+        UpdateStatus::Failed(error) => (
+            format!("No se pudo actualizar: {error}"),
+            outline("update_check", "Reintentar").icon(Icon::Refresh).render(),
+        ),
+    };
+    settings_parts::settings_group(
+        "Actualizaciones",
+        vec![
+            settings_parts::settings_row(
+                &format!("openADE {}", env!("CARGO_PKG_VERSION")),
+                &status,
+                control,
+                compact,
+            ),
+            settings_parts::switch_row(
+                "settings_auto_update",
+                "Actualizar automáticamente",
+                if update.installable {
+                    "Descarga cada versión nueva en segundo plano y la instala al reiniciar."
+                } else {
+                    "Avisa cuando hay una versión nueva. Esta copia no se reemplaza sola: se actualiza con el archivo de cada versión."
+                },
+                update.automatic,
+                true,
+                compact,
+            ),
+        ],
+    )
 }
 
 /// A passive note shares the row typography without presenting an unavailable
@@ -1645,7 +1768,7 @@ pub fn hook_editor_modal(state: &ViewState, base: Element, viewport_width: f32) 
 
 // The harness never lets an Allow rule lower the host's Ask or Deny, so the
 // editor and the confirmation must not promise unattended execution.
-pub(crate) const EXEC_RULE_ALLOW_MEANING: &str = "«Permitir» no restringe el prefijo ni salta la aprobación: el permiso de comandos del agente sigue decidiendo si se pregunta antes de ejecutarlo.";
+pub(crate) const EXEC_RULE_ALLOW_MEANING: &str = "«Permitir» ejecuta sin preguntar los comandos que empiezan exactamente con este prefijo cuando el agente está en «Pedir aprobación». No abre nada en «Sólo lectura», y un shell que ejecute otra cosa (sh -c, env) sigue preguntando.";
 
 fn exec_rules_page(state: &ViewState, compact: bool) -> Vec<Element> {
     let settings = &state.native_exec_rules;
@@ -2653,6 +2776,7 @@ pub fn build_settings_page(
             usage
         }
         SettingsPage::Shortcuts => shortcuts_page(state, compact),
+        SettingsPage::Processes => processes_page(state, compact),
         _ => additional_page(state, page, compact),
     };
     let mut body = Vec::new();
@@ -3347,6 +3471,29 @@ mod tests {
     }
 
     #[test]
+    fn the_processes_page_lists_each_process_with_its_figures_and_a_way_to_end_it() {
+        let mut state = crate::view::tests::empty_state();
+        state.processes = vec![crate::processes::ProcessRow {
+            pid: 4242,
+            parent: 1,
+            name: "claude".into(),
+            command: "claude --resume abc".into(),
+            cpu_percent: 12.4,
+            memory_bytes: 3 * 1024 * 1024,
+            read_bytes: 0,
+            written_bytes: 2048,
+        }];
+        let frame = UiTree::new(Element::column(processes_page(&state, false))).layout(Size::new(720.0, 400.0));
+        assert!(frame.regions.iter().any(|region| region.id == "process_end:4242"));
+        let texts: Vec<String> = frame.commands.iter().filter_map(|command| match command {
+            DrawCommand::Text { text, .. } => Some(text.to_string()),
+            _ => None,
+        }).collect();
+        assert!(texts.iter().any(|text| text.contains("claude · 4242")), "{texts:?}");
+        assert!(texts.iter().any(|text| text.contains("12 % CPU · 3.0 MB")), "{texts:?}");
+    }
+
+    #[test]
     fn settings_routes_are_distinct_and_parseable() {
         let mut ids = std::collections::HashSet::new();
         for (_, pages) in SETTINGS_GROUPS {
@@ -3355,7 +3502,7 @@ mod tests {
                 assert!(ids.insert(page.action_id()), "duplicate settings route");
             }
         }
-        assert_eq!(ids.len(), 20);
+        assert_eq!(ids.len(), 21);
         assert_eq!(SettingsPage::from_action_id("settings_page:unknown"), None);
     }
 

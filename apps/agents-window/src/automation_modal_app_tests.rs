@@ -352,6 +352,7 @@ fn automation_modal_rename_preserves_exact_once_and_interval_schedule() {
                     prompt: "Resume los cambios sin modificar archivos.".into(),
                     backend: "codex".into(),
                     native_provider: None,
+                    allow_changes: false,
                     schedule: schedule.clone(),
                 },
                 1_700_000_000_000,

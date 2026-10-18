@@ -84,7 +84,21 @@ impl AgentsWindow {
         true
     }
 
-    pub(super) fn open_tool_workspace_file(&mut self, owner: &str, path: &str) {
+    /// A file named in a reply opens like a tool's, at its line when it has one.
+    pub(super) fn open_reply_path(&mut self, path: &Path, line: u32) {
+        let owner = self.view.selected_session.clone().unwrap_or_default();
+        let Some(relative) = path.to_str().and_then(|path| self.open_tool_workspace_file(&owner, path)) else {
+            return;
+        };
+        if line > 0 {
+            self.editor_services.pending_navigation = Some((
+                relative,
+                openide_language::Position { line: line - 1, character: 0 },
+            ));
+        }
+    }
+
+    pub(super) fn open_tool_workspace_file(&mut self, owner: &str, path: &str) -> Option<PathBuf> {
         let workspace = Path::new(&self.view.workspace);
         let relative = workspace.canonicalize().ok().and_then(|root| {
             let path = workspace.join(path).canonicalize().ok()?;
@@ -100,10 +114,12 @@ impl AgentsWindow {
             {
                 self.sync_dock_view();
                 self.refresh_clean_code_editor();
+                return Some(relative);
             }
         } else {
             self.view.status = "El archivo ya no está disponible dentro del proyecto".into();
         }
+        None
     }
 
     fn open_tool_image(&mut self, scope: &str, ctx: &egui::Context) {
@@ -223,6 +239,18 @@ mod tests {
             Some("src/main.rs")
         );
         assert_eq!(app.view.side_tab, SideTab::FilePreview);
+    }
+
+    #[test]
+    fn a_path_in_a_reply_opens_its_file_at_the_line_it_names() {
+        let (_temp, mut app) = fixture();
+        let ctx = egui::Context::default();
+        app.apply_action(UiAction::Clicked { id: "chat_path_open:0:0:1:../outside.rs".into() }, &ctx);
+        assert!(app.view.file_preview.is_none());
+        app.apply_action(UiAction::Clicked { id: "chat_path_open:0:0:3:src/main.rs".into() }, &ctx);
+        assert_eq!(app.view.file_preview.as_ref().map(|view| view.path.as_str()), Some("src/main.rs"));
+        let (path, position) = app.editor_services.pending_navigation.clone().unwrap();
+        assert_eq!((path, position.line), (PathBuf::from("src/main.rs"), 2));
     }
 
     #[test]

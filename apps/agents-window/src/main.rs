@@ -1,6 +1,7 @@
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
 mod agent_cli_definitions;
+mod app_update;
 mod cli_profile_settings;
 mod agent_cursor;
 mod agent_tool_settings;
@@ -51,6 +52,14 @@ mod command_center;
 #[cfg(test)]
 mod command_center_visual_tests;
 mod composer_attachments;
+mod file_drop;
+mod chime;
+mod cli_status;
+mod checkpoints;
+mod pr_watch;
+mod worktree_tasks;
+mod html_preview;
+mod processes;
 mod composer_context_ui;
 mod composer_pending;
 mod composer_permissions_ui;
@@ -83,6 +92,8 @@ mod file_ops;
 mod files;
 mod folder_dialog;
 mod fonts;
+mod acp_run;
+mod cli_tasks;
 mod graph_layout;
 mod graph_ui;
 mod graph_view;
@@ -195,6 +206,10 @@ fn main() -> eframe::Result {
     if let Some(code) = openide_cef::run_child_process() {
         std::process::exit(code);
     }
+    // A downloaded version putting itself in place of the one that quit.
+    if std::env::args_os().nth(1).is_some_and(|argument| argument == app_update::APPLY_FLAG) {
+        std::process::exit(app_update::apply_main(&std::env::args_os().skip(2).collect::<Vec<_>>()));
+    }
     // An external MCP client runs this executable as its proxy to one
     // browser context. That process is not the application: it opens no
     // window and reads no configuration.
@@ -256,7 +271,9 @@ fn main() -> eframe::Result {
                     root,
                 ))));
             }
-            Ok(Box::new(AgentsWindow::new()))
+            let mut app = AgentsWindow::new();
+            app.file_drops = file_drop::FileDrops::attach(creation);
+            Ok(Box::new(app))
         }),
     )
 }

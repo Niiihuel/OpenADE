@@ -244,7 +244,7 @@ async fn run_recovery_with_command_actor(
                     .digest_hex()
         {
             return Err(
-                "La recuperación de automatización exige su perfil original de sólo lectura".into(),
+                "La recuperación de automatización exige su perfil original".into(),
             );
         }
         let limits = frozen.limits();

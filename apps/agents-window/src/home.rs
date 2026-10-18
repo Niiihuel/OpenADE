@@ -130,14 +130,15 @@ pub(crate) fn build_home_sized(
     )
 }
 
-/// Starts a task that runs an installed agent CLI instead of the native agent.
+/// Starts a task that runs an installed agent CLI, or an agent over ACP,
+/// instead of the native agent.
 fn cli_entry(state: &ViewState) -> Option<Element> {
     let installed: Vec<_> = state
         .agent_clis
         .iter()
         .filter(|agent| agent.resolved.is_some())
         .collect();
-    if installed.is_empty() {
+    if installed.is_empty() && state.acp_agents.is_empty() {
         return None;
     }
     let mut row = vec![
@@ -160,6 +161,14 @@ fn cli_entry(state: &ViewState) -> Option<Element> {
         .tooltip(format!("Nueva tarea con {} en una terminal", agent.label));
         openide_ui::Component::render(button)
     }));
+    row.extend(state.acp_agents.iter().map(|agent| {
+        let button = openide_ui::Button::new(format!("acp_task:{}", agent.id), &agent.name, theme::component_palette())
+            .icon(crate::provider_icons::icon_for_acp_agent(&agent.id, &agent.name))
+            .variant(openide_ui::ButtonVariant::Ghost)
+            .size(openide_ui::ControlSize::Compact)
+            .tooltip(format!("Nueva tarea con {} en la conversación", agent.name));
+        openide_ui::Component::render(button)
+    }));
     row.push(Element::spacer().flex(1.0));
     Some(Element::row(row).gap(8.0).size(None, Some(CLI_ENTRY_HEIGHT)))
 }
@@ -177,6 +186,7 @@ mod tests {
 
     fn inputs() -> ComposerProps<'static> {
         ComposerProps {
+            agent_name: "",
             check_failure: None,
             pause_line: None,
             keymap_profile: crate::keymap::KeymapProfile::default(),
@@ -197,6 +207,7 @@ mod tests {
             attachments: &[],
             attachment_visuals: None,
             attachment_loading: false,
+            files_over: false,
             add_menu_open: false,
             dictation: openide_ui::DictationState::Idle,
             transcript: "",

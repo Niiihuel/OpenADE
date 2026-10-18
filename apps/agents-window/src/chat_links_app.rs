@@ -27,6 +27,36 @@ impl AgentsWindow {
         ctx.open_url(egui::OpenUrl::new_tab(url));
     }
 
+    /// A ```html block of a reply, `chat_html:<row>:<block>`, rendered in the
+    /// integrated browser.
+    pub(super) fn open_reply_html(&mut self, id: &str, ctx: &egui::Context) {
+        let mut parts = id.trim_start_matches("chat_html:").splitn(2, ':');
+        let (Some(row), Some(block)) = (
+            parts.next().and_then(|row| row.parse::<usize>().ok()),
+            parts.next().and_then(|block| block.parse::<usize>().ok()),
+        ) else {
+            return;
+        };
+        let Some(TranscriptItem::Assistant { content, .. }) = self.view.transcript.get(row) else {
+            return;
+        };
+        let Some(html) = crate::html_preview::html_blocks(content).into_iter().nth(block) else {
+            return;
+        };
+        if self.html_previews.is_none() {
+            match crate::html_preview::HtmlPreviews::start() {
+                Ok(previews) => self.html_previews = Some(previews),
+                Err(error) => {
+                    self.view.status = format!("No se pudo mostrar el HTML: {error}");
+                    return;
+                }
+            }
+        }
+        if let Some(url) = self.html_previews.as_ref().map(|previews| previews.publish(&html)) {
+            self.open_chat_link(&url, LinkTarget::Integrated, ctx);
+        }
+    }
+
     pub(super) fn apply_chat_link_menu_action(&mut self, id: &str, ctx: &egui::Context) {
         let Some(menu) = self.view.chat_link_menu.take() else {
             return;
@@ -76,3 +106,23 @@ impl AgentsWindow {
 #[cfg(test)]
 #[path = "chat_links_app_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod html_tests {
+    use super::*;
+
+    #[test]
+    fn a_replys_html_block_is_served_once_asked_for() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(temp.path().join("data"));
+        app.view.transcript = vec![TranscriptItem::Assistant {
+            content: "Acá va:\n```html\n<h1>Hola</h1>\n```".into(),
+            streaming: false,
+        }];
+        let ctx = egui::Context::default();
+        app.open_reply_html("chat_html:0:1", &ctx);
+        assert!(app.html_previews.is_none(), "no second block, nothing served");
+        app.open_reply_html("chat_html:0:0", &ctx);
+        assert!(app.html_previews.is_some());
+    }
+}

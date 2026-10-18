@@ -345,7 +345,19 @@ fn summary(props: &ComposerProps<'_>) -> Element {
     // fit beside the title: 150 px go to the title, the insets and the badge's
     // padding, and the monospace face advances 6.7 px.
     let room = ((width - 150.0) / 6.7) as usize;
-    let model = usage.and_then(|usage| usage.model.rsplit('/').next()).unwrap_or("");
+    // A model the composer cannot send to is not shown as the context's: its
+    // id is only what was saved before the provider went away. The same
+    // routes tell the composer "No hay modelos disponibles".
+    let sendable = props.model_routes.iter().any(|route| {
+        route.backend == "native"
+            && route.selectable()
+            && route.provider_id == props.native_provider_id
+            && route.model_id == props.selected_model
+    });
+    let model = usage
+        .filter(|usage| usage.error.is_none() && sendable)
+        .and_then(|usage| usage.model.rsplit('/').next())
+        .unwrap_or("");
     if !model.is_empty() && room > 8 {
         card = card.badge(crate::view::shorten(model, room - 1));
     }

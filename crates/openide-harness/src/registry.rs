@@ -103,15 +103,7 @@ impl ToolCatalog {
                     limit: MAX_CATALOG_SCHEMA_BYTES,
                 });
             }
-            let validator = jsonschema::draft202012::options()
-                .should_validate_formats(true)
-                .should_ignore_unknown_formats(false)
-                .offline()
-                .build(&definition.parameters)
-                .map_err(|error| ToolCatalogError::InvalidParameters {
-                    name: definition.name.clone(),
-                    reason: error.to_string(),
-                })?;
+            let validator = compile_validator(&definition)?;
             by_name.insert(definition.name.clone(), collected.len());
             collected.push(definition);
             validators.push(validator);
@@ -166,6 +158,23 @@ impl ToolCatalog {
             .map_err(|validation_error| error(validation_error.to_string()))?;
         Ok(definition)
     }
+}
+
+/// The Draft 2020-12 validator a definition's parameters compile to; the
+/// catalog keeps one per advertised tool and the MCP adapter one per
+/// deferred tool.
+pub(crate) fn compile_validator(
+    definition: &ToolDefinition,
+) -> Result<jsonschema::Validator, ToolCatalogError> {
+    jsonschema::draft202012::options()
+        .should_validate_formats(true)
+        .should_ignore_unknown_formats(false)
+        .offline()
+        .build(&definition.parameters)
+        .map_err(|error| ToolCatalogError::InvalidParameters {
+            name: definition.name.clone(),
+            reason: error.to_string(),
+        })
 }
 
 fn validate_name(name: &str) -> Result<(), ToolCatalogError> {

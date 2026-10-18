@@ -469,6 +469,7 @@ mod tests {
             "Original frozen instructions".into(),
             "Read fixture".into(),
             &run_id,
+            false,
         )
         .unwrap();
         let store = SessionStore::open(root.join("sessions")).unwrap();

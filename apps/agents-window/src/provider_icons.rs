@@ -36,6 +36,37 @@ pub(crate) fn icon_for_agent_cli(agent_id: &str) -> Icon {
     }
 }
 
+/// An ACP agent's mark: the artwork openADE has for its CLI or its company,
+/// else the brand catalog's entry named exactly as the agent, with the last
+/// words of its name dropped one by one ("Grok Build" is Grok's), or as its
+/// id. An agent no brand answers to is a terminal.
+pub(crate) fn icon_for_acp_agent(id: &str, name: &str) -> Icon {
+    let words: Vec<&str> = name.split_whitespace().collect();
+    let first = words.first().map_or_else(String::new, |word| word.to_lowercase());
+    if let Some(own) = [icon_for_agent_cli(id), icon_for_provider(id), icon_for_provider(&first)]
+        .into_iter()
+        .find(|icon| !matches!(icon, Icon::Terminal | Icon::Grid))
+    {
+        return own;
+    }
+    let dark = !crate::theme_mode::light();
+    let exact = |query: &str| {
+        crate::brand_icons::search(query, 4).into_iter().find(|brand| {
+            brand
+                .aliases
+                .iter()
+                .chain(std::iter::once(&brand.title))
+                .any(|known| known.eq_ignore_ascii_case(query))
+        })
+    };
+    (1..=words.len())
+        .rev()
+        .map(|count| words[..count].join(" "))
+        .chain(std::iter::once(id.to_owned()))
+        .find_map(|query| exact(&query).and_then(|brand| brand.icon(dark)))
+        .unwrap_or(Icon::Terminal)
+}
+
 /// Artwork limn does not ship: provider marks and the application's own
 /// glyphs. Each is an SVG drawn with `currentColor`, so it follows the theme.
 pub(crate) const CODEX: Icon =
@@ -94,6 +125,21 @@ mod tests {
             Icon::Custom(source) => Some(source),
             _ => None,
         }
+    }
+
+    #[test]
+    fn acp_agents_wear_their_own_cli_or_brand_mark_and_only_an_exact_brand() {
+        assert_eq!(svg_for_icon(icon_for_acp_agent("opencode", "OpenCode")), svg_for_icon(OPENCODE));
+        assert_eq!(svg_for_icon(icon_for_acp_agent("vibe", "Mistral Vibe")), svg_for_icon(MISTRAL));
+        for (id, name) in [("grok", "Grok Build"), ("gemini", "Gemini CLI"), ("copilot", "GitHub Copilot"), ("antigravity", "Google Antigravity")] {
+            assert!(crate::brand_icons::is_brand_icon(&icon_for_acp_agent(id, name)), "{name}");
+        }
+        // The sidebar knows only the id, which names the brand itself for some.
+        for id in ["grok", "gemini"] {
+            assert!(crate::brand_icons::is_brand_icon(&icon_for_acp_agent(id, id)), "{id}");
+        }
+        // A word a brand merely starts with is not that brand.
+        assert!(matches!(icon_for_acp_agent("code-puppy", "Code Puppy"), Icon::Terminal));
     }
 
     #[test]

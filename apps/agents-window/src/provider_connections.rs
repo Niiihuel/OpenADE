@@ -27,7 +27,9 @@ use crate::native_provider::{self, ProviderModelDiscovery};
 use openide_connections::{client, credential_dir, json_response, load, lock, now, random, request_error, revoke_codex, save, update_tokens, valid_secret, verify_identity, Credential, RESOURCE, TOKEN_URL};
 #[cfg(test)]
 use openide_connections::key_provider;
-pub(crate) use openide_connections::{codex_token_source, read_key, refresh_due, service, supported, PROVIDERS};
+pub(crate) use openide_connections::{
+    codex_token_source, connectable, read_key, refresh_due, service, supported, KEY_PROVIDERS, PROVIDERS,
+};
 use openide_connections::refresh_codex;
 
 
@@ -35,6 +37,7 @@ pub(crate) const CHATGPT_USAGE_URL: &str = "https://chatgpt.com/settings/usage";
 pub(crate) fn name(id: &str) -> &str {
     PROVIDERS
         .iter()
+        .chain(KEY_PROVIDERS)
         .find(|row| row.0 == id)
         .map_or(id, |row| row.1)
 }
@@ -46,6 +49,12 @@ pub(crate) fn account_url(id: &str) -> &'static str {
         "nvidia" => "https://build.nvidia.com/",
         "minimax" => "https://platform.minimax.io/console/access",
         "zai" => "https://z.ai/manage-apikey/apikey-list",
+        "openai" => "https://platform.openai.com/api-keys",
+        "anthropic" => "https://console.anthropic.com/settings/keys",
+        "xai" => "https://console.x.ai/",
+        "deepseek" => "https://platform.deepseek.com/api_keys",
+        "mistral" => "https://console.mistral.ai/api-keys",
+        "groq" => "https://console.groq.com/keys",
         _ => "https://openrouter.ai/",
     }
 }
@@ -177,8 +186,10 @@ impl ConnectionWorker {
     }
     pub(crate) fn api_key(root: PathBuf, id: String, key: String, service: String) -> Self {
         Self::spawn(move |sender, cancel| {
-            if !matches!(id.as_str(), "opencode" | "nvidia" | "openrouter" | "minimax" | "zai")
-                || !valid_secret(key.trim())
+            if !matches!(
+                id.as_str(),
+                "opencode" | "nvidia" | "openrouter" | "minimax" | "zai" | "openai" | "anthropic" | "xai" | "deepseek" | "mistral" | "groq"
+            ) || !valid_secret(key.trim())
                 || key.len() > 4096
             {
                 return Err("Introduce una clave API válida".into());
@@ -336,7 +347,12 @@ fn oauth(
                 .append_pair("state", &state)
                 .append_pair("nonce", &nonce)
                 .append_pair("ext_agent_host_id", &host_id(root)?);
-            if let Some(client_id) = old.as_ref().and_then(|r| r.client_id.as_deref()) {
+            // A client registered under an earlier name is left behind:
+            // ChatGPT shows the name only at registration.
+            let current = old
+                .as_ref()
+                .filter(|r| r.agent_name.as_deref() == Some(openide_connections::AGENT_NAME));
+            if let Some(client_id) = current.and_then(|r| r.client_id.as_deref()) {
                 query.append_pair("client_id", client_id);
                 // Account selection stays in the browser; identity is checked after return.
                 if let Some(email) = old.as_ref().and_then(|r| r.email.as_deref()) {
@@ -393,7 +409,11 @@ fn oauth(
             ..Default::default()
         }
     } else {
-        let prior_client = old.as_ref().and_then(|r| r.client_id.as_deref());
+        // Only a client registered under the current name is expected back.
+        let prior_client = old
+            .as_ref()
+            .filter(|r| r.agent_name.as_deref() == Some(openide_connections::AGENT_NAME))
+            .and_then(|r| r.client_id.as_deref());
         let issued = callback
             .get("client_id")
             .map(String::as_str)
@@ -435,6 +455,7 @@ fn oauth(
             version: 1,
             provider_id: id.into(),
             client_id: Some(issued.into()),
+            agent_name: Some(openide_connections::AGENT_NAME.into()),
             subject: Some(identity.sub),
             email: identity.email,
             id_token: Some(id_token.into()),
@@ -625,6 +646,26 @@ mod api_provider_tests {
     #[test]
     fn minimax_and_zai_credentials_remain_separate_private_and_revocable() {
         let root = tempfile::tempdir().unwrap();
+        // A key kept for a provider of the native agent is read back through
+        // its variable, and never counts as an account.
+        for (provider, env) in [
+            ("openai", "OPENAI_API_KEY"),
+            ("anthropic", "ANTHROPIC_API_KEY"),
+            ("xai", "XAI_API_KEY"),
+            ("deepseek", "DEEPSEEK_API_KEY"),
+            ("mistral", "MISTRAL_API_KEY"),
+            ("groq", "GROQ_API_KEY"),
+        ] {
+            assert!(openide_connections::key_connectable(provider) && !supported(provider), "{provider}");
+            assert_eq!(key_provider(env), Some(provider));
+            assert_eq!(read_key(root.path(), env), None);
+            save(root.path(), &Credential {
+                version: 1, provider_id: provider.into(), access_token: format!("key-{provider}"),
+                service: "api".into(), ..Default::default()
+            }).unwrap();
+            assert_eq!(read_key(root.path(), env).as_deref(), Some(format!("key-{provider}").as_str()));
+            assert!(!summaries(root.path()).contains_key(provider));
+        }
         for (provider, env) in [("minimax", "MINIMAX_API_KEY"), ("zai", "ZAI_API_KEY")] {
             let secret = format!("fixture-{provider}-secret");
             save(root.path(), &Credential {

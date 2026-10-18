@@ -199,6 +199,7 @@ fn native_context_automation_load_error_keeps_recorded_route_and_visible_cause()
         "Read-only fixture".into(),
         "Inspect the project".into(),
         &run_id,
+        false,
     )
     .unwrap();
     let store = app.store.clone().unwrap();

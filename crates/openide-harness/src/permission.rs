@@ -242,6 +242,9 @@ impl PermissionPolicy {
         };
         match (host_mode, evaluation.decision) {
             (PermissionMode::Deny, _) | (_, Some(ExecDecision::Deny)) => PermissionMode::Deny,
+            // An exact prefix the user allowed answers the host's question;
+            // it never opens what the host denies.
+            (PermissionMode::Ask, Some(ExecDecision::Allow)) => PermissionMode::Allow,
             (PermissionMode::Ask, _) | (_, Some(ExecDecision::Ask)) => PermissionMode::Ask,
             _ => PermissionMode::Allow,
         }
@@ -595,7 +598,7 @@ mod tests {
     }
 
     #[test]
-    fn argv_rules_only_tighten_host_permissions() {
+    fn argv_rules_tighten_host_permissions_and_an_allow_rule_answers_a_question() {
         let call = command("git", &["status"]);
         let host_deny = PermissionPolicy::new()
             .with_tool("run_command", PermissionMode::Deny)
@@ -604,7 +607,12 @@ mod tests {
         let host_ask = PermissionPolicy::new()
             .with_tool("run_command", PermissionMode::Ask)
             .with_exec_policy(policy(ExecDecision::Allow));
-        assert_eq!(host_ask.mode_for_call(&call), PermissionMode::Ask);
+        assert_eq!(host_ask.mode_for_call(&call), PermissionMode::Allow);
+        // Only the exact prefix: another program, or a shell that could run
+        // it, still asks.
+        assert_eq!(host_ask.mode_for_call(&command("gh", &["pr"])), PermissionMode::Ask);
+        assert_eq!(host_ask.mode_for_call(&command("sh", &["-c", "git status"])), PermissionMode::Ask);
+        assert_eq!(host_ask.mode_for_call(&command("/usr/bin/git", &["status"])), PermissionMode::Ask);
         let raised = PermissionPolicy::new().with_exec_policy(policy(ExecDecision::Deny));
         assert_eq!(raised.mode_for_call(&call), PermissionMode::Deny);
         let mut persistent = call.clone();

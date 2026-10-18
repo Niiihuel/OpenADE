@@ -3,7 +3,8 @@
 //! This is an original, intentionally smaller implementation than Codex's
 //! Starlark execpolicy. It matches the exact `command` and `args` supplied by
 //! the model, without reparsing arbitrary shell scripts. Rules can tighten
-//! host permissions to Ask or Deny; Allow never grants a new permission.
+//! host permissions to Ask or Deny; Allow answers a host Ask for its exact
+//! prefix and never opens what the host denies.
 
 use openide_core::ToolCall;
 use serde::{Deserialize, Serialize};
@@ -305,7 +306,9 @@ fn executable_basename(program: &str) -> String {
         .to_owned()
 }
 
-fn is_opaque_wrapper(program: &str) -> bool {
+/// A shell or launcher that runs what its arguments say: no prefix of its
+/// argv tells what will run.
+pub fn is_opaque_wrapper(program: &str) -> bool {
     let lowercase = program.to_ascii_lowercase();
     matches!(
         executable_basename(program).as_str(),

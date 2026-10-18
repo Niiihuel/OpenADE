@@ -129,6 +129,7 @@ fn freeze(
         INSTRUCTIONS.into(),
         PROMPT.into(),
         run_id,
+        false,
     )
     .unwrap()
 }
@@ -290,6 +291,62 @@ fn readonly_catalog_contains_no_external_effect_tools() {
     assert!(names.contains(&"search_files"));
     assert!(names.contains(&"update_plan"));
     assert_eq!(names.len(), 4);
+}
+
+#[test]
+fn a_workspace_write_profile_offers_edits_and_sandboxed_commands_and_keeps_its_limits() {
+    let catalog = profile_catalog(WORKSPACE_WRITE_V1).unwrap();
+    let names: Vec<_> = catalog.definitions().iter().map(|definition| definition.name.as_str()).collect();
+    for tool in ["read_file", "write_file", "apply_patch", "run_command", "update_plan"] {
+        assert!(names.contains(&tool), "{tool} in {names:?}");
+    }
+    let run_command = catalog.definitions().iter().find(|definition| definition.name == "run_command").unwrap();
+    assert!(run_command.parameters["properties"].get("elevated").is_none(), "never elevated");
+    assert_ne!(catalog.digest_hex(), readonly_catalog().unwrap().digest_hex());
+    assert_ne!(FrozenLimits::from(profile_limits(WORKSPACE_WRITE_V1)), FrozenLimits::from(profile_limits(READ_ONLY_V1)));
+}
+
+#[test]
+fn an_automation_allowed_to_change_freezes_its_profile_or_refuses_without_a_sandbox() {
+    let directory = tempfile::tempdir().unwrap();
+    let server = HttpFixture::new(NativeWireApi::ChatCompletions);
+    let (_, run_id, _) = occurrence();
+    let discoveries = configure(directory.path(), &server.endpoint, NativeWireApi::ChatCompletions);
+    let frozen = FrozenNativeAutomationAuthorityV1::freeze(
+        RuntimeConnection {
+            auth: Default::default(),
+            headers: Default::default(),
+            endpoint: server.endpoint.clone(),
+            api_key: Some(SECRET.into()),
+            model_id: MODEL.into(),
+            wire_api: NativeWireApi::ChatCompletions,
+        },
+        PROVIDER,
+        directory.path(),
+        directory.path(),
+        None,
+        &discoveries,
+        None,
+        Some(budget()),
+        INSTRUCTIONS.into(),
+        PROMPT.into(),
+        &run_id,
+        true,
+    );
+    if !openide_harness::CommandIsolation::WorkspaceWriteOffline.is_available_on_host() {
+        assert!(frozen.unwrap_err().contains("aislamiento"));
+        return;
+    }
+    let frozen = frozen.unwrap();
+    assert!(frozen.allows_changes());
+    assert!(frozen.catalog().unwrap().definitions().iter().any(|definition| definition.name == "write_file"));
+    let origin = frozen.to_origin("automation", &run_id, 1, true).unwrap();
+    assert_eq!(origin.authority_profile, openide_core::NativeAutomationAuthorityProfile::WorkspaceWriteV1);
+    // A snapshot that claims the write profile with the read-only limits is refused.
+    let mut tampered: serde_json::Value = serde_json::to_value(&frozen).unwrap();
+    tampered["limits"] = serde_json::to_value(FrozenLimits::from(readonly_v1_limits())).unwrap();
+    let tampered: FrozenNativeAutomationAuthorityV1 = serde_json::from_value(tampered).unwrap();
+    assert!(tampered.validate().is_err());
 }
 
 #[test]

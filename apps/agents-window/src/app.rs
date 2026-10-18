@@ -1,5 +1,7 @@
 #[path = "marketplace_app.rs"]
 mod marketplace_app;
+#[path = "app_update_app.rs"]
+mod app_update_app;
 #[path = "appearance_app.rs"]
 mod appearance_app;
 #[path = "custom_theme_app.rs"]
@@ -166,6 +168,21 @@ mod background_resume_app;
 #[path = "pause_app_tests.rs"]
 mod pause_app_tests;
 #[cfg(test)]
+#[path = "file_drop_app_tests.rs"]
+mod file_drop_app_tests;
+#[path = "cli_status_app.rs"]
+mod cli_status_app;
+#[path = "checkpoints_app.rs"]
+mod checkpoints_app;
+#[path = "delegation_app.rs"]
+mod delegation_app;
+#[path = "pr_watch_app.rs"]
+mod pr_watch_app;
+#[path = "fork_app.rs"]
+mod fork_app;
+#[path = "worktree_tasks_app.rs"]
+mod worktree_tasks_app;
+#[cfg(test)]
 #[path = "message_edit_app_tests.rs"]
 mod message_edit_app_tests;
 #[cfg(test)]
@@ -184,6 +201,11 @@ mod tool_disclosure_app_tests;
 mod tool_navigation_app;
 #[path = "graph_app.rs"]
 mod graph_app;
+#[path = "acp_app.rs"]
+mod acp_app;
+#[cfg(test)]
+#[path = "acp_app_tests.rs"]
+mod acp_app_tests;
 
 #[path = "composer_interaction_app.rs"]
 mod composer_interaction_app;
@@ -353,6 +375,7 @@ type NativeCommandOutputResponse = (
 enum ActiveRun {
     Native(AgentRunHandle),
     Cli(CliRunHandle),
+    Acp(crate::acp_run::AcpRunHandle),
 }
 
 /// Bound work pulled into one UI frame. Keeping the unread tail in the channel
@@ -1124,6 +1147,60 @@ struct BackgroundAutomationRun {
     run: ActiveRun,
 }
 
+/// A turn that goes on while its conversation is off screen, with what the
+/// window keeps of the turn on screen until it is back.
+struct ParkedRun {
+    run: ActiveRun,
+    workspace: String,
+    run_has_output: bool,
+    turn_had_effects: bool,
+    pending_prompt: Option<String>,
+    pending_attachments: Vec<ComposerAttachmentView>,
+    /// What it asked and nobody has answered yet.
+    pending_permissions: Vec<PermissionView>,
+    /// Its final event was seen; what is left is the tail of its process.
+    ended: bool,
+}
+
+impl ParkedRun {
+    /// What `process_event` keeps of this event for the turn on screen.
+    fn note(&mut self, event: &AgentEvent) {
+        if matches!(
+            &event.kind,
+            AgentEventKind::AssistantDelta { .. }
+                | AgentEventKind::AssistantMessage { .. }
+                | AgentEventKind::ToolStarted { .. }
+                | AgentEventKind::ToolOutputDelta { .. }
+                | AgentEventKind::ToolResultMedia { .. }
+                | AgentEventKind::ProcessOutput { .. }
+        ) {
+            self.run_has_output = true;
+        }
+        match &event.kind {
+            AgentEventKind::ToolStarted { tool_call } => {
+                self.turn_had_effects |= crate::turn_check::tool_has_effects(&tool_call.name);
+            }
+            AgentEventKind::PermissionRequested { request_id, tool_call }
+                if !self.pending_permissions.iter().any(|permission| permission.request_id == *request_id) =>
+            {
+                self.pending_permissions.push(PermissionView {
+                    request_id: request_id.clone(),
+                    tool_name: tool_call.name.clone(),
+                    arguments: serde_json::to_string_pretty(&tool_call.arguments).unwrap_or_default(),
+                });
+            }
+            AgentEventKind::PermissionResolved { request_id, .. } => {
+                self.pending_permissions.retain(|permission| permission.request_id != *request_id);
+            }
+            AgentEventKind::TurnCompleted { .. }
+            | AgentEventKind::TurnFailed { .. }
+            | AgentEventKind::TurnCancelled
+            | AgentEventKind::TurnPaused { .. } => self.ended = true,
+            _ => {}
+        }
+    }
+}
+
 fn install_text_measurer(tree: &mut UiTree, context: &egui::Context) {
     limn_egui::attach_fonts(tree, context);
 }
@@ -1282,10 +1359,18 @@ fn relayout_after_updates(
 }
 
 impl ActiveRun {
+    fn session_id(&self) -> &str {
+        match self {
+            Self::Native(run) => &run.session_id,
+            Self::Cli(run) => &run.session_id,
+            Self::Acp(run) => &run.session_id,
+        }
+    }
+
     fn journal_error(&self) -> Option<String> {
         match self {
             Self::Native(run) => run.journal_error(),
-            Self::Cli(_) => None,
+            Self::Cli(_) | Self::Acp(_) => None,
         }
     }
 
@@ -1293,6 +1378,7 @@ impl ActiveRun {
         match self {
             Self::Native(run) => run.resolve_permission(request_id, choice),
             Self::Cli(_) => false,
+            Self::Acp(run) => run.resolve_permission(request_id, choice),
         }
     }
 
@@ -1300,6 +1386,7 @@ impl ActiveRun {
         match self {
             Self::Native(run) => run.cancel(),
             Self::Cli(run) => run.cancel(),
+            Self::Acp(run) => run.cancel(),
         }
     }
 
@@ -1307,6 +1394,7 @@ impl ActiveRun {
         let receiver = match self {
             Self::Native(run) => &run.events,
             Self::Cli(run) => &run.events,
+            Self::Acp(run) => &run.events,
         };
         drain_ui_updates(receiver)
     }
@@ -1388,6 +1476,11 @@ pub struct AgentsWindow {
     background_automation_runs: Vec<BackgroundAutomationRun>,
     /// Paused trees the clock is continuing while they are not on screen.
     background_resumes: Vec<background_resume_app::BackgroundResume>,
+    /// Turns of the conversations the person left while they ran.
+    parked_runs: Vec<ParkedRun>,
+    cli_homes: crate::cli_tasks::Homes,
+    /// Searches for the session a CLI task's CLI created after its start.
+    cli_session_probes: Vec<(String, Receiver<Option<String>>)>,
     native_automation_result_errors: HashMap<(PathBuf, String), String>,
     automation_queue: VecDeque<(usize, AutomationDispatch)>,
     marketplace_response: Option<Receiver<MarketplaceResponse>>,
@@ -1437,6 +1530,34 @@ pub struct AgentsWindow {
     attachment_worker: Option<crate::composer_attachments::AttachmentWorker>,
     attachment_visuals_pending: HashSet<String>,
     attachment_pastes_pending: HashSet<crate::composer_attachments::DraftKey>,
+    pub(crate) file_drops: crate::file_drop::FileDrops,
+    /// A notice asked for the window's attention; sent on the next frame.
+    attention_pending: bool,
+    /// The task each CLI terminal belongs to, and how its CLI reports.
+    cli_terminal_tasks: HashMap<u64, (String, crate::cli_status::StatusReport)>,
+    /// Tasks whose CLI works (`false`) or waits for the person (`true`).
+    cli_status: BTreeMap<String, bool>,
+    /// The word each task's hooks last wrote, so one is acted on once.
+    cli_status_words: HashMap<String, String>,
+    cli_status_polled: Option<Instant>,
+    /// Pull requests tasks watch, the next look and the one in flight.
+    pr_watches: Vec<crate::pr_watch::Watch>,
+    pr_watch_due: Instant,
+    pr_watch_poll: Option<std::sync::mpsc::Receiver<Vec<pr_watch_app::WatchResult>>>,
+    process_sampler: crate::processes::ProcessSampler,
+    processes_polled: Option<Instant>,
+    /// Where the HTML of replies is served from, once one is opened.
+    html_previews: Option<crate::html_preview::HtmlPreviews>,
+    /// The task worktree the environment's Git worker is creating.
+    task_worktree: Option<PathBuf>,
+    /// Context for a forked CLI task, typed in once its CLI is ready.
+    cli_handoffs: HashMap<String, (String, Instant)>,
+    /// Tasks a CLI delegated, waiting for their answer.
+    delegations: HashMap<String, std::sync::mpsc::Sender<Result<String, String>>>,
+    checkpoint_channel: (
+        std::sync::mpsc::Sender<checkpoints_app::CheckpointDone>,
+        std::sync::mpsc::Receiver<checkpoints_app::CheckpointDone>,
+    ),
     keyboard_paste_handled: bool,
     pending_text_paste: Option<text_input_app::TextPasteRequest>,
     attachment_viewer_generation: u64,
@@ -1461,6 +1582,7 @@ pub struct AgentsWindow {
     /// Model for the next turn only; see `start_run`.
     turn_model_override: Option<NativeProviderSettings>,
     window_focused: bool,
+    updates: app_update_app::Updates,
     toast_shown: bool,
     /// The Settings notice on screen and when it appeared.
     settings_notice_seen: Option<(String, Instant)>,
@@ -1487,6 +1609,13 @@ pub struct AgentsWindow {
     // shows when it comes back, but takes no input.
     browser_live: HashMap<u64, bool>,
     agent_cursor: crate::agent_cursor::AgentCursor,
+    /// Each ACP task's agent, kept running between its turns.
+    acp_slots: HashMap<String, Arc<crate::acp_run::AgentSlot>>,
+    acp_offers_loading: Option<Receiver<Result<Vec<crate::acp_run::AcpEntry>, String>>>,
+    /// An agent starting ahead of its task's first turn, by session.
+    acp_warming: Option<Receiver<(String, Result<(), String>)>>,
+    /// An agent's download, by registry id.
+    acp_installing: Option<Receiver<(String, Result<(), String>)>>,
     /// The graph tab's layout thread, camera and pointer; its options live in the view.
     graph: crate::graph_view::GraphView,
     /// The file last shown in the dock: the graph's focused node.
@@ -1693,7 +1822,7 @@ fn project_on_github(workspace: &str) -> bool {
     crate::github::discover_repository(Path::new(workspace)).is_some()
 }
 
-const MAX_COMPOSER_ATTACHMENTS: usize = 12;
+pub(crate) const MAX_COMPOSER_ATTACHMENTS: usize = 12;
 const MAX_COMPOSER_ATTACHMENT_PATH_BYTES: usize = 2_048;
 const MAX_COMPOSER_PROJECTS: usize = 12;
 const MAX_COMPOSER_GOAL_BYTES: usize = 8 * 1024;
@@ -2950,6 +3079,28 @@ fn recovery_status(recovery: &ReplayRecovery) -> &'static str {
             "Turno abortado con herramientas pendientes; requiere resolución"
         }
     }
+}
+
+/// What an ACP agent is told to go on with a turn the app was closed in the
+/// middle of.
+const ACP_CONTINUATION: &str =
+    "Seguí con lo que estabas haciendo: la aplicación se cerró en medio de tu turno anterior.";
+
+/// An ACP turn that started and never ended: the app was closed in the
+/// middle of it, and the agent with it.
+fn acp_turn_unfinished(events: &[AgentEvent]) -> bool {
+    events
+        .iter()
+        .rev()
+        .find_map(|event| match &event.kind {
+            AgentEventKind::TurnStarted { .. } => Some(true),
+            AgentEventKind::TurnCompleted { .. }
+            | AgentEventKind::TurnFailed { .. }
+            | AgentEventKind::TurnCancelled
+            | AgentEventKind::TurnPaused { .. } => Some(false),
+            _ => None,
+        })
+        .unwrap_or(false)
 }
 
 fn native_session_views(
@@ -6230,6 +6381,7 @@ impl AgentsWindow {
                         generation: self.review_generation,
                         account: self.github_query_account().map(str::to_owned),
                         create_pull: None,
+                        action: None,
                     })
                     .is_ok()
             });
@@ -6647,6 +6799,7 @@ impl AgentsWindow {
         crate::theme_mode::load(&root);
         let data_folder = root.display().to_string();
         let settings_preferences = SettingsPreferences::load(&root);
+        let (updates, update_view) = app_update_app::Updates::new(settings_preferences.auto_update);
         crate::theme_mode::set_appearance(&settings_preferences.appearance);
         crate::appearance_preferences::set_current(&settings_preferences.appearance);
         let ide = crate::ide_workspace::IdeWorkspaceState::load(&root);
@@ -6865,6 +7018,7 @@ impl AgentsWindow {
             composer_attachments: Vec::new(),
             composer_attachment_visuals: Default::default(),
             composer_attachment_loading: false,
+            composer_files_over: false,
             composer_image_viewer: None,
             message_edit: Default::default(),
             message_actions: Default::default(),
@@ -6996,6 +7150,17 @@ impl AgentsWindow {
             compat_hooks: Vec::new(),
             plugin_skills: Vec::new(),
             agent_clis: Vec::new(),
+            acp_agents: Vec::new(),
+            acp_catalog: Vec::new(),
+            acp_catalog_error: None,
+            acp_installing: None,
+            acp_query: String::new(),
+            off_screen_turns: BTreeMap::new(),
+            cli_task_mode: Default::default(),
+            cli_mode_open: false,
+            checkpoint_menu: None,
+            checkpoint_restoring: false,
+            ide_folders: Vec::new(),
             turn_check_command: String::new(),
             turn_check_failure: None,
             review_model: Default::default(),
@@ -7050,6 +7215,7 @@ impl AgentsWindow {
                 appearance_font_query: Default::default(),
                 custom_theme_ui: Default::default(),
             settings_reopen_last_workspace: settings_preferences.reopen_last_workspace,
+            update: update_view,
             settings_terminal_shell: settings_preferences.terminal_shell.clone(),
             settings_terminal_shell_draft: match &settings_preferences.terminal_shell {
                 TerminalShell::Custom(path) => path.to_string_lossy().into_owned(),
@@ -7170,6 +7336,8 @@ impl AgentsWindow {
             turn_in_view: None,
             link_copied: None,
             show_archived: false,
+            processes: Vec::new(),
+            session_query: String::new(),
             session_organization: sidebar_preferences.organization,
             session_sort: sidebar_preferences.sort,
             session_sort_menu_open: false,
@@ -7287,6 +7455,9 @@ impl AgentsWindow {
             automation_last_poll: Instant::now() - Duration::from_secs(31),
             background_automation_runs: Vec::new(),
             background_resumes: Vec::new(),
+            parked_runs: Vec::new(),
+            cli_homes: crate::cli_tasks::Homes::from_env(),
+            cli_session_probes: Vec::new(),
             native_automation_result_errors: HashMap::new(),
             automation_queue: VecDeque::new(),
             marketplace_response: None,
@@ -7332,6 +7503,22 @@ impl AgentsWindow {
             attachment_worker: crate::composer_attachments::AttachmentWorker::start(),
             attachment_visuals_pending: HashSet::new(),
             attachment_pastes_pending: HashSet::new(),
+            file_drops: Default::default(),
+            attention_pending: false,
+            cli_terminal_tasks: HashMap::new(),
+            cli_status: BTreeMap::new(),
+            cli_status_words: HashMap::new(),
+            cli_status_polled: None,
+            pr_watches: crate::pr_watch::load(&root),
+            pr_watch_due: Instant::now(),
+            pr_watch_poll: None,
+            process_sampler: Default::default(),
+            processes_polled: None,
+            html_previews: None,
+            task_worktree: None,
+            cli_handoffs: HashMap::new(),
+            delegations: HashMap::new(),
+            checkpoint_channel: std::sync::mpsc::channel(),
             keyboard_paste_handled: false,
             pending_text_paste: None,
             attachment_viewer_generation: 0,
@@ -7350,6 +7537,7 @@ impl AgentsWindow {
             session_start_context: None,
             turn_model_override: None,
             window_focused: true,
+            updates,
             toast_shown: false,
             settings_notice_seen: None,
             // An unreadable file reviews with the selected model.
@@ -7390,6 +7578,10 @@ impl AgentsWindow {
             browser_restart_urls: HashMap::new(),
             browser_live: HashMap::new(),
             agent_cursor: Default::default(),
+            acp_slots: HashMap::new(),
+            acp_offers_loading: None,
+            acp_warming: None,
+            acp_installing: None,
             graph: Default::default(),
             graph_last_file: None,
             graph_relayout: false,
@@ -7869,6 +8061,7 @@ impl AgentsWindow {
                 instructions,
                 dispatch.prompt.clone(),
                 &dispatch.run_id,
+                dispatch.allow_changes,
             )?;
             // Validate credentials before metadata publication. This makes no
             // backend request and stores only the variable name, never its key.
@@ -8224,6 +8417,7 @@ impl AgentsWindow {
                 | "automation_next"
                 | "automation_save"
                 | "automation_native_current"
+                | "automation_allow_changes"
                 | "automation_choice_dismiss"
                 | "automation_weekdays_work"
         ) || [
@@ -8369,6 +8563,16 @@ impl AgentsWindow {
                 if backend == "native" {
                     state.form.native_provider.get_or_insert(current_native);
                 }
+            }
+            return;
+        }
+        if id == "automation_allow_changes" {
+            // Turning it off is always possible; on, only with the sandbox.
+            if state.editor_step == AutomationEditorStep::Agent
+                && state.form.backend == "native"
+                && (state.form.allow_changes || crate::automation_view::changes_available())
+            {
+                state.form.allow_changes = !state.form.allow_changes;
             }
             return;
         }
@@ -8699,6 +8903,13 @@ impl AgentsWindow {
                         }
                         let (recovery, plan, pause) =
                             native_session_views(&self.data_root, &store, record);
+                        // An ACP agent is closed with the app: a turn of it
+                        // that never ended can be asked to go on.
+                        let recovery = recovery.or_else(|| {
+                            (record.session.backend.starts_with(crate::acp_run::ACP_BACKEND)
+                                && acp_turn_unfinished(&record.events))
+                            .then_some(SessionRecoveryView::Resume)
+                        });
                         if let Some(recovery) = recovery {
                             let selected_running = self.view.running
                                 && self.view.selected_session.as_deref()
@@ -9496,6 +9707,7 @@ impl AgentsWindow {
         }
         self.view.composer_project_options =
             composer_project_options(&self.view.workspace, &self.known_project_paths);
+        self.sync_ide_folders();
     }
 
     fn persist_sidebar_preferences(&mut self) {
@@ -10454,6 +10666,30 @@ impl AgentsWindow {
         );
     }
 
+    /// A rule allowing `prefix` for the next turns, kept with the others.
+    fn allow_command_always(&mut self, prefix: &[String]) -> Result<(), String> {
+        if let Some(error) = &self.exec_policy_load_error {
+            return Err(format!("Corregí las reglas de comandos antes de añadir una: {error}"));
+        }
+        let rule = openide_harness::ExecRule::new(
+            prefix.iter().cloned().map(openide_harness::ExecPatternToken::Literal).collect(),
+            ExecDecision::Allow,
+            Some("Permitido siempre desde una aprobación".to_owned()),
+        )
+        .map_err(|error| error.to_string())?;
+        let mut rules = self.exec_policy_settings.rules.clone();
+        if !rules.contains(&rule) {
+            rules.push(rule);
+        }
+        let next = ExecPolicySettings { rules };
+        next.policy().map_err(|error| error.to_string())?;
+        next.save(&self.data_root).map_err(|error| error.to_string())?;
+        self.exec_policy_settings = next;
+        self.exec_policy_load_error = None;
+        self.view.native_exec_rules = ExecPolicyUiState::from_settings(&self.exec_policy_settings);
+        Ok(())
+    }
+
     fn delete_exec_rule(&mut self, index: usize) {
         let mut next_view = self.view.native_exec_rules.clone();
         if let Err(error) = next_view.remove(index) {
@@ -10956,6 +11192,28 @@ impl AgentsWindow {
         self.open_native_command_controls(command_id);
     }
 
+    /// What the composer's preset says of an ACP agent's request: "Permitir
+    /// todo" allows it, "Sólo lectura" refuses an edit or a command, and the
+    /// others leave it to the person.
+    fn acp_preset_answer(&self, tool_name: &str) -> Option<bool> {
+        use crate::composer_permissions_ui::{preset_for_permissions, ComposerPermissionPreset};
+        match preset_for_permissions(
+            self.agent_tool_settings.permissions(),
+            self.agent_tool_settings.full_access(),
+        ) {
+            ComposerPermissionPreset::FullAccess => Some(true),
+            ComposerPermissionPreset::ReadOnly
+                if matches!(
+                    tool_name,
+                    "edit_file" | "write_file" | "apply_patch" | "run_command" | "start_command"
+                ) =>
+            {
+                Some(false)
+            }
+            _ => None,
+        }
+    }
+
     fn native_permission_policy(&self) -> Result<PermissionPolicy, String> {
         if let Some(error) = &self.exec_policy_load_error {
             return Err(format!(
@@ -11279,7 +11537,7 @@ impl AgentsWindow {
     fn begin_provider_connect(&mut self, id: &str) {
         if self.view.running
             || self.provider_connection_worker.is_some()
-            || !crate::provider_connections::supported(id)
+            || !crate::provider_connections::connectable(id)
         {
             return;
         }
@@ -11952,6 +12210,9 @@ impl AgentsWindow {
     }
 
     fn refresh_composer_choice_options(&mut self) {
+        if self.refresh_acp_composer_options() {
+            return;
+        }
         let codex_live = self.view.selected_backend == "codex" && !self.codex_models.is_empty();
         self.view.composer_model_options = if codex_live {
             self.view
@@ -12310,6 +12571,9 @@ impl AgentsWindow {
     }
 
     fn select_composer_model(&mut self, model: &str) {
+        if self.select_acp_choice(false, model).is_some() {
+            return;
+        }
         if self.composer_choices_editable() && model != "openide:configure-model" {
             let provider = self
                 .view
@@ -12376,6 +12640,9 @@ impl AgentsWindow {
     }
 
     fn select_composer_effort(&mut self, effort: &str) -> bool {
+        if let Some(selected) = self.select_acp_choice(true, effort) {
+            return selected;
+        }
         if self.composer_choices_editable()
             && (self.composer_selection_busy() || self.view.composer_pending.is_some())
         {
@@ -12600,8 +12867,7 @@ impl AgentsWindow {
             self.view.status = "Espera a que termine el cambio de rama".to_owned();
             return;
         }
-        if self.view.running {
-            self.view.status = "Detén el agente antes de cambiar de sesión".to_owned();
+        if !self.park_active_run() {
             return;
         }
         self.close_automation_editor();
@@ -12617,6 +12883,8 @@ impl AgentsWindow {
         self.view.composer_branches.open = false;
         self.view.main_page = MainPage::Workspace;
         self.view.background_run_selected = false;
+        self.view.cli_task_mode = Default::default();
+        self.view.cli_mode_open = false;
         // Whatever is selected next, a draft included, shows its conversation.
         self.dock.restore_maximized();
         self.view.selected_session = None;
@@ -12881,8 +13149,7 @@ impl AgentsWindow {
             self.view.status = "Espera a que termine el cambio de rama".to_owned();
             return;
         }
-        if self.view.running {
-            self.view.status = "Detén el agente antes de cambiar de sesión".to_owned();
+        if !self.park_active_run() {
             return;
         }
         self.prompt_focus_pending = false;
@@ -12942,6 +13209,8 @@ impl AgentsWindow {
                     .set_input_value("workspace", self.view.workspace.clone());
                 self.view.selected_backend = stored.session.backend.clone();
                 self.refresh_composer_selection();
+                self.warm_acp_agent();
+                self.view.cli_task_mode = crate::cli_tasks::get(&self.data_root, id).mode;
                 self.ensure_cli_terminal();
                 self.view.turn_mode = stored
                     .events
@@ -13000,6 +13269,7 @@ impl AgentsWindow {
                         }
                     }
                 }
+                self.unpark_run(id);
                 self.show_persistence_error();
                 self.sync_background_selected();
                 self.refresh_sessions();
@@ -13541,6 +13811,10 @@ impl AgentsWindow {
     fn start_run(&mut self) {
         if self.view.message_edit.editing.is_some() {
             self.request_message_edit_submit();
+            return;
+        }
+        if crate::acp_run::agent_id(&self.view.selected_backend).is_some() {
+            self.start_acp_run();
             return;
         }
         // A turn may carry its own model (a review, for one) without touching
@@ -14328,8 +14602,7 @@ impl AgentsWindow {
         let Some((agent, _)) = crate::agent_cli_definitions::profile(agent_id) else {
             return;
         };
-        if self.view.running {
-            self.view.status = "Detén el agente antes de cambiar de sesión".to_owned();
+        if !self.park_active_run() {
             return;
         }
         if self.resolve_agent_cli(agent).is_none() {
@@ -14357,6 +14630,38 @@ impl AgentsWindow {
 
     /// A CLI names its conversation through the terminal's window title. The
     /// task starts with the CLI's name and takes that title once there is one.
+    /// The permissions the selected CLI task starts its CLI with. A CLI that
+    /// is running keeps its own until it is started again.
+    fn set_cli_task_mode(&mut self, mode: crate::cli_tasks::CliMode) {
+        self.view.cli_mode_open = false;
+        let Some(session_id) = self
+            .view
+            .selected_session
+            .clone()
+            .filter(|_| crate::view::cli_task(&self.view))
+        else {
+            return;
+        };
+        let mut task = crate::cli_tasks::get(&self.data_root, &session_id);
+        task.mode = mode;
+        match crate::cli_tasks::save(&self.data_root, &session_id, &task) {
+            Ok(()) => {
+                self.view.cli_task_mode = mode;
+                let running = self
+                    .dock
+                    .terminal_tabs(&self.dock_scope())
+                    .iter()
+                    .any(|tab| self.terminals.contains_key(&tab.id.get()));
+                self.view.status = if running {
+                    format!("{}: se aplica al reiniciar la CLI", mode.label())
+                } else {
+                    format!("{}: se aplica al iniciar la CLI", mode.label())
+                };
+            }
+            Err(error) => self.view.status = error,
+        }
+    }
+
     fn follow_cli_task_title(&mut self) -> bool {
         if !crate::view::cli_task(&self.view) {
             return false;
@@ -14448,6 +14753,26 @@ impl AgentsWindow {
     /// Records a session event the user is not watching: the window is in
     /// the background, another task is on screen, or this one's conversation
     /// is under its maximized dock.
+    /// Settings' list of processes, sampled every two seconds while shown.
+    fn poll_processes(&mut self, ctx: &egui::Context) -> bool {
+        let shown = self.view.show_settings && self.view.settings_page == SettingsPage::Processes;
+        if !shown {
+            let changed = !self.view.processes.is_empty();
+            self.view.processes.clear();
+            self.processes_polled = None;
+            return changed;
+        }
+        let interval = Duration::from_secs(2);
+        if self.processes_polled.is_some_and(|at| at.elapsed() < interval) {
+            ctx.request_repaint_after(interval);
+            return false;
+        }
+        self.processes_polled = Some(Instant::now());
+        self.view.processes = self.process_sampler.sample();
+        ctx.request_repaint_after(interval);
+        true
+    }
+
     fn notify_session(
         &mut self,
         event: crate::notifications::Event,
@@ -14474,6 +14799,11 @@ impl AgentsWindow {
             .unwrap_or_else(|| "Tarea".to_owned());
         if !self.window_focused && self.view.notifications.settings.uses_system() {
             crate::notifications::notify_system(title, &task);
+            // The taskbar or the compositor marks the window until it is seen.
+            self.attention_pending = true;
+        }
+        if self.view.notifications.settings.uses_sound() {
+            crate::chime::play();
         }
         self.view.notifications.push(
             event.severity(),
@@ -14486,13 +14816,15 @@ impl AgentsWindow {
     fn process_event(&mut self, event: AgentEvent) -> bool {
         let native_run =
             self.active_resume.is_some() || matches!(&self.active_run, Some(ActiveRun::Native(_)));
+        // An ACP agent publishes its plan like the native worker does.
+        let plan_run = native_run || matches!(&self.active_run, Some(ActiveRun::Acp(_)));
         if let AgentEventKind::PlanProposed { plan } | AgentEventKind::PlanUpdated { plan, .. } =
             &event.kind
         {
             // Live plan publications belong to the selected native worker.
             // Reject stale/foreign/invalid events before advancing the cursor
             // or persisting anything. Replay loads durable history separately.
-            if !native_run
+            if !plan_run
                 || self.view.selected_session.as_deref() != Some(event.session_id.as_str())
                 || !plan.is_valid()
                 || event.sequence <= self.last_sequence
@@ -14516,6 +14848,14 @@ impl AgentsWindow {
             }
             _ => None,
         };
+        // Read back from the journal already: not told to the transcript twice.
+        let seen = event.sequence <= self.last_sequence;
+        if let (false, AgentEventKind::TurnStarted { prompt }) = (seen, &event.kind) {
+            self.checkpoint_before_turn(&event.session_id, prompt);
+        }
+        if !seen {
+            self.answer_delegation(&event.session_id, &event.kind);
+        }
         self.last_sequence = self.last_sequence.max(event.sequence);
         if native_run {
             // shortcut: an event queued before a journal reread counts twice
@@ -14595,7 +14935,7 @@ impl AgentsWindow {
                 }
             }
         }
-        let mut changed = self.projection.apply_event(&event);
+        let mut changed = !seen && self.projection.apply_event(&event);
         if matches!(
             &event.kind,
             AgentEventKind::AssistantDelta { .. }
@@ -14612,7 +14952,7 @@ impl AgentsWindow {
         }
         match &event.kind {
             AgentEventKind::PlanProposed { plan } | AgentEventKind::PlanUpdated { plan, .. }
-                if native_run
+                if plan_run
                     && persisted
                     && self.view.selected_session.as_deref() == Some(event.session_id.as_str())
                     && plan.is_valid() =>
@@ -14650,20 +14990,27 @@ impl AgentsWindow {
                     });
                     // A site the user decided about is answered as they said,
                     // for the turn that is running in the conversation shown.
-                    let decided = (self.view.running
-                        && self.view.selected_session.as_deref() == Some(event.session_id.as_str()))
-                    .then(|| self.agent_browser_site(&tool_call.name, &tool_call.arguments.to_string()))
-                    .flatten()
-                    .and_then(|site| {
-                        let access = self.browser_sites.access(&site);
-                        (access != crate::browser_sites::SiteAccess::Allow
-                            || crate::browser_runtime::browser_site_auto_allow_is_bound(
-                                &tool_call.name, &tool_call.arguments, Some(&site),
-                            )).then_some(access)
-                    })
-                    .filter(|access| *access != crate::browser_sites::SiteAccess::Ask);
-                    if let Some(access) = decided {
-                        self.answer_permission(request_id, access == crate::browser_sites::SiteAccess::Allow);
+                    let own = self.view.running
+                        && self.view.selected_session.as_deref() == Some(event.session_id.as_str());
+                    let decided = own
+                        .then(|| self.agent_browser_site(&tool_call.name, &tool_call.arguments.to_string()))
+                        .flatten()
+                        .and_then(|site| {
+                            let access = self.browser_sites.access(&site);
+                            (access != crate::browser_sites::SiteAccess::Allow
+                                || crate::browser_runtime::browser_site_auto_allow_is_bound(
+                                    &tool_call.name, &tool_call.arguments, Some(&site),
+                                )).then_some(access)
+                        })
+                        .filter(|access| *access != crate::browser_sites::SiteAccess::Ask)
+                        .map(|access| access == crate::browser_sites::SiteAccess::Allow)
+                        .or_else(|| {
+                            (own && matches!(&self.active_run, Some(ActiveRun::Acp(_))))
+                                .then(|| self.acp_preset_answer(&tool_call.name))
+                                .flatten()
+                        });
+                    if let Some(allow) = decided {
+                        self.answer_permission(request_id, allow);
                     } else {
                         let waiting = if openide_harness::is_user_interaction_tool(&tool_call.name) {
                             "Esperando tu respuesta".to_owned()
@@ -14864,13 +15211,8 @@ impl AgentsWindow {
         // immediately, even while its visual offset is still animating.
         let selected = self.view.selected_session.as_deref();
         let selected_run = self.view.running
-            && (self.active_run.as_ref().is_some_and(|run| {
-                selected
-                    == Some(match run {
-                        ActiveRun::Native(run) => run.session_id.as_str(),
-                        ActiveRun::Cli(run) => run.session_id.as_str(),
-                    })
-            }) || self
+            && (self.active_run.as_ref().is_some_and(|run| selected == Some(run.session_id()))
+                || self
                 .active_resume
                 .as_ref()
                 .is_some_and(|run| selected == Some(run.session_id.as_str())));
@@ -14990,6 +15332,264 @@ impl AgentsWindow {
         changed
     }
 
+    /// The conversation on screen is left: its turn goes on off screen. A
+    /// recovery of it is waited for instead.
+    fn park_active_run(&mut self) -> bool {
+        let Some(run) = self.active_run.take() else {
+            if self.view.running {
+                self.view.status =
+                    "Espera a que termine la recuperación para cambiar de sesión".to_owned();
+                return false;
+            }
+            return true;
+        };
+        self.parked_runs.push(ParkedRun {
+            run,
+            workspace: self.view.workspace.clone(),
+            run_has_output: std::mem::take(&mut self.run_has_output),
+            turn_had_effects: std::mem::take(&mut self.turn_had_effects),
+            pending_prompt: self.pending_prompt.take(),
+            pending_attachments: std::mem::take(&mut self.pending_attachments),
+            pending_permissions: std::mem::take(&mut self.view.pending_permissions),
+            ended: !self.view.running,
+        });
+        self.view.running = false;
+        self.sync_off_screen_turns();
+        true
+    }
+
+    /// The conversation of a parked turn is back on screen: the turn is the
+    /// one on screen again, over the transcript just read from the journal.
+    fn unpark_run(&mut self, session_id: &str) {
+        let Some(index) = self
+            .parked_runs
+            .iter()
+            .position(|parked| parked.run.session_id() == session_id)
+        else {
+            return;
+        };
+        let parked = self.parked_runs.remove(index);
+        self.active_run = Some(parked.run);
+        self.run_has_output = parked.run_has_output;
+        self.turn_had_effects = parked.turn_had_effects;
+        self.pending_prompt = parked.pending_prompt;
+        self.pending_attachments = parked.pending_attachments;
+        self.view.pending_permissions = parked.pending_permissions;
+        self.view.running = !parked.ended;
+        if self.view.running {
+            self.view.status = "Ejecutando...".to_owned();
+        }
+        self.sync_off_screen_turns();
+    }
+
+    fn sync_off_screen_turns(&mut self) {
+        self.view.off_screen_turns = self
+            .parked_runs
+            .iter()
+            .filter(|parked| !parked.ended)
+            .map(|parked| {
+                (
+                    parked.run.session_id().to_owned(),
+                    !parked.pending_permissions.is_empty(),
+                )
+            })
+            .chain(self.cli_status.iter().map(|(session, asks)| (session.clone(), *asks)))
+            .collect();
+    }
+
+    /// A stopped turn's message goes back to its conversation's draft, as it
+    /// goes back to the composer on screen.
+    fn give_back_parked_prompt(&mut self, index: usize) {
+        let parked = &mut self.parked_runs[index];
+        let attachments = std::mem::take(&mut parked.pending_attachments);
+        let Some(prompt) = parked.pending_prompt.take().filter(|_| !parked.run_has_output) else {
+            return;
+        };
+        let key = (parked.workspace.clone(), Some(parked.run.session_id().to_owned()));
+        if !attachments.is_empty() {
+            let drafted = self.attachment_drafts.entry(key.clone()).or_default();
+            for file in attachments {
+                if !drafted.iter().any(|existing| existing.path == file.path) {
+                    drafted.push(file);
+                }
+            }
+        }
+        if self.drafts.get(&key).is_some_and(|draft| !draft.is_empty()) {
+            return;
+        }
+        if let Some(store) = &self.store {
+            if let Err(error) = store.save_draft(Path::new(&key.0), key.1.as_deref(), &prompt) {
+                self.draft_error = Some(error.to_string());
+            }
+        }
+        self.drafts.insert(key, prompt);
+    }
+
+    /// Turns going on off screen: their events are kept, what they ask waits
+    /// for the person, and their end is announced on a conversation left
+    /// unread. What is queued behind them waits for the conversation to be
+    /// opened again.
+    fn poll_parked_runs(&mut self) -> bool {
+        let mut changed = false;
+        let mut index = 0;
+        while index < self.parked_runs.len() {
+            let (events, disconnected) = self.parked_runs[index].run.drain();
+            changed |= !events.is_empty() || disconnected;
+            let native_run = matches!(self.parked_runs[index].run, ActiveRun::Native(_));
+            let session_id = self.parked_runs[index].run.session_id().to_owned();
+            for event in events {
+                if !native_run {
+                    if let Some(store) = &self.store {
+                        if let Err(error) = store.append_event(&event.session_id, &event) {
+                            self.persistence_error = Some(error.to_string());
+                            self.parked_runs[index].run.cancel();
+                            continue;
+                        }
+                    }
+                }
+                self.parked_runs[index].note(&event);
+                self.answer_delegation(&event.session_id, &event.kind);
+                if matches!(
+                    event.kind,
+                    AgentEventKind::ToolFinished { .. }
+                        | AgentEventKind::TurnCompleted { .. }
+                        | AgentEventKind::TurnFailed { .. }
+                        | AgentEventKind::TurnCancelled
+                ) {
+                    self.environment_dirty = true;
+                }
+                match &event.kind {
+                    // The preset answers an ACP agent off screen as it does on it.
+                    AgentEventKind::PermissionRequested { request_id, tool_call }
+                        if matches!(self.parked_runs[index].run, ActiveRun::Acp(_))
+                            && self.acp_preset_answer(&tool_call.name).is_some() =>
+                    {
+                        let allow = self.acp_preset_answer(&tool_call.name) == Some(true);
+                        self.parked_runs[index].run.resolve_permission(
+                            request_id,
+                            if allow { PermissionChoice::Allow } else { PermissionChoice::Deny },
+                        );
+                        self.parked_runs[index]
+                            .pending_permissions
+                            .retain(|permission| permission.request_id != *request_id);
+                    }
+                    AgentEventKind::PermissionRequested { tool_call, .. } => {
+                        let waiting = if openide_harness::is_user_interaction_tool(&tool_call.name) {
+                            "Esperando tu respuesta".to_owned()
+                        } else {
+                            format!("Permiso pendiente: {}", tool_call.name)
+                        };
+                        self.notify_session(crate::notifications::Event::Approval, &waiting, &session_id);
+                    }
+                    AgentEventKind::TurnCompleted { .. } => {
+                        self.notify_session(
+                            crate::notifications::Event::TurnCompleted,
+                            "Turno completado",
+                            &session_id,
+                        );
+                        self.parked_runs[index].pending_prompt = None;
+                        self.parked_runs[index].pending_attachments.clear();
+                        self.leave_unread(&session_id);
+                    }
+                    AgentEventKind::TurnFailed { .. } => {
+                        self.notify_session(crate::notifications::Event::TurnFailed, "Turno fallido", &session_id);
+                        self.give_back_parked_prompt(index);
+                        self.leave_unread(&session_id);
+                    }
+                    AgentEventKind::TurnCancelled => {
+                        self.give_back_parked_prompt(index);
+                        self.leave_unread(&session_id);
+                    }
+                    AgentEventKind::TurnPaused { .. } => {
+                        self.notify_session(crate::notifications::Event::Approval, "Turno en pausa", &session_id);
+                        self.parked_runs[index].pending_prompt = None;
+                        self.parked_runs[index].pending_attachments.clear();
+                    }
+                    _ => {}
+                }
+                // A turn that was stopped or failed does not go on to what was
+                // queued behind it until the user says so.
+                if matches!(event.kind, AgentEventKind::TurnCancelled | AgentEventKind::TurnFailed { .. }) {
+                    if let Some(queue) = self.turn_queue.get_mut(&session_id).filter(|queue| !queue.items.is_empty()) {
+                        queue.paused = true;
+                        self.save_turn_queues();
+                    }
+                }
+            }
+            if disconnected {
+                if let Some(error) = self.parked_runs[index].run.journal_error() {
+                    self.persistence_error = Some(error);
+                }
+                if !self.parked_runs[index].ended {
+                    self.answer_delegation(
+                        &session_id,
+                        &AgentEventKind::TurnFailed { error: "El agente terminó sin una respuesta final".into() },
+                    );
+                    self.notify_session(
+                        crate::notifications::Event::TurnFailed,
+                        "El proceso terminó sin evento final",
+                        &session_id,
+                    );
+                    self.give_back_parked_prompt(index);
+                    self.leave_unread(&session_id);
+                }
+                self.parked_runs.remove(index);
+                if native_run {
+                    self.reconcile_native_automation_session(&session_id);
+                }
+                self.refresh_sessions();
+                self.show_persistence_error();
+            } else {
+                index += 1;
+            }
+        }
+        if changed {
+            self.sync_off_screen_turns();
+        }
+        changed
+    }
+
+    /// The CLI sessions found after a start, kept for the next one.
+    fn poll_cli_session_probes(&mut self) -> bool {
+        let root = self.data_root.clone();
+        let mut changed = false;
+        self.cli_session_probes.retain(|(task_id, probe)| match probe.try_recv() {
+            Ok(found) => {
+                if let Some(session) = found {
+                    let mut task = crate::cli_tasks::get(&root, task_id);
+                    task.session = Some(session);
+                    let _ = crate::cli_tasks::save(&root, task_id, &task);
+                }
+                changed = true;
+                false
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => true,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => false,
+        });
+        changed
+    }
+
+    fn leave_unread(&self, session_id: &str) {
+        if let Some(store) = &self.store {
+            let _ = store.mark_unread(session_id);
+        }
+    }
+
+    /// Goes on with an ACP turn the app was closed in the middle of: the
+    /// agent gets its session back when it can reopen it, and is told.
+    fn resume_acp_turn(&mut self, events: &[AgentEvent]) {
+        if !acp_turn_unfinished(events) {
+            self.view.status = "La sesión no tiene un turno interrumpido".to_owned();
+            return;
+        }
+        if !self.view.prompt.trim().is_empty() {
+            self.view.status = "Enviá o borrá el mensaje escrito antes de reanudar".to_owned();
+            return;
+        }
+        self.view.prompt = ACP_CONTINUATION.to_owned();
+        self.start_acp_run();
+    }
+
     fn start_resume(&mut self) {
         if self.plugin_removal_pending {
             self.view.status = "Espera a que termine la desinstalación del plugin".to_owned();
@@ -15021,6 +15621,10 @@ impl AgentsWindow {
         };
         let stored = match store.load(&session_id) {
             Ok(Some(stored)) if stored.session.backend == "native" => stored,
+            Ok(Some(stored)) if stored.session.backend.starts_with(crate::acp_run::ACP_BACKEND) => {
+                self.resume_acp_turn(&stored.events);
+                return;
+            }
             Ok(Some(_)) => {
                 self.view.status = "Esta sesión usa un agente CLI".to_owned();
                 return;
@@ -16760,6 +17364,32 @@ impl AgentsWindow {
         }
     }
 
+    /// A drop anywhere on the window attaches to the composer of the page
+    /// being shown; settings and the other pages have none.
+    fn accepts_file_drops(&self) -> bool {
+        self.view.main_page == MainPage::Workspace
+            && !self.view.show_settings
+            && !self.view.show_command_center
+    }
+
+    fn attach_dropped_files(&mut self, paths: &[PathBuf], ctx: &egui::Context) {
+        if let Some(list) = crate::file_drop::file_url_list(paths) {
+            self.request_composer_attachment_paste(Some(list), ctx);
+        }
+    }
+
+    fn poll_file_drops(&mut self, ctx: &egui::Context) -> bool {
+        let dropped = self.file_drops.poll(self.accepts_file_drops());
+        if !dropped.is_empty() {
+            self.attach_dropped_files(&dropped, ctx);
+        }
+        let over = self.accepts_file_drops()
+            && (self.file_drops.hovering || ctx.input(|input| !input.raw.hovered_files.is_empty()));
+        let changed = !dropped.is_empty() || over != self.view.composer_files_over;
+        self.view.composer_files_over = over;
+        changed
+    }
+
     fn request_composer_attachment_paste(
         &mut self,
         hint: Option<String>,
@@ -17281,23 +17911,60 @@ impl AgentsWindow {
         self.sync_navigation_controls();
     }
 
+    /// The explorer's folders: the active one first, then the ones the IDE
+    /// has worked in.
+    fn sync_ide_folders(&mut self) {
+        self.view.ide_folders =
+            composer_project_options(&self.view.workspace, &self.view.ide.folders);
+    }
+
+    /// In the IDE, the folder being worked in stays among its folders.
+    fn remember_ide_folder(&mut self) {
+        let workspace = self.view.workspace.clone();
+        if !self.view.ide.is_active()
+            || workspace.is_empty()
+            || self.view.ide.folders.contains(&workspace)
+        {
+            return;
+        }
+        self.view.ide.folders.push(workspace);
+        self.persist_ide_workspace();
+    }
+
+    /// The active folder leaves the IDE's list; it stays open until another
+    /// is chosen.
+    fn remove_ide_folder(&mut self) {
+        self.view.ide.folders_open = false;
+        let workspace = self.view.workspace.clone();
+        if !self.view.ide.folders.contains(&workspace) {
+            return;
+        }
+        self.view.ide.folders.retain(|folder| *folder != workspace);
+        self.persist_ide_workspace();
+        self.sync_ide_folders();
+        self.view.status = "La carpeta sigue abierta hasta que cambies a otra".to_owned();
+    }
+
     fn change_workspace(&mut self, value: String) {
         if self.view.environment.workflow.busy.is_some() {
             return;
         }
-        if self.view.running || self.view.composer_branches.switching() {
+        if self.view.workspace == value {
+            return;
+        }
+        // A turn goes on off screen; a recovery in flight is waited for.
+        if self.view.composer_branches.switching()
+            || (self.view.running && !self.park_active_run())
+        {
             self.view.status = if self.view.composer_branches.switching() {
                 "Espera a que termine el cambio de rama"
             } else {
-                "Detén el agente antes de cambiar de proyecto"
+                "Espera a que termine la recuperación para cambiar de proyecto"
             }
             .to_owned();
             self.view.workspace_draft = self.view.workspace.clone();
             self.tree
                 .set_input_value("workspace", self.view.workspace.clone());
-            return;
-        }
-        if self.view.workspace == value {
             return;
         }
         self.close_automation_editor();
@@ -17306,7 +17973,10 @@ impl AgentsWindow {
         } else {
             self.save_draft();
         }
+        // The IDE keeps the folder it leaves and the one it goes to.
+        self.remember_ide_folder();
         self.view.workspace = value;
+        self.remember_ide_folder();
         self.reset_marketplace_workspace();
         self.view.composer_branches = Default::default();
         self.view.workspace_draft = self.view.workspace.clone();
@@ -17790,6 +18460,7 @@ impl AgentsWindow {
                         Effect::Copy(text) => ctx.copy_text(text),
                         Effect::Activity(call) => self.show_tool_activity(&call, false),
                         Effect::Retry(user_row) => self.retry_message(user_row),
+                        Effect::Fork { end, target } => self.fork_task(end, &target),
                     }
                     return;
                 }
@@ -17812,6 +18483,15 @@ impl AgentsWindow {
         }
         if matches!(&action, UiAction::Clicked { id } if id != "ide_agent_new_toggle") {
             self.view.ide.agent_new_open = false;
+        }
+        if matches!(&action, UiAction::Clicked { id } if id != "cli_mode_toggle") {
+            self.view.cli_mode_open = false;
+        }
+        if matches!(&action, UiAction::Clicked { id } if id != "checkpoints_toggle") {
+            self.view.checkpoint_menu = None;
+        }
+        if matches!(&action, UiAction::Clicked { id } if id != "ide_folder_toggle") {
+            self.view.ide.folders_open = false;
         }
         let addon_settings = match &action {
             UiAction::Clicked { id } => match id.as_str() {
@@ -17876,6 +18556,9 @@ impl AgentsWindow {
             return;
         }
         if self.apply_project_actions_action(&action, ctx) {
+            return;
+        }
+        if self.apply_checkpoint_action(&action) || self.apply_pull_action(&action) {
             return;
         }
         if self.apply_tool_navigation_action(&action, ctx) {
@@ -17946,6 +18629,12 @@ impl AgentsWindow {
                     self.open_chat_link(&url, target, ctx);
                 }
             }
+            UiAction::Clicked { id } if id.starts_with("chat_html:") => self.open_reply_html(&id, ctx),
+            UiAction::Clicked { id } if id.starts_with("chat_path_open:") => {
+                if let Some((path, line)) = crate::rich_text::workspace_path_from_action(&id) {
+                    self.open_reply_path(&path, line);
+                }
+            }
             UiAction::Clicked { id } if crate::rich_text::toggle_diagram_source(&id) => {}
             UiAction::Clicked { id } if id.starts_with(crate::chat_links::MENU_ACTION_PREFIX) => {
                 self.apply_chat_link_menu_action(&id, ctx);
@@ -17970,6 +18659,9 @@ impl AgentsWindow {
                         self.refresh_agent_terminal_views();
                     }
                 }
+            }
+            UiAction::FilesDropped { paths, .. } if self.accepts_file_drops() => {
+                self.attach_dropped_files(&paths, ctx);
             }
             UiAction::CopyRequested { text } => ctx.copy_text(text),
             UiAction::PasteRequested { id } => self.request_text_paste(id, ctx),
@@ -18042,7 +18734,7 @@ impl AgentsWindow {
                 fraction,
                 committed,
             } if id == "composer_effort_slider" => {
-                if self.composer_choices_editable()
+                if self.composer_model_editable()
                     && self.composer_slider_effort(fraction).is_some()
                 {
                     if committed {
@@ -19058,6 +19750,7 @@ impl AgentsWindow {
                         generation: self.review_generation,
                         account: self.github_query_account().map(str::to_owned),
                         create_pull: Some(crate::github::PullDraft { draft: id == "github_pr_submit_draft", ..pull }),
+                        action: None,
                     };
                     if !self.github_in_flight && worker.submit(request).is_ok() {
                         // What was written stays until the pull request shows: a refusal keeps it to correct.
@@ -19276,6 +19969,51 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id == "dock_add_dismiss" => {
                 self.view.show_dock_add_menu = false;
             }
+            UiAction::Clicked { id } if id == "ide_folder_toggle" => {
+                self.view.ide.folders_open = !self.view.ide.folders_open;
+            }
+            UiAction::Clicked { id } if id == "ide_folder_dismiss" => {
+                self.view.ide.folders_open = false;
+            }
+            UiAction::Clicked { id } if id == "ide_folder_browse" => {
+                self.view.ide.folders_open = false;
+                self.open_workspace_folder_picker(ctx);
+            }
+            UiAction::Clicked { id } if id == "ide_folder_remove" => self.remove_ide_folder(),
+            UiAction::Clicked { id } if id.starts_with("ide_folder_select:") => {
+                self.view.ide.folders_open = false;
+                let chosen = id
+                    .strip_prefix("ide_folder_select:")
+                    .and_then(|index| index.parse::<usize>().ok())
+                    .and_then(|index| self.view.ide_folders.get(index).cloned());
+                if let Some((path, _)) = chosen {
+                    self.change_workspace(path);
+                    if !self.view.running {
+                        self.visit_navigation();
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id == "environment_task_worktree" => self.start_task_worktree(ctx),
+            UiAction::Clicked { id } if id.starts_with("process_end:") => {
+                if let Ok(pid) = id["process_end:".len()..].parse::<u32>() {
+                    self.view.status = match crate::processes::terminate(pid) {
+                        Ok(()) => format!("Se pidió terminar el proceso {pid}"),
+                        Err(error) => format!("No se pudo terminar el proceso {pid}: {error}"),
+                    };
+                    self.processes_polled = None;
+                }
+            }
+            UiAction::Clicked { id } if id == "cli_mode_toggle" => {
+                self.view.cli_mode_open = !self.view.cli_mode_open;
+            }
+            UiAction::Clicked { id } if id == "cli_mode_dismiss" => {
+                self.view.cli_mode_open = false;
+            }
+            UiAction::Clicked { id } if crate::cli_tasks::CliMode::from_action(&id).is_some() => {
+                if let Some(mode) = crate::cli_tasks::CliMode::from_action(&id) {
+                    self.set_cli_task_mode(mode);
+                }
+            }
             UiAction::Clicked { id } if id == "cli_task_restart" => {
                 if crate::view::cli_task(&self.view) {
                     let scope = self.dock_scope();
@@ -19291,6 +20029,26 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id.starts_with("cli_task:") => {
                 self.start_cli_task(&id["cli_task:".len()..]);
             }
+            UiAction::Clicked { id } if id.starts_with("acp_install:") => {
+                self.install_acp_agent(&id["acp_install:".len()..]);
+            }
+            UiAction::Clicked { id } if id.starts_with("acp_remove:") => {
+                self.remove_acp_agent(&id["acp_remove:".len()..]);
+            }
+            UiAction::Clicked { id } if id.starts_with("acp_package:") => {
+                self.toggle_acp_package(&id["acp_package:".len()..]);
+            }
+            UiAction::Clicked { id } if id.starts_with("acp_task:") => {
+                self.start_acp_task(&id["acp_task:".len()..]);
+            }
+            UiAction::Clicked { id }
+                if matches!(
+                    id.as_str(),
+                    "update_check" | "update_download" | "update_restart" | "update_notes" | "settings_auto_update"
+                ) =>
+            {
+                self.apply_update_action(&id, ctx);
+            }
             UiAction::Clicked { id } if id == "notifications_toggle" => {
                 self.view.notifications.toggle();
             }
@@ -19303,8 +20061,10 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id == "settings_notice_dismiss" => {
                 self.clear_settings_notice();
             }
-            UiAction::Clicked { id } if id == "notification_toast_dismiss" => {
-                self.view.notifications.dismiss_toast();
+            UiAction::Clicked { id } if id.starts_with("notification_toast_dismiss:") => {
+                if let Ok(id) = id["notification_toast_dismiss:".len()..].parse() {
+                    self.view.notifications.dismiss_toast(id);
+                }
             }
             UiAction::Clicked { id } if id.starts_with("notification_setting:") => {
                 let mut next = self.view.notifications.settings;
@@ -19313,7 +20073,7 @@ impl AgentsWindow {
                         Ok(()) => {
                             self.view.notifications.settings = next;
                             if !next.shows_toasts() {
-                                self.view.notifications.dismiss_toast();
+                                self.view.notifications.dismiss_toasts();
                             }
                             self.view.status = "Ajustes de notificaciones guardados".to_owned();
                         }
@@ -19327,12 +20087,19 @@ impl AgentsWindow {
                 }
             }
             UiAction::Clicked { id } if id.starts_with("notification_open:") => {
-                let target = id["notification_open:".len()..]
+                let item = id["notification_open:".len()..]
                     .parse()
                     .ok()
                     .and_then(|id| self.view.notifications.take(id));
                 self.view.notifications.close();
-                if let Some(crate::notifications::Target::Session(session)) = target {
+                let (target, first_action) = item.map_or((None, None), |item| {
+                    (item.target, item.actions.into_iter().next().map(|action| action.id))
+                });
+                if target.is_none() {
+                    if let Some(action) = first_action {
+                        self.apply_action(UiAction::Clicked { id: action }, ctx);
+                    }
+                } else if let Some(crate::notifications::Target::Session(session)) = target {
                     // It may name the conversation a maximized dock covers,
                     // which a running turn does not let open again.
                     self.dock.restore_maximized();
@@ -19419,6 +20186,25 @@ impl AgentsWindow {
                     self.ensure_terminal_session(id);
                     self.refresh_terminal_panes();
                 }
+            }
+            UiAction::InputChanged { id, value } if id == "session_search" => {
+                self.view.session_query = value.chars().take(200).collect();
+                self.tree.scroll_to_start("sessions_list");
+            }
+            UiAction::Clicked { id } if id == "session_search:clear" => {
+                self.view.session_query.clear();
+                self.tree.set_input_value("session_search", "");
+                self.tree.focus("session_search");
+            }
+            // Titles filter at once; words said inside the tasks are the
+            // command center's search, which reads every journal on a worker.
+            UiAction::Clicked { id } if id == "session_search_messages" => {
+                let query = self.view.session_query.trim().to_owned();
+                self.open_command_center();
+                self.view.command_scope = Scope::Sessions;
+                self.view.command_query = query.clone();
+                self.command_tree.set_input_value("command_query", &query);
+                self.request_command_search();
             }
             UiAction::Clicked { id } if id == "toggle_archived_view" => {
                 self.view.show_archived = !self.view.show_archived;
@@ -19892,6 +20678,7 @@ impl AgentsWindow {
                                                     store.storage_root(),
                                                     &removed.id,
                                                 );
+                                                self.forget_checkpoints(&removed.id);
                                                 let _ =
                                                     crate::session_changes_external::remove_marker(
                                                         store.storage_root(),
@@ -19928,6 +20715,8 @@ impl AgentsWindow {
                                             store.storage_root(),
                                             session_id,
                                         );
+                                        self.forget_checkpoints(session_id);
+                                        self.forget_task_worktree(session_id, &record.session.workspace);
                                         let _ = crate::session_changes_external::remove_marker(
                                             store.storage_root(),
                                             session_id,
@@ -19980,6 +20769,7 @@ impl AgentsWindow {
                                             store.storage_root(),
                                             session_id,
                                         );
+                                        self.forget_checkpoints(session_id);
                                         let _ = crate::session_changes_external::remove_marker(
                                             store.storage_root(),
                                             session_id,
@@ -20881,7 +21671,7 @@ impl AgentsWindow {
             }
             UiAction::Clicked { id } if id.starts_with("provider_usage_connect:") => {
                 let provider = id.trim_start_matches("provider_usage_connect:");
-                if crate::provider_connections::supported(provider)
+                if crate::provider_connections::connectable(provider)
                     && self.view.native_provider_definitions.contains_key(provider)
                 {
                     self.view.provider_usage_open = false;
@@ -20896,7 +21686,7 @@ impl AgentsWindow {
             }
             UiAction::Clicked { id } if id.starts_with("provider_account:") => {
                 let provider = id.trim_start_matches("provider_account:");
-                if crate::provider_connections::supported(provider) {
+                if crate::provider_connections::connectable(provider) {
                     ctx.open_url(egui::OpenUrl::new_tab(
                         crate::provider_connections::account_url(provider),
                     ));
@@ -20905,7 +21695,7 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id.starts_with("provider_disconnect:") => {
                 let provider = id.trim_start_matches("provider_disconnect:");
                 if !self.view.running
-                    && crate::provider_connections::supported(provider)
+                    && crate::provider_connections::connectable(provider)
                     && self.provider_connection_worker.is_none()
                 {
                     self.provider_connection_id = Some(provider.into());
@@ -21115,7 +21905,7 @@ impl AgentsWindow {
             }
             UiAction::Clicked { id } if id.starts_with("catalog_browse:") => {
                 let provider_id = id.trim_start_matches("catalog_browse:");
-                if crate::provider_connections::supported(provider_id)
+                if crate::provider_connections::connectable(provider_id)
                     && self
                         .view
                         .native_provider_definitions
@@ -21422,7 +22212,10 @@ impl AgentsWindow {
                 self.commit_agent_tool_settings(next, message);
             }
             UiAction::Clicked { id } if id == "turn_mode_toggle" => {
-                if self.view.selected_backend == "native" && !self.view.running {
+                if (self.view.selected_backend == "native"
+                    || crate::acp_run::agent_id(&self.view.selected_backend).is_some())
+                    && !self.view.running
+                {
                     self.view.turn_mode = match self.view.turn_mode {
                         TurnMode::Plan => TurnMode::Build,
                         TurnMode::Build => TurnMode::Plan,
@@ -21496,7 +22289,7 @@ impl AgentsWindow {
                 self.view.backend_menu_open = false;
             }
             UiAction::Clicked { id } if id == "composer_model_toggle" => {
-                if self.composer_choices_editable() {
+                if self.composer_model_editable() {
                     self.view.composer_context_open = false;
                     self.view.composer_model_menu_open = !(self.view.composer_model_menu_open
                         || self.view.composer_effort_menu_open);
@@ -21537,7 +22330,7 @@ impl AgentsWindow {
                 }
             }
             UiAction::Clicked { id } if id == "composer_model_list_toggle" => {
-                if self.composer_choices_editable()
+                if self.composer_model_editable()
                     && self.view.composer_model_menu_open
                     && !self.view.composer_advanced_open
                 {
@@ -21596,7 +22389,7 @@ impl AgentsWindow {
             UiAction::Clicked { id }
                 if id == "composer_advanced_toggle" || id == "composer_advanced_chip_toggle" =>
             {
-                if self.composer_choices_editable()
+                if self.composer_model_editable()
                     && self.view.composer_model_menu_open
                     && !self.view.composer_model_list_open
                     && self
@@ -21621,7 +22414,7 @@ impl AgentsWindow {
                 self.select_composer_model(id.trim_start_matches("composer_model:"));
             }
             UiAction::Clicked { id } if id == "composer_effort_toggle" => {
-                if self.composer_choices_editable()
+                if self.composer_model_editable()
                     && (!self.view.composer_model_options.is_empty()
                         || !self.view.composer_effort_options.is_empty())
                 {
@@ -21663,7 +22456,8 @@ impl AgentsWindow {
                             connect.phase,
                             crate::provider_connections::ConnectPhase::Entry
                                 | crate::provider_connections::ConnectPhase::Error
-                        ) && matches!(connect.provider_id.as_str(), "opencode" | "nvidia")
+                        ) && crate::provider_connections::connectable(&connect.provider_id)
+                            && !matches!(connect.provider_id.as_str(), "codex" | "openrouter")
                         {
                             self.provider_key_draft = value.chars().take(4096).collect();
                             connect.key_entered = !self.provider_key_draft.trim().is_empty();
@@ -21805,6 +22599,7 @@ impl AgentsWindow {
                     self.persist_native_settings();
                 }
                 "catalog_provider_query" => self.view.catalog_provider_query = value,
+                "acp_query" => self.view.acp_query = value,
                 "catalog_model_query" => self.view.catalog_model_query = value,
                 "settings_search" => self.view.settings_nav_query = value,
                 "rename_title" => self.view.rename_draft = value,
@@ -22168,6 +22963,7 @@ impl AgentsWindow {
 
 impl eframe::App for AgentsWindow {
     fn on_exit(&mut self) {
+        self.file_drops.close_and_wait();
         self.revoke_all_external_grants();
         self.cancel_editor_loads();
         self.stop_dictation();
@@ -22192,6 +22988,9 @@ impl eframe::App for AgentsWindow {
         for run in self.background_automation_runs.drain(..) {
             run.run.cancel();
         }
+        for parked in self.parked_runs.drain(..) {
+            parked.run.cancel();
+        }
         // Dropping a continuation's worker cancels it.
         self.background_resumes.clear();
         let now_ms = chrono::Utc::now().timestamp_millis();
@@ -22203,6 +23002,7 @@ impl eframe::App for AgentsWindow {
             );
         }
         self.save_draft();
+        self.apply_staged_update_on_exit();
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -22222,7 +23022,9 @@ impl eframe::App for AgentsWindow {
         if ctx.input(|input| input.viewport().close_requested())
             && !self.view.automations.quit_allowed
             && !self.view.code_editor_quit_confirm
-            && (!self.background_automation_runs.is_empty() || !self.automation_queue.is_empty())
+            && (!self.background_automation_runs.is_empty()
+                || !self.automation_queue.is_empty()
+                || !self.parked_runs.is_empty())
         {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.view.automations.quit_pending = true;
@@ -22231,6 +23033,7 @@ impl eframe::App for AgentsWindow {
         early_changed |= quit_confirm_before != self.view.code_editor_quit_confirm;
         early_changed |= self.sync_external_approval(&ctx);
         early_changed |= self.serve_external_browser_calls(&ctx);
+        early_changed |= self.serve_delegate_calls();
         early_changed |= self.follow_file_tree(&ctx);
         early_changed |= self.follow_agent_clis();
         early_changed |= self.follow_ide_agent_tabs();
@@ -22272,12 +23075,20 @@ impl eframe::App for AgentsWindow {
             | self.poll_subagent_sessions()
             | self.poll_automations()
             | self.poll_background_resumes()
+            | self.poll_parked_runs()
+            | self.poll_cli_session_probes()
+            | self.poll_cli_status(&ctx)
+            | self.poll_checkpoints()
+            | self.poll_pr_watch()
+            | self.poll_cli_handoffs(&ctx)
+            | self.poll_processes(&ctx)
             | self.poll_compact()
             | self.poll_resume()
             | self.poll_child_recovery()
             | self.poll_native_command_sessions()
             | self.follow_agent_terminals()
             | self.poll_marketplace()
+            | self.poll_app_update(&ctx)
             | self.poll_plugins()
             | self.poll_catalog()
             | self.poll_model_discovery()
@@ -22440,6 +23251,20 @@ impl eframe::App for AgentsWindow {
         }
         if !window_focused || !self.view.show_command_center {
             early_changed |= self.command_tree.dismiss_context_menu();
+        }
+        early_changed |= self.poll_file_drops(&ctx);
+        // A screen reader names the window after the task in it.
+        limn_egui::name_window(
+            &ctx,
+            &match self.view.selected_session_title.as_deref().filter(|title| !title.is_empty()) {
+                Some(title) => format!("{title} · openADE"),
+                None => "openADE".to_owned(),
+            },
+        );
+        if std::mem::take(&mut self.attention_pending) && !window_focused {
+            ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(
+                egui::UserAttentionType::Informational,
+            ));
         }
         early_changed |= self.sync_tour();
         let (mut frame, prepared_layout) =
@@ -22689,6 +23514,7 @@ impl eframe::App for AgentsWindow {
         needs_relayout |= self.update_terminal(&ctx);
         needs_relayout |= self.update_browser(&ctx);
         needs_relayout |= self.update_graph();
+        needs_relayout |= self.poll_acp_agents(&ctx);
         needs_relayout |= self.update_github_account(&ctx);
         needs_relayout |= self.update_github_contributions(&ctx);
         needs_relayout |= self.sync_stream_presentation(presentation_frame_time);
@@ -22864,6 +23690,7 @@ impl eframe::App for AgentsWindow {
             || !self.view.active_subagents.is_empty()
             || self.subagent_poll_needed
             || self.marketplace_response.is_some()
+            || self.updates.busy()
             || self.plugin_response.is_some()
             || self.marketplace_remote.pending()
             || self.catalog_response.is_some()
@@ -26278,6 +27105,7 @@ mod tests {
                 workspace_path: workspace.clone(),
                 backend: "my-cli".into(),
                 native_provider: None,
+                allow_changes: false,
                 prompt: "hola".into(),
                 title: "Saludo".into(),
                 scheduled_at: 0,

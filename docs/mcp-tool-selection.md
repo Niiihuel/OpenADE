@@ -19,7 +19,10 @@ bounded to 8 MiB per transport message, 2 MiB of tool definitions in the entire
 catalog, 512 tools, and 64 pages. The aggregate catalog bound also bounds every
 individual definition. Input schemas advertised to the model retain their
 separate 64 KiB per-tool limit, 2 MiB combined schema limit, and 128 tools across
-local, window-owned browser/image, and external MCP tools.
+local, window-owned browser/image, and external MCP tools. External MCP tools
+past that budget are not dropped: the last two places go to `search_mcp_tools`
+and `call_mcp_tool`, through which the model finds a deferred tool by words and
+calls it by name with the same argument validation and approval.
 
 The installed REA 6.4.0 was measured using only `initialize`,
 `notifications/initialized`, and `tools/list`. No `tools/call` or target analysis

@@ -35,6 +35,52 @@ struct BrowserCall {
     started: bool,
 }
 
+/// A task a CLI hands to another agent, waiting for the window to start it.
+pub(super) struct DelegateCall {
+    pub agent: String,
+    pub prompt: String,
+    pub workspace: PathBuf,
+    /// The final answer, or why there is none.
+    pub reply: mpsc::Sender<Result<String, String>>,
+}
+
+const MAX_DELEGATED_PROMPT: usize = 32_000;
+
+/// `delegate_task` on the bridge's thread: it waits, as long as the task
+/// takes, for the turn's final answer.
+fn delegate_call(
+    calls: &Mutex<Vec<DelegateCall>>,
+    repaint: &Mutex<Option<egui::Context>>,
+    grant: &Grant,
+    arguments: &serde_json::Value,
+) -> Result<Vec<serde_json::Value>, String> {
+    let field = |name: &str| {
+        arguments[name]
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| format!("Falta `{name}`"))
+    };
+    let (agent, prompt) = (field("agent")?, field("prompt")?);
+    if prompt.chars().count() > MAX_DELEGATED_PROMPT {
+        return Err(format!("La tarea supera los {MAX_DELEGATED_PROMPT} caracteres"));
+    }
+    let (reply, answer) = mpsc::channel();
+    locked(calls).push(DelegateCall {
+        agent: agent.to_owned(),
+        prompt: prompt.to_owned(),
+        workspace: grant.workspace.clone(),
+        reply,
+    });
+    if let Some(ctx) = locked(repaint).as_ref() {
+        ctx.request_repaint();
+    }
+    let text = answer
+        .recv()
+        .map_err(|_| "openADE se cerró antes de que la tarea terminara".to_owned())??;
+    Ok(openide_bridge::text(text))
+}
+
 struct PendingApproval {
     title: String,
     detail: String,
@@ -52,6 +98,7 @@ pub(super) struct ExternalBridgeHost {
     /// Per terminal tab: its token, the file that holds it and its session.
     grants: HashMap<u64, (String, Option<PathBuf>, String)>,
     browser_calls: Arc<Mutex<Vec<BrowserCall>>>,
+    pub(super) delegate_calls: Arc<Mutex<Vec<DelegateCall>>>,
     /// A CLI's browser tab opened or closed since the dock's view was built.
     dock_stale: bool,
 }
@@ -144,6 +191,7 @@ impl ExternalBridgeHost {
             agents: HashMap::new(),
             grants: HashMap::new(),
             browser_calls: Arc::default(),
+            delegate_calls: Arc::default(),
             dock_stale: false,
         }
     }
@@ -190,6 +238,21 @@ impl ExternalBridgeHost {
             input_schema: serde_json::json!({ "type": "object", "properties": {} }),
             run: Arc::new(|grant, _| review_changes(grant).map(openide_bridge::text)),
         }];
+        let (calls, delegate_repaint) = (self.delegate_calls.clone(), self.repaint.clone());
+        tools.push(HostTool {
+            name: "delegate_task".into(),
+            group: ExternalTool::Subagents.name(),
+            description: "Hands a task to another agent in openADE, in this same project, and waits for its final answer. `agent` is `openade` (openADE's own agent, with the model chosen in its composer), the id of an ACP agent installed in openADE (such as `gemini` or `grok`), or a CLI run headless (`claude`, `codex`). The task shows in openADE's sidebar, where the person can open or stop it. Give the agent everything it needs: it does not see this conversation.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "agent": { "type": "string", "description": "openade, an installed ACP agent id, claude or codex" },
+                    "prompt": { "type": "string", "description": "The complete task for the other agent" }
+                },
+                "required": ["agent", "prompt"]
+            }),
+            run: Arc::new(move |grant, arguments| delegate_call(&calls, &delegate_repaint, grant, arguments)),
+        });
         // The native agent's browser tools, on a browser of the calling CLI's
         // own. `open_preview` is not among them: it opens the server a native
         // conversation started.
@@ -355,6 +418,7 @@ impl AgentsWindow {
 
     /// Reloads the detected CLI list shown in Settings.
     pub(super) fn refresh_agent_clis(&mut self) {
+        self.refresh_acp_agents();
         self.view.agent_clis = agent_cli_definitions::definitions()
             .iter()
             .map(|agent| crate::view::AgentCliRowView {
@@ -401,11 +465,65 @@ impl AgentsWindow {
                     agent.label
                 ))
             })?;
-            let mut args: Vec<OsString> = Vec::new();
-            if accept_all {
+            // The task's own conversation and permissions come first: `codex
+            // resume <id>` is a subcommand, and the flags follow it.
+            let task_id = self.view.selected_session.clone();
+            let mut task = task_id
+                .as_deref()
+                .map(|id| crate::cli_tasks::get(&self.data_root, id))
+                .unwrap_or_default();
+            // A terminal of a task opens the task's conversation; one opened
+            // on its own starts the CLI as it is.
+            let mut args: Vec<OsString> = match &task_id {
+                Some(_) => crate::cli_tasks::session_args(agent, &self.cli_homes, &mut task)
+                    .into_iter()
+                    .map(OsString::from)
+                    .collect(),
+                None => Vec::new(),
+            };
+            let full_access = accept_all || task.mode == crate::cli_tasks::CliMode::FullAccess;
+            if full_access {
                 args.extend(agent.accept_all_args.iter().map(OsString::from));
+            } else if task.mode == crate::cli_tasks::CliMode::ReadOnly {
+                args.extend(agent.read_only_args.iter().map(OsString::from));
+            }
+            if let Some(task_id) = &task_id {
+                if let Err(error) = crate::cli_tasks::save(&self.data_root, task_id, &task) {
+                    self.view.status = error;
+                }
+                // A CLI that names its own session: it is looked for once the
+                // CLI has had time to create it.
+                if let (None, Some(discovery), Some(started)) = (&task.session, agent.sessions, task.started_at_ms) {
+                    let taken = crate::cli_tasks::load(&self.data_root)
+                        .into_values()
+                        .filter_map(|other| other.session)
+                        .collect();
+                    let probe = crate::cli_tasks::discover(
+                        discovery,
+                        &self.cli_homes,
+                        program.clone(),
+                        self.agent_search_path(),
+                        PathBuf::from(&self.view.workspace),
+                        started,
+                        taken,
+                    );
+                    self.cli_session_probes.push((task_id.clone(), probe));
+                }
             }
             let mut env = Vec::new();
+            // A task's CLI says whether it works, asks or is done.
+            if let (Some(task_id), Some(report)) = (&task_id, agent.status) {
+                let file = crate::cli_status::status_file(&self.data_root, task_id);
+                if let Some(directory) = file.parent() {
+                    std::fs::create_dir_all(directory)?;
+                }
+                // What the previous process wrote is not this one's news.
+                let _ = std::fs::remove_file(&file);
+                args.extend(report.args());
+                env.push((crate::cli_status::STATUS_VARIABLE, file.to_string_lossy().into_owned()));
+                self.cli_terminal_tasks.insert(id, (task_id.clone(), report));
+                self.cli_status_words.remove(task_id);
+            }
             // The CLI needs the same search path it was found with (its own
             // runtime, such as node, usually sits beside it).
             if let Some(path) = self.agent_search_path().and_then(|path| path.into_string().ok()) {
@@ -429,7 +547,7 @@ impl AgentsWindow {
                 let token = bridge.grant(Grant {
                     workspace: PathBuf::from(&self.view.workspace),
                     // OpenIDE chose these arguments itself, so this is known.
-                    cli_accepts_all: accept_all,
+                    cli_accepts_all: full_access,
                     session: session.clone(),
                 });
                 match kind.bridge_launch(&url, &token, &config_dir) {
