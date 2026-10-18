@@ -172,6 +172,8 @@ mod file_drop_app_tests;
 mod cli_status_app;
 #[path = "checkpoints_app.rs"]
 mod checkpoints_app;
+#[path = "delegation_app.rs"]
+mod delegation_app;
 #[cfg(test)]
 #[path = "message_edit_app_tests.rs"]
 mod message_edit_app_tests;
@@ -1530,6 +1532,8 @@ pub struct AgentsWindow {
     /// The word each task's hooks last wrote, so one is acted on once.
     cli_status_words: HashMap<String, String>,
     cli_status_polled: Option<Instant>,
+    /// Tasks a CLI delegated, waiting for their answer.
+    delegations: HashMap<String, std::sync::mpsc::Sender<Result<String, String>>>,
     checkpoint_channel: (
         std::sync::mpsc::Sender<checkpoints_app::CheckpointDone>,
         std::sync::mpsc::Receiver<checkpoints_app::CheckpointDone>,
@@ -7480,6 +7484,7 @@ impl AgentsWindow {
             cli_status: BTreeMap::new(),
             cli_status_words: HashMap::new(),
             cli_status_polled: None,
+            delegations: HashMap::new(),
             checkpoint_channel: std::sync::mpsc::channel(),
             keyboard_paste_handled: false,
             pending_text_paste: None,
@@ -14782,6 +14787,9 @@ impl AgentsWindow {
         if let (false, AgentEventKind::TurnStarted { prompt }) = (seen, &event.kind) {
             self.checkpoint_before_turn(&event.session_id, prompt);
         }
+        if !seen {
+            self.answer_delegation(&event.session_id, &event.kind);
+        }
         self.last_sequence = self.last_sequence.max(event.sequence);
         if native_run {
             // shortcut: an event queued before a journal reread counts twice
@@ -15374,6 +15382,7 @@ impl AgentsWindow {
                     }
                 }
                 self.parked_runs[index].note(&event);
+                self.answer_delegation(&event.session_id, &event.kind);
                 if matches!(
                     event.kind,
                     AgentEventKind::ToolFinished { .. }
@@ -15446,6 +15455,10 @@ impl AgentsWindow {
                     self.persistence_error = Some(error);
                 }
                 if !self.parked_runs[index].ended {
+                    self.answer_delegation(
+                        &session_id,
+                        &AgentEventKind::TurnFailed { error: "El agente terminó sin una respuesta final".into() },
+                    );
                     self.notify_session(
                         crate::notifications::Event::TurnFailed,
                         "El proceso terminó sin evento final",
@@ -22922,6 +22935,7 @@ impl eframe::App for AgentsWindow {
         early_changed |= quit_confirm_before != self.view.code_editor_quit_confirm;
         early_changed |= self.sync_external_approval(&ctx);
         early_changed |= self.serve_external_browser_calls(&ctx);
+        early_changed |= self.serve_delegate_calls();
         early_changed |= self.follow_file_tree(&ctx);
         early_changed |= self.follow_agent_clis();
         early_changed |= self.follow_ide_agent_tabs();

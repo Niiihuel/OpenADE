@@ -129,6 +129,15 @@ says 0.1.0.
   menu undoes the restore. Refused while an agent works or the editor holds
   unsaved changes; the last 50 points of a task are kept, and deleting the
   task removes them
+- A CLI connected to the bridge can delegate: `delegate_task {agent, prompt}`
+  hands a task to openADE's own agent, an installed ACP agent or a headless
+  CLI in the same project. It starts as an ordinary task, runs off screen
+  with its row in the sidebar (where the person can open it, answer what it
+  asks or stop it) and its final answer goes back to the caller. Settings →
+  External CLIs → Delegar tareas switches it on (approval as for the other
+  tools); at most four run at once. The bridge raises the CLIs' MCP tool
+  timeouts to an hour (Codex `tool_timeout_sec`, Claude `MCP_TOOL_TIMEOUT`)
+  so a long task's answer is not dropped
 
 ## 0.3.0 — 2026-10-16
 

@@ -517,3 +517,39 @@ fn an_acp_turn_the_app_was_closed_in_is_offered_to_go_on() {
     app.refresh_sessions();
     assert!(!app.view.session_recovery.contains_key(&session), "ended: nothing is left to go on with");
 }
+
+#[test]
+fn a_task_delegated_through_the_bridge_runs_off_screen_and_answers_its_caller() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app = window(root.path());
+    // The person is on a task of their own, with a draft half written.
+    app.start_acp_task("fake");
+    let caller = app.view.selected_session.clone().unwrap();
+    app.view.prompt = "borrador".into();
+    let (reply, answer) = std::sync::mpsc::channel();
+    app.external_bridge
+        .delegate_calls
+        .lock()
+        .unwrap()
+        .push(crate::app::external_bridge_app::DelegateCall {
+            agent: "fake".into(),
+            prompt: "revisá el login".into(),
+            workspace: PathBuf::from(&app.view.workspace),
+            reply,
+        });
+    assert!(app.serve_delegate_calls());
+    // They stay where they were; the delegated task runs off screen.
+    assert_eq!(app.view.selected_session.as_deref(), Some(caller.as_str()));
+    assert_eq!(app.view.prompt, "borrador");
+    let delegated = app.delegations.keys().next().cloned().expect("a delegation in flight");
+    assert_ne!(delegated, caller);
+    pump(&mut app, |app| app.view.off_screen_turns.get(&delegated) == Some(&true));
+    assert!(answer.try_recv().is_err(), "no answer before the turn ends");
+    // Its approval is the person's, on the task itself.
+    app.open_session(&delegated);
+    let request = app.view.pending_permissions[0].request_id.clone();
+    app.answer_permission(&request, true);
+    pump(&mut app, |app| app.active_run.is_none() && !app.view.running);
+    assert_eq!(answer.try_recv().unwrap(), Ok("Hola desde ACP y fin".into()));
+    assert!(app.delegations.is_empty());
+}

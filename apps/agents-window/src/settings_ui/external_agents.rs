@@ -13,7 +13,7 @@ fn tool_row(
         title,
         description,
         state.external_agents.allows(tool),
-        state.external_agents.enabled() && tool != ExternalTool::Subagents,
+        state.external_agents.enabled(),
         compact,
     )
 }
@@ -26,7 +26,7 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
     };
     let mut content = vec![
         settings_parts::feedback_banner(
-            "Funciona con Claude Code y Codex iniciados desde el menú de perfiles de la terminal. Los subagentes de openADE todavía no se ofrecen a una CLI externa.",
+            "Funciona con Claude Code y Codex iniciados desde el menú de perfiles de la terminal.",
             FeedbackTone::Info,
             None,
             compact,
@@ -103,8 +103,8 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
                 tool_row(
                     state,
                     ExternalTool::Subagents,
-                    "Subagentes",
-                    "Todavía no disponible. Creará subagentes de openADE y esperará su resultado.",
+                    "Delegar tareas",
+                    "La CLI le pasa una tarea a otro agente de openADE (el propio, uno ACP o otra CLI) en este proyecto y espera su respuesta. La tarea aparece en la barra lateral.",
                     compact,
                 ),
             ],

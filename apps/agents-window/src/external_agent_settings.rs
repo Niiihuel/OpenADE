@@ -222,8 +222,6 @@ impl ExternalAgentSettings {
     /// Decision for one call from an external CLI. `cli_accepts_all` is what
     /// OpenIDE knows about the CLI it launched, never what the CLI claims.
     /// `Allow` here still passes through the exec policy's deny rules.
-    // shortcut: no caller outside tests, remove the allow when the bridge server lands.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn mode_for(&self, tool: ExternalTool, cli_accepts_all: bool) -> PermissionMode {
         if !self.enabled || !self.allows(tool) {
             PermissionMode::Deny

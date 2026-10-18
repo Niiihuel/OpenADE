@@ -13,6 +13,9 @@ use serde_json::json;
 
 const SERVER_NAME: &str = "openide";
 const TOKEN_ENV: &str = "OPENIDE_BRIDGE_TOKEN";
+/// A delegated task answers when its turn ends, which takes minutes; the
+/// CLIs' own limits (Codex: 60 s) would drop the answer.
+const TOOL_TIMEOUT_SECONDS: u64 = 3600;
 
 /// How a CLI is told about the bridge. Which CLI uses which is host data.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
@@ -56,7 +59,7 @@ impl BridgeKind {
                 options.open(&path)?.write_all(config.to_string().as_bytes())?;
                 Ok(Launch {
                     args: vec!["--mcp-config".into(), path.clone().into()],
-                    env: Vec::new(),
+                    env: vec![("MCP_TOOL_TIMEOUT", (TOOL_TIMEOUT_SECONDS * 1000).to_string())],
                     config_file: Some(path),
                 })
             }
@@ -67,6 +70,8 @@ impl BridgeKind {
                     format!("mcp_servers.{SERVER_NAME}.url={}", json!(url)).into(),
                     "-c".into(),
                     format!("mcp_servers.{SERVER_NAME}.bearer_token_env_var=\"{TOKEN_ENV}\"").into(),
+                    "-c".into(),
+                    format!("mcp_servers.{SERVER_NAME}.tool_timeout_sec={TOOL_TIMEOUT_SECONDS}").into(),
                 ],
                 env: vec![(TOKEN_ENV, token.to_owned())],
                 config_file: None,
