@@ -28,11 +28,13 @@ pub(crate) struct RemoteSettings {
     /// Ask the router to open the port (UPnP). Off unless asked: it puts the
     /// server on the internet.
     pub upnp: bool,
+    /// Keep the PC from sleeping while the remote is on.
+    pub keep_awake: bool,
 }
 
 impl Default for RemoteSettings {
     fn default() -> Self {
-        Self { enabled: false, port: DEFAULT_PORT, public_address: String::new(), upnp: false }
+        Self { enabled: false, port: DEFAULT_PORT, public_address: String::new(), upnp: false, keep_awake: false }
     }
 }
 
@@ -62,6 +64,14 @@ pub(crate) struct Remote {
     published_at: Option<Instant>,
     /// When Settings → Remoto was last read.
     viewed_at: Option<Instant>,
+    /// The process that keeps the PC awake, while asked to.
+    awake: Option<std::process::Child>,
+}
+
+impl Drop for Remote {
+    fn drop(&mut self) {
+        self.stay_awake(false);
+    }
 }
 
 impl Remote {
@@ -81,6 +91,7 @@ impl Remote {
             invitation: None,
             published_at: None,
             viewed_at: None,
+            awake: None,
         }
     }
 
@@ -101,6 +112,29 @@ impl Remote {
 
     pub(crate) fn connected_devices(&self) -> BTreeMap<String, usize> {
         self.bridge.connected_devices()
+    }
+
+    /// Holds a logind inhibitor against idle and sleep. It waits on this
+    /// process, so it goes away with openADE however openADE ends.
+    fn stay_awake(&mut self, awake: bool) {
+        if !awake {
+            if let Some(mut child) = self.awake.take() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            return;
+        }
+        if self.awake.is_some() || !cfg!(target_os = "linux") {
+            return;
+        }
+        self.awake = std::process::Command::new("systemd-inhibit")
+            .args(["--what=idle:sleep", "--who=openADE", "--why=El remoto del iPhone está activo", "--mode=block"])
+            .args(["tail", &format!("--pid={}", std::process::id()), "-f", "/dev/null"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .ok();
     }
 }
 
@@ -140,6 +174,7 @@ impl AgentsWindow {
     /// Starts or stops the server to match the settings.
     pub(super) fn apply_remote_settings(&mut self) {
         self.remote.server = None;
+        self.remote.stay_awake(false);
         self.remote.invitation = None;
         self.remote.error = None;
         if !self.remote.settings.enabled {
@@ -158,6 +193,8 @@ impl AgentsWindow {
             Ok(server) => self.remote.server = Some(server),
             Err(error) => self.remote.error = Some(format!("No se pudo iniciar el remoto: {error:#}")),
         }
+        let awake = self.remote.server.is_some() && self.remote.settings.keep_awake;
+        self.remote.stay_awake(awake);
     }
 
     pub(super) fn set_remote_settings(&mut self, settings: RemoteSettings) {
@@ -210,6 +247,7 @@ impl AgentsWindow {
             view.routes = server.routes();
             view.push = server.push_enabled();
             view.upnp = self.remote.settings.upnp.then(|| server.upnp_state().describe());
+            view.keep_awake = self.remote.settings.keep_awake;
             view.devices = server
                 .devices()
                 .unwrap_or_default()
@@ -262,6 +300,11 @@ impl AgentsWindow {
                 if settings != self.remote.settings {
                     self.set_remote_settings(settings);
                 }
+            }
+            UiAction::Clicked { id } if id == "remote_keep_awake" => {
+                let mut settings = self.remote.settings.clone();
+                settings.keep_awake = !settings.keep_awake;
+                self.set_remote_settings(settings);
             }
             UiAction::Clicked { id } if id == "remote_upnp" => {
                 let mut settings = self.remote.settings.clone();

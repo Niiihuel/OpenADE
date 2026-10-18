@@ -329,6 +329,8 @@ pub(crate) struct RemoteView {
     pub push: bool,
     /// What the router said, when asked to open the port.
     pub upnp: Option<String>,
+    /// The PC stays awake while the remote is on.
+    pub keep_awake: bool,
     pub devices: Vec<RemoteDeviceView>,
     /// The pairing code on screen, drawn, and when it stops working (Unix
     /// seconds).

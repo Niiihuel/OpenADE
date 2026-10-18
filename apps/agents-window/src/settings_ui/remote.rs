@@ -34,6 +34,14 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
                 compact,
             ),
             settings_parts::switch_row(
+                "remote_keep_awake",
+                "Mantener el PC despierto",
+                "Mientras el remoto esté activo el PC no se suspende solo, para que el teléfono lo encuentre. Gasta más batería.",
+                remote.keep_awake,
+                remote.enabled,
+                compact,
+            ),
+            settings_parts::switch_row(
                 "remote_upnp",
                 "Abrir el puerto en el router (UPnP)",
                 remote.upnp.clone().unwrap_or_else(|| {
