@@ -14,6 +14,7 @@ mod mcp_inspection;
 mod mcp;
 mod memory;
 mod providers;
+mod remote;
 mod rules_preview;
 mod skills_preview;
 mod subagents;
@@ -66,6 +67,7 @@ pub enum SettingsPage {
     Data,
     Usage,
     Processes,
+    Remote,
     Github,
     Shortcuts,
 }
@@ -95,6 +97,7 @@ const DATA_PAGES: &[SettingsPage] = &[
     SettingsPage::Data,
     SettingsPage::Usage,
     SettingsPage::Processes,
+    SettingsPage::Remote,
     SettingsPage::Github,
 ];
 
@@ -128,6 +131,7 @@ impl SettingsPage {
             Self::Data => "settings_page:data",
             Self::Usage => "settings_page:usage",
             Self::Processes => "settings_page:processes",
+            Self::Remote => "settings_page:remote",
             Self::Github => "settings_page:github",
             Self::Shortcuts => "settings_page:shortcuts",
         }
@@ -154,6 +158,7 @@ impl SettingsPage {
             "settings_page:data" => Some(Self::Data),
             "settings_page:usage" => Some(Self::Usage),
             "settings_page:processes" => Some(Self::Processes),
+            "settings_page:remote" => Some(Self::Remote),
             "settings_page:github" => Some(Self::Github),
             "settings_page:shortcuts" => Some(Self::Shortcuts),
             _ => None,
@@ -181,6 +186,7 @@ impl SettingsPage {
             Self::Data => "Datos y sesiones",
             Self::Usage => "Uso",
             Self::Processes => "Procesos",
+            Self::Remote => "Remoto",
             Self::Github => "GitHub",
             Self::Shortcuts => "Atajos de teclado",
         }
@@ -207,6 +213,7 @@ impl SettingsPage {
             Self::Data => Icon::Archive,
             Self::Usage => Icon::ChartBar,
             Self::Processes => Icon::Grid,
+            Self::Remote => Icon::Phone,
             Self::Github => Icon::Github,
             Self::Shortcuts => Icon::Keyboard,
         }
@@ -246,6 +253,7 @@ impl SettingsPage {
             Self::Data => "tareas sesiones sessions agrupar group ordenar sort carpeta de datos data folder archivar archive",
             Self::Usage => "consumo tokens límites limits actividad activity costo cost",
             Self::Processes => "procesos processes cpu memoria memory disco disk terminar kill matar diagnóstico diagnostics",
+            Self::Remote => "remoto remote iphone teléfono telefono celular móvil mobile emparejar pair qr acceso",
             Self::Github => "cuenta account pull request repositorio repository perfil profile",
             #[allow(unreachable_patterns)]
             _ => "",
@@ -274,6 +282,7 @@ impl SettingsPage {
             Self::Data => "Historial local y organización de tareas.",
             Self::Usage => "Suscripciones, saldo y límites de tus proveedores conectados.",
             Self::Processes => "Lo que openADE tiene en marcha: agentes, terminales, servidores MCP y de lenguaje.",
+            Self::Remote => "Seguí y manejá tus tareas desde el iPhone, conectado directo a este PC.",
             Self::Github => "Conexión de la cuenta y repositorio de GitHub.",
         }
     }
@@ -2777,6 +2786,7 @@ pub fn build_settings_page(
         }
         SettingsPage::Shortcuts => shortcuts_page(state, compact),
         SettingsPage::Processes => processes_page(state, compact),
+        SettingsPage::Remote => remote::page(state, compact),
         _ => additional_page(state, page, compact),
     };
     let mut body = Vec::new();
@@ -3502,7 +3512,7 @@ mod tests {
                 assert!(ids.insert(page.action_id()), "duplicate settings route");
             }
         }
-        assert_eq!(ids.len(), 21);
+        assert_eq!(ids.len(), 22);
         assert_eq!(SettingsPage::from_action_id("settings_page:unknown"), None);
     }
 

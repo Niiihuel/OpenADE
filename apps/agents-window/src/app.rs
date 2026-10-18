@@ -1,5 +1,16 @@
 #[path = "remote_app.rs"]
 mod remote_app;
+
+/// A real pairing code, drawn, for views under test.
+#[cfg(test)]
+pub(crate) fn remote_qr_fixture() -> openide_ui::RasterImage {
+    let root = tempfile::tempdir().unwrap();
+    let invitation = openide_remote::pairing::PairingStore::new(root.path())
+        .start(&["https://192.168.1.40:7787".into()], "ab", "server", "PC")
+        .unwrap();
+    let (width, modules) = invitation.qr_modules().unwrap();
+    remote_app::qr_image(width, &modules).unwrap()
+}
 #[path = "marketplace_app.rs"]
 mod marketplace_app;
 #[path = "app_update_app.rs"]
@@ -7345,6 +7356,7 @@ impl AgentsWindow {
             link_copied: None,
             show_archived: false,
             processes: Vec::new(),
+            remote: Default::default(),
             session_query: String::new(),
             session_organization: sidebar_preferences.organization,
             session_sort: sidebar_preferences.sort,
@@ -18550,6 +18562,10 @@ impl AgentsWindow {
         if self.apply_approval_action(&action, ctx) {
             return;
         }
+        if self.apply_remote_action(&action) {
+            self.poll_remote_view();
+            return;
+        }
         if self.apply_question_action(&action, ctx) {
             return;
         }
@@ -23076,6 +23092,10 @@ impl eframe::App for AgentsWindow {
         early_changed |= self.serve_external_browser_calls(&ctx);
         early_changed |= self.serve_delegate_calls();
         early_changed |= self.serve_remote();
+        early_changed |= self.poll_remote_view();
+        if self.view.show_settings && self.view.settings_page == SettingsPage::Remote {
+            ctx.request_repaint_after(Duration::from_secs(1));
+        }
         early_changed |= self.follow_file_tree(&ctx);
         early_changed |= self.follow_agent_clis();
         early_changed |= self.follow_ide_agent_tabs();

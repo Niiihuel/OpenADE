@@ -312,6 +312,36 @@ pub struct NativeAutomationSessionView {
     pub scheduled_at_ms: i64,
 }
 
+
+/// Settings → Remoto as the window shows it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct RemoteView {
+    pub enabled: bool,
+    /// The fields as typed, saved when submitted.
+    pub port: String,
+    pub public_address: String,
+    /// The port it listens on, once started.
+    pub listening: Option<u16>,
+    /// The certificate's fingerprint in four groups, to compare by eye.
+    pub fingerprint: String,
+    pub routes: Vec<String>,
+    pub error: Option<String>,
+    pub push: bool,
+    pub devices: Vec<RemoteDeviceView>,
+    /// The pairing code on screen, drawn, and when it stops working (Unix
+    /// seconds).
+    pub qr: Option<(openide_ui::RasterImage, u64)>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct RemoteDeviceView {
+    pub id: String,
+    pub name: String,
+    /// "Conectado ahora" or when it was last seen.
+    pub seen: String,
+    pub connected: bool,
+}
+
 #[derive(Clone)]
 pub struct SessionView {
     pub id: String,
@@ -595,6 +625,8 @@ pub struct ViewState {
     pub show_archived: bool,
     /// openADE's child processes, while Settings shows them.
     pub(crate) processes: Vec<crate::processes::ProcessRow>,
+    /// Settings → Remoto: the phone's server, its pairing code and devices.
+    pub(crate) remote: RemoteView,
     /// The sidebar's filter of tasks by title or project; empty shows all.
     pub session_query: String,
     pub session_organization: SessionOrganization,
@@ -4412,6 +4444,7 @@ pub(crate) mod tests {
             file_clipboard: None,
             show_archived: false,
             processes: Vec::new(),
+            remote: RemoteView::default(),
             session_query: String::new(),
             session_organization: SessionOrganization::Project,
             session_sort: SessionSort::Updated,

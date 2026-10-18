@@ -9,6 +9,8 @@ use super::*;
 use openide_remote::bridge::{Agent, Bridge, Command, Decision, Delivery, Live, Notice, Request, TaskRow};
 use openide_remote::pairing::PairingInvitation;
 use openide_remote::server::{Options, Server};
+use base64::Engine as _;
+use sha2::Digest as _;
 use std::sync::Arc;
 
 const SETTINGS_FILE: &str = "remote-settings.json";
@@ -52,9 +54,11 @@ pub(crate) struct Remote {
     waker: Arc<std::sync::Mutex<Option<crate::background::Waker>>>,
     pub(crate) server: Option<Server>,
     pub(crate) error: Option<String>,
-    /// The code on screen for a phone to scan, with its QR modules.
-    pub(crate) invitation: Option<(PairingInvitation, usize, Vec<bool>)>,
+    /// The code on screen for a phone to scan, drawn.
+    pub(crate) invitation: Option<(PairingInvitation, openide_ui::RasterImage)>,
     published_at: Option<Instant>,
+    /// When Settings → Remoto was last read.
+    viewed_at: Option<Instant>,
 }
 
 impl Remote {
@@ -73,6 +77,7 @@ impl Remote {
             error: None,
             invitation: None,
             published_at: None,
+            viewed_at: None,
         }
     }
 
@@ -94,6 +99,30 @@ impl Remote {
     pub(crate) fn connected_devices(&self) -> BTreeMap<String, usize> {
         self.bridge.connected_devices()
     }
+}
+
+/// The code as a PNG, eight pixels a module inside the white border a
+/// scanner needs: drawn as rectangles it would get seams between rows.
+pub(super) fn qr_image(width: usize, modules: &[bool]) -> Option<openide_ui::RasterImage> {
+    const SCALE: usize = 8;
+    const QUIET: usize = 4;
+    let side = (width + 2 * QUIET) * SCALE;
+    let image = image::GrayImage::from_fn(side as u32, side as u32, |x, y| {
+        let (column, row) = (x as usize / SCALE, y as usize / SCALE);
+        let dark = (QUIET..QUIET + width).contains(&column)
+            && (QUIET..QUIET + width).contains(&row)
+            && modules.get((row - QUIET) * width + column - QUIET).copied().unwrap_or(false);
+        image::Luma([if dark { 0 } else { 255 }])
+    });
+    let mut bytes = Vec::new();
+    image.write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png).ok()?;
+    openide_ui::RasterImage::new(
+        format!("{:x}", sha2::Sha256::digest(&bytes)),
+        openide_ui::RasterImageFormat::Png,
+        bytes.len() as u32,
+        Arc::from(base64::engine::general_purpose::STANDARD.encode(&bytes)),
+        "Código para emparejar el iPhone",
+    )
 }
 
 fn host_name() -> String {
@@ -139,13 +168,109 @@ impl AgentsWindow {
     /// A new code for a phone to pair with.
     pub(super) fn start_remote_pairing(&mut self) {
         let Some(server) = &self.remote.server else { return };
-        match server.invite(&host_name()).and_then(|invitation| {
-            let (width, modules) = invitation.qr_modules()?;
-            Ok((invitation, width, modules))
-        }) {
+        let drawn = server.invite(&host_name()).map_err(|error| format!("{error:#}")).and_then(|invitation| {
+            let (width, modules) = invitation.qr_modules().map_err(|error| format!("{error:#}"))?;
+            let image = qr_image(width, &modules).ok_or("no se pudo dibujar")?;
+            Ok((invitation, image))
+        });
+        match drawn {
             Ok(invitation) => self.remote.invitation = Some(invitation),
-            Err(error) => self.remote.error = Some(format!("No se pudo crear el código: {error:#}")),
+            Err(error) => self.remote.error = Some(format!("No se pudo crear el código: {error}")),
         }
+    }
+
+    /// Settings → Remoto, read again every second while it is shown.
+    pub(super) fn poll_remote_view(&mut self) -> bool {
+        let shown = self.view.show_settings && self.view.settings_page == crate::settings_ui::SettingsPage::Remote;
+        if !shown {
+            return false;
+        }
+        if self.remote.viewed_at.is_some_and(|at| at.elapsed() < Duration::from_secs(1)) {
+            return false;
+        }
+        let first = self.remote.viewed_at.is_none();
+        self.remote.viewed_at = Some(Instant::now());
+        let settings = &self.remote.settings;
+        let connected = self.remote.connected_devices();
+        let now_ms = chrono::Utc::now().timestamp_millis().max(0) as u64;
+        let mut view = crate::view::RemoteView {
+            enabled: settings.enabled,
+            port: if first { settings.port.to_string() } else { self.view.remote.port.clone() },
+            public_address: if first { settings.public_address.clone() } else { self.view.remote.public_address.clone() },
+            error: self.remote.error.clone(),
+            ..Default::default()
+        };
+        if let Some(server) = &self.remote.server {
+            view.listening = Some(server.port());
+            view.fingerprint = openide_remote::tls::short_fingerprint(server.fingerprint());
+            view.routes = server.routes();
+            view.push = server.push_enabled();
+            view.devices = server
+                .devices()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|device| crate::view::RemoteDeviceView {
+                    connected: connected.contains_key(&device.id),
+                    seen: if connected.contains_key(&device.id) {
+                        "Conectado ahora".to_owned()
+                    } else {
+                        format!("Visto {}", crate::provider_usage_ui::elapsed_label(device.last_seen_ms, now_ms))
+                    },
+                    id: device.id,
+                    name: device.name,
+                })
+                .collect();
+        }
+        let now_s = now_ms / 1000;
+        if self.remote.invitation.as_ref().is_some_and(|(invitation, _)| invitation.expires_at <= now_s) {
+            self.remote.invitation = None;
+        }
+        view.qr = self.remote.invitation.as_ref().map(|(invitation, image)| (image.clone(), invitation.expires_at));
+        let changed = view != self.view.remote;
+        self.view.remote = view;
+        changed
+    }
+
+    /// The page's own controls; `false` for any other action.
+    pub(super) fn apply_remote_action(&mut self, action: &UiAction) -> bool {
+        match action {
+            UiAction::Clicked { id } if id == "remote_enabled" => {
+                let mut settings = self.remote.settings.clone();
+                settings.enabled = !settings.enabled;
+                self.set_remote_settings(settings);
+            }
+            UiAction::InputChanged { id, value } if id == "remote_port" => self.view.remote.port = value.clone(),
+            UiAction::InputChanged { id, value } if id == "remote_public" => {
+                self.view.remote.public_address = value.clone();
+            }
+            UiAction::Submitted { id, .. } if id == "remote_port" || id == "remote_public" => {
+                let mut settings = self.remote.settings.clone();
+                match self.view.remote.port.trim().parse::<u16>() {
+                    Ok(port) if port >= 1024 => settings.port = port,
+                    _ => {
+                        self.remote.error = Some("El puerto debe ser un número entre 1024 y 65535".into());
+                        self.remote.viewed_at = None;
+                        return true;
+                    }
+                }
+                settings.public_address = self.view.remote.public_address.trim().to_owned();
+                if settings != self.remote.settings {
+                    self.set_remote_settings(settings);
+                }
+            }
+            UiAction::Clicked { id } if id == "remote_pair" => self.start_remote_pairing(),
+            UiAction::Clicked { id } if id == "remote_pair_close" => self.remote.invitation = None,
+            UiAction::Clicked { id } if id.starts_with("remote_revoke:") => {
+                if let Some(server) = &self.remote.server {
+                    if let Err(error) = server.revoke(&id["remote_revoke:".len()..]) {
+                        self.remote.error = Some(format!("No se pudo quitar el acceso: {error:#}"));
+                    }
+                }
+            }
+            _ => return false,
+        }
+        self.remote.viewed_at = None;
+        true
     }
 
     /// Serves what the phone asked for and tells it what changed. Called
