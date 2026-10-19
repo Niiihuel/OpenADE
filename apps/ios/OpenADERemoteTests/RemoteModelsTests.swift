@@ -25,7 +25,6 @@ final class RemoteModelsTests: XCTestCase {
         XCTAssertEqual(overview.snapshot.tasks.count, 2)
         let first = overview.tasks[0]
         XCTAssertTrue(first.isWaiting && first.isRunning)
-        XCTAssertEqual(first.stateTitle, "Te necesita")
         XCTAssertEqual(first.updatedAt.timeIntervalSince1970, 1_700_000_000)
         XCTAssertFalse(overview.tasks[1].chat)
         XCTAssertEqual(overview.tasks[1].displayTitle, "Nueva tarea")
@@ -96,6 +95,7 @@ final class RemoteModelsTests: XCTestCase {
                      ToolCallItem(id: "3", name: "custom")]
         XCTAssertEqual(ToolKind.summary(calls), "Buscó 1 vez · Usó 1 herramienta")
         XCTAssertEqual(calls[1].label, "Buscó “swift”")
+        XCTAssertEqual(ToolKind.summary([ToolCallItem(id: "q", name: "ask_user", isRunning: true)]), "Te hizo una pregunta")
     }
 
     func testTaskListPutsPinnedFirstThenProjectsInTheirOrder() {

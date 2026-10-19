@@ -92,7 +92,6 @@ struct ConversationProjection: Equatable, Sendable {
     /// What the conversation shows: entries grouped and finished turns folded.
     private(set) var items: [ConversationItem] = []
     private(set) var cursor: Int64 = 0
-    private(set) var didTrimHistory = false
     /// Changes whenever the visible content does, so a view can follow the end.
     private(set) var revision = 0
     private var indices: [String: Int] = [:]
@@ -175,8 +174,7 @@ struct ConversationProjection: Equatable, Sendable {
     private static func pausedNotice(_ text: String?) -> String {
         let details = text.flatMap { try? JSONDecoder().decode(JSONValue.self, from: Data($0.utf8)) }
         if case .number(let resets)? = details?["resets_at_ms"] {
-            let time = Date(timeIntervalSince1970: resets / 1_000).formatted(date: .omitted, time: .shortened)
-            return "En pausa por el límite de uso. Sigue a las \(time)."
+            return "En pausa por el límite de uso. Sigue a las \(Date(timeIntervalSince1970: resets / 1_000).spanishTime)."
         }
         return "En pausa por el límite de uso."
     }
@@ -209,7 +207,6 @@ struct ConversationProjection: Equatable, Sendable {
             removed = true
         }
         if removed {
-            didTrimHistory = true
             indices = Dictionary(uniqueKeysWithValues: entries.enumerated().map { ($0.element.id, $0.offset) })
             let live = Set(entries.map(\.turnID))
             turns = turns.filter { live.contains($0.key) }

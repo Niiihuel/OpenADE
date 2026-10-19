@@ -247,8 +247,14 @@ private final class FixtureURLProtocol: URLProtocol, @unchecked Sendable {
 
 struct DebugFixtureScreen: View {
     let mode: String
+    @Environment(RemoteStore.self) private var store
 
     var body: some View {
+        // Screens read their drafts and defaults when they appear: wait for the data.
+        if store.library.activeID == nil { ProgressView() } else { scene }
+    }
+
+    @ViewBuilder private var scene: some View {
         switch mode {
         case "tasks", "tasks-empty", "tasks-offline", "lock": HomeView()
         case "new-task": HomeView().sheet(isPresented: .constant(true)) { NewTaskView().remoteSheet() }

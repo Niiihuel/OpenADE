@@ -111,7 +111,8 @@ struct ToolGroupRow: View {
 
     private var runningTitle: String {
         guard let live = group.calls.last(where: \.isRunning) else { return group.summary }
-        return group.calls.count > 1 ? "\(group.summary) · \(live.label)" : live.label
+        let done = group.calls.filter { !$0.isRunning && $0.kind != .followUp }
+        return done.isEmpty ? live.label : "\(ToolKind.summary(done)) · \(live.label)"
     }
 }
 
@@ -199,7 +200,7 @@ struct TurnWorkRow: View {
                 HStack(spacing: 8) {
                     Text(work.title).font(.subheadline.weight(.medium)).foregroundStyle(RemoteTheme.ink.opacity(0.8))
                     if let summary = work.summary {
-                        Text(summary).font(.subheadline).foregroundStyle(RemoteTheme.muted).lineLimit(1)
+                        Text(summary).font(.subheadline).foregroundStyle(RemoteTheme.muted).lineLimit(2)
                     }
                     if work.failures > 0 { Image(systemName: "exclamationmark.circle.fill").font(.caption).foregroundStyle(.red) }
                     Spacer(minLength: 4)

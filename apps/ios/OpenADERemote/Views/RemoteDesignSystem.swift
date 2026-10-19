@@ -199,7 +199,6 @@ struct ConnectionPill: View {
 enum Haptics {
     static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
     static func warning() { UINotificationFeedbackGenerator().notificationOccurred(.warning) }
-    static func tap() { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
 }
 
 extension View {

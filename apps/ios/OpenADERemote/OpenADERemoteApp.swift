@@ -32,13 +32,13 @@ struct OpenADERemoteApp: App {
             .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
             .task {
                 store.restore()
-                lock.launch()
+                lock.launch(paired: store.isPaired)
                 store.setForeground(scenePhase == .active)
             }
             .onChange(of: scenePhase) { _, phase in
                 switch phase {
                 case .active:
-                    lock.becameActive()
+                    lock.becameActive(paired: store.isPaired)
                     store.setForeground(true)
                 case .background:
                     lock.enteredBackground()

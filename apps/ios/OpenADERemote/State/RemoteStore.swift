@@ -226,7 +226,9 @@ final class RemoteStore {
                 }
             }
             for await (index, identity) in group {
-                let matches = identity.map { $0.serverID == serverID && $0.fingerprint.lowercased() == fingerprint.lowercased() } ?? false
+                let matches = identity.map {
+                    $0.api == 2 && $0.serverID == serverID && $0.fingerprint.lowercased() == fingerprint.lowercased()
+                } ?? false
                 if identity != nil && !matches { otherComputer = true }
                 outcomes[index] = matches
                 if let first = outcomes.firstIndex(where: { $0 != false }), outcomes[first] == true {

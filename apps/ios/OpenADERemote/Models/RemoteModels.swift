@@ -28,13 +28,6 @@ struct RemoteTask: Codable, Identifiable, Hashable, Sendable {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "Nueva tarea" : trimmed
     }
-    var stateTitle: String {
-        switch state {
-        case "running": "Trabajando"
-        case "waiting": "Te necesita"
-        default: "Lista"
-        }
-    }
 
     func with(title: String? = nil, pinned: Bool? = nil, unread: Bool? = nil) -> RemoteTask {
         RemoteTask(id: id, title: title ?? self.title, project: project, agent: agent, backend: backend,
@@ -205,3 +198,8 @@ enum PermissionDecision: String, Sendable {
 }
 
 enum MessageDelivery: String, Sendable { case auto, queue }
+
+extension Date {
+    /// "14:30": the app speaks Spanish whatever the iPhone's language.
+    var spanishTime: String { formatted(Date.FormatStyle(date: .omitted, time: .shortened, locale: Locale(identifier: "es"))) }
+}

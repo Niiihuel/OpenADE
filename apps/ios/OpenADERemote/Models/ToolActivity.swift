@@ -24,7 +24,8 @@ enum ToolKind: Int, CaseIterable, Sendable {
             self = .delegate
         case "poll_command", "write_stdin", "terminal_send", "terminate_command", "resize_command", "wait_agent",
              "await_subagent", "send_input", "send_message", "message_conversation", "cancel_agent", "cancel_subagent",
-             "list_agents", "update_plan", "todowrite", "todoread":
+             "list_agents", "update_plan", "todowrite", "todoread", "ask_user", "switch_mode":
+            // A question or a mode proposal is the card above the composer, not work.
             self = .followUp
         default:
             self = name.hasPrefix("browser_") ? .browse : .other
@@ -70,7 +71,7 @@ enum ToolKind: Int, CaseIterable, Sendable {
             guard let count = counts[kind], count > 0 else { return nil }
             return count == 1 ? one : many.replacingOccurrences(of: "%d", with: String(count))
         }
-        return parts.isEmpty ? "Usó herramientas" : parts.joined(separator: " · ")
+        return parts.isEmpty ? (calls.first.map { label(for: $0) } ?? "Usó herramientas") : parts.joined(separator: " · ")
     }
 
     static func command(in arguments: JSONValue?) -> String? {
@@ -121,7 +122,12 @@ enum ToolKind: Int, CaseIterable, Sendable {
             let url = call.arguments?["url"]?.stringValue.flatMap { URL(string: $0)?.host }
             return url.map { "Abrió \($0)" } ?? call.name
         case .delegate: return "Delegó una tarea"
-        case .other, .followUp: return call.name
+        case .other, .followUp:
+            switch call.name {
+            case "ask_user": return "Te hizo una pregunta"
+            case "switch_mode": return "Propuso cambiar de modo"
+            default: return call.name
+            }
         }
     }
 }

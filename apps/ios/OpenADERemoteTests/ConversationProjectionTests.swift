@@ -119,7 +119,6 @@ final class ConversationProjectionTests: XCTestCase {
         projection.apply((1...320).map { event(Int64($0), "user_message", turn: "t\($0)", text: "Mensaje \($0)") })
         XCTAssertEqual(projection.entries.count, 300)
         XCTAssertEqual(projection.entries.first?.text, "Mensaje 21")
-        XCTAssertTrue(projection.didTrimHistory)
         var stream = ConversationProjection()
         stream.apply([event(1, "assistant_delta", text: String(repeating: "x", count: 200_000), message: "m")])
         XCTAssertLessThanOrEqual(stream.entries[0].text.utf8.count, 128 * 1_024)

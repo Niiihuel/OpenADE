@@ -21,20 +21,21 @@ final class AppLock {
         LAContext().canEvaluatePolicy(.deviceOwnerAuthentication, error: nil)
     }
 
-    func launch() {
+    /// Nothing to hide before a PC is paired, so an unpaired app never locks.
+    func launch(paired: Bool) {
         guard !started else { return }
         started = true
         #if DEBUG
         if DebugUIFixtures.mode != nil { isLocked = DebugUIFixtures.mode == "lock"; return }
         #endif
-        if enabled && available { isLocked = true; Task { await unlock() } }
+        if paired && enabled && available { isLocked = true; Task { await unlock() } }
     }
 
     func enteredBackground() { if backgroundedAt == nil { backgroundedAt = .now } }
 
-    func becameActive() {
+    func becameActive(paired: Bool) {
         defer { backgroundedAt = nil }
-        guard let away = backgroundedAt, enabled, available, Date.now.timeIntervalSince(away) > 5 * 60 else { return }
+        guard paired, let away = backgroundedAt, enabled, available, Date.now.timeIntervalSince(away) > 5 * 60 else { return }
         isLocked = true
         Task { await unlock() }
     }

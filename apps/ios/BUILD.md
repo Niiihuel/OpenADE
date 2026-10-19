@@ -89,14 +89,14 @@ credential was required. The installed CLI's capability update payload was
 rejected by Apple, so the capability was enabled and read back through Apple's
 documented `POST /v1/bundleIdCapabilities` API before EAS continued signing.
 Physical push delivery still requires verification on the registered iPhone.
-Push events currently come from turns owned by the remote daemon (permission
-needed or turn completed). The desktop session bridge has no background event
-watcher; desktop-origin sessions update by foreground polling and do not yet
-produce APNs notifications.
+Push events come from the openADE window when push is configured on the PC:
+a task needs a permission, asks a question, finished or failed. The PC does not
+push while its window has focus, and a notice carries only the task's title.
 
 The native resource phase includes the opaque 1024px AppIcon asset and
 `PrivacyInfo.xcprivacy`. The privacy manifest declares the app-only UserDefaults
-reason `CA92.1` for the local logout restoration flag; credentials remain in
+reason `CA92.1` for appearance, the Face ID lock and the last project and agent
+chosen for a new task; credentials remain in
 Keychain. The app does not contain analytics or tracking SDKs.
 
 ## Local Mac build
@@ -111,13 +111,17 @@ bash scripts/build-simulator.sh
 The simulator workflow also compiles the Release configuration into separate
 DerivedData with signing disabled, so code excluded by `#if DEBUG` is checked
 without changing Apple credentials. XCTest and launch verification use the
-signed Debug app. Explicit `--ui-fixture=<scene>` launch flags cover chat, files,
-changes, projects, empty tasks, new tasks, composer, attachments, permissions,
-models, advanced settings, connections and accessibility text size. They produce
-`fixture-*.png` captures using local test data and no host connection, including
-a separate light-appearance chat capture.
+signed Debug app. Explicit `--ui-fixture=<scene>` launch flags cover the task
+list (also empty and offline), a running chat, a queued message, folded tool
+work, a permission, a question, a CLI task, a new task, settings, pairing, the
+Face ID lock, files, changes, Git diff/commit/comment, source and accessibility
+text size. They produce `fixture-*.png` captures using local test data and no
+host connection, plus light-appearance captures of the list, chat, permission
+and question. The list is in `DebugUIFixtures.scenes` and in the script.
 These fixtures are compiled out of Release; their screenshots demonstrate layout,
-not an actual PC session. `screenshot.png` captures the normal connection screen.
+not an actual PC session. `screenshot.png` captures the first-launch screen.
+GitHub Actions runs this script on pushes to `wt/remote-*` branches and uploads
+the reports as the `ios-reports` artifact.
 
 Linux can validate configuration and generate the project but cannot compile
 SwiftUI for iOS. Only a completed macOS/Xcode build establishes native build

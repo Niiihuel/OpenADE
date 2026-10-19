@@ -75,7 +75,8 @@ struct NewTaskView: View {
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancelar") { dismiss() }.disabled(creating) } }
             .remoteCanvas()
             .interactiveDismissDisabled(creating)
-            .onAppear {
+            // The list may arrive after the sheet opens: choose as soon as there is something.
+            .onChange(of: projects.map(\.id) + agents.map(\.id), initial: true) {
                 if project.isEmpty { project = projects.contains { $0.id == lastProject } ? lastProject : projects.first?.id ?? "" }
                 if agent.isEmpty { agent = agents.contains { $0.backend == lastAgent } ? lastAgent : agents.first?.backend ?? "" }
             }

@@ -170,7 +170,7 @@ struct PairingReviewView: View {
                         TextField("Nombre", text: $deviceName).font(.body).disabled(store.pairing)
                     }
                     if let error { WorkspaceErrorView(message: error) }
-                    Text("El código vence a las \(Date(timeIntervalSince1970: Double(payload.expiresAt)).formatted(date: .omitted, time: .shortened)).")
+                    Text("El código vence a las \(Date(timeIntervalSince1970: Double(payload.expiresAt)).spanishTime).")
                         .font(.footnote).foregroundStyle(RemoteTheme.muted)
                 }
                 .padding(20)

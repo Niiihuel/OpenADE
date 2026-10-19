@@ -194,6 +194,9 @@ struct HomeView: View {
 struct TaskRow: View {
     let task: RemoteTask
     var projectName: String? = nil
+    /// The app speaks Spanish whatever the iPhone's language: "hace 4 min".
+    private static let relative = Date.RelativeFormatStyle(presentation: .numeric, unitsStyle: .abbreviated,
+                                                           locale: Locale(identifier: "es"))
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -207,18 +210,21 @@ struct TaskRow: View {
                         .lineLimit(2)
                     Spacer(minLength: 6)
                     if task.updatedAtMS > 0 {
-                        Text(task.updatedAt.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated)))
+                        Text(task.updatedAt.formatted(Self.relative))
                             .font(.caption).foregroundStyle(RemoteTheme.muted).lineLimit(1)
                     }
                 }
                 HStack(spacing: 6) {
                     RemoteTag(title: task.agent, symbol: task.chat ? nil : "terminal")
-                    if let projectName { Text(projectName).foregroundStyle(RemoteTheme.muted).lineLimit(1) }
+                    if let projectName {
+                        HStack(spacing: 3) { Image(systemName: "folder"); Text(projectName) }
+                            .foregroundStyle(RemoteTheme.muted)
+                    }
                     if task.isWaiting { Text("Te necesita").fontWeight(.medium).foregroundStyle(RemoteTheme.attention) }
                     else if task.isRunning { Text("Trabajando").foregroundStyle(RemoteTheme.muted) }
                     if task.queued > 0 {
-                        Label("\(task.queued) en cola", systemImage: "tray.full").foregroundStyle(RemoteTheme.muted)
-                            .labelStyle(.titleAndIcon)
+                        HStack(spacing: 3) { Image(systemName: "tray.full"); Text("\(task.queued) en cola") }
+                            .foregroundStyle(RemoteTheme.muted)
                     }
                     Spacer(minLength: 0)
                     if task.unread {
