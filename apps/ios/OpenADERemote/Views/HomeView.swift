@@ -103,7 +103,6 @@ struct HomeView: View {
         .searchable(text: $query, prompt: "Buscar tareas")
         .refreshable { await store.refresh() }
         .overlay { if sections.isEmpty && store.connection != .revoked { emptyState } }
-        .safeAreaInset(edge: .bottom, spacing: 0) { newTaskDock }
         .connectionPill(onRevoked: { showingPairing = true })
         .remoteCanvas()
         .navigationTitle(store.computerName)
@@ -166,28 +165,6 @@ struct HomeView: View {
                     .disabled(!store.isOnline)
             }
         }
-    }
-
-    private var newTaskDock: some View {
-        Button { showingNewTask = true } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "plus").font(.system(size: 20, weight: .regular))
-                Text("Pedile algo a \(store.computerName)").font(.body).foregroundStyle(RemoteTheme.muted).lineLimit(1)
-                Spacer(minLength: 0)
-                Image(systemName: "arrow.up").font(.system(size: 16, weight: .semibold))
-                    .frame(width: 34, height: 34).background(RemoteTheme.raised, in: Circle())
-            }
-            .padding(.leading, 18).padding(.trailing, 7).padding(.vertical, 7)
-            .background(RemoteTheme.surface, in: Capsule())
-            .overlay { Capsule().strokeBorder(RemoteTheme.border, lineWidth: 0.5) }
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .disabled(!store.isOnline)
-        .opacity(store.isOnline ? 1 : 0.55)
-        .accessibilityLabel("Nueva tarea")
-        .padding(.horizontal, 16).padding(.vertical, 10)
-        .background(RemoteTheme.canvas)
     }
 }
 
