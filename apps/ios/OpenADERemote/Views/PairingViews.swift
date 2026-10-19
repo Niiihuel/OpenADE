@@ -134,10 +134,26 @@ struct PairingReviewView: View {
     @State private var requestID = UUID().uuidString
     @State private var error: String?
 
+    /// A saved PC with the same name but another identity: this is a new PC.
+    private var namesake: SavedComputer? {
+        store.library.computers.first {
+            $0.id != payload.serverID && $0.name.displaySafe.caseInsensitiveCompare(payload.label) == .orderedSame
+        }
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
+                    if let namesake {
+                        RemoteCard {
+                            Label("Nueva PC", systemImage: "exclamationmark.triangle.fill")
+                                .font(.headline).foregroundStyle(RemoteTheme.attention)
+                            Text("Ya tenés emparejada otra PC llamada «\(namesake.name.displaySafe)», con el código \(namesake.shortFingerprint). Esta es una PC distinta, con el código \(payload.shortFingerprint). Seguí solo si la reconocés: al emparejarla pasa a ser la PC en uso.")
+                                .font(.subheadline)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                     HStack(spacing: 14) {
                         Image(systemName: "desktopcomputer")
                             .font(.system(size: 26, weight: .light))
@@ -179,7 +195,7 @@ struct PairingReviewView: View {
                 Button(action: pair) {
                     HStack(spacing: 10) {
                         if store.pairing { ProgressView().tint(RemoteTheme.onAccent) }
-                        Text(store.pairing ? "Emparejando…" : "Emparejar")
+                        Text(store.pairing ? "Emparejando…" : namesake == nil ? "Emparejar" : "Emparejar como PC nueva")
                     }
                 }
                 .buttonStyle(RemotePrimaryButtonStyle())

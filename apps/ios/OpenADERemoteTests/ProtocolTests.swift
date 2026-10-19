@@ -42,6 +42,19 @@ final class ProtocolTests: XCTestCase {
         XCTAssertEqual(try RemoteRoute.url(parsed.routes[1]).absoluteString, "https://[2803:9800:9015:4a1::2]:7787")
     }
 
+    func testIdsCompareLowercaseAndTheLabelIsShownSafe() throws {
+        let parsed = try PairingPayload.parse(link(payload([
+            "server_id": "6F1C2A9E-3B7D-4F2A-9C1E-5D8B7A6F4E21", "pairing_id": "0B1E6D2C-8F4A-4B3E-9A7D-2C5E1F6A8B90",
+            "label": "\u{202E}soxin",
+        ])))
+        XCTAssertEqual(parsed.serverID, "6f1c2a9e-3b7d-4f2a-9c1e-5d8b7a6f4e21")
+        XCTAssertEqual(parsed.pairingID, "0b1e6d2c-8f4a-4b3e-9a7d-2c5e1f6a8b90")
+        XCTAssertEqual(parsed.label, "soxin")
+        // The PC's QR code is the raw JSON itself.
+        let raw = String(decoding: try JSONSerialization.data(withJSONObject: payload()), as: UTF8.self)
+        XCTAssertEqual(try PairingPayload.parse(raw).label, "nixos")
+    }
+
     func testExpiredCodeIsRefusedAsExpired() throws {
         XCTAssertEqual(try parseError(payload(["expires_at": Int(Date.now.timeIntervalSince1970) - 1])), .expired)
     }
@@ -103,6 +116,11 @@ final class ProtocolTests: XCTestCase {
         var chunked = SSEParser()
         let split = chunked.push(bytes[..<cut]) + chunked.push(bytes[cut..<(cut + 9)]) + chunked.push(bytes[(cut + 9)...])
         XCTAssertEqual(split, received)
+    }
+
+    func testAnEventLargerThanTheLimitIsDroppedAndTheNextOneArrives() {
+        let huge = "data: " + String(repeating: "x", count: SSEParser.eventLimit) + "\n\n"
+        XCTAssertEqual(messages([huge, "event: overview\ndata: {}\n\n"]), [SSEMessage(event: "overview", data: "{}")])
     }
 
     func testBlankLineWithoutDataResetsTheEventNameAndDefaultsToMessage() {

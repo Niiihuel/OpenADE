@@ -61,18 +61,5 @@
 	<string>Dictá un mensaje para tu agente. Podés revisarlo y editarlo antes de enviarlo.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Convertí tu voz en un borrador de texto usando el reconocimiento de este iPhone.</string>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>dev.openade.remote.pairing</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>openade-remote</string>
-			</array>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-		</dict>
-	</array>
 </dict>
 </plist>

@@ -22,8 +22,9 @@ enum DebugUIFixtures {
     static let fingerprint = "a3f19c0be27d4c6188e5b0d2f7a19c3e6b4d8f2a1c7e9b0d3f5a2c8e4b6d1f07"
 
     static var pairingPayload: PairingPayload {
-        PairingPayload(version: 2, routes: ["https://192.168.1.229:7787", "https://[2803:9800:9015:4a1::2]:7787", "https://casa.example.com:7787"],
-                       fingerprint: fingerprint, serverID: serverID, pairingID: "0b1e6d2c-8f4a-4b3e-9a7d-2c5e1f6a8b90",
+        PairingPayload(version: 2, routes: ["https://192.168.1.40:7787", "https://[2803:9800:9015:4a1::7]:7787", "https://casa.example.com:7787"],
+                       fingerprint: "5be04d9a7c13f28e6b0a4c9d1e7f3a85c2d6b8e0f4a1c7d9e3b5f2a6c8d0e417",
+                       serverID: "9c3d5e7f-1a2b-4c6d-8e0f-a1b2c3d4e5f6", pairingID: "0b1e6d2c-8f4a-4b3e-9a7d-2c5e1f6a8b90",
                        secret: String(repeating: "7c", count: 32), expiresAt: Int64(Date.now.timeIntervalSince1970) + 540, label: "nixos")
     }
 

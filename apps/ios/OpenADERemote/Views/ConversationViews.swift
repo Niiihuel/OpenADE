@@ -141,7 +141,7 @@ private struct ToolCallRow: View {
             .accessibilityLabel("\(call.label)\(call.isRunning ? ", en curso" : call.isError ? ", falló" : "")")
             if expanded {
                 VStack(alignment: .leading, spacing: 8) {
-                    if call.kind != .run, let arguments = call.arguments, arguments != .object([:]) {
+                    if let arguments = call.arguments, arguments != .object([:]) {
                         OutputBlock(text: String(arguments.displayText.prefix(2_000)))
                     }
                     if !call.output.isEmpty {

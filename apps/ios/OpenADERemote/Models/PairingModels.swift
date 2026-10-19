@@ -1,7 +1,9 @@
 import Foundation
 
-/// What the PC's QR code carries: where it answers, the certificate the phone
-/// pins, and a secret good once for ten minutes.
+/// What the PC's QR code carries, as raw JSON: where it answers, the
+/// certificate the phone pins, and a one-use secret. It is untrusted input and
+/// only enters through the app's own scanner or paste field; an older
+/// `openade-remote://pair#…` text is still accepted there.
 struct PairingPayload: Codable, Equatable, Identifiable, Sendable {
     let version: Int
     let routes: [String]
@@ -43,9 +45,11 @@ struct PairingPayload: Codable, Equatable, Identifiable, Sendable {
         guard (1...8).contains(payload.routes.count), payload.routes.allSatisfy({ (try? RemoteRoute.url($0)) != nil }),
               lowercaseHex(payload.fingerprint), lowercaseHex(payload.secret),
               UUID(uuidString: payload.serverID) != nil, UUID(uuidString: payload.pairingID) != nil,
-              !payload.label.isEmpty, payload.label.utf8.count <= 256 else { throw PairingError.invalidCode }
+              !payload.label.displaySafe.isEmpty, payload.label.utf8.count <= 256 else { throw PairingError.invalidCode }
         guard Double(payload.expiresAt) > now.timeIntervalSince1970 else { throw PairingError.expired }
-        return payload
+        return PairingPayload(version: payload.version, routes: payload.routes, fingerprint: payload.fingerprint,
+                              serverID: payload.serverID.lowercased(), pairingID: payload.pairingID.lowercased(),
+                              secret: payload.secret, expiresAt: payload.expiresAt, label: payload.label.displaySafe)
     }
 }
 

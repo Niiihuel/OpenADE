@@ -74,15 +74,30 @@ enum ToolKind: Int, CaseIterable, Sendable {
         return parts.isEmpty ? (calls.first.map { label(for: $0) } ?? "Usó herramientas") : parts.joined(separator: " · ")
     }
 
+    /// Keys a command line is built from; every other argument is shown apart.
+    static let commandKeys: Set<String> = ["command", "cmd", "commandLine", "args", "argv", "cwd", "workdir"]
+
+    /// The whole command that would run: the program and every argument, each
+    /// quoted as a shell would need it, so `sh -c '…'` never reads as `sh`.
     static func command(in arguments: JSONValue?) -> String? {
         guard let arguments else { return nil }
         for key in ["command", "cmd", "commandLine"] {
-            if let text = arguments[key]?.stringValue, !text.isEmpty { return text }
-            if let parts = arguments[key]?.arrayValue?.compactMap(\.stringValue), !parts.isEmpty {
-                return parts.joined(separator: " ")
-            }
+            var parts: [String]
+            // A string is the program or a whole shell line, shown as given.
+            if let text = arguments[key]?.stringValue, !text.isEmpty { parts = [text] }
+            else if let items = arguments[key]?.arrayValue, !items.isEmpty { parts = items.map(quoted) }
+            else { continue }
+            parts += ((arguments["args"] ?? arguments["argv"])?.arrayValue ?? []).map(quoted)
+            return parts.joined(separator: " ")
         }
         return nil
+    }
+
+    static func quoted(_ value: JSONValue) -> String {
+        guard let text = value.stringValue else { return value.compactText }
+        let plain = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_./:=,+@%"))
+        if !text.isEmpty, text.unicodeScalars.allSatisfy(plain.contains) { return text }
+        return "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     static func paths(in arguments: JSONValue?) -> [String] {
@@ -99,7 +114,7 @@ enum ToolKind: Int, CaseIterable, Sendable {
         // apply_patch names its files inside the patch text.
         for key in ["patch", "input"] {
             for line in (arguments[key]?.stringValue ?? "").split(separator: "\n") {
-                for marker in ["*** Update File: ", "*** Add File: ", "*** Delete File: ", "+++ b/"] where line.hasPrefix(marker) {
+                for marker in ["*** Update File: ", "*** Add File: ", "*** Delete File: ", "*** Move to: ", "+++ b/"] where line.hasPrefix(marker) {
                     let path = String(line.dropFirst(marker.count)).trimmingCharacters(in: .whitespaces)
                     if !path.isEmpty, !found.contains(path) { found.append(path) }
                 }

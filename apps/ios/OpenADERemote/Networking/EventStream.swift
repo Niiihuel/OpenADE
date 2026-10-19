@@ -11,9 +11,14 @@ struct SSEParser {
     private var line: [UInt8] = []
     private var event = ""
     private var data: [String] = []
+    private var dataBytes = 0
+    /// An event whose data outgrew `eventLimit`: dropped when it ends.
+    private var oversized = false
     private var afterCR = false
     /// A line longer than this is dropped rather than growing without bound.
     private let lineLimit = 16 * 1_024 * 1_024
+    /// One event's data at most; the PC pages its events far below this.
+    static let eventLimit = 4 * 1_024 * 1_024
 
     mutating func push<Bytes: Sequence>(_ bytes: Bytes) -> [SSEMessage] where Bytes.Element == UInt8 {
         bytes.compactMap { push($0) }
@@ -36,8 +41,8 @@ struct SSEParser {
 
     private mutating func process(_ text: String) -> SSEMessage? {
         if text.isEmpty {
-            defer { event = ""; data = [] }
-            guard !data.isEmpty else { return nil }
+            defer { event = ""; data = []; dataBytes = 0; oversized = false }
+            guard !data.isEmpty, !oversized else { return nil }
             return SSEMessage(event: event.isEmpty ? "message" : event, data: data.joined(separator: "\n"))
         }
         if text.hasPrefix(":") { return nil }
@@ -53,7 +58,9 @@ struct SSEParser {
         }
         switch field {
         case "event": event = String(value)
-        case "data": data.append(String(value))
+        case "data":
+            dataBytes += value.utf8.count + 1
+            if dataBytes > Self.eventLimit { oversized = true; data = [""] } else if !oversized { data.append(String(value)) }
         default: break
         }
         return nil

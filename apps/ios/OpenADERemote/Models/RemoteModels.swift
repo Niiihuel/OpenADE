@@ -202,6 +202,18 @@ enum PermissionDecision: String, Sendable {
 
 enum MessageDelivery: String, Sendable { case auto, queue }
 
+extension String {
+    /// Without control or bidirectional-format characters, which can make a
+    /// name read as another one.
+    var displaySafe: String {
+        var scalars = String.UnicodeScalarView()
+        scalars.append(contentsOf: unicodeScalars.filter {
+            $0.properties.generalCategory != .control && $0.properties.generalCategory != .format
+        })
+        return String(scalars).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
 extension Date {
     /// "14:30": the app speaks Spanish whatever the iPhone's language.
     var spanishTime: String { formatted(Date.FormatStyle(date: .omitted, time: .shortened, locale: Locale(identifier: "es"))) }

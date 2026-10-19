@@ -87,6 +87,10 @@ struct PermissionCard: View {
                         }
                         .buttonStyle(RemoteSecondaryButtonStyle())
                         .accessibilityLabel("Permitir siempre los comandos que empiezan con \(always)")
+                    } else if ToolKind(toolName: request.toolName) == .run {
+                        // The session grant covers every later command of the task, not this one.
+                        Button("Permitir todos los comandos en esta tarea") { decide(.allowSession) }
+                            .buttonStyle(RemoteSecondaryButtonStyle())
                     } else {
                         Button("Permitir en esta tarea") { decide(.allowSession) }
                             .buttonStyle(RemoteSecondaryButtonStyle())
@@ -99,50 +103,65 @@ struct PermissionCard: View {
         }
     }
 
+    /// The first lines of a long text, and how many more there are.
+    private func clipped(_ text: String, _ limit: Int) -> (text: String, more: Int) {
+        let lines = text.components(separatedBy: "\n")
+        return (lines.prefix(limit).joined(separator: "\n"), max(0, lines.count - limit))
+    }
+
+    private func codeBlock(_ text: String, _ limit: Int) -> some View {
+        let shown = clipped(text, limit)
+        return VStack(alignment: .leading, spacing: 4) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                Text(shown.text)
+                    .font(.system(.callout, design: .monospaced))
+                    .textSelection(.enabled)
+                    .padding(12)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RemoteTheme.raised, in: RoundedRectangle(cornerRadius: 14))
+            if shown.more > 0 {
+                Text(shown.more == 1 ? "Sigue 1 línea más" : "Siguen \(shown.more) líneas más")
+                    .font(.caption).foregroundStyle(RemoteTheme.attention)
+            }
+        }
+    }
+
+    /// The summary, every other argument, and always the whole request.
     @ViewBuilder private var details: some View {
-        switch summary.style {
-        case .command:
-            VStack(alignment: .leading, spacing: 6) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    Text("$ " + (summary.lines.first ?? ""))
-                        .font(.system(.callout, design: .monospaced))
-                        .lineLimit(8)
-                        .textSelection(.enabled)
-                        .padding(12)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RemoteTheme.raised, in: RoundedRectangle(cornerRadius: 14))
+        VStack(alignment: .leading, spacing: 8) {
+            switch summary.style {
+            case .command:
+                codeBlock("$ " + (summary.lines.first ?? ""), 12)
+                    .accessibilityLabel("Comando: \(summary.lines.first ?? "")")
                 if let detail = summary.detail {
-                    Text(detail).font(.caption).foregroundStyle(RemoteTheme.muted).lineLimit(1).truncationMode(.middle)
+                    Text(detail).font(.caption).foregroundStyle(RemoteTheme.muted).lineLimit(2).truncationMode(.middle)
                 }
-            }
-            .accessibilityLabel("Comando: \(summary.lines.first ?? "")")
-        case .paths:
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(summary.lines.prefix(5), id: \.self) { path in
+            case .paths:
+                ForEach(summary.lines.prefix(8), id: \.self) { path in
                     Label(path, systemImage: "doc.text")
-                        .font(.callout.monospaced()).lineLimit(1).truncationMode(.middle)
+                        .font(.callout.monospaced()).lineLimit(2).truncationMode(.middle)
                 }
-                if summary.lines.count > 5 {
-                    Text("y \(summary.lines.count - 5) archivos más").font(.caption).foregroundStyle(RemoteTheme.muted)
+                if summary.lines.count > 8 {
+                    Text("y \(summary.lines.count - 8) archivos más").font(.caption).foregroundStyle(RemoteTheme.attention)
                 }
+            case .json:
+                codeBlock(summary.lines.first ?? "", 16)
             }
-        case .json:
-            DisclosureGroup(isExpanded: $showingArguments) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    Text(summary.lines.first ?? "")
-                        .font(.system(.caption, design: .monospaced))
-                        .lineLimit(40)
-                        .textSelection(.enabled)
-                        .padding(10)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RemoteTheme.raised, in: RoundedRectangle(cornerRadius: 12))
-                .padding(.top, 6)
-            } label: {
-                Text("Ver los argumentos").font(.subheadline)
+            ForEach(summary.extras, id: \.self) { extra in
+                Text(extra)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(RemoteTheme.attention)
+                    .lineLimit(4)
+                    .textSelection(.enabled)
             }
-            .tint(RemoteTheme.muted)
+            Button("Ver todos los argumentos", systemImage: "doc.text.magnifyingglass") { showingArguments = true }
+                .font(.subheadline)
+                .frame(minHeight: 36)
+                .tint(RemoteTheme.muted)
+        }
+        .sheet(isPresented: $showingArguments) {
+            ReadOnlyOutputView(title: request.toolName, output: request.arguments.displayText).remoteSheet()
         }
     }
 

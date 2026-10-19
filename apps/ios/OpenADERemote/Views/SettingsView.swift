@@ -53,7 +53,10 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Toggle("Bloquear con Face ID", isOn: $lockEnabled)
+                    Toggle("Bloquear con Face ID", isOn: Binding(get: { lockEnabled }, set: { enabled in
+                        if enabled { lockEnabled = true; return }
+                        Task { if await AppLock.authenticate("Confirmá que querés dejar de bloquear openADE.") { lockEnabled = false } }
+                    }))
                 } footer: {
                     Text("Pide Face ID o el código del iPhone al abrir la app y al volver después de 5 minutos.")
                 }

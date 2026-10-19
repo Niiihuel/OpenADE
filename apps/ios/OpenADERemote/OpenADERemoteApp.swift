@@ -6,7 +6,6 @@ struct OpenADERemoteApp: App {
     @State private var store = RemoteStore()
     @State private var lock = AppLock()
     @State private var cover = CoverWindow()
-    @State private var pairingPayload: PairingPayload?
     @AppStorage("openade.remote.appearance") private var appearance = "system"
     @Environment(\.scenePhase) private var scenePhase
     private var notifications: NativeNotifications { .shared }
@@ -43,7 +42,10 @@ struct OpenADERemoteApp: App {
                     let style: UIUserInterfaceStyle = appearance == "dark" ? .dark : appearance == "light" ? .light : .unspecified
                     switch state {
                     case .none: cover.hide()
-                    case .lock: cover.show(AnyView(LockScreen(lock: lock)), style: style)
+                    case .lock:
+                        // The keyboard must not keep typing into the hidden composer.
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                        cover.show(AnyView(LockScreen(lock: lock)), style: style)
                     // What the app switcher shows: never a task.
                     case .privacy: cover.show(AnyView(ZStack { RemoteTheme.canvas.ignoresSafeArea(); BrandMark(size: 88) }), style: style)
                     }
@@ -51,18 +53,11 @@ struct OpenADERemoteApp: App {
                 .alert("openADE", isPresented: Binding(get: { store.notice != nil }, set: { if !$0 { store.notice = nil } })) {
                     Button("Entendido", role: .cancel) { store.notice = nil }
                 } message: { Text(store.notice ?? "") }
-                .onOpenURL { url in
-                    do { pairingPayload = try PairingPayload.parse(url.absoluteString) }
-                    catch { store.notice = error.localizedDescription }
-                }
-                // A pairing link waits for the unlock: pairing is never done behind the lock.
-                .sheet(item: Binding(get: { lock.isLocked ? nil : pairingPayload }, set: { pairingPayload = $0 })) {
-                    PairingReviewView(payload: $0).environment(store).remoteSheet()
-                }
                 .task(id: scenePhase) { if scenePhase == .active { await notifications.registerIfAuthorized() } }
                 .task(id: "\(store.pushKey)|\(notifications.token ?? "")") { await store.syncPush(token: notifications.token) }
-                .onChange(of: notifications.destination, initial: true) {
-                    guard let destination = notifications.destination else { return }
+                // A tapped notice waits for the unlock before it switches PC or opens a task.
+                .onChange(of: lock.isLocked ? nil : notifications.destination, initial: true) { _, destination in
+                    guard let destination else { return }
                     store.restore()
                     store.open(destination)
                     notifications.destination = nil

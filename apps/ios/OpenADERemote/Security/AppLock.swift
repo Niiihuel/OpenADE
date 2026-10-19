@@ -21,14 +21,28 @@ final class AppLock {
         LAContext().canEvaluatePolicy(.deviceOwnerAuthentication, error: nil)
     }
 
-    /// Nothing to hide before a PC is paired, so an unpaired app never locks.
+    /// Closed from the first frame: nothing shows before `launch` decides.
+    init() {
+        isLocked = enabled && available
+    }
+
+    /// Nothing to hide before a PC is paired, so an unpaired app opens.
     func launch(paired: Bool) {
         guard !started else { return }
         started = true
         #if DEBUG
         if DebugUIFixtures.mode != nil { isLocked = DebugUIFixtures.mode == "lock"; return }
         #endif
-        if paired && enabled && available { isLocked = true; Task { await unlock() } }
+        if !paired { isLocked = false }
+        else if isLocked { Task { await unlock() } }
+    }
+
+    /// The owner's Face ID or passcode, for turning the lock off. Without a
+    /// passcode the lock never engages, so there is nothing to confirm.
+    static func authenticate(_ reason: String) async -> Bool {
+        let context = LAContext()
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: nil) else { return true }
+        return (try? await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)) ?? false
     }
 
     func enteredBackground() { if backgroundedAt == nil { backgroundedAt = .now } }

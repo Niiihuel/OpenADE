@@ -119,25 +119,39 @@ and EAS builds.
 
 ### On the phone
 
-- **Pairing.** The QR code or link (`openade-remote://pair#<base64url JSON>`)
-  is untrusted input: version 2, 1–8 `https` routes, a 64-digit lowercase hex
-  fingerprint and secret, UUIDs and an expiry in the future. The review screen
-  shows the PC's label and the first 16 digits of the fingerprint
-  (`ABCD-1234-EF56-7890`) to compare with Settings → Remoto. A saved PC never
-  gets another certificate by pairing again: it must be forgotten first.
+- **Pairing.** The QR code is the raw JSON payload; the app registers no URL
+  scheme, so no other app can receive a pairing secret, and a code only enters
+  through the app's own scanner or paste field (an older
+  `openade-remote://pair#…` text is still accepted there). The payload is
+  untrusted input: version 2, 1–8 `https` routes, a 64-digit lowercase hex
+  fingerprint and secret, UUIDs (compared lowercase) and an expiry in the
+  future; the label loses control and bidi characters. The review screen shows
+  the PC's label and the first 16 digits of the fingerprint
+  (`ABCD-1234-EF56-7890`) to compare with Settings → Remoto; a PC that shares a
+  saved PC's name shows as "Nueva PC" with both codes. A saved PC never gets
+  another certificate by pairing again: it must be forgotten first.
 - **Pinning.** Every request, the stream and uploads go through one URLSession
   per fingerprint whose delegate accepts the TLS handshake only if SHA-256 of
   the leaf certificate's DER is the pinned value; redirects are refused. The
   token is only sent after `/.well-known/openade` answered as API 2 with the
-  same server id and fingerprint.
+  same server id and fingerprint. An event of the stream is capped at 4 MB.
+- **Permissions.** The card shows the whole command (program and every
+  argument, quoted as a shell needs), every other argument such as `env` or
+  `elevated`, and always offers the full arguments. "Permitir siempre" names
+  the exact prefix the PC will keep allowing; for commands, the per-task grant
+  reads "Permitir todos los comandos en esta tarea".
 - **Storage.** Tokens, routes and pins live in one Keychain item
-  (`WhenUnlockedThisDeviceOnly`). The last task list and twelve recent
-  conversations per PC are cached with complete file protection for offline
-  reading; forgetting a PC deletes them and first removes its push token.
-- **Lock.** "Bloquear con Face ID" (on by default) asks for Face ID or the
-  passcode when a paired app opens and after five minutes away. The lock and
-  the app-switcher cover are a window above every sheet and alert; a pairing
-  link waits for the unlock. Links in agent text open web pages only.
+  (`WhenUnlockedThisDeviceOnly`); a reinstall starts unpaired. The last task
+  list and twelve recent conversations per PC are cached with complete file
+  protection for offline reading. Forgetting a PC deletes them and first asks
+  that PC to drop this phone's push token; a revoked PC's cache, conversations
+  and list are deleted at once.
+- **Lock.** "Bloquear con Face ID" (on by default) starts locked and asks for
+  Face ID or the passcode when a paired app opens and after five minutes away;
+  turning it off asks too. The lock and the app-switcher cover are a window
+  above every sheet and alert, the keyboard is dismissed under it, and a tapped
+  notice waits for the unlock. Links in agent text open web pages only, after
+  showing the full address; copied code stays on this iPhone for two minutes.
 - **Connection.** On launch, on returning and on network changes the phone
   probes every route in parallel (3 s) and keeps the likeliest that answers as
   this PC; `/v2/overview` refreshes the learned routes. One stream is open

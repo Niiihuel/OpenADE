@@ -63,6 +63,12 @@ final class RemoteStore {
         if let mode = DebugUIFixtures.mode { DebugUIFixtures.load(mode, into: self); return }
         #endif
         keychain.deleteLegacyRecords()
+        let installed = "openade.remote.installed"
+        if !UserDefaults.standard.bool(forKey: installed) {
+            // The Keychain outlives an uninstall: a reinstall must not restore pairings silently.
+            try? keychain.deleteLibrary()
+            UserDefaults.standard.set(true, forKey: installed)
+        }
         do { library = try keychain.loadLibrary() ?? ConnectionLibrary() }
         catch { notice = Self.readable(error) }
         activate()
@@ -200,14 +206,14 @@ final class RemoteStore {
         let authorized = found.authorized(computer.token)
         let overview = try await authorized.overview()
         guard gen == generation else { throw CancellationError() }
-        guard overview.server.serverID == computer.id else { throw PairingError.wrongComputer }
+        guard overview.server.serverID.lowercased() == computer.id.lowercased() else { throw PairingError.wrongComputer }
         client = authorized
         server = overview.server
         apply(overview.snapshot)
         update(computer.id) { saved in
             saved.learn(routes: overview.server.routes)
             saved.lastRoute = found.baseURL.absoluteString
-            if !overview.server.name.isEmpty { saved.name = overview.server.name }
+            if !overview.server.name.displaySafe.isEmpty { saved.name = overview.server.name.displaySafe }
         }
     }
 
@@ -227,7 +233,7 @@ final class RemoteStore {
             }
             for await (index, identity) in group {
                 let matches = identity.map {
-                    $0.api == 2 && $0.serverID == serverID && $0.fingerprint.lowercased() == fingerprint.lowercased()
+                    $0.api == 2 && $0.serverID.lowercased() == serverID.lowercased() && $0.fingerprint.lowercased() == fingerprint.lowercased()
                 } ?? false
                 if identity != nil && !matches { otherComputer = true }
                 outcomes[index] = matches
@@ -315,6 +321,12 @@ final class RemoteStore {
         stopLoop()
         client = nil
         update(id) { $0.revoked = true }
+        cache.remove(server: id)
+        conversations = [:]
+        recentTasks = []
+        drafts = [:]
+        snapshot = TaskListSnapshot()
+        hasSnapshot = false
         connection = .revoked
         connectionDetail = ConnectionError.unauthorized.errorDescription
     }
@@ -472,9 +484,9 @@ final class RemoteStore {
         defer { pairing = false }
         let found = try await Self.probe(routes: payload.routes, fingerprint: payload.fingerprint, serverID: payload.serverID)
         let result = try await found.pair(payload, requestID: requestID, deviceName: deviceName)
-        guard result.serverID == payload.serverID, result.fingerprint.lowercased() == payload.fingerprint.lowercased(),
+        guard result.serverID.lowercased() == payload.serverID, result.fingerprint.lowercased() == payload.fingerprint.lowercased(),
               !result.token.isEmpty else { throw PairingError.wrongComputer }
-        var computer = SavedComputer(id: payload.serverID, name: result.name.isEmpty ? payload.label : result.name,
+        var computer = SavedComputer(id: payload.serverID, name: result.name.displaySafe.isEmpty ? payload.label : result.name.displaySafe,
                                      routes: payload.routes, fingerprint: payload.fingerprint.lowercased(),
                                      token: result.token, deviceID: result.deviceID, lastRoute: found.baseURL.absoluteString)
         computer.learn(routes: result.routes)
@@ -496,8 +508,13 @@ final class RemoteStore {
     }
 
     func forget(_ id: String) async {
-        if id == library.activeID, isOnline, activeComputer?.registeredPushToken != nil, let client {
-            try? await client.removePush()
+        // Best effort: the PC may be off; its notices then stop when it sees the token fail.
+        if let computer = library.computers.first(where: { $0.id == id }), computer.registeredPushToken != nil, !computer.revoked {
+            if id == library.activeID, isOnline, let client {
+                try? await client.removePush()
+            } else if let found = try? await Self.probe(routes: computer.routes, fingerprint: computer.fingerprint, serverID: computer.id) {
+                try? await found.authorized(computer.token).removePush()
+            }
         }
         var next = library
         next.computers.removeAll { $0.id == id }
