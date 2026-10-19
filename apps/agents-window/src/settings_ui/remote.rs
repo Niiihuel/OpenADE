@@ -12,7 +12,7 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
         groups.push(settings_parts::feedback_banner(error, FeedbackTone::Error, None, compact));
     }
     let status = match remote.listening {
-        Some(port) => format!("Escuchando en el puerto {port}. Huella {}", remote.fingerprint),
+        Some(port) => format!("Escuchando en el puerto {port}. Código de seguridad {}", remote.fingerprint),
         None if remote.enabled => "No está escuchando.".to_owned(),
         None => "Apagado: ningún teléfono puede conectarse.".to_owned(),
     };
@@ -101,7 +101,7 @@ fn pairing(remote: &RemoteView, compact: bool) -> Element {
             "Emparejar un iPhone",
             vec![settings_parts::settings_row(
                 "Código de emparejamiento",
-                format!("Sirve una vez y por diez minutos. El teléfono se conectará por: {routes}"),
+                format!("Sirve una vez y por cinco minutos. El teléfono se conectará por: {routes}"),
                 outline("remote_pair", "Mostrar código").icon(Icon::Phone).render(),
                 compact,
             )],
@@ -111,7 +111,7 @@ fn pairing(remote: &RemoteView, compact: bool) -> Element {
     let explanation = Element::column(vec![
         Text::new("Escanealo con la app openADE del iPhone", theme::component_palette()).render(),
         Text::new(
-            format!("Vence en diez minutos y sirve una sola vez. Huella del PC: {}. Direcciones: {routes}", remote.fingerprint),
+            format!("Vence en cinco minutos y sirve una sola vez. Código de seguridad: {}. Direcciones: {routes}", remote.fingerprint),
             theme::component_palette(),
         )
         .muted()
