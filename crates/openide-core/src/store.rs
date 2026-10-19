@@ -3538,38 +3538,6 @@ impl SessionStore {
             .collect())
     }
 
-    pub fn list_active(&self) -> Result<Vec<Session>, StoreError> {
-        Ok(self
-            .list()?
-            .into_iter()
-            .filter(|session| !session.archived)
-            .collect())
-    }
-
-    pub fn list_archived(&self) -> Result<Vec<Session>, StoreError> {
-        Ok(self
-            .list()?
-            .into_iter()
-            .filter(|session| session.archived)
-            .collect())
-    }
-
-    pub fn list_active_with_events(&self) -> Result<Vec<StoredSession>, StoreError> {
-        Ok(self
-            .list_with_events()?
-            .into_iter()
-            .filter(|record| !record.session.archived)
-            .collect())
-    }
-
-    pub fn list_archived_with_events(&self) -> Result<Vec<StoredSession>, StoreError> {
-        Ok(self
-            .list_with_events()?
-            .into_iter()
-            .filter(|record| record.session.archived)
-            .collect())
-    }
-
     /// Lists sessions together with their event logs so callers can derive
     /// display titles without reading each log a second time.
     pub fn list_with_events(&self) -> Result<Vec<StoredSession>, StoreError> {
@@ -5647,7 +5615,7 @@ mod tests {
         assert_eq!(loaded.workspace, PathBuf::from("C:/legacy/project"));
         assert_eq!(loaded.backend, "native");
         assert_eq!(loaded.unread_at_ms, None);
-        assert_eq!(reopened.list_active().unwrap().len(), 1);
+        assert_eq!(reopened.list().unwrap().iter().filter(|session| !session.archived).count(), 1);
     }
 
     #[test]
@@ -6231,13 +6199,9 @@ mod tests {
         assert!(renamed.updated_at_ms > session.updated_at_ms);
         store.set_pinned(&session.id, true).unwrap();
         store.set_archived(&session.id, true).unwrap();
-        assert!(store.list_active().unwrap().is_empty());
-        assert!(store.list_active_with_events().unwrap().is_empty());
-        assert_eq!(store.list_archived().unwrap().len(), 1);
-        assert_eq!(
-            store.list_archived_with_events().unwrap()[0].events,
-            vec![event.clone()]
-        );
+        let listed = store.list_with_events().unwrap();
+        assert!(listed.len() == 1 && listed[0].session.archived);
+        assert_eq!(listed[0].events, vec![event.clone()]);
         drop(store);
 
         let reopened = SessionStore::open(dir.path()).unwrap();
@@ -6249,7 +6213,7 @@ mod tests {
 
         reopened.rename(&session.id, None).unwrap();
         reopened.set_archived(&session.id, false).unwrap();
-        assert_eq!(reopened.list_active().unwrap().len(), 1);
+        assert_eq!(reopened.list().unwrap().iter().filter(|session| !session.archived).count(), 1);
         assert_eq!(
             reopened.load(&session.id).unwrap().unwrap().session.title,
             None

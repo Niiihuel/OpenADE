@@ -8,7 +8,7 @@
 
 use crate::subagents::QueuedInputState;
 use crate::{
-    AgentError, SubagentCoordinator, SubagentError, SubagentRecord, SubagentStatus, SubagentWorker,
+    AgentError, SubagentCoordinator, SubagentError, SubagentStatus, SubagentWorker,
     SubagentWorkerError, ToolContext, ToolDefinition, ToolExecutor, ToolOutput,
 };
 use async_trait::async_trait;
@@ -138,9 +138,10 @@ impl SubagentToolExecutor {
             .ok_or_else(|| AgentError::Runtime("subagent coordination is closed".to_owned()))
     }
 
+    #[cfg(test)]
     /// Read-only lookup for a journaled `spawn_agent` call whose parent tool
     /// result was lost. It does not dispatch or resume the child.
-    pub fn child_for_call_id(&self, call_id: &str) -> Result<Option<SubagentRecord>, AgentError> {
+    pub fn child_for_call_id(&self, call_id: &str) -> Result<Option<crate::SubagentRecord>, AgentError> {
         let spawn_id =
             Self::spawn_id(call_id).map_err(|error| AgentError::InvalidRequest(error.content))?;
         let parent_lease = self.lease()?;
@@ -276,6 +277,7 @@ impl SubagentToolExecutor {
         Ok(format!("input-{:x}", hash.finalize()))
     }
 
+    #[cfg(test)]
     /// Locate a committed input when a parent's tool result was lost. This
     /// lookup itself never starts another turn or repeats an external effect.
     pub fn input_for_call_id(

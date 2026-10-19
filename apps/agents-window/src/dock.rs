@@ -13,7 +13,9 @@ const MAX_WIDTH_RATIO: f32 = 0.65;
 const MIN_WIDTH_PX: f32 = 320.0;
 const MAX_RECENT_PER_OWNER: usize = 8;
 const DEFAULT_TERMINAL_HEIGHT_PX: f32 = 240.0;
+#[cfg(test)]
 const MIN_TERMINAL_HEIGHT_PX: f32 = 120.0;
+#[cfg(test)]
 const MAX_TERMINAL_HEIGHT_RATIO: f32 = 0.65;
 
 /// A tab can belong to the whole workspace, a draft, or one task.
@@ -713,6 +715,7 @@ impl DockState {
             .unwrap_or(DEFAULT_TERMINAL_HEIGHT_PX)
     }
 
+    #[cfg(test)]
     /// Keep the user's preference while fitting within 65% of the available
     /// height. The 120 px minimum yields on very short windows; it never pushes
     /// the transcript or composer outside their available space.

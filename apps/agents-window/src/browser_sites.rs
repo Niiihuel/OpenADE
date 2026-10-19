@@ -33,22 +33,6 @@ impl SiteAccess {
         Self::ALL.into_iter().find(|access| access.key() == key)
     }
 
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Allow => "Permitir siempre",
-            Self::Ask => "Requiere aprobación",
-            Self::Block => "Bloquear",
-        }
-    }
-
-    /// The next value, for a control that goes through the three.
-    pub fn next(self) -> Self {
-        match self {
-            Self::Allow => Self::Ask,
-            Self::Ask => Self::Block,
-            Self::Block => Self::Allow,
-        }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]

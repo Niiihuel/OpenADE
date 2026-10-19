@@ -252,10 +252,6 @@ impl PairingStore {
         Ok(())
     }
 
-    pub fn purge_expired(&self) -> Result<()> {
-        let _lock = self.lock()?;
-        self.purge_locked(now())
-    }
     fn purge_locked(&self, timestamp: u64) -> Result<()> {
         for entry in fs::read_dir(self.directory())? {
             let path = entry?.path();
@@ -267,20 +263,6 @@ impl PairingStore {
             }
         }
         Ok(())
-    }
-    pub fn has_active_invitation(&self) -> Result<bool> {
-        let _lock = self.lock()?;
-        self.purge_locked(now())?;
-        for entry in fs::read_dir(self.directory())? {
-            let path = entry?.path();
-            if path.extension().is_some_and(|e| e == "json") {
-                let pending: Pending = storage::read_json(&path)?;
-                if pending.completion.is_none() {
-                    return Ok(true);
-                }
-            }
-        }
-        Ok(false)
     }
 }
 
@@ -395,7 +377,8 @@ mod tests {
         let mut pending: Pending = storage::read_json(&store.path(&invite.pairing_id)).unwrap();
         pending.expires_at = 0;
         storage::write_json(&store.path(&invite.pairing_id), &pending).unwrap();
-        store.purge_expired().unwrap();
+        let late = store.complete(request(&invite, &Uuid::new_v4().to_string())).err().unwrap();
+        assert!(matches!(late.downcast_ref::<PairingError>(), Some(PairingError::Expired)));
         assert!(!store.path(&invite.pairing_id).exists());
         assert!(invite
             .deep_link()

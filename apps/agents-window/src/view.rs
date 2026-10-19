@@ -3428,6 +3428,7 @@ fn workspace_frame(content: Element) -> Element {
         .flex(1.0)
 }
 
+#[cfg(test)]
 pub fn build_view(state: &ViewState, viewport_width: f32) -> Element {
     build_view_sized(state, viewport_width, 720.0)
 }

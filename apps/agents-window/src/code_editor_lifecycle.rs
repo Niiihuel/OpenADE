@@ -657,6 +657,7 @@ impl AgentsWindow {
         self.code_editor_save_as(relative)
     }
 
+    #[cfg(test)]
     /// Explicit discard only; external changes and failed saves never call this.
     pub(in crate::app) fn code_editor_discard_active(&mut self) -> Result<(), String> {
         let d = self

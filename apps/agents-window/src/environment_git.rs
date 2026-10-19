@@ -11,7 +11,7 @@ use std::{
     thread,
 };
 
-use crate::git_branches::{self, Branch, BranchSnapshot};
+use crate::git_branches::{self, BranchSnapshot};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct WorktreeInfo {
@@ -172,10 +172,6 @@ const MAX_COMPARED_FILES: usize = 300;
 
 pub(crate) enum Operation {
     Refresh,
-    Switch {
-        snapshot: GitSnapshot,
-        branch: Branch,
-    },
     CreateBranch {
         snapshot: GitSnapshot,
         name: String,
@@ -240,14 +236,6 @@ impl Worker {
                     let mut comparison = None;
                     let outcome = match request.operation {
                         Operation::Refresh => None,
-                        Operation::Switch { snapshot, branch } => Some(
-                            git_branches::switch_branch(
-                                &request.workspace,
-                                &snapshot.branches,
-                                &branch,
-                            )
-                            .map(|()| format!("Rama activa: {}", branch.name)),
-                        ),
                         Operation::CreateBranch { snapshot, name } => Some(
                             create_branch(&request.workspace, &snapshot, &name)
                                 .map(|()| format!("Rama creada: {name}")),

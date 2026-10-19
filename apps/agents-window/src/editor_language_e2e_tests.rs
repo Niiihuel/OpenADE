@@ -398,7 +398,7 @@ fn renaming_the_open_file_closes_its_old_uri_and_opens_the_new_one_with_its_text
     app.refresh_file_rows();
     let ctx = egui::Context::default();
     let log = server.with_extension("log");
-    let mut received = |app: &mut AgentsWindow, count: usize| {
+    let received = |app: &mut AgentsWindow, count: usize| {
         let deadline = Instant::now() + Duration::from_secs(20);
         loop {
             app.poll_file_op(&ctx);

@@ -322,6 +322,7 @@ impl AgentRunner {
         self
     }
 
+    #[cfg(test)]
     pub fn with_context_policy(mut self, policy: ContextPolicy) -> Self {
         self.context_policy = Some(policy);
         self

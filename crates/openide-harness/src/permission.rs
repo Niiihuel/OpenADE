@@ -178,6 +178,7 @@ impl PermissionPolicy {
         self
     }
 
+    #[cfg(test)]
     /// Explicit host opt-in to automatically permit bounded, workspace-relative
     /// text edits. This is a deterministic tool rule, not a risk classifier.
     /// Commands, file deletion/move, malformed calls and unknown tools retain

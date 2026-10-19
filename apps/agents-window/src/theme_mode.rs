@@ -503,6 +503,7 @@ fn lightness(dark: f32) -> f32 {
     along(CURVE.into_iter(), dark.clamp(0.0, 255.0))
 }
 
+#[cfg(test)]
 /// The gray of the dark design that the light theme paints as `light`: for
 /// a picture of a theme that must look the same in either.
 pub(crate) fn gray_painted_as(light: u8) -> u8 {

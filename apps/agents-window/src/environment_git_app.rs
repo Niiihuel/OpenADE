@@ -13,7 +13,7 @@ impl AgentsWindow {
             Operation::Push { .. } => Some("Enviando commits…"),
             Operation::Fetch { .. } => Some("Buscando cambios en el remoto…"),
             Operation::Pull { .. } => Some("Recibiendo commits…"),
-            Operation::CreateBranch { .. } | Operation::Switch { .. } => Some("Cambiando de rama…"),
+            Operation::CreateBranch { .. } => Some("Cambiando de rama…"),
             Operation::CreateWorktree { .. } => Some("Creando worktree…"),
         };
         if self.view.environment.workflow.busy.is_some() {
@@ -22,7 +22,6 @@ impl AgentsWindow {
         match &operation {
             Operation::Refresh | Operation::Compare { .. } | Operation::Fetch { .. } => {}
             Operation::Pull { snapshot }
-            | Operation::Switch { snapshot, .. }
             | Operation::CreateBranch { snapshot, .. }
             | Operation::CreateWorktree { snapshot, .. }
             | Operation::Commit { snapshot, .. }

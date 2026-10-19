@@ -985,7 +985,7 @@ fn export_environment_visual_review() {
     }];
     let figures = state.git_review.clone();
     for width in [280.0, 380.0] {
-        let mut shot = |state: &ViewState, height: f32, name: &str, hover: Option<&'static str>| {
+        let shot = |state: &ViewState, height: f32, name: &str, hover: Option<&'static str>| {
             export_with_interaction(
                 environment_card(state, width, height),
                 width,

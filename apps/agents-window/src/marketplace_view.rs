@@ -1644,6 +1644,7 @@ pub(crate) fn detail_or_landing(
     }
 }
 
+#[cfg(test)]
 pub fn marketplace_page(state: &MarketplaceViewState, available_width: f32) -> Element {
     marketplace_page_with_navigation(state, available_width, None)
 }

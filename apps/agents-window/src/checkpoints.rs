@@ -159,6 +159,7 @@ fn same_tree(workspace: &Path, first: &str, second: &str) -> bool {
     tree(first).is_some_and(|tree_one| tree(second) == Some(tree_one))
 }
 
+#[cfg(test)]
 /// The files that differ between the point `commit` and the project now.
 pub(crate) fn changed_since(workspace: &Path, commit: &str) -> Result<Vec<String>, String> {
     let _guard = GIT.lock().unwrap_or_else(|e| e.into_inner());

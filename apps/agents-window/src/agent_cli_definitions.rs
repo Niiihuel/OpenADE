@@ -88,6 +88,7 @@ pub(crate) fn profile(id: &str) -> Option<(&'static AgentCliDefinition, bool)> {
 }
 
 impl AgentCliDefinition {
+    #[cfg(test)]
     /// Profile IDs and labels this CLI contributes to the terminal menu.
     pub fn profiles(&self) -> Vec<(String, String)> {
         let mut profiles = vec![(self.id.clone(), self.label.clone())];

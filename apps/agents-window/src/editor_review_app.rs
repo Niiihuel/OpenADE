@@ -247,8 +247,6 @@ impl AgentsWindow {
             token: self.editor_review.token.clone(),
             document_id,
             revision,
-            additions: review.file.additions,
-            deletions: review.file.deletions,
             hunk_count: if key.document.is_some() {
                 display_hunks.len()
             } else {

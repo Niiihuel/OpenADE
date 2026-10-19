@@ -11,6 +11,7 @@ use std::{
 /// stand in for the system's.
 pub type Trash = fn(&Path) -> Result<(), String>;
 
+#[cfg(not(test))]
 pub fn system_trash(path: &Path) -> Result<(), String> {
     // The crate's own message can name paths outside the project.
     trash::delete(path).map_err(|_| "la papelera del sistema no está disponible".to_owned())

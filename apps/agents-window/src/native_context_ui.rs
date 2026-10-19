@@ -211,6 +211,7 @@ impl NativeContextUiState {
     }
 
     /// Keep the ring precise even when integer labels round a small use to 0%.
+    #[cfg(any(test, feature = "editor-e2e"))]
     pub(crate) fn used_fraction(&self) -> Option<f32> {
         let used = self.used_tokens()?;
         let capacity = self.capacity()?;

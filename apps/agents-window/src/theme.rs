@@ -38,6 +38,7 @@ pub const WINDOW: Color = SCHEME.raised;
 pub const SIDEBAR: Color = SCHEME.raised;
 pub const PANEL: Color = SCHEME.panel;
 pub const CARD: Color = SCHEME.raised;
+#[cfg(test)]
 /// Floating action menus share the composer popover's dark surface.
 pub const MENU_SURFACE: Color = SCHEME.menu;
 pub const MENU_MUTED: Color = SCHEME.menu_muted;
