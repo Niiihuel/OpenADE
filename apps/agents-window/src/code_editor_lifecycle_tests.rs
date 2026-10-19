@@ -835,7 +835,7 @@ fn export_rename_tabs_visual_review() {
         .unwrap_or_else(|| PathBuf::from("/tmp/openide-editor-visual-qa"));
     std::fs::create_dir_all(&directory).unwrap();
     let (_root, mut app) = tree_fixture(&["src/a.rs", "main.rs", "src/b.rs"]);
-    let mut export = |app: &mut AgentsWindow, name: &str| {
+    let export = |app: &mut AgentsWindow, name: &str| {
         let (width, height) = (900.0, 760.0);
         let frame = frame(app, width);
         let path = directory.join(format!("{name}.svg"));

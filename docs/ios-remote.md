@@ -1,77 +1,189 @@
-# openADE for iPhone
+# openADE Remote for iPhone
 
-The iPhone app (`apps/ios`, SwiftUI, iOS 17+) follows and drives the tasks of
-the openADE window on a PC: the native agent, ACP agents (OpenCode, Grok…)
-and, read-only, CLI tasks that run in a terminal (Claude Code, Codex). The
-window itself serves it over HTTPS (`crates/openide-remote`, default port
-7787); there is no separate daemon. The plan and the comparison with t3code
-and OpenChamber are in `docs/remote-plan.md`.
+The iPhone app follows and drives the tasks of openADE on the person's own
+PC: the native agent, ACP agents (OpenCode, Grok…) and CLI tasks (Claude Code,
+Codex) in a terminal. There is no cloud in between: the openADE window itself
+serves the phone over HTTPS. The design comes from reading t3code and
+OpenChamber (`docs/remote-plan.md`).
 
-## Trust
+## On the PC
 
-- **Pairing.** openADE → Ajustes → Remoto shows a QR code (also a link):
-  `openade-remote://pair#<base64url JSON>` with version 2, the PC's routes
-  (LAN, global IPv6, an optional public address), the SHA-256 fingerprint of
-  its own certificate, its `server_id`, and a one-use secret valid for ten
-  minutes. The phone shows the PC's name and the first 16 hex digits of the
-  fingerprint (`ABCD-1234-EF56-7890`) to compare with the PC before pairing.
-- **Pinning.** Every request goes through a URLSession whose delegate accepts
-  the TLS handshake only if SHA-256 of the leaf certificate's DER equals the
-  pinned fingerprint; hostname and CA checks are ignored because the pin is the
-  trust anchor. Redirects are refused. The bearer token is only ever sent on a
-  pinned session, after `/.well-known/openade` answered with the same
-  `server_id` and fingerprint.
-- **Storage.** Tokens, routes and pins of every paired PC live in one Keychain
-  item (`WhenUnlockedThisDeviceOnly`). The last task list and up to twelve
-  recent conversations per PC are cached with complete file protection so the
-  app can be read offline; forgetting a PC deletes them.
-- **Revocation.** Any 401 on an authenticated request marks the PC as revoked
-  and stops using its token; the app asks to pair again.
+Settings → Remoto turns it on. The window then runs an HTTPS server on port
+7787 (configurable) on every address, IPv4 and IPv6.
+
+- **One owner.** The server lives in the window (`crates/openide-remote`,
+  started by `apps/agents-window/src/remote_app.rs`). A task the phone starts is
+  an ordinary task of the window: the same runner, sidebar, queue and journal.
+- **Reads come from disk.** The task list is the window's sidebar, published to
+  the server; a task's conversation and its live stream are read from its
+  journal (`<data>/sessions/<id>.jsonl`), which is also the replay buffer: a
+  phone that reconnects names the last event it has and gets what followed.
+- **Commands go through the window.** Starting a task, sending a message,
+  stopping, answering a permission or a question, renaming, pinning and
+  archiving are queued for the window, which acts on the task the way a person
+  would: it opens the task, uses the same control and opens again what was
+  open. A message for a busy task waits in the task's queue and is sent when the
+  turn ends, on screen or off it.
+- **The window keeps working while hidden.** On Wayland a window on another
+  workspace or behind a screen that is off draws nothing, and winit holds its
+  redraws. The window runs through its own event loop
+  (`apps/agents-window/src/background.rs`) and every wake runs the work that
+  draws nothing: turns, notices, delegated calls and the phone's commands.
+
+### Security
+
+- The PC makes its own TLS certificate once (`<data>/remote/tls`). No authority
+  signs it: the phone pins its SHA-256, which comes in the pairing code, and
+  never sends its token to a server whose certificate does not match.
+- Each phone has its own random token; only its SHA-256 is stored
+  (`<data>/remote/devices.json`). Settings → Remoto lists each phone with when
+  it was last seen, and "Quitar acceso" revokes it at once, open streams
+  included.
+- A pairing code works once, for five minutes, and only the last one shown:
+  closing it or making another withdraws it. The PC says so when a phone
+  pairs. Attempts are limited per address.
+- "Always allow" from the phone saves exactly the command prefix the phone
+  was shown (`always` in each pending request), or nothing. A request whose
+  arguments are too large to show on the phone can only be refused.
+- Connections are capped (64, 8 per address) before TLS, idle clients time
+  out, each phone has at most four streams, uploads share a 200 MB quota and
+  the window serves a few commands per frame.
+- `/.well-known/openade` names nothing: only the API version, the server id
+  and the certificate's fingerprint, which TLS shows anyway.
+- Only projects the window knows can be read or written, never the
+  filesystem root; file and Git edits check the revision the phone saw.
+
+### Reaching the PC
+
+The pairing code carries every route, the likeliest first:
+
+1. The local network (`https://192.168.x.y:7787`).
+2. The PC's stable global IPv6 address, if it has one (not the privacy
+   address it goes out with, which changes every day). From outside it works
+   when the router lets incoming IPv6 through to the PC. If the provider
+   changes the network prefix, the phone learns the new address the next time
+   it reaches the PC some other way.
+3. A public address the person typed (a DNS name or IP, with a port they
+   forwarded on their router).
+4. The router's public IPv4 when "Abrir el puerto en el router (UPnP)" is on and
+   the router agrees. When the router's own address is private or shared
+   (CGNAT), Settings says so instead of offering it.
+
+The PC's own firewall must let TCP 7787 in, for IPv4 and IPv6 (on NixOS,
+`networking.firewall.allowedTCPPorts`). From the PC itself the port answers
+even when it is closed to everyone else, so try it from the phone.
+
+The phone tries the routes and keeps the first that answers as this PC (same
+server id and certificate). On the developer's network (2026-10-18) the router
+does not answer UPnP, so from outside only IPv6 or a forwarded port can work.
+
+### Push notices
+
+The phone registers its APNs token with the PC. The PC signs with the Apple
+Push key in `<data>/remote/push` (`apns.p8` and `config.json` with `enabled`,
+`team_id`, `key_id` and `topic` `dev.openade.remote`) and sends: a permission
+or a question waiting, a turn that finished or failed. The lock screen shows
+"openADE" and what happened, never the project, the task or the conversation. Nothing is sent while the window has
+the keyboard focus: the person is at the PC.
+
+### API
+
+`/.well-known/openade` and `POST /v2/pair` are open; everything else needs the
+phone's bearer token.
+
+| Method | Path | What |
+|---|---|---|
+| GET | `/v2/overview` | server, tasks, projects, agents |
+| GET | `/v2/stream?task=&after=` | SSE: `overview`, `events`, `pending`, `reset` |
+| GET | `/v2/tasks/{id}/history?before=` | a window of the conversation, its pending requests, the cursor |
+| POST | `/v2/tasks` | start a task: project, agent, prompt, files, plan |
+| POST | `/v2/tasks/{id}/messages` | send now or queue (`delivery`) |
+| POST | `/v2/tasks/{id}/stop` | stop its turn |
+| POST | `/v2/tasks/{id}/permissions/{request}` | `allow`, `allow_session`, `allow_always` with the `always` prefix shown, `deny` |
+| POST | `/v2/tasks/{id}/answers/{request}` | answer the agent's questions |
+| PATCH | `/v2/tasks/{id}` | title, pinned, archived |
+| POST | `/v2/tasks/{id}/read` | mark read |
+| POST | `/v2/uploads` | a file to attach (body, `X-Filename`) |
+| POST/DELETE | `/v2/notifications/devices` | the phone's APNs token |
+| … | `/v2/projects/{id}/files`, `/file`, `/diff`, `/git/*` | files and Git |
+
+Mutations carry a `request_id`, per device; the same id with the same request
+gets the same answer again, and a retry while the first is still with the
+window waits for it instead of running the command twice.
+
+## The app
+
+`apps/ios` is SwiftUI, iOS 17 and later, with no third-party packages; on the
+iPhone it is called openADE. See `apps/ios/BUILD.md` for the project generator
+and EAS builds.
+
+### On the phone
+
+- **Pairing.** The QR code or link (`openade-remote://pair#<base64url JSON>`)
+  is untrusted input: version 2, 1–8 `https` routes, a 64-digit lowercase hex
+  fingerprint and secret, UUIDs and an expiry in the future. The review screen
+  shows the PC's label and the first 16 digits of the fingerprint
+  (`ABCD-1234-EF56-7890`) to compare with Settings → Remoto. A saved PC never
+  gets another certificate by pairing again: it must be forgotten first.
+- **Pinning.** Every request, the stream and uploads go through one URLSession
+  per fingerprint whose delegate accepts the TLS handshake only if SHA-256 of
+  the leaf certificate's DER is the pinned value; redirects are refused. The
+  token is only sent after `/.well-known/openade` answered as API 2 with the
+  same server id and fingerprint.
+- **Storage.** Tokens, routes and pins live in one Keychain item
+  (`WhenUnlockedThisDeviceOnly`). The last task list and twelve recent
+  conversations per PC are cached with complete file protection for offline
+  reading; forgetting a PC deletes them and first removes its push token.
 - **Lock.** "Bloquear con Face ID" (on by default) asks for Face ID or the
-  passcode when the app opens and after five minutes in the background;
-  content stays blurred meanwhile, and the app switcher never shows it.
-  Notifications carry only the task title and cannot approve anything.
+  passcode when a paired app opens and after five minutes away. The lock and
+  the app-switcher cover are a window above every sheet and alert; a pairing
+  link waits for the unlock. Links in agent text open web pages only.
+- **Connection.** On launch, on returning and on network changes the phone
+  probes every route in parallel (3 s) and keeps the likeliest that answers as
+  this PC; `/v2/overview` refreshes the learned routes. One stream is open
+  while the app is in the foreground, following the task on screen from the
+  last event the phone has, with jittered backoff from 0.5 s to 30 s. A small
+  pill says "Conectando", "Reconectando", "Sin conexión · mostrando lo guardado"
+  or "Acceso revocado" instead of blocking the screen; a 401 means revoked.
 
-## Connection
-
-On launch, on returning to the foreground and on network changes the app
-probes every saved route in parallel (3 s, pinned) and uses the likeliest one
-that answers as this PC; `/v2/overview` then refreshes the learned routes.
-While the app is in the foreground it keeps one server-sent event stream open
-(`/v2/stream`), watching the task on screen from the last event it has; it
-reconnects with jittered backoff from 0.5 s to 30 s and closes the stream in
-the background. A small floating pill says "Conectando", "Reconectando", "Sin
-conexión · mostrando lo guardado" or "Acceso revocado" instead of blocking the
-screen.
-
-Mutations carry a request id; repeating the same draft repeats the id, so the
-PC answers a retry instead of acting twice. Messages sent while a turn runs are
-queued on the PC and survive the phone locking.
-
-## Screens
+### Screens
 
 - **Tareas**: the PC's sidebar — pinned first, then by project — with agent,
-  time, "Trabajando", "Te necesita", queued count and unread dot. Swipe to pin,
-  archive or rename; search; pull to refresh. The title switches between PCs.
-- **Tarea**: Markdown answers that stream as they arrive, tool calls grouped
-  by kind ("Leyó 4 archivos · Editó 2 archivos · Ejecutó 1 comando"), finished
-  turns folded behind "Trabajó 2 min", "Cargar anterior" for older history.
-  A permission ("Permitir una vez", "Permitir siempre", "Rechazar") or an
-  `ask_user` question sits above the composer; the first answer wins, from the
-  PC or the phone. The composer attaches photos and files, dictates on device,
-  turns into Stop when the task runs and the draft is empty, and says "Se
-  enviará al terminar" when it would queue. Changes and files of the task's
-  project open from the header menu. CLI tasks show their state only.
-- **Nueva tarea**: project, agent, Construir/Planear and the prompt.
-- **Ajustes**: paired PCs, pairing another one, notifications (when the PC has
-  push configured), Face ID lock and appearance.
-- iPad uses a split view: the list beside the open task.
+  time, "Trabajando", "Te necesita", queued messages and unread dot; swipe to
+  pin, archive or rename; search; the title switches between PCs.
+- **Tarea**: Markdown answers streaming in, tool calls grouped by kind
+  ("Leyó 4 archivos · Ejecutó 1 comando · Editó 2 archivos"), finished turns
+  folded behind "Trabajó 2 min", "Cargar anterior". A permission ("Permitir una
+  vez", "Rechazar", "Permitir siempre" with the exact prefix, or "Permitir en
+  esta tarea") or a question sits above the composer. The composer attaches
+  photos and files, dictates on device, turns into Stop while the task runs
+  with an empty draft and says "Se enviará al terminar" when it would queue.
+  Changes and files of the project open from the header. CLI tasks show their
+  state only.
+- **Nueva tarea**: project, agent, Construir/Planear, prompt.
+- **Ajustes**: paired PCs, pairing another, notifications, Face ID, appearance.
+- iPad shows the list beside the open task.
 
-## Verification
+GitHub Actions builds it on every push to `main` or a `wt/remote-*` branch that
+touches `apps/ios` (`.github/workflows/ios.yml`): Debug and Release simulator
+builds, XCTest, and screenshots of every screen's debug fixture in dark and
+light appearance (artifact `ios-reports`). That is the Swift compiler this
+project has outside a Mac.
 
-GitHub Actions (`.github/workflows/ios.yml`, macOS runner) runs
-`apps/ios/scripts/build-simulator.sh` on pushes to `wt/remote-*`: Debug and
-Release builds, XCTest, and DEBUG-only `--ui-fixture=<scene>` screenshots of
-every screen in dark and light appearance, uploaded as `ios-reports`. Fixtures
-use local data and never a PC. Pinning against the real server, APNs delivery,
-camera, dictation and Face ID still need a physical iPhone.
+## Checks
+
+```sh
+nix-shell --run "cargo test -p openide-remote"
+nix-shell --run "cargo test -p agents-window remote"
+# Settings → Remoto as PNG:
+OPENADE_VISUAL_DIR=<dir> nix-shell --run "cargo test -p agents-window export_remote_visual_review -- --ignored"
+# What this network's router says, without opening anything:
+nix-shell --run "cargo test -p openide-remote this_networks_router -- --ignored --nocapture"
+```
+
+## Not verified yet
+
+- A real iPhone against a real PC: pinning, routes from outside and push
+  delivery have only run in tests and the simulator.
+- Turning the old daemon's sessions (`<data>/remote/sessions`) into tasks of the
+  window: they stay on disk, unseen.

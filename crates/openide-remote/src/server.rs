@@ -17,15 +17,21 @@ use openide_core::SessionStore;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::net::IpAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::net::TcpListener;
-use tokio::sync::oneshot;
+pub use crate::upnp::UpnpState;
 use uuid::Uuid;
 
 /// What a phone may upload at once.
 const MAX_UPLOAD: usize = 25 * 1024 * 1024;
+/// Everything uploaded and not yet cleaned up, together.
+const UPLOADS_QUOTA: u64 = 200 * 1024 * 1024;
+/// Pairing attempts one address may make in a minute.
+const PAIRING_ATTEMPTS: u32 = 10;
 /// Uploads older than this are deleted when the server starts.
 const UPLOAD_LIFETIME: Duration = Duration::from_secs(7 * 24 * 3600);
 
@@ -39,6 +45,8 @@ pub struct Options {
     pub name: String,
     /// A name or address the person gave for a port opened on their router.
     pub public_address: Option<String>,
+    /// Ask the router to open the port (UPnP).
+    pub upnp: bool,
 }
 
 struct Shared {
@@ -54,13 +62,21 @@ struct Shared {
     name: String,
     port: u16,
     public_address: Option<String>,
+    upnp: Arc<Mutex<UpnpState>>,
     /// Edits of a project's files and index, one at a time.
     writes: Mutex<()>,
+    /// Uploads written at once.
+    uploads: tokio::sync::Semaphore,
+    /// Pairing attempts per address in the current minute.
+    pairing_attempts: Mutex<HashMap<IpAddr, (std::time::Instant, u32)>>,
 }
 
 impl Shared {
     fn routes(&self) -> Vec<String> {
-        crate::network::routes(self.port, self.public_address.as_deref())
+        let mut routes = crate::network::routes(self.port, self.public_address.as_deref());
+        let upnp = self.upnp.lock().unwrap_or_else(|error| error.into_inner()).route(self.port);
+        routes.extend(upnp.filter(|route| !routes.contains(route)));
+        routes
     }
 }
 
@@ -68,8 +84,9 @@ type AppState = Arc<Shared>;
 
 pub struct Server {
     shared: AppState,
-    stop: Option<oneshot::Sender<()>>,
-    thread: Option<std::thread::JoinHandle<()>>,
+    stop: tokio::sync::watch::Sender<bool>,
+    /// Answers once the port is no longer listened on.
+    released: std::sync::mpsc::Receiver<()>,
 }
 
 impl Server {
@@ -92,15 +109,23 @@ impl Server {
             name: options.name,
             port,
             public_address: options.public_address,
+            upnp: Arc::new(Mutex::new(UpnpState::Off)),
             root: options.root,
             sessions: options.sessions,
             bridge,
             writes: Mutex::new(()),
+            uploads: tokio::sync::Semaphore::new(2),
+            pairing_attempts: Mutex::default(),
         });
-        let (stop, stopped) = oneshot::channel();
+        // Codes from before and tokens no phone acknowledged are forgotten.
+        let _ = shared.pairing.purge_expired();
+        let _ = shared.pairing.cancel_unused();
+        let (stop, stopped) = tokio::sync::watch::channel(false);
+        let (release, released) = std::sync::mpsc::channel();
         let app = router(shared.clone());
         let notices = shared.clone();
-        let thread = std::thread::Builder::new().name("openade-remote".into()).spawn(move || {
+        let upnp = options.upnp.then(|| (shared.upnp.clone(), stopped.clone()));
+        std::thread::Builder::new().name("openade-remote".into()).spawn(move || {
             let Ok(runtime) = tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(2)
                 .enable_all()
@@ -112,10 +137,20 @@ impl Server {
                 listener.set_nonblocking(true).ok();
                 let Ok(listener) = TcpListener::from_std(listener) else { return };
                 tokio::spawn(send_notices(notices));
+                let router = upnp.map(|(state, stop)| tokio::spawn(crate::upnp::keep_open(port, state, stop)));
                 serve(listener, tls, app, stopped).await;
+                let _ = release.send(());
+                // The router's port is closed after the window moved on.
+                if let Some(router) = router {
+                    let _ = router.await;
+                }
             });
         })?;
-        Ok(Self { shared, stop: Some(stop), thread: Some(thread) })
+        Ok(Self { shared, stop, released })
+    }
+
+    pub fn upnp_state(&self) -> UpnpState {
+        self.shared.upnp.lock().unwrap_or_else(|error| error.into_inner()).clone()
     }
 
     pub fn port(&self) -> u16 {
@@ -134,28 +169,36 @@ impl Server {
         self.shared.push.is_some()
     }
 
-    /// A one-use code for a phone to pair with, good for ten minutes.
+    /// A one-use code for a phone to pair with, good for five minutes. A
+    /// code shown before stops working.
     pub fn invite(&self, label: &str) -> Result<PairingInvitation> {
+        self.shared.pairing.cancel_unused()?;
         self.shared.pairing.start(&self.routes(), &self.shared.fingerprint, &self.shared.server_id, label)
+    }
+
+    /// The code on screen is closed: it stops working.
+    pub fn withdraw_invitations(&self) -> Result<()> {
+        self.shared.pairing.cancel_unused()
     }
 
     pub fn devices(&self) -> Result<Vec<Device>> {
         Ok(self.shared.devices.list()?.into_iter().filter(|device| !device.revoked).collect())
     }
 
+    /// The device loses access at once, open streams included.
     pub fn revoke(&self, id: &str) -> Result<()> {
-        self.shared.devices.revoke(id)
+        self.shared.devices.revoke(id)?;
+        self.shared.bridge.revoked();
+        Ok(())
     }
 }
 
 impl Drop for Server {
     fn drop(&mut self) {
-        if let Some(stop) = self.stop.take() {
-            let _ = stop.send(());
-        }
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
+        let _ = self.shared.pairing.cancel_unused();
+        let _ = self.stop.send(true);
+        // A server started next on the same port needs it free.
+        let _ = self.released.recv_timeout(Duration::from_secs(3));
     }
 }
 
@@ -192,32 +235,91 @@ fn clean_uploads(root: &std::path::Path) {
     }
 }
 
+/// Connections served at once, and from one address.
+const MAX_CONNECTIONS: usize = 64;
+const MAX_PER_ADDRESS: usize = 8;
+
+/// The address a request came from, for limits that are per address.
+#[derive(Clone, Copy)]
+struct Peer(IpAddr);
+
+/// One connection's share of its address's allowance.
+struct AddressSlot {
+    addresses: Arc<Mutex<HashMap<IpAddr, usize>>>,
+    address: IpAddr,
+}
+
+impl AddressSlot {
+    fn take(addresses: &Arc<Mutex<HashMap<IpAddr, usize>>>, address: IpAddr) -> Option<Self> {
+        let mut open = addresses.lock().unwrap_or_else(|error| error.into_inner());
+        let count = open.entry(address).or_default();
+        if *count >= MAX_PER_ADDRESS {
+            return None;
+        }
+        *count += 1;
+        Some(Self { addresses: addresses.clone(), address })
+    }
+}
+
+impl Drop for AddressSlot {
+    fn drop(&mut self) {
+        let mut open = self.addresses.lock().unwrap_or_else(|error| error.into_inner());
+        if let Some(count) = open.get_mut(&self.address) {
+            *count -= 1;
+            if *count == 0 {
+                open.remove(&self.address);
+            }
+        }
+    }
+}
+
 async fn serve(
     listener: TcpListener,
     tls: tokio_rustls::TlsAcceptor,
     app: Router,
-    mut stopped: oneshot::Receiver<()>,
+    mut stopped: tokio::sync::watch::Receiver<bool>,
 ) {
+    let slots = Arc::new(tokio::sync::Semaphore::new(MAX_CONNECTIONS));
+    let addresses: Arc<Mutex<HashMap<IpAddr, usize>>> = Arc::default();
     loop {
-        let tcp = tokio::select! {
+        let (tcp, peer) = tokio::select! {
             accepted = listener.accept() => match accepted {
-                Ok((tcp, _)) => tcp,
+                Ok(accepted) => accepted,
                 Err(_) => {
                     tokio::time::sleep(Duration::from_millis(50)).await;
                     continue;
                 }
             },
-            _ = &mut stopped => return,
+            _ = stopped.changed() => return,
         };
+        // Past either limit the connection is dropped before any TLS work.
+        let Ok(permit) = slots.clone().try_acquire_owned() else { continue };
+        let Some(slot) = AddressSlot::take(&addresses, peer.ip()) else { continue };
         let (tls, app) = (tls.clone(), app.clone());
         tokio::spawn(async move {
+            let _held = (permit, slot);
             let Ok(Ok(stream)) = tokio::time::timeout(Duration::from_secs(10), tls.accept(tcp)).await else {
                 return;
             };
-            let service = hyper_util::service::TowerToHyperService::new(app);
-            let _ = hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new())
-                .serve_connection_with_upgrades(hyper_util::rt::TokioIo::new(stream), service)
-                .await;
+            let h2 = stream.get_ref().1.alpn_protocol() == Some(b"h2".as_slice());
+            let service = hyper_util::service::TowerToHyperService::new(app.layer(Extension(Peer(peer.ip()))));
+            let io = hyper_util::rt::TokioIo::new(stream);
+            // Without a timer hyper waits on a silent client for ever.
+            if h2 {
+                let _ = hyper::server::conn::http2::Builder::new(hyper_util::rt::TokioExecutor::new())
+                    .timer(hyper_util::rt::TokioTimer::new())
+                    .keep_alive_interval(Some(Duration::from_secs(30)))
+                    .keep_alive_timeout(Duration::from_secs(10))
+                    .max_concurrent_streams(32)
+                    .serve_connection(io, service)
+                    .await;
+            } else {
+                let _ = hyper::server::conn::http1::Builder::new()
+                    .timer(hyper_util::rt::TokioTimer::new())
+                    .header_read_timeout(Duration::from_secs(10))
+                    .serve_connection(io, service)
+                    .await;
+            }
         });
     }
 }
@@ -231,15 +333,8 @@ async fn send_notices(shared: AppState) {
         if live.desktop_focused {
             continue;
         }
-        let title = live
-            .tasks
-            .iter()
-            .find(|row| row.id == task)
-            .map(|row| {
-                let project = row.project.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
-                if project.is_empty() { row.title.clone() } else { format!("{project} · {}", row.title) }
-            })
-            .unwrap_or_else(|| "openADE".to_owned());
+        // The lock screen shows it: no project or task names.
+        let title = "openADE".to_owned();
         let kind = match notice {
             Notice::Approval => PushEventKind::ApprovalRequired,
             Notice::Question => PushEventKind::QuestionAsked,
@@ -337,9 +432,9 @@ async fn blocking<T: Send + 'static>(work: impl FnOnce() -> ApiResult<T> + Send 
 }
 
 async fn identity(State(shared): State<AppState>) -> Json<Value> {
+    // The certificate already identifies the PC; its name waits for a token.
     Json(json!({
         "api": 2,
-        "name": shared.name,
         "server_id": shared.server_id,
         "fingerprint": shared.fingerprint,
     }))
@@ -354,7 +449,24 @@ struct Pair {
     device_name: String,
 }
 
-async fn pair(State(shared): State<AppState>, ApiJson(request): ApiJson<Pair>) -> ApiResult<Json<Value>> {
+async fn pair(
+    State(shared): State<AppState>,
+    Extension(Peer(address)): Extension<Peer>,
+    ApiJson(request): ApiJson<Pair>,
+) -> ApiResult<Json<Value>> {
+    {
+        let mut attempts = shared.pairing_attempts.lock().unwrap_or_else(|error| error.into_inner());
+        attempts.retain(|_, (since, _)| since.elapsed() < Duration::from_secs(60));
+        let (_, count) = attempts.entry(address).or_insert((std::time::Instant::now(), 0));
+        if *count >= PAIRING_ATTEMPTS {
+            return Err(ApiError {
+                status: StatusCode::TOO_MANY_REQUESTS,
+                code: "pairing_rate_limited",
+                message: "Demasiados intentos; esperá un minuto".into(),
+            });
+        }
+        *count += 1;
+    }
     blocking(move || {
         let result = shared
             .pairing
@@ -365,6 +477,7 @@ async fn pair(State(shared): State<AppState>, ApiJson(request): ApiJson<Pair>) -
                 device_name: request.device_name,
             })
             .map_err(pairing_error)?;
+        shared.bridge.paired(&result.device_name);
         Ok(Json(json!({
             "device_id": result.device_id,
             "device_name": result.device_name,
@@ -386,9 +499,6 @@ fn pairing_error(error: anyhow::Error) -> ApiError {
             (StatusCode::CONFLICT, "pairing_used", "Ese código ya se usó")
         }
         Some(PairingError::InvalidRequest) => (StatusCode::BAD_REQUEST, "invalid_request", "Pedido inválido"),
-        Some(PairingError::RateLimited) => {
-            (StatusCode::TOO_MANY_REQUESTS, "pairing_rate_limited", "Demasiados intentos; esperá un minuto")
-        }
         None => return ApiError::unavailable(),
     };
     ApiError { status, code, message: message.into() }
@@ -431,8 +541,13 @@ async fn stream(
     if let Some(task) = &query.task {
         storage::validate_id(task).map_err(|_| ApiError::not_found())?;
     }
-    let connection = shared.bridge.connect(&device.id);
-    Ok(crate::stream::open(shared.bridge.clone(), connection, shared.sessions.clone(), query.task, query.after)
+    let connection = shared.bridge.connect(&device.id).ok_or(ApiError {
+        status: StatusCode::TOO_MANY_REQUESTS,
+        code: "too_many_streams",
+        message: "Este teléfono ya tiene demasiadas conexiones abiertas".into(),
+    })?;
+    let access = crate::stream::Access { devices: shared.devices.clone(), device: device.id };
+    Ok(crate::stream::open(shared.bridge.clone(), connection, access, shared.sessions.clone(), query.task, query.after)
         .into_response())
 }
 
@@ -498,7 +613,11 @@ struct CreateTask {
     plan: bool,
 }
 
-async fn create_task(State(shared): State<AppState>, ApiJson(request): ApiJson<CreateTask>) -> ApiResult<Json<Value>> {
+async fn create_task(
+    State(shared): State<AppState>,
+    Extension(device): Extension<Device>,
+    ApiJson(request): ApiJson<CreateTask>,
+) -> ApiResult<Json<Value>> {
     let live = shared.bridge.live();
     let project = tasks::project_path(&live, &request.project).ok_or_else(ApiError::not_found)?;
     if !live.agents.iter().any(|agent| agent.startable && agent.backend == request.backend) {
@@ -511,7 +630,7 @@ async fn create_task(State(shared): State<AppState>, ApiJson(request): ApiJson<C
         files: uploaded(&shared, &request.files)?,
         plan: request.plan,
     };
-    shared.bridge.call(&request.request_id, command).await.map(Json)
+    shared.bridge.call(&device.id, &request.request_id, command).await.map(Json)
 }
 
 #[derive(Deserialize)]
@@ -531,6 +650,7 @@ fn auto() -> Delivery {
 
 async fn send_message(
     State(shared): State<AppState>,
+    Extension(device): Extension<Device>,
     Path(id): Path<String>,
     ApiJson(request): ApiJson<SendMessage>,
 ) -> ApiResult<Json<Value>> {
@@ -541,7 +661,7 @@ async fn send_message(
         files: uploaded(&shared, &request.files)?,
         delivery: request.delivery,
     };
-    shared.bridge.call(&request.request_id, command).await.map(Json)
+    shared.bridge.call(&device.id, &request.request_id, command).await.map(Json)
 }
 
 #[derive(Deserialize)]
@@ -551,34 +671,47 @@ struct RequestId {
 
 async fn stop(
     State(shared): State<AppState>,
+    Extension(device): Extension<Device>,
     Path(id): Path<String>,
     ApiJson(request): ApiJson<RequestId>,
 ) -> ApiResult<Json<Value>> {
     known_task(&shared, &id)?;
-    shared.bridge.call(&request.request_id, Command::Stop { task: id }).await.map(Json)
+    shared.bridge.call(&device.id, &request.request_id, Command::Stop { task: id }).await.map(Json)
 }
 
 async fn read(State(shared): State<AppState>, Path(id): Path<String>) -> ApiResult<Json<Value>> {
     known_task(&shared, &id)?;
-    let request_id = format!("read:{id}:{}", Uuid::new_v4());
-    shared.bridge.call(&request_id, Command::Read { task: id }).await.map(Json)
+    shared.bridge.call_once(Command::Read { task: id }).await.map(Json)
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PermissionAnswer {
-    decision: Decision,
+    /// `allow`, `allow_session`, `allow_always` or `deny`.
+    decision: String,
+    /// For `allow_always`: the prefix the phone showed, which must still be
+    /// what the request would allow.
+    always: Option<String>,
 }
 
 async fn permission(
     State(shared): State<AppState>,
+    Extension(device): Extension<Device>,
     Path((id, request_id)): Path<(String, String)>,
     ApiJson(request): ApiJson<PermissionAnswer>,
 ) -> ApiResult<Json<Value>> {
     known_task(&shared, &id)?;
-    let key = format!("permission:{id}:{request_id}");
-    let command = Command::Permission { task: id, request_id, decision: request.decision };
-    shared.bridge.call(&key, command).await.map(Json)
+    let decision = match (request.decision.as_str(), request.always) {
+        ("allow", None) => Decision::Allow,
+        ("allow_session", None) => Decision::AllowSession,
+        ("allow_always", Some(prefix)) if !prefix.trim().is_empty() => Decision::AllowAlways(prefix),
+        ("deny", None) => Decision::Deny,
+        _ => return Err(ApiError::bad("Decisión inválida")),
+    };
+    // A refused decision leaves the request open for another one.
+    let key = format!("permission:{id}:{request_id}:{decision:?}");
+    let command = Command::Permission { task: id, request_id, decision };
+    shared.bridge.call(&device.id, &key, command).await.map(Json)
 }
 
 #[derive(Deserialize)]
@@ -589,13 +722,14 @@ struct QuestionAnswer {
 
 async fn answer(
     State(shared): State<AppState>,
+    Extension(device): Extension<Device>,
     Path((id, request_id)): Path<(String, String)>,
     ApiJson(request): ApiJson<QuestionAnswer>,
 ) -> ApiResult<Json<Value>> {
     known_task(&shared, &id)?;
-    let key = format!("answer:{id}:{request_id}");
+    let key = format!("answer:{id}:{request_id}:{:x}", sha2::Digest::finalize(<sha2::Sha256 as sha2::Digest>::new_with_prefix(request.answer.as_bytes())));
     let command = Command::Answer { task: id, request_id, answer: prompt(request.answer)? };
-    shared.bridge.call(&key, command).await.map(Json)
+    shared.bridge.call(&device.id, &key, command).await.map(Json)
 }
 
 #[derive(Deserialize)]
@@ -609,6 +743,7 @@ struct PatchTask {
 
 async fn patch_task(
     State(shared): State<AppState>,
+    Extension(device): Extension<Device>,
     Path(id): Path<String>,
     ApiJson(request): ApiJson<PatchTask>,
 ) -> ApiResult<Json<Value>> {
@@ -617,7 +752,7 @@ async fn patch_task(
         return Err(ApiError::bad("Título inválido"));
     }
     let command = Command::Patch { task: id, title: request.title, pinned: request.pinned, archived: request.archived };
-    shared.bridge.call(&request.request_id, command).await.map(Json)
+    shared.bridge.call(&device.id, &request.request_id, command).await.map(Json)
 }
 
 /// A file the phone attaches, sent as the request body.
@@ -639,7 +774,12 @@ async fn upload(State(shared): State<AppState>, headers: HeaderMap, body: axum::
     if name.is_empty() || body.is_empty() {
         return Err(ApiError::bad("Archivo vacío o sin nombre"));
     }
+    let writing = shared.clone();
+    let _writing = writing.uploads.acquire().await.map_err(|_| ApiError::unavailable())?;
     blocking(move || {
+        if uploads_size(&shared.root.join("uploads")) + body.len() as u64 > UPLOADS_QUOTA {
+            return Err(ApiError::bad("Hay demasiados archivos subidos sin usar; probá más tarde"));
+        }
         let id = Uuid::new_v4().to_string();
         let folder = shared.root.join("uploads").join(&id);
         storage::prepare_directory(&folder).map_err(|_| ApiError::unavailable())?;
@@ -647,6 +787,19 @@ async fn upload(State(shared): State<AppState>, headers: HeaderMap, body: axum::
         Ok(Json(json!({"id": id, "filename": name, "size_bytes": body.len()})))
     })
     .await
+}
+
+/// What the uploads folder holds: a folder per upload, a file in each.
+fn uploads_size(folder: &std::path::Path) -> u64 {
+    let Ok(uploads) = std::fs::read_dir(folder) else { return 0 };
+    uploads
+        .flatten()
+        .filter_map(|upload| std::fs::read_dir(upload.path()).ok())
+        .flatten()
+        .flatten()
+        .filter_map(|file| file.metadata().ok())
+        .map(|metadata| metadata.len())
+        .sum()
 }
 
 fn percent_decode(value: &str) -> String {

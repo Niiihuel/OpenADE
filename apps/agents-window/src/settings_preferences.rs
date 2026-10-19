@@ -374,6 +374,7 @@ impl SettingsPreferences {
         Ok(())
     }
 
+    #[cfg(test)]
     /// Resolve the selected shell immediately before creating a PTY. The
     /// system choice delegates to TerminalSession::spawn.
     pub fn terminal_command(&self) -> Result<Option<(OsString, Vec<OsString>)>, String> {

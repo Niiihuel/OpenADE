@@ -3,6 +3,8 @@ use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
@@ -28,12 +30,33 @@ fn now_ms() -> u64 {
 #[derive(Clone)]
 pub struct DeviceStore {
     root: PathBuf,
+    /// The list as last read, with the file's modification time: requests
+    /// with a token do not each read the file.
+    cache: Arc<Mutex<Option<(FileStamp, Vec<Device>)>>>,
+}
+
+/// What tells one version of the file from another.
+type FileStamp = (SystemTime, u64, u64);
+
+fn stamp(path: &Path) -> Option<FileStamp> {
+    let metadata = std::fs::metadata(path).ok()?;
+    #[cfg(unix)]
+    let inode = std::os::unix::fs::MetadataExt::ino(&metadata);
+    #[cfg(not(unix))]
+    let inode = 0;
+    Some((metadata.modified().ok()?, metadata.len(), inode))
 }
 
 impl DeviceStore {
+    fn write(&self, devices: &[Device]) -> Result<()> {
+        *self.cache.lock().unwrap_or_else(|error| error.into_inner()) = None;
+        storage::write_json(&self.root.join("devices.json"), &devices)
+    }
+
     pub fn new(root: &Path) -> Self {
         Self {
             root: root.to_owned(),
+            cache: Arc::default(),
         }
     }
 
@@ -64,7 +87,7 @@ impl DeviceStore {
             }
             return Ok(device.clone());
         }
-        if devices.len() >= 128 {
+        if devices.iter().filter(|device| !device.revoked).count() >= 128 {
             bail!("device limit reached");
         }
         let device = Device {
@@ -76,16 +99,27 @@ impl DeviceStore {
             last_seen_ms: now_ms(),
         };
         devices.push(device.clone());
-        storage::write_json(&self.root.join("devices.json"), &devices)?;
+        self.write(&devices)?;
         Ok(device)
     }
 
     pub fn list(&self) -> Result<Vec<Device>> {
         let path = self.root.join("devices.json");
-        if !path.exists() {
+        let Some(current) = stamp(&path) else {
             return Ok(Vec::new());
+        };
+        let mut cache = self.cache.lock().unwrap_or_else(|error| error.into_inner());
+        if let Some((_, devices)) = cache.as_ref().filter(|(read, _)| *read == current) {
+            return Ok(devices.clone());
         }
-        storage::read_json(&path)
+        let devices: Vec<Device> = storage::read_json(&path)?;
+        *cache = Some((current, devices.clone()));
+        Ok(devices)
+    }
+
+    /// The device still has access.
+    pub fn is_active(&self, id: &str) -> bool {
+        self.list().is_ok_and(|devices| devices.iter().any(|device| device.id == id && !device.revoked))
     }
 
     pub fn revoke(&self, id: &str) -> Result<()> {
@@ -96,7 +130,7 @@ impl DeviceStore {
             .find(|d| d.id == id)
             .ok_or_else(|| anyhow::anyhow!("device not found"))?;
         device.revoked = true;
-        storage::write_json(&self.root.join("devices.json"), &devices)
+        self.write(&devices)
     }
 
     /// Records that `id` was just seen, unless that was recorded lately.
@@ -109,14 +143,11 @@ impl DeviceStore {
         let mut devices = self.list()?;
         if let Some(device) = devices.iter_mut().find(|device| device.id == id) {
             device.last_seen_ms = now;
-            storage::write_json(&self.root.join("devices.json"), &devices)?;
+            self.write(&devices)?;
         }
         Ok(())
     }
 
-    pub fn authenticate(&self, token: &str) -> bool {
-        self.authenticate_device(token).is_some()
-    }
     pub fn authenticate_device(&self, token: &str) -> Option<Device> {
         if token.len() != 64 {
             return None;

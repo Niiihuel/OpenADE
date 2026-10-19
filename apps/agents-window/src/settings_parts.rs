@@ -20,10 +20,9 @@ pub const ROW_PADDING: f32 = 10.0;
 pub enum CapabilityStatus {
     Ready,
     Partial,
-    Planned,
 }
 
-/// Small capability marker for features that are ready, limited or planned.
+/// Small capability marker for features that are ready or limited.
 /// It is informational and never implies an action is available.
 pub fn status_badge(status: CapabilityStatus) -> Element {
     let (icon, text, color, surface) = match status {
@@ -34,12 +33,6 @@ pub fn status_badge(status: CapabilityStatus) -> Element {
             theme::SELECTED,
         ),
         CapabilityStatus::Partial => (Icon::Clock, "Parcial", theme::FOREGROUND, theme::SELECTED),
-        CapabilityStatus::Planned => (
-            Icon::Clock,
-            "Planificado",
-            theme::FOREGROUND_SUBTLE,
-            theme::PANEL,
-        ),
     };
     let content = Element::row(vec![
         Element::icon(icon)
@@ -329,11 +322,7 @@ mod tests {
 
     #[test]
     fn all_status_badges_are_informational() {
-        for status in [
-            CapabilityStatus::Ready,
-            CapabilityStatus::Partial,
-            CapabilityStatus::Planned,
-        ] {
+        for status in [CapabilityStatus::Ready, CapabilityStatus::Partial] {
             let badge = status_badge(status);
             let mut ids = Vec::new();
             action_ids(&badge, &mut ids);
@@ -358,11 +347,7 @@ mod tests {
     fn status_badges_keep_intrinsic_size_and_center_in_wrapped_headers() {
         let header_color = Color::rgb(1, 2, 3);
         for (width, compact) in [(500.0, false), (300.0, false), (240.0, true)] {
-            for status in [
-                CapabilityStatus::Ready,
-                CapabilityStatus::Partial,
-                CapabilityStatus::Planned,
-            ] {
+            for status in [CapabilityStatus::Ready, CapabilityStatus::Partial] {
                 let header = PageHeader::new("Complementos del agente", theme::card_palette())
                     .description("Capacidades instaladas y extensiones ejecutables, con su configuración y disponibilidad por proyecto.")
                     .trailing(status_badge(status))

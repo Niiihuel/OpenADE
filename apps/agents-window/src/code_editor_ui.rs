@@ -7,6 +7,7 @@ use openide_ui::{
 };
 use std::path::Path;
 
+#[cfg(test)]
 const HEADER_HEIGHT: f32 = crate::dock_tab_ui::HEADER_HEIGHT;
 const TOOL_SIZE: f32 = crate::dock_tab_ui::TOOL_SIZE;
 pub(crate) const BREADCRUMB_HEIGHT: f32 = 22.0;
@@ -292,6 +293,7 @@ impl EditorPresentation {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn build(
     view: &CodeEditorView,
     workbench: &crate::editor_workbench_ui::EditorWorkbenchView,
@@ -1283,8 +1285,6 @@ mod tests {
                 disabled_reason: None,
             }]
             .into(),
-            additions: 1,
-            deletions: 1,
             hunk_count: 1,
             current_hunk: 0,
             can_accept: true,

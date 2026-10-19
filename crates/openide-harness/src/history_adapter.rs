@@ -145,9 +145,6 @@ impl AdaptedRequest {
         }
     }
 
-    pub fn real_tool_name<'a>(&'a self, sent: &'a str) -> &'a str {
-        self.names.get(sent).map_or(sent, String::as_str)
-    }
 }
 
 /// The history as the target accepts it, with no tools offered and no message

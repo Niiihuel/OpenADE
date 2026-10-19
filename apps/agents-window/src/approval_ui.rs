@@ -335,30 +335,10 @@ pub(crate) fn summary(tool_name: &str, arguments: &str) -> ApprovalSummary {
 /// its first word when that names a subcommand. A shell or launcher that
 /// runs whatever follows has no such prefix.
 pub(crate) fn command_prefix(tool_name: &str, arguments: &str) -> Option<Vec<String>> {
-    if !matches!(tool_name, "run_command" | "start_command") || arguments.len() > MAX_SUMMARY_INPUT {
+    if arguments.len() > MAX_SUMMARY_INPUT {
         return None;
     }
-    let arguments: Value = serde_json::from_str(arguments).ok()?;
-    let arguments = openide_harness::split_command_arguments(&arguments).unwrap_or(arguments);
-    let command = arguments.get("command")?.as_str()?.trim();
-    if command.is_empty()
-        || command.contains(char::is_whitespace)
-        || openide_harness::is_opaque_wrapper(command)
-    {
-        return None;
-    }
-    let mut prefix = vec![command.to_owned()];
-    let first = arguments
-        .get("args")
-        .and_then(Value::as_array)
-        .and_then(|args| args.first())
-        .and_then(Value::as_str);
-    if let Some(first) = first.filter(|first| {
-        !first.starts_with('-') && !first.contains(['/', '\\', '.', ' ']) && first.len() <= 64
-    }) {
-        prefix.push(first.to_owned());
-    }
-    Some(prefix)
+    openide_harness::always_allow_prefix(tool_name, &serde_json::from_str(arguments).ok()?)
 }
 
 /// An image call says what it sends and that it may cost. The model and the

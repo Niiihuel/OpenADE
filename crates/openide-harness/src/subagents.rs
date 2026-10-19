@@ -838,6 +838,7 @@ impl SubagentCoordinator {
         ))
     }
 
+    #[cfg(test)]
     pub(crate) fn lookup_input_control(
         &self,
         control: &SubagentControl,
@@ -1035,6 +1036,7 @@ impl SubagentCoordinator {
         self.request_cancel_control_with_affected(&control, child_id)
     }
 
+    #[cfg(test)]
     /// Desktop cancellation without a live worker must preserve unresolved
     /// journals in this entire subtree for explicit recovery. The check and
     /// cancellation flag are serialized with worker claims by the registry lock.
@@ -1059,6 +1061,7 @@ impl SubagentCoordinator {
         self.request_cancel_inner(&control, child_id, true)
     }
 
+    #[cfg(test)]
     pub fn request_cancel_control(
         &self,
         control: &SubagentControl,

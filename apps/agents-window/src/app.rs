@@ -1594,6 +1594,8 @@ pub struct AgentsWindow {
     pub(crate) background: crate::background::Background,
     /// The phone's server and what it asks for (see `remote_app`).
     remote: remote_app::Remote,
+    /// The tasks not archived, in the sidebar's order, for the phone.
+    remote_tasks: Vec<SessionView>,
     /// Session-start hook output, by (conversation, project, hook set).
     session_start_context: Option<((Option<String>, String, String), String)>,
     /// Model for the next turn only; see `start_run`.
@@ -7556,6 +7558,7 @@ impl AgentsWindow {
             turn_check_run: None,
             background: Default::default(),
             remote: remote_app::Remote::new(&root),
+            remote_tasks: Vec::new(),
             session_start_context: None,
             turn_model_override: None,
             window_focused: true,
@@ -9139,7 +9142,6 @@ impl AgentsWindow {
                     let mut sessions: Vec<(u64, u64, SessionView)> = listing
                         .sessions
                         .into_iter()
-                        .filter(|record| record.session.archived == self.view.show_archived)
                         .map(|record| {
                             let activity_at_ms = record
                                 .events
@@ -9196,6 +9198,11 @@ impl AgentsWindow {
                             )
                         })
                         .collect();
+                    // The phone sees the tasks in use whatever the sidebar shows.
+                    let mut in_use: Vec<_> = sessions.iter().filter(|(_, _, session)| !session.archived).cloned().collect();
+                    sort_session_views(&mut in_use, self.view.session_organization, self.view.session_sort, false);
+                    self.remote_tasks = in_use.into_iter().map(|(_, _, session)| session).collect();
+                    sessions.retain(|(_, _, session)| session.archived == self.view.show_archived);
                     sort_session_views(
                         &mut sessions,
                         self.view.session_organization,
@@ -14517,8 +14524,7 @@ impl AgentsWindow {
                 .with_system_instructions(instructions)
                 .with_native_runtime_identity(&turn_settings.provider_id, endpoint)
                 .with_event_journal(store.clone())
-                .with_native_steering(store.clone())
-                .with_external_controls(store.clone());
+                .with_native_steering(store.clone());
             let command_actor = match self.native_command_actor_for(session_id) {
                 Ok(actor) => actor,
                 Err(error) => {

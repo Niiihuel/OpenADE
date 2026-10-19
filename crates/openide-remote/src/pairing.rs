@@ -8,13 +8,12 @@ use sha2::{Digest, Sha256};
 use std::{
     fmt, fs,
     path::{Path, PathBuf},
-    sync::{Mutex, OnceLock},
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
-pub const INVITATION_TTL_SECONDS: u64 = 600;
+pub const INVITATION_TTL_SECONDS: u64 = 300;
 const MAX_INVITATIONS: usize = 32;
 
 #[derive(Debug)]
@@ -24,7 +23,6 @@ pub enum PairingError {
     Expired,
     AlreadyUsed,
     Conflict,
-    RateLimited,
 }
 impl fmt::Display for PairingError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -34,7 +32,6 @@ impl fmt::Display for PairingError {
             Self::Expired => "pairing invitation expired",
             Self::AlreadyUsed => "pairing invitation already used",
             Self::Conflict => "pairing retry does not match the original request",
-            Self::RateLimited => "too many pairing attempts; retry after one minute",
         })
     }
 }
@@ -162,8 +159,8 @@ impl PairingStore {
         Ok(invitation)
     }
 
+    /// Attempts are limited per address by the server before this is called.
     pub fn complete(&self, request: PairRequest) -> Result<PairingResult> {
-        admit_attempt()?;
         validate_uuid(&request.pairing_id)?;
         validate_uuid(&request.request_id)?;
         validate_name(&request.device_name)?;
@@ -241,21 +238,27 @@ impl PairingStore {
         Ok(())
     }
 
-    /// Local CLI rollback only. HTTP callers cannot cancel arbitrary invitations.
-    pub fn cancel(&self, pairing_id: &str) -> Result<()> {
-        validate_uuid(pairing_id)?;
-        let _lock = self.lock()?;
-        let path = self.path(pairing_id);
-        if path.exists() {
-            fs::remove_file(path)?;
-        }
-        Ok(())
-    }
-
+    /// Forgets codes that expired, with any token a phone never acknowledged.
     pub fn purge_expired(&self) -> Result<()> {
         let _lock = self.lock()?;
         self.purge_locked(now())
     }
+
+    /// Withdraws every code no phone has used yet: one is on screen at most.
+    pub fn cancel_unused(&self) -> Result<()> {
+        let _lock = self.lock()?;
+        for entry in fs::read_dir(self.directory())? {
+            let path = entry?.path();
+            if path.extension().is_some_and(|extension| extension == "json") {
+                let pending: Pending = storage::read_json(&path)?;
+                if pending.completion.is_none() {
+                    fs::remove_file(path)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn purge_locked(&self, timestamp: u64) -> Result<()> {
         for entry in fs::read_dir(self.directory())? {
             let path = entry?.path();
@@ -267,20 +270,6 @@ impl PairingStore {
             }
         }
         Ok(())
-    }
-    pub fn has_active_invitation(&self) -> Result<bool> {
-        let _lock = self.lock()?;
-        self.purge_locked(now())?;
-        for entry in fs::read_dir(self.directory())? {
-            let path = entry?.path();
-            if path.extension().is_some_and(|e| e == "json") {
-                let pending: Pending = storage::read_json(&path)?;
-                if pending.completion.is_none() {
-                    return Ok(true);
-                }
-            }
-        }
-        Ok(false)
     }
 }
 
@@ -314,21 +303,6 @@ fn random_secret() -> String {
     format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())
 }
 
-fn admit_attempt() -> Result<()> {
-    static BUDGET: OnceLock<Mutex<(Instant, u32)>> = OnceLock::new();
-    let mut budget = BUDGET
-        .get_or_init(|| Mutex::new((Instant::now(), 0)))
-        .lock()
-        .map_err(|_| PairingError::RateLimited)?;
-    if budget.0.elapsed() >= Duration::from_secs(60) {
-        *budget = (Instant::now(), 0);
-    }
-    if budget.1 >= 60 {
-        return Err(PairingError::RateLimited.into());
-    }
-    budget.1 += 1;
-    Ok(())
-}
 fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -395,7 +369,8 @@ mod tests {
         let mut pending: Pending = storage::read_json(&store.path(&invite.pairing_id)).unwrap();
         pending.expires_at = 0;
         storage::write_json(&store.path(&invite.pairing_id), &pending).unwrap();
-        store.purge_expired().unwrap();
+        let late = store.complete(request(&invite, &Uuid::new_v4().to_string())).err().unwrap();
+        assert!(matches!(late.downcast_ref::<PairingError>(), Some(PairingError::Expired)));
         assert!(!store.path(&invite.pairing_id).exists());
         assert!(invite
             .deep_link()
@@ -428,7 +403,7 @@ mod tests {
         let recovered = store.complete(request(&invite, &request_id)).unwrap();
         assert_eq!(recovered.token, prepared.token);
         assert_eq!(recovered.device_id, prepared.device_id);
-        assert!(DeviceStore::new(tmp.path()).authenticate(&recovered.token));
+        assert!(DeviceStore::new(tmp.path()).authenticate_device(&recovered.token).is_some());
         let mut changed = request(&invite, &request_id);
         changed.device_name = "Another phone".into();
         assert!(store.complete(changed).is_err());

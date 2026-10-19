@@ -21,6 +21,7 @@ fn build_home_with(inputs: &ComposerProps<'_>, available_width: f32) -> Element 
     build_home_with_height(inputs, available_width, None)
 }
 
+#[cfg(test)]
 fn build_home_with_height(
     inputs: &ComposerProps<'_>,
     available_width: f32,

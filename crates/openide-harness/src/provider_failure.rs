@@ -31,11 +31,6 @@ impl FailureClass {
         matches!(self, Self::Transient | Self::RateLimited)
     }
 
-    /// Classes that leave the turn paused at its model boundary instead of
-    /// failing it. A request that was never committed can be sent again.
-    pub fn pauses_turn(self) -> bool {
-        !matches!(self, Self::Fatal | Self::ContextTooLarge)
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

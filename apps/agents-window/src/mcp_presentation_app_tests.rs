@@ -2,7 +2,6 @@ use super::*;
 use crate::mcp_inspection::tests::{wait_until, HttpFixture};
 use crate::mcp_inspection::McpInspectionPhase;
 use crate::mcp_settings::{McpServerSettings, McpSettingsScope};
-use crate::view::MainPage;
 use openide_ui::{Point, Size, UiAction, UiEvent, UiTree};
 
 fn prepare(root: &Path, workspace: &Path) -> AgentsWindow {

@@ -61,15 +61,6 @@ impl IdeActivity {
         }
     }
 
-    pub fn title(self) -> &'static str {
-        match self {
-            Self::Files => "Archivos",
-            Self::Search => "Buscar",
-            Self::Git => "Control de versiones",
-            Self::Debug => "Depuración",
-            Self::Extensions => "Complementos",
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]

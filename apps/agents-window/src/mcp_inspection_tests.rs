@@ -895,7 +895,7 @@ fn the_last_connection_to_each_server_is_remembered_until_another_says_otherwise
         servers: vec![server("uno"), server("dos")],
     };
     let mut state = McpInspectionUiState::default();
-    let mut inspect = |state: &mut McpInspectionUiState,
+    let inspect = |state: &mut McpInspectionUiState,
                        id: &str,
                        snapshot: Option<McpInspectionSnapshot>,
                        error: Option<&str>,

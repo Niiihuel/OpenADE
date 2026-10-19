@@ -231,7 +231,6 @@ mod tests {
             caption: "Archivo eliminado · cambios pendientes".into(),
             review: Some(crate::editor_review_ui::EditorReviewView {
                 token: token.into(),
-                deletions: 1,
                 can_accept: true,
                 can_reject: true,
                 ..Default::default()

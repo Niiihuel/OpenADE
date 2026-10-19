@@ -6,9 +6,10 @@ use super::background_resume_app_tests::{app_at, Reply, ScriptedProvider};
 use super::*;
 use crate::app::remote_app::RemoteSettings;
 use openide_harness::LocalTool;
+use std::sync::atomic::AtomicBool;
 
 /// The window's loop while a phone's request is out: serve it, run turns.
-fn serve_until<T>(app: &mut AgentsWindow, phone: std::thread::JoinHandle<T>) -> T {
+pub(crate) fn serve_until<T>(app: &mut AgentsWindow, phone: std::thread::JoinHandle<T>) -> T {
     let deadline = Instant::now() + DEADLINE;
     while !phone.is_finished() {
         assert!(Instant::now() < deadline, "the phone's request timed out: {}", app.view.status);
@@ -21,7 +22,7 @@ fn serve_until<T>(app: &mut AgentsWindow, phone: std::thread::JoinHandle<T>) -> 
 }
 
 /// The window's loop until the task's journal has an event `done` accepts.
-fn run_until(app: &mut AgentsWindow, task: &str, done: impl Fn(&AgentEventKind) -> bool) {
+pub(crate) fn run_until(app: &mut AgentsWindow, task: &str, done: impl Fn(&AgentEventKind) -> bool) {
     let deadline = Instant::now() + DEADLINE;
     loop {
         app.poll_run();
@@ -43,7 +44,7 @@ fn run_until(app: &mut AgentsWindow, task: &str, done: impl Fn(&AgentEventKind) 
     }
 }
 
-fn phone() -> reqwest::blocking::Client {
+pub(crate) fn phone() -> reqwest::blocking::Client {
     reqwest::blocking::Client::builder()
         .danger_accept_invalid_certs(true)
         .timeout(Duration::from_secs(10))
@@ -52,8 +53,8 @@ fn phone() -> reqwest::blocking::Client {
 }
 
 /// The server's address and a paired phone's token.
-fn paired(app: &mut AgentsWindow) -> (String, String) {
-    app.set_remote_settings(RemoteSettings { enabled: true, port: 0, public_address: String::new() });
+pub(crate) fn paired(app: &mut AgentsWindow) -> (String, String) {
+    app.set_remote_settings(RemoteSettings { enabled: true, port: 0, ..RemoteSettings::default() });
     let server = app.remote.server.as_ref().unwrap_or_else(|| panic!("{:?}", app.remote.error));
     let base = format!("https://127.0.0.1:{}", server.port());
     let invitation = server.invite("PC").unwrap();
@@ -101,7 +102,7 @@ fn start_task(app: &mut AgentsWindow, base: &str, token: &str, prompt: &'static 
     )
 }
 
-fn history(app: &mut AgentsWindow, base: &str, token: &str, task: &str) -> Value {
+pub(crate) fn history(app: &mut AgentsWindow, base: &str, token: &str, task: &str) -> Value {
     let url = format!("{base}/v2/tasks/{task}/history");
     let token = token.to_owned();
     serve_until(app, std::thread::spawn(move || phone().get(url).bearer_auth(&token).send().unwrap().json().unwrap()))
@@ -167,4 +168,133 @@ fn a_phone_allows_what_a_task_off_screen_waits_on() {
         std::thread::spawn(move || phone().post(url).bearer_auth(&token).json(&json!({"decision": "deny"})).send().unwrap().status()),
     );
     assert_eq!(late, 409);
+}
+
+#[test]
+fn a_phone_answers_the_question_a_task_asks() {
+    let root = tempfile::tempdir().unwrap();
+    let provider = ScriptedProvider::new(|request| {
+        let tool_result = request["messages"].as_array().unwrap().iter().find(|message| message["role"] == "tool");
+        match tool_result {
+            Some(result) if result["content"].as_str().unwrap_or_default().contains("Rust") => Reply::Text("ELEGISTE_RUST"),
+            Some(_) => Reply::Text("SIN_RESPUESTA"),
+            None => Reply::Tool(
+                "ask_user",
+                json!({"questions": [{"header": "Lenguaje", "question": "¿En qué lo escribo?", "multi_select": false,
+                    "options": [{"label": "Rust"}, {"label": "Go"}]}]}),
+            ),
+        }
+    });
+    let mut app = app_at(root.path(), &provider.endpoint);
+    let (base, token) = paired(&mut app);
+    let task = start_task(&mut app, &base, &token, "Escribí un servidor");
+    run_until(&mut app, &task, |kind| matches!(kind, AgentEventKind::PermissionRequested { .. }));
+    let waiting = history(&mut app, &base, &token, &task);
+    assert_eq!(waiting["pending"][0]["tool_name"], "ask_user", "{waiting}");
+    let request = waiting["pending"][0]["request_id"].as_str().unwrap().to_owned();
+    let answer = json!({"answered_by": "user", "answers": [{"header": "Lenguaje", "selected": ["Rust"]}]}).to_string();
+    let url = format!("{base}/v2/tasks/{task}/answers/{request}");
+    let answered: Value = serve_until(
+        &mut app,
+        std::thread::spawn(move || phone().post(url).bearer_auth(&token).json(&json!({"answer": answer})).send().unwrap().json().unwrap()),
+    );
+    assert_eq!(answered["answered"], true, "{answered}");
+    run_until(&mut app, &task, |kind| matches!(kind, AgentEventKind::TurnCompleted { .. }));
+    let events = app.store.as_ref().unwrap().load(&task).unwrap().unwrap().events;
+    assert!(
+        events.iter().any(|event| matches!(&event.kind, AgentEventKind::TurnCompleted { response, .. } if response == "ELEGISTE_RUST")),
+        "{:?}",
+        events.iter().map(|event| format!("{:?}", event.kind).chars().take(80).collect::<String>()).collect::<Vec<_>>()
+    );
+}
+
+/// A provider whose first answer waits for `gate`; it answers the queued
+/// message with its own text.
+fn gated() -> (ScriptedProvider, Arc<AtomicBool>) {
+    let gate = Arc::new(AtomicBool::new(false));
+    let open = gate.clone();
+    let provider = ScriptedProvider::new(move |request| {
+        while !open.load(Ordering::Acquire) {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        if request.to_string().contains("MENSAJE_EN_COLA") {
+            Reply::Text("RESPUESTA_A_LA_COLA")
+        } else {
+            Reply::Text("PRIMERA_RESPUESTA")
+        }
+    });
+    (provider, gate)
+}
+
+fn post(app: &mut AgentsWindow, url: String, token: &str, body: Value) -> Value {
+    let token = token.to_owned();
+    serve_until(app, std::thread::spawn(move || phone().post(url).bearer_auth(&token).json(&body).send().unwrap().json().unwrap()))
+}
+
+#[test]
+fn a_message_for_a_busy_task_waits_in_its_queue_and_goes_when_the_turn_ends() {
+    let root = tempfile::tempdir().unwrap();
+    let (provider, gate) = gated();
+    let mut app = app_at(root.path(), &provider.endpoint);
+    let (base, token) = paired(&mut app);
+    let task = start_task(&mut app, &base, &token, "Primer mensaje");
+    let sent = post(&mut app, format!("{base}/v2/tasks/{task}/messages"), &token, json!({"request_id": "q1", "prompt": "MENSAJE_EN_COLA"}));
+    assert_eq!(sent["delivered"], "queued", "{sent}");
+    assert_eq!(app.turn_queue.get(&task).map(|queue| queue.items.len()), Some(1));
+    gate.store(true, Ordering::Release);
+    run_until(&mut app, &task, |kind| {
+        matches!(kind, AgentEventKind::TurnCompleted { response, .. } if response == "RESPUESTA_A_LA_COLA")
+    });
+    assert!(app.turn_queue.get(&task).is_none_or(|queue| queue.items.is_empty()));
+    assert_eq!(provider.requests().len(), 2);
+}
+
+#[test]
+fn a_phone_stops_a_turn_running_off_screen() {
+    let root = tempfile::tempdir().unwrap();
+    let (provider, gate) = gated();
+    let mut app = app_at(root.path(), &provider.endpoint);
+    let (base, token) = paired(&mut app);
+    let on_screen = app.view.selected_session.clone();
+    let task = start_task(&mut app, &base, &token, "Algo largo");
+    let stopped = post(&mut app, format!("{base}/v2/tasks/{task}/stop"), &token, json!({"request_id": "s1"}));
+    assert_eq!(stopped["stopped"], true, "{stopped}");
+    run_until(&mut app, &task, |kind| matches!(kind, AgentEventKind::TurnCancelled));
+    assert_eq!(app.view.selected_session, on_screen);
+    let again = post(&mut app, format!("{base}/v2/tasks/{task}/stop"), &token, json!({"request_id": "s2"}));
+    assert_eq!(again["error"]["message"], "La tarea no está corriendo", "{again}");
+    gate.store(true, Ordering::Release);
+    drop(provider);
+}
+
+#[test]
+fn a_phone_cannot_allow_more_than_it_was_shown_nor_answer_a_permission_as_a_question() {
+    let root = tempfile::tempdir().unwrap();
+    let provider = ScriptedProvider::new(|request| {
+        if request["messages"].as_array().unwrap().iter().any(|message| message["role"] == "tool") {
+            Reply::Text("SIN_COMANDO")
+        } else {
+            Reply::Tool("run_command", json!({"command": "echo", "args": ["hola"]}))
+        }
+    });
+    let mut app = app_at(root.path(), &provider.endpoint);
+    let mut permissions = AgentToolSettings::default();
+    permissions.set(LocalTool::RunCommand, true);
+    assert!(app.commit_agent_tool_settings(permissions, "Commands ask first"));
+    let (base, token) = paired(&mut app);
+    let task = start_task(&mut app, &base, &token, "Saludá");
+    run_until(&mut app, &task, |kind| matches!(kind, AgentEventKind::PermissionRequested { .. }));
+    let waiting = history(&mut app, &base, &token, &task);
+    assert_eq!(waiting["pending"][0]["always"], "echo hola", "{waiting}");
+    let request = waiting["pending"][0]["request_id"].as_str().unwrap().to_owned();
+    let permission = format!("{base}/v2/tasks/{task}/permissions/{request}");
+
+    let wider = post(&mut app, permission.clone(), &token, json!({"decision": "allow_always", "always": "echo"}));
+    assert_eq!(wider["error"]["message"], "Lo que se permitiría siempre cambió; revisá el pedido", "{wider}");
+    let answered = post(&mut app, format!("{base}/v2/tasks/{task}/answers/{request}"), &token, json!({"answer": "{}"}));
+    assert_eq!(answered["error"]["message"], "No es una pregunta", "{answered}");
+    let denied = post(&mut app, permission, &token, json!({"decision": "deny"}));
+    assert_eq!(denied["decision"], "deny", "{denied}");
+    run_until(&mut app, &task, |kind| matches!(kind, AgentEventKind::TurnCompleted { .. }));
+    assert!(app.data_root.join("exec-policy.json").metadata().is_err() || !std::fs::read_to_string(app.data_root.join("exec-policy.json")).unwrap().contains("echo"));
 }

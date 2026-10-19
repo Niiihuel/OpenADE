@@ -3895,6 +3895,7 @@ fn aborted_batch_card(batch: &AbortedToolBatchView, compact: bool) -> Element {
     )
 }
 
+#[cfg(test)]
 fn composer(state: &ViewState, width: f32) -> Element {
     composer_with_height(state, width, None)
 }
@@ -4157,6 +4158,7 @@ fn automation_read_only_card(
         .render()
 }
 
+#[cfg(test)]
 /// Renders an active session without representing unprojected harness state.
 pub fn build_session_surface(
     state: &ViewState,
@@ -4191,6 +4193,7 @@ pub(crate) fn build_session_surface_sized(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn build_session_body(
     state: &ViewState,
     center_width: f32,

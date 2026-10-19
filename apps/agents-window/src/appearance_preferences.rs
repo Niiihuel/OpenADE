@@ -15,6 +15,7 @@ thread_local! {
     static CURRENT: RefCell<AppearancePreferences> = RefCell::new(AppearancePreferences::default());
 }
 
+#[cfg(test)]
 pub(crate) fn current() -> AppearancePreferences {
     CURRENT.with_borrow(Clone::clone)
 }

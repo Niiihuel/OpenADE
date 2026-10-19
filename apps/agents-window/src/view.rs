@@ -327,6 +327,10 @@ pub(crate) struct RemoteView {
     pub routes: Vec<String>,
     pub error: Option<String>,
     pub push: bool,
+    /// What the router said, when asked to open the port.
+    pub upnp: Option<String>,
+    /// The PC stays awake while the remote is on.
+    pub keep_awake: bool,
     pub devices: Vec<RemoteDeviceView>,
     /// The pairing code on screen, drawn, and when it stops working (Unix
     /// seconds).
@@ -3424,6 +3428,7 @@ fn workspace_frame(content: Element) -> Element {
         .flex(1.0)
 }
 
+#[cfg(test)]
 pub fn build_view(state: &ViewState, viewport_width: f32) -> Element {
     build_view_sized(state, viewport_width, 720.0)
 }

@@ -33,6 +33,24 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
                 field("remote_port", &remote.port, "7787"),
                 compact,
             ),
+            settings_parts::switch_row(
+                "remote_keep_awake",
+                "Mantener el PC despierto",
+                "Mientras el remoto esté activo el PC no se suspende solo, para que el teléfono lo encuentre. Gasta más batería.",
+                remote.keep_awake,
+                remote.enabled,
+                compact,
+            ),
+            settings_parts::switch_row(
+                "remote_upnp",
+                "Abrir el puerto en el router (UPnP)",
+                remote.upnp.clone().unwrap_or_else(|| {
+                    "Para llegar desde afuera por IPv4. Pone el servidor en internet, protegido por TLS y por la clave de cada teléfono.".into()
+                }),
+                remote.upnp.is_some(),
+                remote.enabled,
+                compact,
+            ),
             settings_parts::settings_row(
                 "Dirección pública",
                 "Opcional. Si abriste el puerto en tu router, el nombre o la IP pública con la que se llega desde afuera.",
@@ -41,7 +59,18 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
             ),
         ],
     ));
-    if remote.listening.is_some() {
+    if let Some(port) = remote.listening {
+        groups.push(settings_parts::settings_group(
+            "Firewall",
+            vec![settings_parts::value_row(
+                "Puerto abierto en este PC",
+                format!(
+                    "El sistema tiene que dejar entrar conexiones al puerto {port}, por IPv4 y por IPv6. Desde este mismo PC responde aunque esté cerrado, así que probalo desde el teléfono. En NixOS: networking.firewall.allowedTCPPorts = [ {port} ];"
+                ),
+                format!("TCP {port}"),
+                compact,
+            )],
+        ));
         groups.push(pairing(remote, compact));
         groups.push(devices(remote, compact));
         groups.push(settings_parts::settings_group(

@@ -318,6 +318,7 @@ impl SessionStore {
         })
     }
 
+    #[cfg(test)]
     /// Whether [`Self::undo_native_rewind`] would still put the tail back.
     pub fn can_undo_native_rewind(&self, rewind: &NativeRewind) -> bool {
         self.native_journal_len(&rewind.session_id)

@@ -256,6 +256,7 @@ fn readonly_tools() -> Arc<dyn ToolExecutor> {
     }))
 }
 
+#[cfg(test)]
 fn readonly_catalog() -> Result<ToolCatalog, String> {
     profile_catalog(READ_ONLY_V1)
 }

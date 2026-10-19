@@ -58,11 +58,13 @@ pub struct ResponsesResult {
 }
 
 impl ResponsesResult {
+    #[cfg(test)]
     /// Typed hosted search actions from the original provider output items.
     pub fn web_search_calls(&self) -> Result<Vec<HostedWebSearchCall>, AgentError> {
         hosted_web_search_calls(&self.output_items)
     }
 
+    #[cfg(test)]
     /// URL citation annotations with offsets into each provider output part.
     /// The host UI must render these as visible, clickable links.
     pub fn web_citations(&self) -> Result<Vec<HostedWebCitation>, AgentError> {

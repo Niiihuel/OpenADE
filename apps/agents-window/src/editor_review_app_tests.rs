@@ -215,7 +215,6 @@ fn acceptance_clears_editor_markers_reopens_durably_and_a_new_edit_is_pending() 
     open(&mut fixture.app, "main.rs");
     let review = fixture.app.view.editor_workbench.review.as_ref().unwrap();
     assert!(review.can_accept && !review.busy);
-    assert_eq!((review.additions, review.deletions), (1, 1));
     assert_eq!(review.hunks.len(), 1);
     let old_version = fixture
         .app
@@ -370,7 +369,6 @@ fn deleted_file_opens_confirmed_snapshot_and_acceptance_never_recreates_it() {
     assert_eq!(snapshot.path, "deleted.rs");
     let review = snapshot.review.as_ref().unwrap();
     assert!(review.can_accept && !review.busy);
-    assert_eq!((review.additions, review.deletions), (0, 1));
     let CodeSnapshotContent::Diff { lines, .. } = &snapshot.content else {
         panic!("confirmed deletion must display the immutable deleted lines");
     };

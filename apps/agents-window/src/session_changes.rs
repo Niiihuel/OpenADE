@@ -862,6 +862,7 @@ struct ReplayedFile {
     epoch: usize,
 }
 
+#[cfg(test)]
 /// A bounded observer of the store's JSONL format. An incomplete/corrupt tail
 /// is an error and is never repaired. This reader does not acquire a worker
 /// lease, and does not block a native writer on a full-history store load.

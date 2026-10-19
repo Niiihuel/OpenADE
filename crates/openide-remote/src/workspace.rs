@@ -101,6 +101,10 @@ mod guarded {
     }
     impl Directory {
         pub fn root(root: &Path) -> ApiResult<Self> {
+            // A project is a folder below the root, never the whole disk.
+            if !root.is_absolute() || root.components().count() < 2 {
+                return Err(ApiError::bad("Project path must be an absolute folder"));
+            }
             let start = name("/")?;
             let mut current = Self(opened(unsafe {
                 libc::open(

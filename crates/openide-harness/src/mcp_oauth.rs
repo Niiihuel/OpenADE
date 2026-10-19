@@ -1057,6 +1057,7 @@ impl OAuthSession {
         })
     }
 
+    #[cfg(test)]
     /// Parse an insufficient-scope Bearer challenge and request its scopes in
     /// addition to those already granted. The caller must obtain user consent
     /// in a browser and must not replay an uncertain tools/call automatically.

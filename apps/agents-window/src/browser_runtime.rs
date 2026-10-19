@@ -839,6 +839,7 @@ impl BrowserHandle {
         Ok(snapshot)
     }
 
+    #[cfg(test)]
     fn submit(&self, command: BrowserCommand) -> Result<BrowserRequest, String> {
         self.submit_as(command, true, false)
     }
@@ -1098,6 +1099,7 @@ impl BrowserRuntime {
         self.scale
     }
 
+    #[cfg(test)]
     /// The origins the agent may not go to, read or act on from now on.
     pub(crate) fn set_blocked_sites(&self, origins: Vec<String>) {
         self.handle.agent_policy.lock().unwrap_or_else(|poison| poison.into_inner()).blocked = origins;

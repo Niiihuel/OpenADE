@@ -475,3 +475,17 @@ esperan a que vuelva la cuota de EAS (2026-11-01) o a una Mac.
   (OpenChamber) en esta etapa.
 - Terminal PTY completa en el teléfono, que está excluida a propósito en
   `docs/ios-remote.md`.
+
+## Estado (2026-10-18)
+
+Decisiones del usuario: reestructurar todo como t3code/OpenChamber, sin
+Tailscale (el PC levanta su propio servidor), SwiftUI. Face ID quedó a criterio:
+bloqueo de la app con Face ID activado por defecto, sin aprobar desde la
+pantalla bloqueada.
+
+Implementado en `wt/remote-v2`: servidor HTTPS en la ventana con certificado
+propio fijado por el teléfono, emparejamiento por QR con todas las rutas, stream
+SSE leído de las bitácoras, comandos ejecutados por la ventana, todos los
+backends, avisos APNs, Ajustes → Remoto, UPnP opcional, y la ventana que sigue
+trabajando oculta. La app del iPhone se rehízo en `wt/remote-ios`. El detalle
+técnico vive en `docs/ios-remote.md`.

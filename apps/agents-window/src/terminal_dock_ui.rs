@@ -763,6 +763,7 @@ fn sessions_control(state: &ViewState, room: f32) -> Sessions {
     Sessions::ListOnly
 }
 
+#[cfg(test)]
 pub(crate) fn header(state: &ViewState, width: f32) -> Element {
     header_with_sections(state, width, None)
 }

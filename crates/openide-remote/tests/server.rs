@@ -52,7 +52,7 @@ async fn a_paired_phone_reads_tasks_sends_a_message_follows_the_journal_and_lose
     });
 
     let server = Server::start(
-        Options { root: root.path().join("remote"), sessions: sessions.clone(), port: 0, name: "PC de prueba".into(), public_address: None },
+        Options { root: root.path().join("remote"), sessions: sessions.clone(), port: 0, name: "PC de prueba".into(), public_address: None, upnp: false },
         bridge.clone(),
     )
     .unwrap();
@@ -61,10 +61,20 @@ async fn a_paired_phone_reads_tasks_sends_a_message_follows_the_journal_and_lose
 
     let identity: Value = http.get(format!("{base}/.well-known/openade")).send().await.unwrap().json().await.unwrap();
     assert_eq!(identity["fingerprint"], server.fingerprint());
+    assert!(identity.get("name").is_none(), "the host name waits for a token: {identity}");
     assert_eq!(http.get(format!("{base}/v2/overview")).send().await.unwrap().status(), 401);
 
+    // A code shown before stops working once another is made.
+    let replaced = server.invite("PC de prueba").unwrap();
     let invitation = server.invite("PC de prueba").unwrap();
     assert_eq!(invitation.fingerprint, server.fingerprint());
+    let stale = http
+        .post(format!("{base}/v2/pair"))
+        .json(&json!({"pairing_id": replaced.pairing_id, "secret": replaced.secret, "request_id": uuid::Uuid::new_v4().to_string(), "device_name": "Otro"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(stale.status(), 401);
     let paired: Value = http
         .post(format!("{base}/v2/pair"))
         .json(&json!({
@@ -137,16 +147,61 @@ async fn a_paired_phone_reads_tasks_sends_a_message_follows_the_journal_and_lose
     }
     let mut received = String::new();
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
-    while !(received.contains("Corro los tests") && received.contains("event: pending")) {
+    while !(received.contains("Corro los tests") && received.contains("\"always\"")) {
         let chunk = tokio::time::timeout_at(deadline, stream.chunk()).await.expect("stream stalled").unwrap().unwrap();
         received.push_str(&String::from_utf8_lossy(&chunk));
     }
     assert!(received.contains("event: overview"));
     assert!(received.contains("\"run_command\""));
+    assert!(received.contains("\"always\":\"cargo test\""), "the phone sees what always allowing would allow: {received}");
     assert!(!received.contains("PRIMER_EVENTO"), "the phone already had the first event");
-    drop(stream);
+    assert_eq!(bridge.take_paired(), ["iPhone de prueba"]);
 
+    // Losing access ends the stream that is open, not only new requests.
     let device = server.devices().unwrap()[0].id.clone();
     server.revoke(&device).unwrap();
     assert_eq!(http.get(format!("{base}/v2/overview")).bearer_auth(&token).send().await.unwrap().status(), 401);
+    let ended = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match stream.chunk().await {
+                Ok(Some(_)) => continue,
+                _ => return,
+            }
+        }
+    })
+    .await;
+    assert!(ended.is_ok(), "the revoked phone's stream kept going");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_address_gets_a_few_connections_and_a_few_pairing_attempts() {
+    let root = tempfile::tempdir().unwrap();
+    let server = Server::start(
+        Options { root: root.path().join("remote"), sessions: root.path().join("sessions"), port: 0, name: "PC".into(), public_address: None, upnp: false },
+        Bridge::new(|| {}),
+    )
+    .unwrap();
+    let address = format!("127.0.0.1:{}", server.port());
+    // Connections that never finish TLS hold their place for a while.
+    let held: Vec<_> = (0..8).map(|_| std::net::TcpStream::connect(&address).unwrap()).collect();
+    let mut extra = std::net::TcpStream::connect(&address).unwrap();
+    extra.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    let mut byte = [0u8; 1];
+    assert_eq!(std::io::Read::read(&mut extra, &mut byte).unwrap_or(0), 0, "a ninth connection is closed at once");
+    drop(held);
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let http = client();
+    let attempt = || {
+        http.post(format!("https://{address}/v2/pair")).json(&json!({
+            "pairing_id": uuid::Uuid::new_v4().to_string(),
+            "secret": "0".repeat(64),
+            "request_id": uuid::Uuid::new_v4().to_string(),
+            "device_name": "x",
+        }))
+    };
+    for _ in 0..10 {
+        assert_eq!(attempt().send().await.unwrap().status(), 401);
+    }
+    assert_eq!(attempt().send().await.unwrap().status(), 429);
 }

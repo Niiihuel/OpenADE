@@ -79,6 +79,7 @@ impl UsageWindow {
         (percent.is_finite() && percent >= 0.0).then_some(percent)
     }
 
+    #[cfg(test)]
     pub(crate) fn remaining_percent(&self) -> Option<f64> {
         self.used_percent()
             .map(|used| (100.0 - used).clamp(0.0, 100.0))

@@ -67,6 +67,7 @@ impl Default for NotificationSettings {
 }
 
 impl NotificationSettings {
+    #[cfg(test)]
     pub const NAMES: [&'static str; 8] = [
         "turn_completed",
         "turn_failed",

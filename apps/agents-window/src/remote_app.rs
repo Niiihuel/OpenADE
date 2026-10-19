@@ -25,11 +25,16 @@ pub(crate) struct RemoteSettings {
     pub port: u16,
     /// A name or address for a port the person opened on their router.
     pub public_address: String,
+    /// Ask the router to open the port (UPnP). Off unless asked: it puts the
+    /// server on the internet.
+    pub upnp: bool,
+    /// Keep the PC from sleeping while the remote is on.
+    pub keep_awake: bool,
 }
 
 impl Default for RemoteSettings {
     fn default() -> Self {
-        Self { enabled: false, port: DEFAULT_PORT, public_address: String::new() }
+        Self { enabled: false, port: DEFAULT_PORT, public_address: String::new(), upnp: false, keep_awake: false }
     }
 }
 
@@ -59,6 +64,14 @@ pub(crate) struct Remote {
     published_at: Option<Instant>,
     /// When Settings → Remoto was last read.
     viewed_at: Option<Instant>,
+    /// The process that keeps the PC awake, while asked to.
+    awake: Option<std::process::Child>,
+}
+
+impl Drop for Remote {
+    fn drop(&mut self) {
+        self.stay_awake(false);
+    }
 }
 
 impl Remote {
@@ -78,6 +91,7 @@ impl Remote {
             invitation: None,
             published_at: None,
             viewed_at: None,
+            awake: None,
         }
     }
 
@@ -98,6 +112,29 @@ impl Remote {
 
     pub(crate) fn connected_devices(&self) -> BTreeMap<String, usize> {
         self.bridge.connected_devices()
+    }
+
+    /// Holds a logind inhibitor against idle and sleep. It waits on this
+    /// process, so it goes away with openADE however openADE ends.
+    fn stay_awake(&mut self, awake: bool) {
+        if !awake {
+            if let Some(mut child) = self.awake.take() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            return;
+        }
+        if self.awake.is_some() || !cfg!(target_os = "linux") {
+            return;
+        }
+        self.awake = std::process::Command::new("systemd-inhibit")
+            .args(["--what=idle:sleep", "--who=openADE", "--why=El remoto del iPhone está activo", "--mode=block"])
+            .args(["tail", &format!("--pid={}", std::process::id()), "-f", "/dev/null"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .ok();
     }
 }
 
@@ -137,6 +174,7 @@ impl AgentsWindow {
     /// Starts or stops the server to match the settings.
     pub(super) fn apply_remote_settings(&mut self) {
         self.remote.server = None;
+        self.remote.stay_awake(false);
         self.remote.invitation = None;
         self.remote.error = None;
         if !self.remote.settings.enabled {
@@ -149,11 +187,14 @@ impl AgentsWindow {
             port: self.remote.settings.port,
             name: host_name(),
             public_address,
+            upnp: self.remote.settings.upnp,
         };
         match Server::start(options, self.remote.bridge.clone()) {
             Ok(server) => self.remote.server = Some(server),
             Err(error) => self.remote.error = Some(format!("No se pudo iniciar el remoto: {error:#}")),
         }
+        let awake = self.remote.server.is_some() && self.remote.settings.keep_awake;
+        self.remote.stay_awake(awake);
     }
 
     pub(super) fn set_remote_settings(&mut self, settings: RemoteSettings) {
@@ -205,6 +246,8 @@ impl AgentsWindow {
             view.fingerprint = openide_remote::tls::short_fingerprint(server.fingerprint());
             view.routes = server.routes();
             view.push = server.push_enabled();
+            view.upnp = self.remote.settings.upnp.then(|| server.upnp_state().describe());
+            view.keep_awake = self.remote.settings.keep_awake;
             view.devices = server
                 .devices()
                 .unwrap_or_default()
@@ -258,8 +301,23 @@ impl AgentsWindow {
                     self.set_remote_settings(settings);
                 }
             }
+            UiAction::Clicked { id } if id == "remote_keep_awake" => {
+                let mut settings = self.remote.settings.clone();
+                settings.keep_awake = !settings.keep_awake;
+                self.set_remote_settings(settings);
+            }
+            UiAction::Clicked { id } if id == "remote_upnp" => {
+                let mut settings = self.remote.settings.clone();
+                settings.upnp = !settings.upnp;
+                self.set_remote_settings(settings);
+            }
             UiAction::Clicked { id } if id == "remote_pair" => self.start_remote_pairing(),
-            UiAction::Clicked { id } if id == "remote_pair_close" => self.remote.invitation = None,
+            UiAction::Clicked { id } if id == "remote_pair_close" => {
+                self.remote.invitation = None;
+                if let Some(server) = &self.remote.server {
+                    let _ = server.withdraw_invitations();
+                }
+            }
             UiAction::Clicked { id } if id.starts_with("remote_revoke:") => {
                 if let Some(server) = &self.remote.server {
                     if let Err(error) = server.revoke(&id["remote_revoke:".len()..]) {
@@ -284,6 +342,20 @@ impl AgentsWindow {
             if waker.is_none() {
                 *waker = self.background.waker.clone();
             }
+        }
+        for name in self.remote.bridge.take_paired() {
+            // A phone that paired unseen would keep control of this PC.
+            self.view.notifications.push(
+                crate::notifications::Severity::Attention,
+                "Se emparejó un teléfono",
+                format!("«{name}» ahora puede usar este PC. Si no fuiste vos, quitale el acceso en Ajustes → Remoto."),
+                None,
+            );
+            if !self.background.focused {
+                crate::notifications::notify_system("Se emparejó un teléfono", &name);
+            }
+            self.remote.invitation = None;
+            self.remote.viewed_at = None;
         }
         let requests = self.remote.bridge.take_commands();
         let served = !requests.is_empty();
@@ -317,8 +389,7 @@ impl AgentsWindow {
     /// What the phone sees now: the sidebar's tasks with their turns.
     fn remote_live(&self) -> Live {
         let tasks = self
-            .view
-            .sessions
+            .remote_tasks
             .iter()
             .map(|session| {
                 let selected = self.view.selected_session.as_deref() == Some(session.id.as_str());
@@ -463,7 +534,7 @@ impl AgentsWindow {
     }
 
     fn remote_send(&mut self, task: &str, prompt: &str, files: &[PathBuf], delivery: Delivery) -> Result<Value, String> {
-        let session = self.view.sessions.iter().find(|session| session.id == task).ok_or("Esa tarea ya no existe")?;
+        let session = self.remote_tasks.iter().find(|session| session.id == task).ok_or("Esa tarea ya no existe")?;
         if !openide_remote::tasks::has_chat(&session.backend) {
             return Err("Esa tarea corre en una terminal del PC; escribile desde ahí".into());
         }
@@ -538,14 +609,25 @@ impl AgentsWindow {
             else {
                 return Err("Ya se respondió desde el PC".into());
             };
-            let choice = match decision {
+            if permission.tool_name == openide_harness::ASK_USER_TOOL {
+                return Err("Es una pregunta: respondela".into());
+            }
+            let arguments: Value = serde_json::from_str(&permission.arguments).unwrap_or(Value::Null);
+            // What the phone could not show it may only refuse.
+            if openide_remote::projection::safe_arguments(&arguments).1 && decision != Decision::Deny {
+                return Err("El pedido es demasiado grande para revisarlo en el teléfono; solo se puede rechazar".into());
+            }
+            let choice = match &decision {
                 Decision::Allow => "allow_once",
-                Decision::AllowAlways
-                    if crate::approval_ui::command_prefix(&permission.tool_name, &permission.arguments).is_some() =>
-                {
+                Decision::AllowSession => "allow_session",
+                Decision::AllowAlways(shown) => {
+                    let prefix = crate::approval_ui::command_prefix(&permission.tool_name, &permission.arguments)
+                        .map(|prefix| prefix.join(" "));
+                    if prefix.as_deref() != Some(shown.as_str()) {
+                        return Err("Lo que se permitiría siempre cambió; revisá el pedido".into());
+                    }
                     "allow_command"
                 }
-                Decision::AllowAlways => "allow_session",
                 Decision::Deny => "deny",
             };
             let target = (task, window.view.workspace.clone(), None::<String>, request_id, choice);
@@ -563,8 +645,14 @@ impl AgentsWindow {
 
     fn remote_answer(&mut self, task: &str, request_id: &str, answer: String) -> Result<Value, String> {
         self.on_task(task, |window| {
-            if !window.view.pending_permissions.iter().any(|permission| permission.request_id == request_id) {
+            let Some(permission) =
+                window.view.pending_permissions.iter().find(|permission| permission.request_id == request_id)
+            else {
                 return Err("Ya se respondió desde el PC".into());
+            };
+            // A permission is not answered as a question: that would allow it.
+            if permission.tool_name != openide_harness::ASK_USER_TOOL {
+                return Err("No es una pregunta".into());
             }
             window.answer_question(request_id, Some((answer, Vec::new())));
             Ok(serde_json::json!({"answered": true}))

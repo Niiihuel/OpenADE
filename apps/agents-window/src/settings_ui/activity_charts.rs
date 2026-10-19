@@ -24,6 +24,7 @@ pub(super) fn task_count_label(count: usize) -> String {
     format!("{count} {}", if count == 1 { "tarea" } else { "tareas" })
 }
 
+#[cfg(test)]
 pub(super) fn execution_count_label(count: usize) -> String {
     format!(
         "{count} {}",

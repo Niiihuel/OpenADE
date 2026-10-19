@@ -1253,7 +1253,7 @@ fn a_maximized_browser_tab_is_the_same_page_resized_to_the_larger_panel() {
     app.sync_dock_view();
     let ctx = egui::Context::default();
     // The size the host asks the page for after a layout, as it confirms it.
-    let mut resized = |app: &mut AgentsWindow| -> (u32, u32) {
+    let resized = |app: &mut AgentsWindow| -> (u32, u32) {
         app.update_browser(&ctx);
         present_workspace(app);
         let pane = region_rect(app, "browser_viewport");
@@ -1330,7 +1330,7 @@ fn export_dock_maximize_visual_review() {
     .unwrap();
     let file = app.dock.open(&scope, DockTabKind::FilePreview { path: "src/main.rs".into() });
     app.viewport_height = 760.0;
-    let mut export = |app: &mut AgentsWindow, name: &str, maximized: bool| {
+    let export = |app: &mut AgentsWindow, name: &str, maximized: bool| {
         assert_eq!(app.view.dock_maximized, maximized, "{name}");
         let size = Size::new(app.viewport_width, app.viewport_height);
         let (context, mut tree) = crate::view::ide_visual_tests::native_tree(

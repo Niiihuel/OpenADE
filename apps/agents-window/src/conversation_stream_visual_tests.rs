@@ -2701,7 +2701,7 @@ fn export_transcript_reveal_visual_review() {
         tree.set_reduced_motion(true);
         tree.layout(viewport);
         tree.scroll_to_end("transcript");
-        let mut save = |tree: &mut UiTree, name: &str| {
+        let save = |tree: &mut UiTree, name: &str| {
             let frame = tree.layout(viewport);
             let path = directory.join(format!("{name}-{width:.0}.svg"));
             crate::settings_ui::visual_qa::write_native_frame_svg(&frame, &path, width, 600.0)

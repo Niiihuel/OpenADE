@@ -381,6 +381,7 @@ pub(crate) fn render_document_at_width(source: &str, width: f32) -> MarkdownPrev
     })
 }
 
+#[cfg(test)]
 /// Render with the actual reading-column width in logical pixels. HTTP(S)
 /// links retain their URI; the host opens them only after an explicit action.
 /// Completed messages reuse a bounded presentation tree until their displayed
@@ -389,6 +390,7 @@ pub fn render_markdown_at_width(source: &str, width: f32) -> Element {
     render_markdown_preview_at_width(source, width).element
 }
 
+#[cfg(test)]
 /// Keep at most two live trees in a shared bounded pool, so reasoning and
 /// assistant text can coexist without churning the completed-message cache.
 /// An unchanged live prefix can also reuse its previous tree.
@@ -396,10 +398,12 @@ pub fn render_streaming_markdown_at_width(source: &str, width: f32) -> Element {
     render_streaming_markdown_preview_at_width(source, width).element
 }
 
+#[cfg(test)]
 pub fn render_markdown_preview_at_width(source: &str, width: f32) -> MarkdownPreview {
     rendered(source, |markdown| markdown.width(width))
 }
 
+#[cfg(test)]
 pub fn render_streaming_markdown_preview_at_width(source: &str, width: f32) -> MarkdownPreview {
     rendered(source, |markdown| markdown.width(width).streaming(true))
 }

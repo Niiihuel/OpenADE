@@ -26,8 +26,6 @@ pub(crate) struct EditorReviewView {
     pub revision: u64,
     pub hunks: std::sync::Arc<[openide_ui::CodeReviewHunk]>,
     pub actions: std::sync::Arc<[openide_ui::CodeReviewHunkActions]>,
-    pub additions: usize,
-    pub deletions: usize,
     pub hunk_count: usize,
     pub current_hunk: usize,
     pub file_count: usize,

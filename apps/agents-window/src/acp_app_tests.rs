@@ -569,3 +569,49 @@ fn a_turn_forked_to_an_acp_agent_opens_its_task_with_the_conversation_to_send() 
     assert_ne!(app.view.selected_session.as_deref(), Some("source"));
     assert!(app.view.prompt.contains("Usuario:\nArreglá el login"), "{}", app.view.prompt);
 }
+
+#[test]
+fn a_phone_starts_a_task_with_an_acp_agent_and_allows_what_it_asks() {
+    use crate::app::native_streaming_app_tests::remote_app_tests::{history, paired, phone, run_until, serve_until};
+    let root = tempfile::tempdir().unwrap();
+    let mut app = window(root.path());
+    let (base, token) = paired(&mut app);
+    let (url, bearer) = (format!("{base}/v2"), token.clone());
+    let task = serve_until(
+        &mut app,
+        std::thread::spawn(move || {
+            let overview: Value = phone().get(format!("{url}/overview")).bearer_auth(&bearer).send().unwrap().json().unwrap();
+            assert!(overview["agents"].as_array().unwrap().iter().any(|agent| agent["backend"] == "acp:fake"), "{overview}");
+            let project = overview["projects"][0]["id"].as_str().unwrap().to_owned();
+            let created: Value = phone()
+                .post(format!("{url}/tasks"))
+                .bearer_auth(&bearer)
+                .json(&json!({"request_id": "acp-1", "project": project, "backend": "acp:fake", "prompt": "decí hola"}))
+                .send()
+                .unwrap()
+                .json()
+                .unwrap();
+            created["task"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned()
+        }),
+    );
+    let ctx = egui::Context::default();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !app.parked_runs.iter().any(|parked| !parked.pending_permissions.is_empty()) {
+        app.poll_parked_runs();
+        app.poll_acp_agents(&ctx);
+        assert!(Instant::now() < deadline, "the agent never asked: {}", app.view.status);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    run_until(&mut app, &task, |kind| matches!(kind, AgentEventKind::PermissionRequested { .. }));
+    let waiting = history(&mut app, &base, &token, &task);
+    assert_eq!(waiting["pending"][0]["tool_name"], "run_command", "{waiting}");
+    let request = waiting["pending"][0]["request_id"].as_str().unwrap().to_owned();
+    let url = format!("{base}/v2/tasks/{task}/permissions/{request}");
+    let answer: Value = serve_until(
+        &mut app,
+        std::thread::spawn(move || phone().post(url).bearer_auth(&token).json(&json!({"decision": "allow"})).send().unwrap().json().unwrap()),
+    );
+    assert_eq!(answer["decision"], "allow_once", "{answer}");
+    run_until(&mut app, &task, |kind| matches!(kind, AgentEventKind::TurnCompleted { .. }));
+    assert_ne!(app.view.selected_session.as_deref(), Some(task.as_str()));
+}

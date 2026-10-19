@@ -574,11 +574,11 @@ fn measure_editor_cost_per_keystroke_by_document_size() {
         let analysis = app.view.editor_workbench.analysis.take();
         app.sync_editor_structure();
         app.view.editor_workbench.analysis = analysis;
-        let mut structure = timed(&mut || drop(app.sync_editor_structure()));
+        let mut structure = timed(&mut || { app.sync_editor_structure(); });
         let waited = Instant::now();
         while app.view.editor_workbench.structure_revision.is_none() {
             std::thread::sleep(Duration::from_millis(1));
-            structure = structure.max(timed(&mut || drop(app.sync_editor_structure())));
+            structure = structure.max(timed(&mut || { app.sync_editor_structure(); }));
         }
         let waited = waited.elapsed();
         let fold = app.view.editor_workbench.fold_candidates[0].clone();
