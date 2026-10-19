@@ -2,7 +2,6 @@
 //! query and completion tokens exist only in private retry state until ACK/TTL.
 use crate::{auth::DeviceStore, storage};
 use anyhow::{bail, Result};
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -53,15 +52,15 @@ pub struct PairingInvitation {
     pub label: String,
 }
 impl PairingInvitation {
-    pub fn deep_link(&self) -> Result<String> {
-        Ok(format!(
-            "openade-remote://pair#{}",
-            URL_SAFE_NO_PAD.encode(serde_json::to_vec(self)?)
-        ))
+    /// What the QR code holds: the invitation as JSON. Not a link: an app
+    /// that claimed a link scheme on the phone could take the secret from the
+    /// camera; only openADE's own scanner reads this.
+    pub fn payload(&self) -> Result<String> {
+        Ok(serde_json::to_string(self)?)
     }
     /// The QR code's modules, row by row, `true` for dark.
     pub fn qr_modules(&self) -> Result<(usize, Vec<bool>)> {
-        let code = qrcode::QrCode::new(self.deep_link()?.as_bytes())?;
+        let code = qrcode::QrCode::new(self.payload()?.as_bytes())?;
         let modules = code.to_colors().into_iter().map(|color| color == qrcode::Color::Dark).collect();
         Ok((code.width(), modules))
     }
@@ -372,11 +371,9 @@ mod tests {
         let late = store.complete(request(&invite, &Uuid::new_v4().to_string())).err().unwrap();
         assert!(matches!(late.downcast_ref::<PairingError>(), Some(PairingError::Expired)));
         assert!(!store.path(&invite.pairing_id).exists());
-        assert!(invite
-            .deep_link()
-            .unwrap()
-            .starts_with("openade-remote://pair#"));
-        assert!(!invite.deep_link().unwrap().contains('?'));
+        let payload: serde_json::Value = serde_json::from_str(&invite.payload().unwrap()).unwrap();
+        assert_eq!(payload["version"], 2);
+        assert_eq!(payload["pairing_id"], invite.pairing_id.as_str());
         let (width, modules) = invite.qr_modules().unwrap();
         assert_eq!(modules.len(), width * width);
     }

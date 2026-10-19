@@ -4394,7 +4394,6 @@ version = "0.4.1"
 dependencies = [
  "anyhow",
  "axum",
- "base64 0.22.1",
  "futures-util",
  "hyper",
  "hyper-util",
