@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Shared grayscale surfaces. Color is reserved for meaning (errors and diffs).
+/// Shared grayscale surfaces. Color is reserved for meaning (attention, errors and diffs).
 enum RemoteTheme {
     static let canvas = adaptive(light: 0.98, dark: 0.015)
     static let surface = adaptive(light: 1, dark: 0.085)
@@ -12,6 +12,8 @@ enum RemoteTheme {
     static let ink = adaptive(light: 0.07, dark: 0.96)
     static let accent = ink
     static let onAccent = adaptive(light: 1, dark: 0.07)
+    /// "The agent needs you": a permission or a question waits.
+    static let attention = Color.orange
 
     private static func adaptive(light: CGFloat, dark: CGFloat) -> Color {
         Color(uiColor: UIColor { traits in
@@ -79,30 +81,6 @@ struct RemoteEmptyState: View {
     }
 }
 
-struct RemoteChip: View {
-    let title: String
-    var symbol: String? = nil
-    var selected = false
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 7) {
-                if let symbol { Image(systemName: symbol).symbolRenderingMode(.monochrome) }
-                Text(title).lineLimit(1)
-            }
-            .font(.subheadline.weight(selected ? .medium : .regular))
-            .padding(.horizontal, 16)
-            .frame(minHeight: 44)
-            .background(selected ? RemoteTheme.raised : Color.clear, in: Capsule())
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(selected ? RemoteTheme.ink : RemoteTheme.muted)
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
-    }
-}
-
 struct RemotePrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
@@ -116,30 +94,112 @@ struct RemotePrimaryButtonStyle: ButtonStyle {
     }
 }
 
-struct RemoteSearchField: View {
-    @Binding var text: String
-    let prompt: String
-    var autoFocus = false
-    @FocusState private var focused: Bool
+/// A quieter capsule button that sits next to a primary one.
+struct RemoteSecondaryButtonStyle: ButtonStyle {
+    var role: ButtonRole? = nil
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.body.weight(.medium))
+            .frame(maxWidth: .infinity, minHeight: 46)
+            .foregroundStyle((role == .destructive ? Color.red : RemoteTheme.ink).opacity(isEnabled ? 1 : 0.4))
+            .background(RemoteTheme.raised.opacity(configuration.isPressed ? 0.6 : 1), in: Capsule())
+            .contentShape(Capsule())
+    }
+}
+
+struct ComposerToolButton: View {
+    let title: String
+    let symbol: String
+    var selected = false
+    let action: () -> Void
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass").foregroundStyle(RemoteTheme.muted)
-            TextField(prompt, text: $text)
-                .textInputAutocapitalization(.never).autocorrectionDisabled()
-                .submitLabel(.search).focused($focused)
-                .onSubmit { focused = false }
-                .accessibilityLabel(prompt)
-            if !text.isEmpty {
-                Button { text = "" } label: { Image(systemName: "xmark.circle.fill").frame(width: 44, height: 44) }
-                    .buttonStyle(.plain).foregroundStyle(RemoteTheme.muted).accessibilityLabel("Borrar búsqueda")
-            }
-        }.padding(.leading, 16).padding(.trailing, text.isEmpty ? 16 : 2)
-            .frame(minHeight: 50)
-            .background(RemoteTheme.surface, in: RoundedRectangle(cornerRadius: 18))
-            .overlay { RoundedRectangle(cornerRadius: 18).strokeBorder(RemoteTheme.border, lineWidth: 0.5) }
-            .task { if autoFocus { focused = true } }
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 20, weight: .regular))
+                .symbolRenderingMode(.monochrome)
+                .frame(width: 40, height: 40)
+                .background(selected ? RemoteTheme.raised : .clear, in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(RemoteTheme.ink.opacity(isEnabled ? 1 : 0.35))
+        .accessibilityLabel(title)
+        .help(title)
     }
+}
+
+/// A capsule label: an agent's name, a count.
+struct RemoteTag: View {
+    let title: String
+    var symbol: String? = nil
+    var body: some View {
+        HStack(spacing: 4) {
+            if let symbol { Image(systemName: symbol).imageScale(.small) }
+            Text(title).lineLimit(1)
+        }
+        .font(.caption2.weight(.medium))
+        .foregroundStyle(RemoteTheme.muted)
+        .padding(.horizontal, 7).padding(.vertical, 3)
+        .background(RemoteTheme.raised, in: Capsule())
+    }
+}
+
+/// A floating pill for every state but online (like t3code): the UI stays
+/// on screen with what it has while the phone reconnects.
+struct ConnectionPill: View {
+    @Environment(RemoteStore.self) private var store
+    var onRevoked: (() -> Void)? = nil
+
+    var body: some View {
+        ZStack {
+            if let content { pill(content) }
+        }
+        .animation(.snappy, value: store.connection)
+    }
+
+    private func pill(_ content: (title: String, symbol: String, spinning: Bool)) -> some View {
+        Button {
+                if store.connection == .revoked { onRevoked?() } else { store.reconnect() }
+            } label: {
+                HStack(spacing: 8) {
+                    if content.spinning { ProgressView().controlSize(.mini) }
+                    else { Image(systemName: content.symbol).font(.caption.weight(.semibold)) }
+                    Text(content.title).font(.footnote.weight(.medium)).lineLimit(1)
+                }
+                .foregroundStyle(store.connection == .revoked ? Color.red : RemoteTheme.ink)
+                .padding(.horizontal, 14).frame(minHeight: 34)
+                .background(.regularMaterial, in: Capsule())
+                .overlay { Capsule().strokeBorder(RemoteTheme.border.opacity(0.8), lineWidth: 0.5) }
+                .shadow(color: .black.opacity(0.16), radius: 10, y: 3)
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .accessibilityLabel(content.title)
+            .accessibilityHint(store.connection == .revoked ? "Abre el emparejamiento" : "Reintenta la conexión")
+            .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
+    private var content: (title: String, symbol: String, spinning: Bool)? {
+        switch store.connection {
+        case .online, .idle: return nil
+        case .connecting: return ("Conectando con \(store.computerName)…", "", true)
+        case .reconnecting: return ("Reconectando…", "", true)
+        case .offline:
+            return (store.hasSnapshot ? "Sin conexión · mostrando lo guardado" : "Sin conexión con \(store.computerName)", "wifi.slash", false)
+        case .revoked: return ("Acceso revocado", "lock.slash", false)
+        }
+    }
+}
+
+enum Haptics {
+    static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
+    static func warning() { UINotificationFeedbackGenerator().notificationOccurred(.warning) }
+    static func tap() { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
 }
 
 extension View {
@@ -155,5 +215,11 @@ extension View {
             .presentationCornerRadius(32)
             .presentationDragIndicator(.visible)
             .tint(RemoteTheme.ink)
+    }
+
+    func connectionPill(onRevoked: (() -> Void)? = nil) -> some View {
+        overlay(alignment: .top) {
+            ConnectionPill(onRevoked: onRevoked).padding(.top, 6)
+        }
     }
 }

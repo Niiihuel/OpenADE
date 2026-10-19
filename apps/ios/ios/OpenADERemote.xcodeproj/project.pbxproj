@@ -6,10 +6,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0C35AEF4EE06B61039D6D7BE /* PBXBuildFile */ = {
-			isa = PBXBuildFile;
-			fileRef = C7AAE1A2C196E0AC80EF4661 /* reference */;
-		};
 		AB3091760FE639DA03848D31 /* PBXBuildFile */ = {
 			isa = PBXBuildFile;
 			fileRef = AF0929356FA2C8BD47373314 /* reference */;
@@ -26,13 +22,33 @@
 			isa = PBXBuildFile;
 			fileRef = 299E6F1F0FA7905615733BA8 /* reference */;
 		};
+		2BD8FAACD0F33EBC41AA768D /* PBXBuildFile */ = {
+			isa = PBXBuildFile;
+			fileRef = B855916AEEE60FC5B143074A /* reference */;
+		};
 		635B665511AFDE1200EF93AA /* PBXBuildFile */ = {
 			isa = PBXBuildFile;
 			fileRef = 10585711C6483F3BD789EA95 /* reference */;
 		};
+		AFA196F048138CD52C92D4FC /* PBXBuildFile */ = {
+			isa = PBXBuildFile;
+			fileRef = 9E9210DAD3EEE6F9C1FA0165 /* reference */;
+		};
+		BB4B8525905BBD281891AB3F /* PBXBuildFile */ = {
+			isa = PBXBuildFile;
+			fileRef = DE94C01F1357B3BD802C6447 /* reference */;
+		};
 		1A5A704D8FAB38647ADE51E2 /* PBXBuildFile */ = {
 			isa = PBXBuildFile;
 			fileRef = 47F424EF5903CFDB3FF650B8 /* reference */;
+		};
+		4D17EA5CB4F5066412C16533 /* PBXBuildFile */ = {
+			isa = PBXBuildFile;
+			fileRef = 986C79F8B476E7A8C5834B6A /* reference */;
+		};
+		95FF994731276AFC17E5D2C1 /* PBXBuildFile */ = {
+			isa = PBXBuildFile;
+			fileRef = E1352E87F0374B093B0A71D1 /* reference */;
 		};
 		641BEA0E313E29A8361561EE /* PBXBuildFile */ = {
 			isa = PBXBuildFile;
@@ -46,9 +62,9 @@
 			isa = PBXBuildFile;
 			fileRef = 146980E7DB0CB7D0C52F1245 /* reference */;
 		};
-		CBA7109089CCAEA948B0ABB4 /* PBXBuildFile */ = {
+		912BCABA150A2616E2CB9357 /* PBXBuildFile */ = {
 			isa = PBXBuildFile;
-			fileRef = D5862D07E74A4C7AEA23CC80 /* reference */;
+			fileRef = 6422AFA9FCFD180B3EDFF039 /* reference */;
 		};
 		9DC99878AF6CC82D71176834 /* PBXBuildFile */ = {
 			isa = PBXBuildFile;
@@ -70,25 +86,17 @@
 			isa = PBXBuildFile;
 			fileRef = BD763CC5323044C5D03C9FEA /* reference */;
 		};
+		FEC617A869899847D1891E12 /* PBXBuildFile */ = {
+			isa = PBXBuildFile;
+			fileRef = 60B0FFF47EB38DA371A01C21 /* reference */;
+		};
 		99FC6A8CA02CAE2C7D339ED0 /* PBXBuildFile */ = {
 			isa = PBXBuildFile;
 			fileRef = 0A48FCE3309F5CEFD5F0C741 /* reference */;
 		};
-		4539221CEC651F54F8C5B0F2 /* PBXBuildFile */ = {
+		5B84F870D449658C6EFDE1BF /* PBXBuildFile */ = {
 			isa = PBXBuildFile;
-			fileRef = A894E2E68EFDB8F4AC8CC975 /* reference */;
-		};
-		5166E69FD8BDAF6AD9D78A78 /* PBXBuildFile */ = {
-			isa = PBXBuildFile;
-			fileRef = 8169DCC8D91162C022B2AA95 /* reference */;
-		};
-		4D7DADD004FCE09E461F0D54 /* PBXBuildFile */ = {
-			isa = PBXBuildFile;
-			fileRef = 769BC3C52759DA5019033CD8 /* reference */;
-		};
-		DEB134AF59AC67B4DE832666 /* PBXBuildFile */ = {
-			isa = PBXBuildFile;
-			fileRef = D227CB93FE75A9C2CB3E0A9B /* reference */;
+			fileRef = AE1CB1EAEAE9BAD2370901DF /* reference */;
 		};
 		CE72DE5067A4A5ED4A279CFD /* PBXBuildFile */ = {
 			isa = PBXBuildFile;
@@ -102,17 +110,29 @@
 			isa = PBXBuildFile;
 			fileRef = 45FE701ECA21816FC70067F7 /* reference */;
 		};
+		721F8449DE293EF02DC4A295 /* PBXBuildFile */ = {
+			isa = PBXBuildFile;
+			fileRef = 0371AA175176FE3A8F568761 /* reference */;
+		};
 		D1F266A0DC6147ABDB82B817 /* PBXBuildFile */ = {
 			isa = PBXBuildFile;
 			fileRef = 186830F9202AEFB5CB119F9B /* reference */;
 		};
-		9EA929FC8FA9071383C0AC49 /* PBXBuildFile */ = {
+		7D5B69255C629C42FE60C7DE /* PBXBuildFile */ = {
 			isa = PBXBuildFile;
-			fileRef = C798722D492C8A2AD2D39F27 /* reference */;
+			fileRef = 33FDA17B6793FE8C0F517FBA /* reference */;
 		};
-		50C2967B0F4A26C905417F87 /* PBXBuildFile */ = {
+		F7DE40B94731D295B24CAFBE /* PBXBuildFile */ = {
 			isa = PBXBuildFile;
-			fileRef = 75F46FACD4F771BD729EF725 /* reference */;
+			fileRef = 5B8F58F7C7619432D247B1FE /* reference */;
+		};
+		A407843C0C928ED42DFAC2FA /* PBXBuildFile */ = {
+			isa = PBXBuildFile;
+			fileRef = D5D90E0B83639F95F09BA45C /* reference */;
+		};
+		63E81BDAB3C281FF8B6B2DE1 /* PBXBuildFile */ = {
+			isa = PBXBuildFile;
+			fileRef = 5781727EA04D435488EA42E4 /* reference */;
 		};
 		44285BA6731D7A2DE46EBE03 /* PBXBuildFile */ = {
 			isa = PBXBuildFile;
@@ -122,9 +142,13 @@
 			isa = PBXBuildFile;
 			fileRef = DCB0A954F670A7CED34D5C07 /* reference */;
 		};
-		1828D34DC2BD9C8A02DD5EF4 /* PBXBuildFile */ = {
+		3589300ADFAFD383BEC264B1 /* PBXBuildFile */ = {
 			isa = PBXBuildFile;
-			fileRef = 33A4868E1F5C6C5C1AB47496 /* reference */;
+			fileRef = C9AF4D9FCE644AB6167FA272 /* reference */;
+		};
+		2E7742FF03A49AB1C2AB5676 /* PBXBuildFile */ = {
+			isa = PBXBuildFile;
+			fileRef = 871A7419BA6E3A7FD0F4472C /* reference */;
 		};
 		51001E7D61B5D84FAA18E8B7 /* PBXBuildFile */ = {
 			isa = PBXBuildFile;
@@ -134,10 +158,6 @@
 			isa = PBXBuildFile;
 			fileRef = DF97F396D99F6FC13EC7FEF6 /* reference */;
 		};
-		C0E779EAA4A49C9489F3C64C /* PBXBuildFile */ = {
-			isa = PBXBuildFile;
-			fileRef = 19BB780996E7A02B5A2AF05D /* reference */;
-		};
 		D0ADC22F3C046CC76298F620 /* PBXBuildFile */ = {
 			isa = PBXBuildFile;
 			fileRef = 05529D7BAF9BE1F1AD75AA78 /* reference */;
@@ -146,13 +166,13 @@
 			isa = PBXBuildFile;
 			fileRef = CD774F8C46B4685BA5E70E5A /* reference */;
 		};
-		CE96496A83C36DC06A82C2AA /* PBXBuildFile */ = {
-			isa = PBXBuildFile;
-			fileRef = 45349125519805D6451E47E5 /* reference */;
-		};
 		FBC34AB49A0606F8A2692993 /* PBXBuildFile */ = {
 			isa = PBXBuildFile;
 			fileRef = E6AF20F4EF07CA3A67EAD5E1 /* reference */;
+		};
+		22759A8BCEE1A536AB4440FD /* PBXBuildFile */ = {
+			isa = PBXBuildFile;
+			fileRef = B9432A682448FC3D034C25E2 /* reference */;
 		};
 		575526D9733A9C0471698E6A /* PBXBuildFile */ = {
 			isa = PBXBuildFile;
@@ -161,10 +181,6 @@
 		D965FFE13F9D823724EC1041 /* PBXBuildFile */ = {
 			isa = PBXBuildFile;
 			fileRef = A2879EA1D749F98D8A4815E4 /* reference */;
-		};
-		0119877BF11EDFFE292CAEAD /* PBXBuildFile */ = {
-			isa = PBXBuildFile;
-			fileRef = A5EAD97573255AC71C6621F9 /* reference */;
 		};
 /* End PBXBuildFile section */
 
@@ -179,12 +195,6 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		C7AAE1A2C196E0AC80EF4661 /* PBXFileReference */ = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = Models/AttachmentModels.swift;
-			sourceTree = "<group>";
-		};
 		AF0929356FA2C8BD47373314 /* PBXFileReference */ = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -209,16 +219,46 @@
 			path = Models/PairingModels.swift;
 			sourceTree = "<group>";
 		};
+		B855916AEEE60FC5B143074A /* PBXFileReference */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = Models/PendingRequests.swift;
+			sourceTree = "<group>";
+		};
 		10585711C6483F3BD789EA95 /* PBXFileReference */ = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
 			path = Models/RemoteModels.swift;
 			sourceTree = "<group>";
 		};
+		9E9210DAD3EEE6F9C1FA0165 /* PBXFileReference */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = Models/TaskList.swift;
+			sourceTree = "<group>";
+		};
+		DE94C01F1357B3BD802C6447 /* PBXFileReference */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = Models/ToolActivity.swift;
+			sourceTree = "<group>";
+		};
 		47F424EF5903CFDB3FF650B8 /* PBXFileReference */ = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
 			path = Models/WorkspaceModels.swift;
+			sourceTree = "<group>";
+		};
+		986C79F8B476E7A8C5834B6A /* PBXFileReference */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = Networking/EventStream.swift;
+			sourceTree = "<group>";
+		};
+		E1352E87F0374B093B0A71D1 /* PBXFileReference */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = Networking/PinnedTransport.swift;
 			sourceTree = "<group>";
 		};
 		3AE02238E29D7369F97B848B /* PBXFileReference */ = {
@@ -239,10 +279,10 @@
 			path = OpenADERemoteApp.swift;
 			sourceTree = "<group>";
 		};
-		D5862D07E74A4C7AEA23CC80 /* PBXFileReference */ = {
+		6422AFA9FCFD180B3EDFF039 /* PBXFileReference */ = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
-			path = Security/ConnectionConfiguration.swift;
+			path = Security/AppLock.swift;
 			sourceTree = "<group>";
 		};
 		BD0F97A6347CA007ABC5EB9A /* PBXFileReference */ = {
@@ -275,34 +315,22 @@
 			path = State/RemoteStore.swift;
 			sourceTree = "<group>";
 		};
+		60B0FFF47EB38DA371A01C21 /* PBXFileReference */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = State/SnapshotCache.swift;
+			sourceTree = "<group>";
+		};
 		0A48FCE3309F5CEFD5F0C741 /* PBXFileReference */ = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
 			path = Views/AttachmentComposerView.swift;
 			sourceTree = "<group>";
 		};
-		A894E2E68EFDB8F4AC8CC975 /* PBXFileReference */ = {
+		AE1CB1EAEAE9BAD2370901DF /* PBXFileReference */ = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
-			path = Views/ComposerControls.swift;
-			sourceTree = "<group>";
-		};
-		8169DCC8D91162C022B2AA95 /* PBXFileReference */ = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = Views/ConnectView.swift;
-			sourceTree = "<group>";
-		};
-		769BC3C52759DA5019033CD8 /* PBXFileReference */ = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = Views/ConnectionsView.swift;
-			sourceTree = "<group>";
-		};
-		D227CB93FE75A9C2CB3E0A9B /* PBXFileReference */ = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = Views/ConversationEntryView.swift;
+			path = Views/ConversationViews.swift;
 			sourceTree = "<group>";
 		};
 		5A3316B1E1F396F60A50B944 /* PBXFileReference */ = {
@@ -323,22 +351,40 @@
 			path = Views/GitWorkspaceView.swift;
 			sourceTree = "<group>";
 		};
+		0371AA175176FE3A8F568761 /* PBXFileReference */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = Views/HomeView.swift;
+			sourceTree = "<group>";
+		};
 		186830F9202AEFB5CB119F9B /* PBXFileReference */ = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
 			path = Views/MarkdownContentView.swift;
 			sourceTree = "<group>";
 		};
-		C798722D492C8A2AD2D39F27 /* PBXFileReference */ = {
+		33FDA17B6793FE8C0F517FBA /* PBXFileReference */ = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
-			path = Views/MessageQueueView.swift;
+			path = Views/NewTaskView.swift;
 			sourceTree = "<group>";
 		};
-		75F46FACD4F771BD729EF725 /* PBXFileReference */ = {
+		5B8F58F7C7619432D247B1FE /* PBXFileReference */ = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
-			path = Views/ModelSettingsView.swift;
+			path = Views/PairingViews.swift;
+			sourceTree = "<group>";
+		};
+		D5D90E0B83639F95F09BA45C /* PBXFileReference */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = Views/PendingCardView.swift;
+			sourceTree = "<group>";
+		};
+		5781727EA04D435488EA42E4 /* PBXFileReference */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = Views/PromptComposer.swift;
 			sourceTree = "<group>";
 		};
 		12103052B988BE9E1140659D /* PBXFileReference */ = {
@@ -353,10 +399,16 @@
 			path = Views/RemoteDesignSystem.swift;
 			sourceTree = "<group>";
 		};
-		33A4868E1F5C6C5C1AB47496 /* PBXFileReference */ = {
+		C9AF4D9FCE644AB6167FA272 /* PBXFileReference */ = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
-			path = Views/SessionDetailView.swift;
+			path = Views/SettingsView.swift;
+			sourceTree = "<group>";
+		};
+		871A7419BA6E3A7FD0F4472C /* PBXFileReference */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = Views/TaskDetailView.swift;
 			sourceTree = "<group>";
 		};
 		43E9EFD250341FD42811806C /* PBXFileReference */ = {
@@ -369,12 +421,6 @@
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
 			path = Views/WorkspacePanelView.swift;
-			sourceTree = "<group>";
-		};
-		19BB780996E7A02B5A2AF05D /* PBXFileReference */ = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = Views/WorkspaceView.swift;
 			sourceTree = "<group>";
 		};
 		8873151C067A966D8A2B0623 /* PBXFileReference */ = {
@@ -407,16 +453,16 @@
 			path = PrivacyInfo.xcprivacy;
 			sourceTree = "<group>";
 		};
-		45349125519805D6451E47E5 /* PBXFileReference */ = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = ConnectionSafetyTests.swift;
-			sourceTree = "<group>";
-		};
 		E6AF20F4EF07CA3A67EAD5E1 /* PBXFileReference */ = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
 			path = ConversationProjectionTests.swift;
+			sourceTree = "<group>";
+		};
+		B9432A682448FC3D034C25E2 /* PBXFileReference */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = ProtocolTests.swift;
 			sourceTree = "<group>";
 		};
 		E98A770B3D8A64239F4C11CD /* PBXFileReference */ = {
@@ -429,12 +475,6 @@
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
 			path = UnifiedDiffTests.swift;
-			sourceTree = "<group>";
-		};
-		A5EAD97573255AC71C6621F9 /* PBXFileReference */ = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = WorkspaceModelsTests.swift;
 			sourceTree = "<group>";
 		};
 		A0A43F5E4C09892FE07BCC80 /* PBXFileReference */ = {
@@ -474,39 +514,44 @@
 		5C6B2798F181355B418BC306 /* PBXGroup */ = {
 			isa = PBXGroup;
 			children = (
-				C7AAE1A2C196E0AC80EF4661 /* reference */,
 				AF0929356FA2C8BD47373314 /* reference */,
 				2C17784512CBA843583C7739 /* reference */,
 				74B0A873318D06648A4C0400 /* reference */,
 				299E6F1F0FA7905615733BA8 /* reference */,
+				B855916AEEE60FC5B143074A /* reference */,
 				10585711C6483F3BD789EA95 /* reference */,
+				9E9210DAD3EEE6F9C1FA0165 /* reference */,
+				DE94C01F1357B3BD802C6447 /* reference */,
 				47F424EF5903CFDB3FF650B8 /* reference */,
+				986C79F8B476E7A8C5834B6A /* reference */,
+				E1352E87F0374B093B0A71D1 /* reference */,
 				3AE02238E29D7369F97B848B /* reference */,
 				B51C66E92CFDA197E236C391 /* reference */,
 				146980E7DB0CB7D0C52F1245 /* reference */,
-				D5862D07E74A4C7AEA23CC80 /* reference */,
+				6422AFA9FCFD180B3EDFF039 /* reference */,
 				BD0F97A6347CA007ABC5EB9A /* reference */,
 				91BC3DB12706806503626F65 /* reference */,
 				2C1DE1C1766CE40EE86C6942 /* reference */,
 				4CEF494E701E209927392B36 /* reference */,
 				BD763CC5323044C5D03C9FEA /* reference */,
+				60B0FFF47EB38DA371A01C21 /* reference */,
 				0A48FCE3309F5CEFD5F0C741 /* reference */,
-				A894E2E68EFDB8F4AC8CC975 /* reference */,
-				8169DCC8D91162C022B2AA95 /* reference */,
-				769BC3C52759DA5019033CD8 /* reference */,
-				D227CB93FE75A9C2CB3E0A9B /* reference */,
+				AE1CB1EAEAE9BAD2370901DF /* reference */,
 				5A3316B1E1F396F60A50B944 /* reference */,
 				1E173C8E55E8702EDE40F743 /* reference */,
 				45FE701ECA21816FC70067F7 /* reference */,
+				0371AA175176FE3A8F568761 /* reference */,
 				186830F9202AEFB5CB119F9B /* reference */,
-				C798722D492C8A2AD2D39F27 /* reference */,
-				75F46FACD4F771BD729EF725 /* reference */,
+				33FDA17B6793FE8C0F517FBA /* reference */,
+				5B8F58F7C7619432D247B1FE /* reference */,
+				D5D90E0B83639F95F09BA45C /* reference */,
+				5781727EA04D435488EA42E4 /* reference */,
 				12103052B988BE9E1140659D /* reference */,
 				DCB0A954F670A7CED34D5C07 /* reference */,
-				33A4868E1F5C6C5C1AB47496 /* reference */,
+				C9AF4D9FCE644AB6167FA272 /* reference */,
+				871A7419BA6E3A7FD0F4472C /* reference */,
 				43E9EFD250341FD42811806C /* reference */,
 				DF97F396D99F6FC13EC7FEF6 /* reference */,
-				19BB780996E7A02B5A2AF05D /* reference */,
 				8873151C067A966D8A2B0623 /* reference */,
 				86441FB398056796183719E4 /* reference */,
 				D02AD13A95DAE5ECF7B60599 /* reference */,
@@ -520,11 +565,10 @@
 		0A17CFA26D6C8199C86BC734 /* PBXGroup */ = {
 			isa = PBXGroup;
 			children = (
-				45349125519805D6451E47E5 /* reference */,
 				E6AF20F4EF07CA3A67EAD5E1 /* reference */,
+				B9432A682448FC3D034C25E2 /* reference */,
 				E98A770B3D8A64239F4C11CD /* reference */,
 				A2879EA1D749F98D8A4815E4 /* reference */,
-				A5EAD97573255AC71C6621F9 /* reference */,
 			);
 			name = OpenADERemoteTests;
 			path = ../OpenADERemoteTests;
@@ -648,39 +692,44 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				0C35AEF4EE06B61039D6D7BE /* reference */,
 				AB3091760FE639DA03848D31 /* reference */,
 				926B5D445053971321F7C82B /* reference */,
 				6291163A96B658307F019170 /* reference */,
 				271286DADD151BD120FA91DD /* reference */,
+				2BD8FAACD0F33EBC41AA768D /* reference */,
 				635B665511AFDE1200EF93AA /* reference */,
+				AFA196F048138CD52C92D4FC /* reference */,
+				BB4B8525905BBD281891AB3F /* reference */,
 				1A5A704D8FAB38647ADE51E2 /* reference */,
+				4D17EA5CB4F5066412C16533 /* reference */,
+				95FF994731276AFC17E5D2C1 /* reference */,
 				641BEA0E313E29A8361561EE /* reference */,
 				7A5BC74FE5204F00ABC043B7 /* reference */,
 				CC47279F309E86A59ADB95DD /* reference */,
-				CBA7109089CCAEA948B0ABB4 /* reference */,
+				912BCABA150A2616E2CB9357 /* reference */,
 				9DC99878AF6CC82D71176834 /* reference */,
 				2E39111BED0F213DE551340C /* reference */,
 				DDB5E1D597312A8114CA6ACA /* reference */,
 				86A9AE3D6E94356F05CC8088 /* reference */,
 				F23C5E328CCE4E8957A42AD4 /* reference */,
+				FEC617A869899847D1891E12 /* reference */,
 				99FC6A8CA02CAE2C7D339ED0 /* reference */,
-				4539221CEC651F54F8C5B0F2 /* reference */,
-				5166E69FD8BDAF6AD9D78A78 /* reference */,
-				4D7DADD004FCE09E461F0D54 /* reference */,
-				DEB134AF59AC67B4DE832666 /* reference */,
+				5B84F870D449658C6EFDE1BF /* reference */,
 				CE72DE5067A4A5ED4A279CFD /* reference */,
 				7E0C00EE764F265341203073 /* reference */,
 				5CE94036877F9E5C35C38853 /* reference */,
+				721F8449DE293EF02DC4A295 /* reference */,
 				D1F266A0DC6147ABDB82B817 /* reference */,
-				9EA929FC8FA9071383C0AC49 /* reference */,
-				50C2967B0F4A26C905417F87 /* reference */,
+				7D5B69255C629C42FE60C7DE /* reference */,
+				F7DE40B94731D295B24CAFBE /* reference */,
+				A407843C0C928ED42DFAC2FA /* reference */,
+				63E81BDAB3C281FF8B6B2DE1 /* reference */,
 				44285BA6731D7A2DE46EBE03 /* reference */,
 				98E9F881527F9975D8AB827F /* reference */,
-				1828D34DC2BD9C8A02DD5EF4 /* reference */,
+				3589300ADFAFD383BEC264B1 /* reference */,
+				2E7742FF03A49AB1C2AB5676 /* reference */,
 				51001E7D61B5D84FAA18E8B7 /* reference */,
 				E88B3349AAC0C4CE13FB87A4 /* reference */,
-				C0E779EAA4A49C9489F3C64C /* reference */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -688,11 +737,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				CE96496A83C36DC06A82C2AA /* reference */,
 				FBC34AB49A0606F8A2692993 /* reference */,
+				22759A8BCEE1A536AB4440FD /* reference */,
 				575526D9733A9C0471698E6A /* reference */,
 				D965FFE13F9D823724EC1041 /* reference */,
-				0119877BF11EDFFE292CAEAD /* reference */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -712,10 +760,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				CODE_SIGN_ENTITLEMENTS = ../OpenADERemote/OpenADERemote.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = ../OpenADERemote/Simulator.entitlements;
-				MARKETING_VERSION = 0.4.0;
+				MARKETING_VERSION = 0.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.openade.remote;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				INFOPLIST_FILE = ../OpenADERemote/Info.plist;
@@ -735,10 +783,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				CODE_SIGN_ENTITLEMENTS = ../OpenADERemote/OpenADERemote.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = ../OpenADERemote/Simulator.entitlements;
-				MARKETING_VERSION = 0.4.0;
+				MARKETING_VERSION = 0.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.openade.remote;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				INFOPLIST_FILE = ../OpenADERemote/Info.plist;

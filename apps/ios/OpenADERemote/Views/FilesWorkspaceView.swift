@@ -2,7 +2,6 @@ import SwiftUI
 
 struct FilesWorkspaceView: View {
     let projectID: String
-    var onSelect: ((String) -> Void)? = nil
     @Environment(RemoteStore.self) private var store
     @State private var path = ""
     @State private var query = ""
@@ -31,7 +30,7 @@ struct FilesWorkspaceView: View {
                 Spacer()
                 RemoteIconButton(title: "Actualizar archivos", symbol: "arrow.clockwise") { Task { await load() } }
                     .disabled(loading)
-                if onSelect == nil, store.supports("workspace.files.write") {
+                if store.isOnline {
                     RemoteIconButton(title: "Nuevo archivo", symbol: "doc.badge.plus") { newFileName = ""; showingCreate = true }
                 }
             }.padding(.horizontal, 16).padding(.vertical, 8)
@@ -60,7 +59,6 @@ struct FilesWorkspaceView: View {
                 ForEach(listing?.entries ?? []) { entry in
                     Button {
                         if entry.isDirectory { path = entry.path; query = "" }
-                        else if let onSelect { onSelect(entry.path) }
                         else { selectedFile = FileDestination(path: entry.path, create: false) }
                     } label: {
                         HStack(spacing: 10) {
@@ -112,14 +110,14 @@ struct FilesWorkspaceView: View {
         loading = true
         defer { if path == expectedPath && query == expectedQuery { loading = false } }
         do {
-            let response: RemoteDirectory = try await store.load(["v1", "projects", projectID, "files"], query: [
+            let response: RemoteDirectory = try await store.get(["v2", "projects", projectID, "files"], query: [
                 URLQueryItem(name: "path", value: expectedPath), URLQueryItem(name: "query", value: expectedQuery)
             ])
             guard path == expectedPath, query == expectedQuery, !Task.isCancelled else { return }
             listing = response; error = nil
         } catch {
             guard !(error is CancellationError), !Task.isCancelled, path == expectedPath, query == expectedQuery else { return }
-            self.error = error.localizedDescription
+            self.error = RemoteStore.readable(error)
         }
     }
 }
@@ -136,35 +134,20 @@ struct FileEditorView: View {
     @State private var loading = false
     @State private var error: String?
     @State private var confirmingClose = false
-    @State private var showingRemote = false
-    @State private var showingPending = false
+    @State private var saving = false
     @State private var wrapSource = true
-    private var key: String { "file:\(projectID):\(path)" }
     private var hasChanges: Bool { editing && (isNew && file == nil || draft != file?.content) }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 if let error { WorkspaceErrorView(message: error).padding(12) }
-                if let pending = store.pendingMutations[key] {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("Hay un guardado sin confirmar. Conservamos tu texto original.", systemImage: "tray.full")
-                            .font(.caption).foregroundStyle(.orange)
-                        Button("Revisar envío pendiente") { showingPending = true }
-                        if pending.canDiscard {
-                            Button("Recargar la versión de la PC y conservar mi borrador") {
-                                store.discardRejectedMutation(pending)
-                                if store.pendingMutations[key] == nil { Task { await load(preserveDraft: true); showingRemote = true } }
-                            }
-                        }
-                    }.font(.caption).padding(12).frame(maxWidth: .infinity, alignment: .leading)
-                }
                 if loading && file == nil && !isNew { ProgressView("Leyendo archivo…").padding() }
                 if editing {
                     TextEditor(text: $draft).font(.system(.callout, design: .monospaced))
                         .autocorrectionDisabled().textInputAutocapitalization(.never)
                         .scrollContentBackground(.hidden)
-                        .padding(.horizontal, 8).disabled(store.actionIsBusy(key) || store.pendingMutations[key] != nil)
+                        .padding(.horizontal, 8).disabled(saving)
                         .accessibilityLabel("Contenido de \(path)")
                 } else if let file {
                     SourceCodeView(content: file.content, path: path, wrapLines: wrapSource)
@@ -181,9 +164,9 @@ struct FileEditorView: View {
                 ToolbarItemGroup(placement: .confirmationAction) {
                     if editing {
                         ShareLink(item: draft) { Label("Compartir borrador", systemImage: "square.and.arrow.up") }
-                        Button(store.pendingMutations[key] == nil ? "Guardar" : "Reintentar") { Task { await save() } }
-                            .disabled(store.actionIsBusy(key) || store.phase != .connected || !hasChanges && store.pendingMutations[key] == nil)
-                    } else if store.supports("workspace.files.write"), file != nil {
+                        Button("Guardar") { Task { await save() } }
+                            .disabled(saving || !store.isOnline || !hasChanges)
+                    } else if file != nil, store.isOnline {
                         Button("Editar", systemImage: "pencil") { editing = true }
                     }
                     if !editing, file != nil {
@@ -196,41 +179,37 @@ struct FileEditorView: View {
             .task {
                 if isNew { editing = true }
                 else { await load() }
-                if case .string(let original)? = store.pendingMutations[key]?.body["content"] { draft = original; editing = true }
             }
             .interactiveDismissDisabled(hasChanges)
             .confirmationDialog("¿Cerrar sin guardar el borrador?", isPresented: $confirmingClose, titleVisibility: .visible) {
                 Button("Descartar borrador local", role: .destructive) { dismiss() }
-            } message: { Text("Podés compartir el borrador antes de cerrar. Un envío ya iniciado seguirá disponible en Envíos pendientes.") }
-            .sheet(isPresented: $showingPending) { PendingRequestsView().remoteSheet() }
-            .sheet(isPresented: $showingRemote) {
-                ReadOnlyOutputView(title: "Versión actual en la PC", output: file?.content ?? "", arguments: nil, truncated: false).remoteSheet()
-            }
+            } message: { Text("Podés compartir el borrador antes de cerrar.") }
         }
     }
 
-    private func load(preserveDraft: Bool = false) async {
+    private func load() async {
         loading = true
         defer { loading = false }
         do {
-            let response: RemoteFile = try await store.load(["v1", "projects", projectID, "file"], query: [URLQueryItem(name: "path", value: path)])
+            let response: RemoteFile = try await store.get(["v2", "projects", projectID, "file"], query: [URLQueryItem(name: "path", value: path)])
             file = response
-            if !preserveDraft { draft = response.content }
+            draft = response.content
             error = nil
-        } catch { if !(error is CancellationError) { self.error = error.localizedDescription } }
+        } catch { if !(error is CancellationError) { self.error = RemoteStore.readable(error) } }
     }
 
     private func save() async {
-        guard draft.utf8.count <= 1024 * 1024 || store.pendingMutations[key] != nil else {
+        guard draft.utf8.count <= 1024 * 1024 else {
             error = "El editor admite archivos de texto de hasta 1 MB. Tu borrador sigue disponible para compartir."; return
         }
+        saving = true
+        defer { saving = false }
         do {
-            let response: RemoteFile = try await store.mutate(key: key, label: "Guardar \(path)", method: "PUT",
-                                                            path: ["v1", "projects", projectID, "file"], body: [
+            let response: RemoteFile = try await store.send("PUT", ["v2", "projects", projectID, "file"], body: [
                 "path": .string(path), "content": .string(draft), "expected_revision": file.map { .string($0.revision) } ?? .null
             ])
             file = response; draft = response.content; error = nil; editing = false
-        } catch { if !(error is CancellationError) { self.error = error.localizedDescription } }
+        } catch { if !(error is CancellationError) { self.error = RemoteStore.readable(error) } }
     }
 }
 

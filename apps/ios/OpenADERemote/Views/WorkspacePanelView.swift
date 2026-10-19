@@ -1,62 +1,45 @@
 import SwiftUI
 
 enum WorkspaceTab: String, CaseIterable, Identifiable {
-    case changes, files, activity
+    case changes, files
     var id: String { rawValue }
-    var title: String {
-        switch self { case .changes: "Cambios"; case .files: "Archivos"; case .activity: "Actividad" }
-    }
-    var icon: String {
-        switch self { case .changes: "point.3.connected.trianglepath.dotted"; case .files: "folder"; case .activity: "waveform.path" }
-    }
+    var title: String { self == .changes ? "Cambios" : "Archivos" }
 }
 
+/// A task's project on the PC: its Git changes and its files.
 struct WorkspacePanelView: View {
     let projectID: String
-    let sessionID: String
-    var onClose: (() -> Void)?
     var onComment: ((String) -> Void)?
-    @Environment(RemoteStore.self) private var store
-    @State private var tab: WorkspaceTab = .changes
+    @Environment(\.dismiss) private var dismiss
+    @State private var tab: WorkspaceTab
 
-    init(projectID: String, sessionID: String, onClose: (() -> Void)? = nil,
-         onComment: ((String) -> Void)? = nil, initialTab: WorkspaceTab = .changes) {
-        self.projectID = projectID; self.sessionID = sessionID; self.onClose = onClose; self.onComment = onComment
+    init(projectID: String, initialTab: WorkspaceTab = .changes, onComment: ((String) -> Void)? = nil) {
+        self.projectID = projectID
+        self.onComment = onComment
         _tab = State(initialValue: initialTab)
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Picker("Vista del proyecto", selection: $tab) {
-                    ForEach(WorkspaceTab.allCases.filter { $0 != .files || store.supports("workspace.files.read") }) { item in
-                        Text(item.title).tag(item)
-                    }
-                }.pickerStyle(.segmented)
-                if let onClose {
-                    Button("Cerrar espacio de trabajo", systemImage: "xmark", action: onClose)
-                        .labelStyle(.iconOnly).buttonStyle(.plain).frame(width: 44, height: 44)
-                }
-            }.padding(12)
-            Divider()
-            switch tab {
-            case .changes:
-                if store.supports("workspace.git.read") { GitWorkspaceView(projectID: projectID, onComment: onComment) }
-                else { DiffView(projectID: projectID, onComment: onComment) }
-            case .files: FilesWorkspaceView(projectID: projectID)
-            case .activity:
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        Text("Salida de herramientas · solo lectura").font(.caption).foregroundStyle(.secondary)
-                        let activity = store.entries(sessionID: sessionID).filter { $0.kind == .tool || $0.kind == .notice }
-                        if activity.isEmpty {
-                            RemoteEmptyState(symbol: "waveform.path", title: "Sin actividad todavía", message: "Las acciones del agente y su salida aparecerán acá.")
-                        }
-                        ForEach(activity) { ConversationEntryView(entry: $0) }
-                    }.padding()
+        NavigationStack {
+            Group {
+                switch tab {
+                case .changes: GitWorkspaceView(projectID: projectID, onComment: onComment)
+                case .files: FilesWorkspaceView(projectID: projectID)
                 }
             }
-        }.background(RemoteTheme.canvas).tint(RemoteTheme.ink)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Picker("Vista del proyecto", selection: $tab) {
+                        ForEach(WorkspaceTab.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 240)
+                }
+                ToolbarItem(placement: .confirmationAction) { Button("Listo") { dismiss() } }
+            }
+            .remoteCanvas()
+        }
     }
 }
 
@@ -67,7 +50,7 @@ struct WorkspaceErrorView: View {
         RemoteCard {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                    Image(systemName: "exclamationmark.triangle").foregroundStyle(RemoteTheme.attention)
                         .accessibilityHidden(true)
                     Text(message).font(.callout).fixedSize(horizontal: false, vertical: true)
                 }

@@ -12,7 +12,7 @@ struct GitWorkspaceView: View {
     @State private var diffTarget: DiffTarget?
     @State private var commitTarget: CommitTarget?
     @State private var commitMessage = ""
-    @State private var showingPending = false
+    @State private var mutating = false
     @State private var sourceScope = ""
     @State private var didPresentInitialPanel = false
 
@@ -26,15 +26,13 @@ struct GitWorkspaceView: View {
         let status: RemoteGitStatus
     }
     private enum GitListSelection { case changes, staged }
-    private var key: String { "git:\(projectID)" }
     private var staged: [RemoteGitFile] { status?.files.filter(\.staged) ?? [] }
     private var unstaged: [RemoteGitFile] {
         status?.files.filter { $0.untracked || !$0.worktreeStatus.trimmingCharacters(in: .whitespaces).isEmpty } ?? []
     }
     private var visibleFiles: [RemoteGitFile] { selection == .changes ? unstaged : staged }
     private var canMutate: Bool {
-        sourceScope == store.connectionIdentity && store.phase == .connected && !loading
-            && !store.actionIsBusy(key) && store.pendingMutations[key] == nil && status != nil
+        sourceScope == store.connectionID.uuidString && store.isOnline && !loading && !mutating && status != nil
     }
 
     var body: some View {
@@ -43,10 +41,10 @@ struct GitWorkspaceView: View {
                 Label(status?.branch ?? "Git", systemImage: "arrow.triangle.branch")
                     .font(.subheadline.weight(.medium)).lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 4)
-                if loading || store.actionIsBusy(key) { ProgressView().controlSize(.small) }
+                if loading || mutating { ProgressView().controlSize(.small) }
                 Menu {
                     Button("Actualizar", systemImage: "arrow.clockwise") { Task { await load() } }.disabled(loading)
-                    if store.supports("workspace.git.stage"), !visibleFiles.isEmpty {
+                    if !visibleFiles.isEmpty {
                         Button(selection == .changes ? "Preparar todos" : "Quitar todos de preparación",
                                systemImage: selection == .changes ? "plus" : "minus") {
                             let files = visibleFiles.map(\.path)
@@ -66,12 +64,6 @@ struct GitWorkspaceView: View {
             }.padding(.horizontal, 16).padding(.bottom, 10)
 
             if let error { WorkspaceErrorView(message: error) { Task { await load() } }.padding(.horizontal, 16) }
-            if store.pendingMutations[key] != nil {
-                Button { showingPending = true } label: {
-                    Label("Revisar operación Git pendiente", systemImage: "arrow.clockwise")
-                        .font(.subheadline).frame(maxWidth: .infinity, alignment: .leading).padding(14)
-                }.buttonStyle(.plain).background(RemoteTheme.raised).padding(.bottom, 8)
-            }
             if status == nil, loading {
                 ProgressView("Leyendo cambios…").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if visibleFiles.isEmpty, error == nil {
@@ -93,7 +85,7 @@ struct GitWorkspaceView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if store.supports("workspace.git.commit"), !staged.isEmpty {
+            if !staged.isEmpty {
                 Button {
                     if let status { commitTarget = CommitTarget(status: status) }
                 } label: {
@@ -111,7 +103,7 @@ struct GitWorkspaceView: View {
         }
         .background(RemoteTheme.canvas).tint(RemoteTheme.ink)
         .task {
-            sourceScope = store.connectionIdentity
+            sourceScope = store.connectionID.uuidString
             await load()
             #if DEBUG
             guard !didPresentInitialPanel else { return }
@@ -130,7 +122,6 @@ struct GitWorkspaceView: View {
                 await commit(message: message, expectedRevision: target.status.revision)
             }.remoteSheet()
         }
-        .sheet(isPresented: $showingPending, onDismiss: { Task { await load() } }) { PendingRequestsView().remoteSheet() }
     }
 
     private func filterChip(_ title: String, count: Int, value: GitListSelection) -> some View {
@@ -160,24 +151,20 @@ struct GitWorkspaceView: View {
                         .background(RemoteTheme.surface, in: RoundedRectangle(cornerRadius: 6))
                 }.frame(minHeight: 56).contentShape(Rectangle())
             }.buttonStyle(.plain)
-            if store.supports("workspace.git.stage") {
-                Button {
-                    Task { await index(isStaged ? "unstage" : "stage", paths: [file.path]) }
-                } label: {
-                    Image(systemName: isStaged ? "minus" : "plus")
-                        .font(.body).foregroundStyle(RemoteTheme.muted).frame(width: 44, height: 44)
-                }
-                .buttonStyle(.plain).disabled(!canMutate)
-                .accessibilityLabel("\(isStaged ? "Quitar de preparación" : "Preparar") \(file.path)")
+            Button {
+                Task { await index(isStaged ? "unstage" : "stage", paths: [file.path]) }
+            } label: {
+                Image(systemName: isStaged ? "minus" : "plus")
+                    .font(.body).foregroundStyle(RemoteTheme.muted).frame(width: 44, height: 44)
             }
+            .buttonStyle(.plain).disabled(!canMutate)
+            .accessibilityLabel("\(isStaged ? "Quitar de preparación" : "Preparar") \(file.path)")
         }
         .contextMenu {
             Button("Ver cambios", systemImage: "doc.text.magnifyingglass") { diffTarget = DiffTarget(path: file.path, staged: isStaged) }
-            if store.supports("workspace.git.stage") {
-                Button(isStaged ? "Quitar de preparación" : "Preparar archivo", systemImage: isStaged ? "minus" : "plus") {
-                    Task { await index(isStaged ? "unstage" : "stage", paths: [file.path]) }
-                }.disabled(!canMutate)
-            }
+            Button(isStaged ? "Quitar de preparación" : "Preparar archivo", systemImage: isStaged ? "minus" : "plus") {
+                Task { await index(isStaged ? "unstage" : "stage", paths: [file.path]) }
+            }.disabled(!canMutate)
         }
     }
 
@@ -188,16 +175,16 @@ struct GitWorkspaceView: View {
     }
 
     private func load() async {
-        guard !loading, sourceScope == store.connectionIdentity else { return }
+        guard !loading, sourceScope == store.connectionID.uuidString else { return }
         let scope = sourceScope
         loading = true
-        defer { if scope == store.connectionIdentity { loading = false } }
+        defer { if scope == store.connectionID.uuidString { loading = false } }
         do {
-            let response: RemoteGitStatus = try await store.load(["v1", "projects", projectID, "git", "status"])
-            guard scope == store.connectionIdentity, !Task.isCancelled else { return }
+            let response: RemoteGitStatus = try await store.get(["v2", "projects", projectID, "git", "status"])
+            guard scope == store.connectionID.uuidString, !Task.isCancelled else { return }
             status = response; error = nil
         } catch {
-            if !(error is CancellationError), scope == store.connectionIdentity { self.error = error.localizedDescription }
+            if !(error is CancellationError), scope == store.connectionID.uuidString { self.error = RemoteStore.readable(error) }
         }
     }
 
@@ -215,14 +202,15 @@ struct GitWorkspaceView: View {
 
     private func mutate(_ action: String, body: [String: JSONValue]) async -> Bool {
         let scope = sourceScope
-        guard scope == store.connectionIdentity else { return false }
+        guard scope == store.connectionID.uuidString else { return false }
+        mutating = true
+        defer { mutating = false }
         do {
-            let updated: RemoteGitStatus = try await store.mutate(key: key, label: action == "commit" ? "Crear commit" : "Preparar cambios Git",
-                                                                  method: "POST", path: ["v1", "projects", projectID, "git", action], body: body)
-            guard scope == store.connectionIdentity else { return false }
+            let updated: RemoteGitStatus = try await store.send("POST", ["v2", "projects", projectID, "git", action], body: body)
+            guard scope == store.connectionID.uuidString else { return false }
             status = updated; error = nil; return true
         } catch {
-            if !(error is CancellationError), scope == store.connectionIdentity { self.error = error.localizedDescription }
+            if !(error is CancellationError), scope == store.connectionID.uuidString { self.error = RemoteStore.readable(error) }
             return false
         }
     }
@@ -248,8 +236,6 @@ private struct GitCommitView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var saving = false
     @State private var failed = false
-    @State private var showingPending = false
-    private var key: String { "git:\(projectID)" }
     private var staged: [RemoteGitFile] { status.files.filter(\.staged) }
 
     var body: some View {
@@ -261,7 +247,7 @@ private struct GitCommitView: View {
                     TextField("Describí este cambio", text: $message, axis: .vertical)
                         .lineLimit(3...7).font(.title3).padding(18)
                         .background(RemoteTheme.surface, in: RoundedRectangle(cornerRadius: 20))
-                        .disabled(saving || store.pendingMutations[key] != nil)
+                        .disabled(saving)
                         .accessibilityLabel("Mensaje del commit")
                     VStack(alignment: .leading, spacing: 16) {
                         Text(staged.count == 1 ? "1 archivo preparado" : "\(staged.count) archivos preparados")
@@ -273,14 +259,9 @@ private struct GitCommitView: View {
                             }
                         }
                     }
-                    if failed || store.pendingMutations[key] != nil {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text(store.pendingMutations[key] == nil ? "No se pudo crear el commit. Tu mensaje sigue disponible." : "El envío requiere revisión antes de crear otro commit.")
-                                .font(.subheadline).foregroundStyle(RemoteTheme.muted)
-                            if store.pendingMutations[key] != nil {
-                                Button("Revisar envío original", systemImage: "arrow.clockwise") { showingPending = true }
-                            }
-                        }
+                    if failed {
+                        Text("No se pudo crear el commit. Tu mensaje sigue disponible.")
+                            .font(.subheadline).foregroundStyle(RemoteTheme.muted)
                     }
                 }.padding(20)
             }
@@ -301,16 +282,12 @@ private struct GitCommitView: View {
                     }
                 }
                 .buttonStyle(RemotePrimaryButtonStyle())
-                .disabled(saving || store.phase != .connected || store.pendingMutations[key] != nil
-                          || message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(saving || !store.isOnline || message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .padding(20).background(RemoteTheme.canvas)
             }
             .navigationTitle("Crear commit").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cerrar") { dismiss() }.disabled(saving) } }
             .interactiveDismissDisabled(saving)
-            .sheet(isPresented: $showingPending, onDismiss: {
-                if store.pendingMutations[key] == nil { dismiss() }
-            }) { PendingRequestsView().remoteSheet() }
             .remoteCanvas()
         }
     }

@@ -1,16 +1,22 @@
 import Foundation
 
+/// What the PC's QR code carries: where it answers, the certificate the phone
+/// pins, and a secret good once for ten minutes.
 struct PairingPayload: Codable, Equatable, Identifiable, Sendable {
     let version: Int
-    let baseURL: String
+    let routes: [String]
+    let fingerprint: String
+    let serverID: String
     let pairingID: String
     let secret: String
     let expiresAt: Int64
     let label: String
     var id: String { pairingID }
+    var shortFingerprint: String { CertificatePin.short(fingerprint) }
+
     enum CodingKeys: String, CodingKey {
-        case version, secret, label
-        case baseURL = "base_url"
+        case version, routes, fingerprint, secret, label
+        case serverID = "server_id"
         case pairingID = "pairing_id"
         case expiresAt = "expires_at"
     }
@@ -29,46 +35,48 @@ struct PairingPayload: Codable, Equatable, Identifiable, Sendable {
             guard let decoded = Data(base64Encoded: base64) else { throw PairingError.invalidCode }
             data = decoded
         }
-        let payload: PairingPayload
-        do { payload = try JSONDecoder().decode(PairingPayload.self, from: data) }
-        catch { throw PairingError.invalidCode }
-        guard payload.version == 1, UUID(uuidString: payload.pairingID) != nil,
+        struct Version: Decodable { let version: Int }
+        guard let version = try? JSONDecoder().decode(Version.self, from: data) else { throw PairingError.invalidCode }
+        guard version.version == 2 else { throw PairingError.unsupportedVersion }
+        guard let payload = try? JSONDecoder().decode(PairingPayload.self, from: data) else { throw PairingError.invalidCode }
+        guard (1...8).contains(payload.routes.count), payload.routes.allSatisfy({ (try? RemoteRoute.url($0)) != nil }),
+              CertificatePin.isValid(payload.fingerprint),
+              UUID(uuidString: payload.serverID) != nil, UUID(uuidString: payload.pairingID) != nil,
               payload.secret.utf8.count == 64, payload.secret.allSatisfy({ $0.isHexDigit && $0.isASCII }),
               !payload.label.isEmpty, payload.label.utf8.count <= 256 else { throw PairingError.invalidCode }
-        _ = try ConnectionConfiguration(address: payload.baseURL, token: "validation")
         guard Double(payload.expiresAt) > now.timeIntervalSince1970 else { throw PairingError.expired }
         return payload
     }
 }
 
-struct PendingPairing: Codable, Sendable {
-    let payload: PairingPayload
-    let requestID: String
-    let deviceName: String
-}
-
+/// `POST /v2/pair`: this phone's own token, and what the PC is.
 struct PairingResult: Decodable, Sendable {
-    let version: Int
-    let baseURL: String
     let deviceID: String
     let deviceName: String
     let token: String
+    let serverID: String
+    let name: String
+    let fingerprint: String
+    let routes: [String]
     enum CodingKeys: String, CodingKey {
-        case version, token
-        case baseURL = "base_url"
+        case token, name, fingerprint, routes
         case deviceID = "device_id"
         case deviceName = "device_name"
+        case serverID = "server_id"
     }
 }
 
-enum PairingError: LocalizedError {
-    case invalidCode, expired, pending, cameraUnavailable
+enum PairingError: LocalizedError, Equatable {
+    case invalidCode, expired, unsupportedVersion, cameraUnavailable, unreachable, wrongComputer, certificateMismatch
     var errorDescription: String? {
         switch self {
         case .invalidCode: "El código no es un emparejamiento válido de openADE."
-        case .expired: "El código venció. Generá otro desde tu PC."
-        case .pending: "Primero reintentá o descartá el emparejamiento pendiente."
+        case .expired: "El código venció. Generá otro desde openADE en tu PC."
+        case .unsupportedVersion: "Este código es de otra versión de openADE. Actualizá openADE en tu PC y esta app."
         case .cameraUnavailable: "No se pudo usar la cámara. Permití el acceso en Ajustes o pegá el enlace de emparejamiento."
+        case .unreachable: "No encontramos tu PC en ninguna de sus direcciones. Revisá que openADE esté abierto y que el iPhone esté en la misma red."
+        case .wrongComputer: "La PC que respondió no es la del código. Por seguridad no se emparejó."
+        case .certificateMismatch: "Una dirección respondió con otro certificado. Por seguridad no se emparejó."
         }
     }
 }

@@ -16,7 +16,7 @@ struct QRScannerView: View {
                     }
                 VStack(spacing: 10) {
                     Text("Apuntá al código de tu PC").font(.headline)
-                    Text("El QR conecta este iPhone con openADE. Después vas a poder revisar qué computadora estás agregando.")
+                    Text("Está en openADE → Ajustes → Remoto. Después vas a revisar qué PC estás agregando.")
                         .font(.subheadline).foregroundStyle(.white.opacity(0.8))
                 }
                 .multilineTextAlignment(.center).foregroundStyle(.white).padding(20)
@@ -97,51 +97,4 @@ private final class ScannerController: UIViewController, AVCaptureMetadataOutput
     }
 
     func stop() { active = false; let session = capture; queue.async { if session.isRunning { session.stopRunning() } } }
-}
-
-struct PairingReviewView: View {
-    let payload: PairingPayload
-    @Environment(RemoteStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
-    @State private var deviceName = UIDevice.current.name
-    @State private var discarding = false
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    Label(payload.label, systemImage: "desktopcomputer").font(.title3.weight(.medium))
-                    Text(payload.baseURL).font(.callout).foregroundStyle(RemoteTheme.muted).textSelection(.enabled)
-                    Text("Confirmá que esta es tu PC. El enlace entrega a este iPhone un acceso propio que podés revocar desde el host.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                .listRowBackground(RemoteTheme.surface)
-                Section("Este dispositivo") {
-                    TextField("Nombre", text: $deviceName)
-                        .disabled(store.library.pendingPairing != nil)
-                }
-                .listRowBackground(RemoteTheme.surface)
-                Section {
-                    Button(store.isConnecting ? "Conectando…" : store.library.pendingPairing == nil ? "Conectar esta PC" : "Reintentar emparejamiento") {
-                        Task { if await store.pair(payload, deviceName: deviceName) { dismiss() } }
-                    }.frame(minHeight: 44).disabled(store.isConnecting || deviceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    if store.isConnecting { ProgressView() }
-                    if store.library.pendingPairing != nil {
-                        Button("Descartar emparejamiento pendiente", role: .destructive) { discarding = true }.disabled(store.isConnecting)
-                    }
-                }
-                .listRowBackground(RemoteTheme.surface)
-                if let notice = store.notice { Section { WorkspaceErrorView(message: notice) } }
-            }
-            .scrollContentBackground(.hidden)
-            .remoteCanvas()
-            .navigationTitle("Emparejar computadora").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cerrar") { dismiss() }.disabled(store.isConnecting) } }
-            .interactiveDismissDisabled(store.isConnecting)
-            .onAppear { if let pending = store.library.pendingPairing { deviceName = pending.deviceName } }
-            .confirmationDialog("¿Descartar este emparejamiento?", isPresented: $discarding, titleVisibility: .visible) {
-                Button("Descartar", role: .destructive) { store.discardPendingPairing(); dismiss() }
-            } message: { Text("Si la PC llegó a crear un acceso, podés revocarlo desde su lista de dispositivos. Para volver a intentar usá un QR nuevo.") }
-        }
-    }
 }

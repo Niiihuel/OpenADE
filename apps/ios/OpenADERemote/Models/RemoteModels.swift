@@ -1,66 +1,97 @@
 import Foundation
 
+/// A task as the PC's sidebar shows it: native, ACP or a CLI in a terminal.
+struct RemoteTask: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let title: String
+    let project: String
+    let agent: String
+    let backend: String
+    let updatedAtMS: Int64
+    let pinned: Bool
+    let unread: Bool
+    /// `idle`, `running` or `waiting` (for the person).
+    let state: String
+    let queued: Int
+    /// False for CLI tasks: they run in a terminal on the PC and have no chat here.
+    let chat: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, project, agent, backend, pinned, unread, state, queued, chat
+        case updatedAtMS = "updated_at_ms"
+    }
+
+    var isWaiting: Bool { state == "waiting" }
+    var isRunning: Bool { state == "running" || state == "waiting" }
+    var updatedAt: Date { Date(timeIntervalSince1970: Double(updatedAtMS) / 1_000) }
+    var displayTitle: String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Nueva tarea" : trimmed
+    }
+    var stateTitle: String {
+        switch state {
+        case "running": "Trabajando"
+        case "waiting": "Te necesita"
+        default: "Lista"
+        }
+    }
+
+    func with(title: String? = nil, pinned: Bool? = nil, unread: Bool? = nil) -> RemoteTask {
+        RemoteTask(id: id, title: title ?? self.title, project: project, agent: agent, backend: backend,
+                   updatedAtMS: updatedAtMS, pinned: pinned ?? self.pinned, unread: unread ?? self.unread,
+                   state: state, queued: queued, chat: chat)
+    }
+}
+
 struct RemoteProject: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let name: String
     let path: String
 }
 
-struct RemoteSession: Codable, Identifiable, Hashable, Sendable {
-    let id: String
-    let projectID: String
-    let title: String
-    let status: String
-    let updatedAtMS: Int64
-    let pendingPermissions: [RemotePermission]
-    let activeTurnID: String?
-    let archived: Bool?
-    let favorite: Bool?
-    let origin: String?
-    let canStartTurn: Bool?
-    let canControlActive: Bool?
+/// An agent a new task can be started with.
+struct RemoteAgent: Codable, Identifiable, Hashable, Sendable {
+    let backend: String
+    let name: String
+    var id: String { backend }
+}
 
+struct ServerInfo: Codable, Hashable, Sendable {
+    let name: String
+    let serverID: String
+    let routes: [String]
+    let push: Bool
     enum CodingKeys: String, CodingKey {
-        case id, title, status, archived, favorite
-        case projectID = "project_id"
-        case updatedAtMS = "updated_at_ms"
-        case pendingPermissions = "pending_permissions"
-        case activeTurnID = "active_turn_id"
-        case origin
-        case canStartTurn = "can_start_turn"
-        case canControlActive = "can_control_active"
-    }
-
-    var isBusy: Bool { status == "running" || status == "waiting_permission" }
-    var updatedAt: Date { Date(timeIntervalSince1970: Double(updatedAtMS) / 1_000) }
-    var statusTitle: String {
-        switch status {
-        case "idle": "Lista"
-        case "running": "Trabajando"
-        case "waiting_permission": "Necesita aprobación"
-        case "completed": "Completada"
-        case "failed": "Con error"
-        case "cancelled": "Detenida"
-        case "interrupted": "Interrumpida"
-        default: "Estado desconocido"
-        }
+        case name, routes, push
+        case serverID = "server_id"
     }
 }
 
-struct RemotePermission: Codable, Identifiable, Hashable, Sendable {
-    let requestID: String
-    let toolCallID: String
-    let toolName: String
-    let arguments: JSONValue
-    let argumentsTruncated: Bool?
-    var id: String { requestID }
+/// What the stream's `overview` event carries, and what is cached for offline reading.
+struct TaskListSnapshot: Codable, Equatable, Sendable {
+    var tasks: [RemoteTask] = []
+    var projects: [RemoteProject] = []
+    var agents: [RemoteAgent] = []
+}
 
+struct OverviewResponse: Decodable, Sendable {
+    let server: ServerInfo
+    let tasks: [RemoteTask]
+    let projects: [RemoteProject]
+    let agents: [RemoteAgent]
+    var snapshot: TaskListSnapshot { TaskListSnapshot(tasks: tasks, projects: projects, agents: agents) }
+}
+
+/// `GET /.well-known/openade`: answered without a token, so the phone can
+/// check it reached its own PC before it sends one.
+struct ServerIdentity: Decodable, Sendable {
+    let api: Int
+    let name: String
+    let serverID: String
+    let fingerprint: String
     enum CodingKeys: String, CodingKey {
-        case arguments
-        case requestID = "request_id"
-        case toolCallID = "tool_call_id"
-        case toolName = "tool_name"
-        case argumentsTruncated = "arguments_truncated"
+        case api, name, fingerprint
+        case serverID = "server_id"
     }
 }
 
@@ -89,6 +120,21 @@ enum JSONValue: Codable, Hashable, Sendable {
         }
     }
 
+    subscript(key: String) -> JSONValue? {
+        if case .object(let object) = self { return object[key] }
+        return nil
+    }
+    var stringValue: String? { if case .string(let text) = self { return text }; return nil }
+    var arrayValue: [JSONValue]? { if case .array(let items) = self { return items }; return nil }
+    var boolValue: Bool? { if case .bool(let bool) = self { return bool }; return nil }
+
+    /// Compact JSON with sorted keys: what an answer string or a test compares.
+    var compactText: String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        return (try? encoder.encode(self)).map { String(decoding: $0, as: UTF8.self) } ?? ""
+    }
+
     var displayText: String {
         if case .string(let text) = self { return text }
         let encoder = JSONEncoder()
@@ -98,20 +144,20 @@ enum JSONValue: Codable, Hashable, Sendable {
     }
 }
 
-struct RemoteEvent: Decodable, Sendable {
+/// One public journal event. The same shape v1 projected, now streamed.
+struct RemoteEvent: Codable, Equatable, Sendable {
     let seq: Int64
     let timestampMS: Int64
     let type: String
-    let text: String?
-    let turnID: String?
-
-    let messageID: String?
-    let requestID: String?
-    let toolCallID: String?
-    let toolName: String?
-    let arguments: JSONValue?
-    let decision: String?
-    let isError: Bool?
+    var text: String? = nil
+    var turnID: String? = nil
+    var messageID: String? = nil
+    var requestID: String? = nil
+    var toolCallID: String? = nil
+    var toolName: String? = nil
+    var arguments: JSONValue? = nil
+    var decision: String? = nil
+    var isError: Bool? = nil
 
     enum CodingKeys: String, CodingKey {
         case seq, type, text, arguments, decision
@@ -125,51 +171,37 @@ struct RemoteEvent: Decodable, Sendable {
     }
 }
 
-struct EventPage: Decodable, Sendable {
+/// `GET /v2/tasks/{id}/history`: a window back to the last few prompts.
+struct TaskHistory: Codable, Sendable {
     let events: [RemoteEvent]
-    let nextCursor: Int64
+    let pending: [PendingRequest]
+    /// The journal's last sequence: where the stream goes on from.
+    let cursor: Int64
     let hasMore: Bool
     enum CodingKeys: String, CodingKey {
-        case events
-        case nextCursor = "next_cursor"
+        case events, pending, cursor
         case hasMore = "has_more"
     }
 }
 
-struct ProjectDiff: Decodable, Sendable {
-    let diff: String
-    let truncated: Bool
-    let includesUntracked: Bool?
+struct StreamEventsPayload: Decodable { let task: String; let events: [RemoteEvent] }
+struct StreamPendingPayload: Decodable { let task: String; let pending: [PendingRequest] }
+struct StreamTaskPayload: Decodable { let task: String }
+
+struct UploadedFile: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let filename: String
+    let sizeBytes: Int64
     enum CodingKeys: String, CodingKey {
-        case diff, truncated
-        case includesUntracked = "includes_untracked"
+        case id, filename
+        case sizeBytes = "size_bytes"
     }
 }
 
-enum TurnMode: String, Codable, CaseIterable, Identifiable, Sendable {
-    case plan, build
-    var id: String { rawValue }
-    var title: String { self == .plan ? "Planear" : "Construir" }
+enum PermissionDecision: String, Sendable {
+    case allow
+    case allowAlways = "allow_always"
+    case deny
 }
 
-struct PendingAction: Codable, Sendable {
-    enum Kind: String, Codable, Sendable { case createSession, sendTurn, steerTurn, cancelTurn }
-    let requestID: String
-    let kind: Kind
-    let resourceID: String
-    let prompt: String?
-    let mode: TurnMode?
-    let turnID: String?
-    var attachmentIDs: [String]? = nil
-    var options: RemoteTurnOptions? = nil
-
-    var key: String { "\(kind.rawValue):\(resourceID)" }
-}
-
-enum PendingActionRetentionPolicy {
-    static func mayDiscardAfterRejection(status: Int, code: String) -> Bool {
-        // A conflict may describe a durable operation whose outcome is unknown.
-        // Keep its request ID unless the host proves there was no accepted effect.
-        [400, 404, 422].contains(status) || (status == 413 && code == "invalid_request")
-    }
-}
+enum MessageDelivery: String, Sendable { case auto, queue }

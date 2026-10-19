@@ -52,23 +52,19 @@ xcrun simctl io "$OPENADE_SIMULATOR_ID" screenshot build/reports/screenshot.png
 # Explicit DEBUG-only fixtures exercise the internal layouts without a live
 # host or credentials. These screenshots are labeled fixture-* and are never
 # evidence of a real PC session; Release builds exclude the fixture code.
-# Warm up the first-use keyboard before the composer captures. Its one-time
-# QuickPath introduction otherwise covers the first focused fixture.
+# Warm up the first-use keyboard before the captures: its one-time QuickPath
+# introduction otherwise covers the first fixture that focuses a field.
 xcrun simctl terminate "$OPENADE_SIMULATOR_ID" dev.openade.remote || true
-xcrun simctl launch "$OPENADE_SIMULATOR_ID" dev.openade.remote --ui-fixture=permissions
+xcrun simctl launch "$OPENADE_SIMULATOR_ID" dev.openade.remote --ui-fixture=new-task
 sleep 3
-for OPENADE_FIXTURE_SCENE in projects empty new-task composer attachments permissions models advanced chat files changes git-diff git-commit git-comment source connections large permissions-large models-large; do
+for OPENADE_FIXTURE_SCENE in tasks tasks-empty tasks-offline chat chat-queue tools permission question cli new-task settings pairing lock files changes git-diff git-commit git-comment source large; do
   xcrun simctl terminate "$OPENADE_SIMULATOR_ID" dev.openade.remote || true
   xcrun simctl launch "$OPENADE_SIMULATOR_ID" dev.openade.remote "--ui-fixture=$OPENADE_FIXTURE_SCENE"
   sleep 3
   xcrun simctl io "$OPENADE_SIMULATOR_ID" screenshot "build/reports/fixture-$OPENADE_FIXTURE_SCENE.png"
 done
 xcrun simctl ui "$OPENADE_SIMULATOR_ID" appearance light
-xcrun simctl terminate "$OPENADE_SIMULATOR_ID" dev.openade.remote || true
-xcrun simctl launch "$OPENADE_SIMULATOR_ID" dev.openade.remote --ui-fixture=chat
-sleep 2
-xcrun simctl io "$OPENADE_SIMULATOR_ID" screenshot build/reports/fixture-chat-light.png
-for OPENADE_FIXTURE_SCENE in git-diff permissions; do
+for OPENADE_FIXTURE_SCENE in tasks chat permission question; do
   xcrun simctl terminate "$OPENADE_SIMULATOR_ID" dev.openade.remote || true
   xcrun simctl launch "$OPENADE_SIMULATOR_ID" dev.openade.remote "--ui-fixture=$OPENADE_FIXTURE_SCENE"
   sleep 3

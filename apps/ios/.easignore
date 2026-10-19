@@ -32,6 +32,7 @@
 !OpenADERemote/Assets.xcassets
 !OpenADERemote/Assets.xcassets/AppIcon.appiconset
 !OpenADERemote/Assets.xcassets/AccentColor.colorset
+!OpenADERemote/Assets.xcassets/BrandMark.imageset
 !OpenADERemote/Assets.xcassets/**/*.json
 !OpenADERemote/Assets.xcassets/**/*.png
 !OpenADERemoteTests

@@ -2,10 +2,10 @@ import SwiftUI
 import UserNotifications
 import Observation
 
-struct NotificationDestination: Identifiable {
+struct NotificationDestination: Identifiable, Equatable {
     let id = UUID()
     let deviceID: String
-    let sessionID: String
+    let taskID: String
 }
 
 @MainActor @Observable
@@ -44,46 +44,24 @@ final class NativeAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificati
     }
 
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
-        Task { @MainActor in NativeNotifications.shared.error = "No se pudo registrar este iPhone para notificaciones. \(error.localizedDescription)" }
+        Task { @MainActor in NativeNotifications.shared.error = "No se pudo registrar este iPhone para avisos. \(error.localizedDescription)" }
     }
 
+    /// The app shows the same thing live while it is open.
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         completionHandler([])
     }
 
+    /// Tapping a notice opens its task, on the PC that sent it.
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         let content = response.notification.request.content.userInfo["openade"] as? [String: Any]
-        if content?["version"] as? Int == 1,
+        if content?["version"] as? Int == 2,
            let deviceID = content?["device_id"] as? String, !deviceID.isEmpty,
-           let sessionID = content?["session_id"] as? String, !sessionID.isEmpty {
-            Task { @MainActor in NativeNotifications.shared.destination = NotificationDestination(deviceID: deviceID, sessionID: sessionID) }
+           let taskID = content?["session_id"] as? String, !taskID.isEmpty {
+            Task { @MainActor in NativeNotifications.shared.destination = NotificationDestination(deviceID: deviceID, taskID: taskID) }
         }
         completionHandler()
-    }
-}
-
-struct NotificationSettingsSection: View {
-    @Environment(RemoteStore.self) private var store
-    @State private var changing = false
-    private var notifications: NativeNotifications { .shared }
-    var body: some View {
-        Section("Notificaciones de esta PC") {
-            Toggle("Avisar cuando necesite atención", isOn: Binding(get: { store.pushEnabled }, set: { enabled in
-                Task {
-                    let scope = store.connectionIdentity
-                    changing = true
-                    let allowed: Bool
-                    if enabled { allowed = await notifications.requestAccess() } else { allowed = true }
-                    if allowed, scope == store.connectionIdentity { await store.setPushEnabled(enabled, token: notifications.token) }
-                    changing = false
-                }
-            })).disabled(changing)
-            if changing { ProgressView() }
-            if let error = store.pushError ?? notifications.error { Text(error).font(.caption).foregroundStyle(.orange) }
-            Text("Recibí un aviso al terminar un turno o cuando el agente requiera aprobación. El aviso no incluye código ni texto de la conversación.")
-                .font(.footnote).foregroundStyle(.secondary)
-        }
     }
 }

@@ -1,15 +1,15 @@
 {
   "expo": {
-    "name": "openADE Remote",
+    "name": "openADE",
     "slug": "openade-remote",
     "owner": "niihuel",
-    "version": "0.4.0",
+    "version": "0.5.0",
     "platforms": [
       "ios"
     ],
     "ios": {
       "bundleIdentifier": "dev.openade.remote",
-      "buildNumber": "4",
+      "buildNumber": "5",
       "supportsTablet": true,
       "config": {
         "usesNonExemptEncryption": false
