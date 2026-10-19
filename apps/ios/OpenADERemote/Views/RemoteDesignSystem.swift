@@ -179,6 +179,7 @@ struct ConnectionPill: View {
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 16)
+            .padding(.vertical, 6)
             .accessibilityLabel(content.title)
             .accessibilityHint(store.connection == .revoked ? "Abre el emparejamiento" : "Reintenta la conexión")
             .transition(.move(edge: .top).combined(with: .opacity))
@@ -216,9 +217,10 @@ extension View {
             .tint(RemoteTheme.ink)
     }
 
+    /// The pill takes its own room at the top, so it never hides a row.
     func connectionPill(onRevoked: (() -> Void)? = nil) -> some View {
-        overlay(alignment: .top) {
-            ConnectionPill(onRevoked: onRevoked).padding(.top, 6)
+        safeAreaInset(edge: .top, spacing: 0) {
+            ConnectionPill(onRevoked: onRevoked)
         }
     }
 }

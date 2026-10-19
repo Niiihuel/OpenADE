@@ -138,5 +138,23 @@ final class RemoteModelsTests: XCTestCase {
         let pairing = String(decoding: try JSONEncoder().encode(DebugUIFixtures.pairingPayload), as: UTF8.self)
         XCTAssertEqual(try PairingPayload.parse(pairing), DebugUIFixtures.pairingPayload)
     }
+
+    /// A link naming a saved PC with another certificate must not replace its token.
+    @MainActor
+    func testPairingNeverReplacesASavedPCsCertificate() async {
+        let store = RemoteStore()
+        DebugUIFixtures.load("tasks", into: store)
+        let saved = DebugUIFixtures.pairingPayload
+        let impostor = PairingPayload(version: 2, routes: ["https://203.0.113.9:7787"], fingerprint: String(repeating: "e", count: 64),
+                                      serverID: saved.serverID, pairingID: saved.pairingID, secret: saved.secret,
+                                      expiresAt: saved.expiresAt, label: "nixos")
+        do {
+            try await store.pair(impostor, deviceName: "iPhone", requestID: UUID().uuidString)
+            XCTFail("pairing replaced a saved certificate")
+        } catch {
+            XCTAssertEqual(error as? PairingError, .changedCertificate)
+        }
+        XCTAssertEqual(store.activeComputer?.fingerprint, DebugUIFixtures.fingerprint)
+    }
     #endif
 }

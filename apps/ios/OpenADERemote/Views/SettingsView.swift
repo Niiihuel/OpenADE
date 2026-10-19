@@ -48,7 +48,7 @@ struct SettingsView: View {
                     } header: {
                         Text("Avisos de \(store.computerName)")
                     } footer: {
-                        Text("Cuando una tarea necesita tu permiso, te hace una pregunta o termina. Solo llevan el título de la tarea, y la PC no avisa mientras la estás usando.")
+                        Text("Cuando una tarea necesita tu permiso, te hace una pregunta o termina. El aviso solo dice qué pasó, nunca el proyecto ni la tarea, y la PC no avisa mientras la estás usando.")
                     }
                 }
 

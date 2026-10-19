@@ -91,7 +91,8 @@ documented `POST /v1/bundleIdCapabilities` API before EAS continued signing.
 Physical push delivery still requires verification on the registered iPhone.
 Push events come from the openADE window when push is configured on the PC:
 a task needs a permission, asks a question, finished or failed. The PC does not
-push while its window has focus, and a notice carries only the task's title.
+push while its window has focus, and a notice only says what happened
+("openADE" and "Necesita tu permiso"), never the project or the task.
 
 The native resource phase includes the opaque 1024px AppIcon asset and
 `PrivacyInfo.xcprivacy`. The privacy manifest declares the app-only UserDefaults
