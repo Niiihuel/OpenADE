@@ -349,6 +349,7 @@ final class RemoteStore {
 
     private func perform<T>(_ key: String?, _ work: (RemoteAPIClient) async throws -> T) async throws -> T {
         guard let client, connection != .revoked else { throw ConnectionError.notConnected }
+        let owner = library.activeID
         if let key {
             guard !busy.contains(key) else { throw CancellationError() }
             busy.insert(key)
@@ -356,7 +357,7 @@ final class RemoteStore {
         defer { if let key { busy.remove(key) } }
         do { return try await work(client) }
         catch {
-            if (error as? ConnectionError) == .unauthorized { markRevoked() }
+            if (error as? ConnectionError) == .unauthorized, owner == library.activeID { markRevoked() }
             throw error
         }
     }
@@ -415,7 +416,9 @@ final class RemoteStore {
 
     func resolve(_ request: PendingRequest, task: String, decision: PermissionDecision) async -> Bool {
         do {
-            try await perform("pending:\(request.id)") { try await $0.resolve(task: task, request: request.id, decision: decision) }
+            try await perform("pending:\(request.id)") {
+                try await $0.resolve(task: task, request: request.id, decision: decision, always: request.always)
+            }
             conversations[task]?.pending.removeAll { $0.id == request.id }
             return true
         } catch {
@@ -462,6 +465,9 @@ final class RemoteStore {
     // MARK: Computers
 
     func pair(_ payload: PairingPayload, deviceName: String, requestID: String) async throws {
+        if let saved = library.computers.first(where: { $0.id == payload.serverID }), saved.fingerprint != payload.fingerprint.lowercased() {
+            throw PairingError.changedCertificate
+        }
         pairing = true
         defer { pairing = false }
         let found = try await Self.probe(routes: payload.routes, fingerprint: payload.fingerprint, serverID: payload.serverID)
@@ -489,7 +495,10 @@ final class RemoteStore {
         do { try save(next); activate() } catch { notice = Self.readable(error) }
     }
 
-    func forget(_ id: String) {
+    func forget(_ id: String) async {
+        if id == library.activeID, isOnline, activeComputer?.registeredPushToken != nil, let client {
+            try? await client.removePush()
+        }
         var next = library
         next.computers.removeAll { $0.id == id }
         let wasActive = next.activeID == id
@@ -523,7 +532,8 @@ final class RemoteStore {
     }
 
     func open(_ destination: NotificationDestination) {
-        guard let computer = library.computers.first(where: { $0.deviceID == destination.deviceID }) else {
+        guard let computer = destination.deviceID.map({ device in library.computers.first { $0.deviceID == device } })
+                ?? activeComputer else {
             notice = "Este aviso es de una PC que ya no está emparejada."
             return
         }

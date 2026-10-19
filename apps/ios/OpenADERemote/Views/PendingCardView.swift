@@ -59,29 +59,43 @@ struct PermissionCard: View {
             Text(request.toolName).font(.footnote.monospaced()).foregroundStyle(RemoteTheme.muted)
             details
             if request.argumentsTruncated {
-                Label("La acción es demasiado grande para mostrarla. Revisala en la PC o rechazala.", systemImage: "exclamationmark.triangle")
+                // The PC accepts only a refusal for what the phone cannot show.
+                Label("Es demasiado grande para mostrarla acá. Revisala en la PC, o rechazala.", systemImage: "exclamationmark.triangle")
                     .font(.caption).foregroundStyle(RemoteTheme.attention)
-            }
-            VStack(spacing: 8) {
-                Button { decide(.allow) } label: {
+                Button("Rechazar", role: .destructive) { decide(.deny) }
+                    .buttonStyle(RemoteSecondaryButtonStyle(role: .destructive))
+                    .disabled(disabled)
+            } else {
+                VStack(spacing: 8) {
                     HStack(spacing: 8) {
-                        if busy { ProgressView().tint(RemoteTheme.onAccent) }
-                        Text("Permitir una vez")
+                        Button { decide(.allow) } label: {
+                            HStack(spacing: 8) {
+                                if busy { ProgressView().tint(RemoteTheme.onAccent) }
+                                Text("Permitir una vez")
+                            }
+                        }
+                        .buttonStyle(RemotePrimaryButtonStyle())
+                        Button("Rechazar", role: .destructive) { decide(.deny) }
+                            .buttonStyle(RemoteSecondaryButtonStyle(role: .destructive))
+                    }
+                    if let always = request.always {
+                        // The exact prefix the PC will keep allowing, shown whole.
+                        Button { decide(.allowAlways) } label: {
+                            (Text("Permitir siempre ") + Text(always).font(.system(.body, design: .monospaced)))
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 12).padding(.vertical, 4)
+                        }
+                        .buttonStyle(RemoteSecondaryButtonStyle())
+                        .accessibilityLabel("Permitir siempre los comandos que empiezan con \(always)")
+                    } else {
+                        Button("Permitir en esta tarea") { decide(.allowSession) }
+                            .buttonStyle(RemoteSecondaryButtonStyle())
+                            .accessibilityHint("Permite esta herramienta hasta que termine la tarea")
                     }
                 }
-                .buttonStyle(RemotePrimaryButtonStyle())
-                .disabled(disabled || request.argumentsTruncated)
-                HStack(spacing: 8) {
-                    Button("Permitir siempre") { decide(.allowAlways) }
-                        .buttonStyle(RemoteSecondaryButtonStyle())
-                        .disabled(disabled || request.argumentsTruncated)
-                        .accessibilityHint("Permite esta acción ahora y las iguales en este proyecto")
-                    Button("Rechazar", role: .destructive) { decide(.deny) }
-                        .buttonStyle(RemoteSecondaryButtonStyle(role: .destructive))
-                        .disabled(disabled)
-                }
+                .disabled(disabled)
+                .padding(.top, 2)
             }
-            .padding(.top, 2)
         }
     }
 

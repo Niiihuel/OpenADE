@@ -6,11 +6,15 @@ struct PendingRequest: Codable, Identifiable, Hashable, Sendable {
     let toolCallID: String
     let toolName: String
     let arguments: JSONValue
+    /// The PC accepts only "deny" for arguments too large to show here.
     let argumentsTruncated: Bool
+    /// The command prefix "always allow" would allow from now on, shown
+    /// verbatim; nil where only "allow in this task" exists.
+    var always: String? = nil
     var id: String { requestID }
 
     enum CodingKeys: String, CodingKey {
-        case arguments
+        case arguments, always
         case requestID = "request_id"
         case toolCallID = "tool_call_id"
         case toolName = "tool_name"

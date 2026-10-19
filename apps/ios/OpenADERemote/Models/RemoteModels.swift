@@ -76,14 +76,13 @@ struct OverviewResponse: Decodable, Sendable {
 }
 
 /// `GET /.well-known/openade`: answered without a token, so the phone can
-/// check it reached its own PC before it sends one.
+/// check it reached its own PC before it sends one. It names nothing else.
 struct ServerIdentity: Decodable, Sendable {
     let api: Int
-    let name: String
     let serverID: String
     let fingerprint: String
     enum CodingKeys: String, CodingKey {
-        case api, name, fingerprint
+        case api, fingerprint
         case serverID = "server_id"
     }
 }
@@ -192,7 +191,11 @@ struct UploadedFile: Codable, Identifiable, Hashable, Sendable {
 }
 
 enum PermissionDecision: String, Sendable {
+    /// This once.
     case allow
+    /// This tool for the rest of the task.
+    case allowSession = "allow_session"
+    /// The exact command prefix the PC named in `always`, from now on.
     case allowAlways = "allow_always"
     case deny
 }

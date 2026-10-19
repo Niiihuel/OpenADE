@@ -5,64 +5,68 @@ struct OpenADERemoteApp: App {
     @UIApplicationDelegateAdaptor(NativeAppDelegate.self) private var appDelegate
     @State private var store = RemoteStore()
     @State private var lock = AppLock()
+    @State private var cover = CoverWindow()
     @State private var pairingPayload: PairingPayload?
     @AppStorage("openade.remote.appearance") private var appearance = "system"
     @Environment(\.scenePhase) private var scenePhase
     private var notifications: NativeNotifications { .shared }
 
+    private enum Cover: Equatable { case none, lock, privacy }
+    private var coverState: Cover { lock.isLocked ? .lock : scenePhase == .active ? .none : .privacy }
+
     var body: some Scene {
         WindowGroup {
-            ZStack {
-                content
-                    .blur(radius: lock.isLocked ? 28 : 0)
-                    .allowsHitTesting(!lock.isLocked)
-                    .accessibilityHidden(lock.isLocked)
-                if lock.isLocked {
-                    LockScreen(lock: lock)
-                } else if scenePhase != .active {
-                    // What the app switcher shows: never the conversation.
-                    ZStack {
-                        RemoteTheme.canvas.ignoresSafeArea()
-                        BrandMark(size: 88)
+            content
+                .allowsHitTesting(!lock.isLocked)
+                .accessibilityHidden(lock.isLocked)
+                .environment(store)
+                .tint(RemoteTheme.ink)
+                .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
+                .task {
+                    store.restore()
+                    lock.launch(paired: store.isPaired)
+                    store.setForeground(scenePhase == .active)
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    switch phase {
+                    case .active:
+                        lock.becameActive(paired: store.isPaired)
+                        store.setForeground(true)
+                    case .background:
+                        lock.enteredBackground()
+                        store.setForeground(false)
+                    default:
+                        break
                     }
                 }
-            }
-            .environment(store)
-            .tint(RemoteTheme.ink)
-            .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
-            .task {
-                store.restore()
-                lock.launch(paired: store.isPaired)
-                store.setForeground(scenePhase == .active)
-            }
-            .onChange(of: scenePhase) { _, phase in
-                switch phase {
-                case .active:
-                    lock.becameActive(paired: store.isPaired)
-                    store.setForeground(true)
-                case .background:
-                    lock.enteredBackground()
-                    store.setForeground(false)
-                default:
-                    break
+                .onChange(of: coverState, initial: true) { _, state in
+                    let style: UIUserInterfaceStyle = appearance == "dark" ? .dark : appearance == "light" ? .light : .unspecified
+                    switch state {
+                    case .none: cover.hide()
+                    case .lock: cover.show(AnyView(LockScreen(lock: lock)), style: style)
+                    // What the app switcher shows: never a task.
+                    case .privacy: cover.show(AnyView(ZStack { RemoteTheme.canvas.ignoresSafeArea(); BrandMark(size: 88) }), style: style)
+                    }
                 }
-            }
-            .alert("openADE", isPresented: Binding(get: { store.notice != nil }, set: { if !$0 { store.notice = nil } })) {
-                Button("Entendido", role: .cancel) { store.notice = nil }
-            } message: { Text(store.notice ?? "") }
-            .onOpenURL { url in
-                do { pairingPayload = try PairingPayload.parse(url.absoluteString) }
-                catch { store.notice = error.localizedDescription }
-            }
-            .sheet(item: $pairingPayload) { PairingReviewView(payload: $0).environment(store).remoteSheet() }
-            .task(id: scenePhase) { if scenePhase == .active { await notifications.registerIfAuthorized() } }
-            .task(id: "\(store.pushKey)|\(notifications.token ?? "")") { await store.syncPush(token: notifications.token) }
-            .onChange(of: notifications.destination, initial: true) {
-                guard let destination = notifications.destination else { return }
-                store.restore()
-                store.open(destination)
-                notifications.destination = nil
-            }
+                .alert("openADE", isPresented: Binding(get: { store.notice != nil }, set: { if !$0 { store.notice = nil } })) {
+                    Button("Entendido", role: .cancel) { store.notice = nil }
+                } message: { Text(store.notice ?? "") }
+                .onOpenURL { url in
+                    do { pairingPayload = try PairingPayload.parse(url.absoluteString) }
+                    catch { store.notice = error.localizedDescription }
+                }
+                // A pairing link waits for the unlock: pairing is never done behind the lock.
+                .sheet(item: Binding(get: { lock.isLocked ? nil : pairingPayload }, set: { pairingPayload = $0 })) {
+                    PairingReviewView(payload: $0).environment(store).remoteSheet()
+                }
+                .task(id: scenePhase) { if scenePhase == .active { await notifications.registerIfAuthorized() } }
+                .task(id: "\(store.pushKey)|\(notifications.token ?? "")") { await store.syncPush(token: notifications.token) }
+                .onChange(of: notifications.destination, initial: true) {
+                    guard let destination = notifications.destination else { return }
+                    store.restore()
+                    store.open(destination)
+                    notifications.destination = nil
+                }
         }
     }
 
@@ -77,6 +81,30 @@ struct OpenADERemoteApp: App {
     @ViewBuilder private var primary: some View {
         if store.isPaired { HomeView().id(store.library.activeID) }
         else { WelcomeView() }
+    }
+}
+
+/// The lock and the app-switcher cover live in their own window above every
+/// sheet and alert, so nothing of a task shows or answers behind them.
+@MainActor
+private final class CoverWindow {
+    private var window: UIWindow?
+
+    func show(_ root: AnyView, style: UIUserInterfaceStyle) {
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else { return }
+        let window = self.window ?? UIWindow(windowScene: scene)
+        window.windowLevel = .alert + 1
+        window.overrideUserInterfaceStyle = style
+        let controller = UIHostingController(rootView: root)
+        controller.view.accessibilityViewIsModal = true
+        window.rootViewController = controller
+        window.isHidden = false
+        self.window = window
+    }
+
+    func hide() {
+        window?.isHidden = true
+        window = nil
     }
 }
 
@@ -105,7 +133,7 @@ private struct LockScreen: View {
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.ultraThinMaterial)
-        .accessibilityAddTraits(.isModal)
+        .background(RemoteTheme.canvas.ignoresSafeArea())
+        .tint(RemoteTheme.ink)
     }
 }

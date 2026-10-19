@@ -20,6 +20,9 @@ struct MarkdownContentView: View {
             }
         }.frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
             .tint(RemoteTheme.ink)
+            .environment(\.openURL, OpenURLAction { url in
+                ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") ? .systemAction : .discarded
+            })
     }
 
     private func inline(_ source: String) -> Text {

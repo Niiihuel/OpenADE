@@ -80,7 +80,7 @@ struct SettingsView: View {
                 get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }
             ), titleVisibility: .visible) {
                 Button("Olvidar", role: .destructive) {
-                    if let forgetting { store.forget(forgetting.id) }
+                    if let forgetting { Task { await store.forget(forgetting.id) } }
                     forgetting = nil
                 }
             } message: {

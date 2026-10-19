@@ -61,6 +61,8 @@ final class ProtocolTests: XCTestCase {
             ["routes": Array(repeating: "https://pc.example:7787", count: 9)],
             ["fingerprint": String(repeating: "a", count: 63)],
             ["fingerprint": String(repeating: "g", count: 64)],
+            ["fingerprint": String(repeating: "AB", count: 32)],
+            ["secret": String(repeating: "0F", count: 32)],
             ["server_id": "not-a-uuid"],
             ["secret": "short"],
             ["label": ""],

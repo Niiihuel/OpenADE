@@ -73,8 +73,7 @@ enum DebugUIFixtures {
             var conversation = TaskConversation()
             conversation.replace(with: try decode(TaskHistory.self, history(mode: mode, now: now)))
             if mode == "chat-queue" { store.drafts[taskID] = "Después corré también las pruebas de UI en el simulador." }
-            let client = RemoteAPIClient(baseURL: URL(string: "https://fixture.invalid")!, fingerprint: fingerprint,
-                                         token: "fixture-token", transport: transport())
+            let client = RemoteAPIClient(fixtureURL: URL(string: "https://fixture.invalid")!, transport: transport())
             store.loadFixture(library: library, snapshot: snapshot, server: server, conversations: [taskID: conversation],
                               connection: mode == "tasks-offline" ? .offline : .online, client: client)
         } catch {
@@ -135,7 +134,8 @@ enum DebugUIFixtures {
                                             "cwd": "/home/nihuel/projects/personal/openADE/apps/ios"]
             add("tool_started", "turn-2", at: 330, ["tool_call_id": "d3", "tool_name": "run_command", "arguments": arguments])
             add("permission_requested", "turn-2", at: 330, ["request_id": "r-perm", "tool_call_id": "d3", "tool_name": "run_command", "arguments": arguments])
-            pending = [["request_id": "r-perm", "tool_call_id": "d3", "tool_name": "run_command", "arguments": arguments, "arguments_truncated": false]]
+            pending = [["request_id": "r-perm", "tool_call_id": "d3", "tool_name": "run_command", "arguments": arguments,
+                        "arguments_truncated": false, "always": "xcodebuild test"]]
         case "question":
             let arguments: [String: Any] = ["questions": [
                 ["header": "Alcance", "question": "¿Hasta dónde querés que llegue la prueba?", "multi_select": false, "options": [

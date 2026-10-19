@@ -39,10 +39,10 @@ struct PairingPayload: Codable, Equatable, Identifiable, Sendable {
         guard let version = try? JSONDecoder().decode(Version.self, from: data) else { throw PairingError.invalidCode }
         guard version.version == 2 else { throw PairingError.unsupportedVersion }
         guard let payload = try? JSONDecoder().decode(PairingPayload.self, from: data) else { throw PairingError.invalidCode }
+        func lowercaseHex(_ value: String) -> Bool { value.utf8.count == 64 && value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) } }
         guard (1...8).contains(payload.routes.count), payload.routes.allSatisfy({ (try? RemoteRoute.url($0)) != nil }),
-              CertificatePin.isValid(payload.fingerprint),
+              lowercaseHex(payload.fingerprint), lowercaseHex(payload.secret),
               UUID(uuidString: payload.serverID) != nil, UUID(uuidString: payload.pairingID) != nil,
-              payload.secret.utf8.count == 64, payload.secret.allSatisfy({ $0.isHexDigit && $0.isASCII }),
               !payload.label.isEmpty, payload.label.utf8.count <= 256 else { throw PairingError.invalidCode }
         guard Double(payload.expiresAt) > now.timeIntervalSince1970 else { throw PairingError.expired }
         return payload
@@ -67,7 +67,7 @@ struct PairingResult: Decodable, Sendable {
 }
 
 enum PairingError: LocalizedError, Equatable {
-    case invalidCode, expired, unsupportedVersion, cameraUnavailable, unreachable, wrongComputer, certificateMismatch
+    case invalidCode, expired, unsupportedVersion, cameraUnavailable, unreachable, wrongComputer, certificateMismatch, changedCertificate
     var errorDescription: String? {
         switch self {
         case .invalidCode: "El código no es un emparejamiento válido de openADE."
@@ -77,6 +77,7 @@ enum PairingError: LocalizedError, Equatable {
         case .unreachable: "No encontramos tu PC en ninguna de sus direcciones. Revisá que openADE esté abierto y que el iPhone esté en la misma red."
         case .wrongComputer: "La PC que respondió no es la del código. Por seguridad no se emparejó."
         case .certificateMismatch: "Una dirección respondió con otro certificado. Por seguridad no se emparejó."
+        case .changedCertificate: "Ya tenés esta PC emparejada con otro certificado. Si la PC lo cambió, olvidala en Ajustes y volvé a emparejar."
         }
     }
 }

@@ -8,12 +8,22 @@ final class RemoteAPIClient: @unchecked Sendable {
     private let token: String?
     private let session: URLSession
 
-    init(baseURL: URL, fingerprint: String, token: String?, transport: URLSession? = nil) {
+    init(baseURL: URL, fingerprint: String, token: String?) {
         self.baseURL = baseURL
         self.fingerprint = fingerprint
         self.token = token
-        session = transport ?? PinnedSessions.session(for: fingerprint).0
+        session = PinnedSessions.session(for: fingerprint).0
     }
+
+    #if DEBUG
+    /// Captures only: a local URLProtocol answers, never a PC, and no token is sent.
+    init(fixtureURL: URL, transport: URLSession) {
+        baseURL = fixtureURL
+        fingerprint = ""
+        token = nil
+        session = transport
+    }
+    #endif
 
     func authorized(_ token: String) -> RemoteAPIClient {
         RemoteAPIClient(baseURL: baseURL, fingerprint: fingerprint, token: token)
@@ -94,9 +104,10 @@ final class RemoteAPIClient: @unchecked Sendable {
         let _: JSONValue = try await perform(makeRequest(["v2", "tasks", task, "read"], method: "POST", body: [:]))
     }
 
-    func resolve(task: String, request requestID: String, decision: PermissionDecision) async throws {
-        let _: JSONValue = try await perform(makeRequest(["v2", "tasks", task, "permissions", requestID], method: "POST",
-                                                     body: ["decision": .string(decision.rawValue)]))
+    func resolve(task: String, request requestID: String, decision: PermissionDecision, always: String? = nil) async throws {
+        var body: [String: JSONValue] = ["decision": .string(decision.rawValue)]
+        if decision == .allowAlways, let always { body["always"] = .string(always) }
+        let _: JSONValue = try await perform(makeRequest(["v2", "tasks", task, "permissions", requestID], method: "POST", body: body))
     }
 
     func answer(task: String, request requestID: String, answer: String) async throws {

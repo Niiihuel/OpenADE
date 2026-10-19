@@ -34,7 +34,7 @@ final class RemoteModelsTests: XCTestCase {
     func testHistoryCarriesEventsPendingQuestionsAndTheJournalCursor() throws {
         let history = try decode(TaskHistory.self, """
         {"events":[{"seq":4,"timestamp_ms":1,"type":"user_message","turn_id":"t1","text":"Hola"}],
-         "pending":[{"request_id":"r1","tool_call_id":"c1","tool_name":"ask_user","arguments_truncated":false,
+         "pending":[{"request_id":"r1","tool_call_id":"c1","tool_name":"ask_user","arguments_truncated":false,"always":null,
                      "arguments":{"questions":[{"header":"Base","question":"¿Cuál?","multi_select":true,
                        "options":[{"label":"SQLite","description":"Simple"},{"label":"Archivos"}]}]}}],
          "cursor":9,"has_more":true}
@@ -43,6 +43,9 @@ final class RemoteModelsTests: XCTestCase {
         XCTAssertTrue(history.hasMore)
         let request = try XCTUnwrap(history.pending.first)
         XCTAssertTrue(request.isQuestion)
+        XCTAssertNil(request.always)
+        let command = try decode(PendingRequest.self, #"{"request_id":"r2","tool_call_id":"c2","tool_name":"run_command","arguments":{"command":"cargo test --all"},"arguments_truncated":false,"always":"cargo test"}"#)
+        XCTAssertEqual(command.always, "cargo test")
         let question = try XCTUnwrap(request.questions.first)
         XCTAssertEqual(question.header, "Base")
         XCTAssertTrue(question.multiSelect)

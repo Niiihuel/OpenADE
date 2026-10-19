@@ -4,7 +4,8 @@ import Observation
 
 struct NotificationDestination: Identifiable, Equatable {
     let id = UUID()
-    let deviceID: String
+    /// Which pairing of this phone the PC sent it to; nil means the active PC.
+    let deviceID: String?
     let taskID: String
 }
 
@@ -57,9 +58,8 @@ final class NativeAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificati
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         let content = response.notification.request.content.userInfo["openade"] as? [String: Any]
-        if content?["version"] as? Int == 2,
-           let deviceID = content?["device_id"] as? String, !deviceID.isEmpty,
-           let taskID = content?["session_id"] as? String, !taskID.isEmpty {
+        if content?["version"] as? Int == 2, let taskID = content?["session_id"] as? String, !taskID.isEmpty {
+            let deviceID = (content?["device_id"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             Task { @MainActor in NativeNotifications.shared.destination = NotificationDestination(deviceID: deviceID, taskID: taskID) }
         }
         completionHandler()
