@@ -35,26 +35,43 @@ Settings → Remoto turns it on. The window then runs an HTTPS server on port
 - The PC makes its own TLS certificate once (`<data>/remote/tls`). No authority
   signs it: the phone pins its SHA-256, which comes in the pairing code, and
   never sends its token to a server whose certificate does not match.
-- Each phone has its own 256-bit token; only its SHA-256 is stored
+- Each phone has its own random token; only its SHA-256 is stored
   (`<data>/remote/devices.json`). Settings → Remoto lists each phone with when
   it was last seen, and "Quitar acceso" revokes it at once, open streams
   included.
-- A pairing code works once, for ten minutes; attempts are rate-limited.
-- Only projects the window knows can be read or written; file and Git edits
-  check the revision the phone saw.
+- A pairing code works once, for five minutes, and only the last one shown:
+  closing it or making another withdraws it. The PC says so when a phone
+  pairs. Attempts are limited per address.
+- "Always allow" from the phone saves exactly the command prefix the phone
+  was shown (`always` in each pending request), or nothing. A request whose
+  arguments are too large to show on the phone can only be refused.
+- Connections are capped (64, 8 per address) before TLS, idle clients time
+  out, each phone has at most four streams, uploads share a 200 MB quota and
+  the window serves a few commands per frame.
+- `/.well-known/openade` names nothing: only the API version, the server id
+  and the certificate's fingerprint, which TLS shows anyway.
+- Only projects the window knows can be read or written, never the
+  filesystem root; file and Git edits check the revision the phone saw.
 
 ### Reaching the PC
 
 The pairing code carries every route, the likeliest first:
 
 1. The local network (`https://192.168.x.y:7787`).
-2. The PC's global IPv6 address, if it has one. From outside it works when the
-   router lets incoming IPv6 through to the PC.
+2. The PC's stable global IPv6 address, if it has one (not the privacy
+   address it goes out with, which changes every day). From outside it works
+   when the router lets incoming IPv6 through to the PC. If the provider
+   changes the network prefix, the phone learns the new address the next time
+   it reaches the PC some other way.
 3. A public address the person typed (a DNS name or IP, with a port they
    forwarded on their router).
 4. The router's public IPv4 when "Abrir el puerto en el router (UPnP)" is on and
    the router agrees. When the router's own address is private or shared
    (CGNAT), Settings says so instead of offering it.
+
+The PC's own firewall must let TCP 7787 in, for IPv4 and IPv6 (on NixOS,
+`networking.firewall.allowedTCPPorts`). From the PC itself the port answers
+even when it is closed to everyone else, so try it from the phone.
 
 The phone tries the routes and keeps the first that answers as this PC (same
 server id and certificate). On the developer's network (2026-10-18) the router
@@ -65,8 +82,8 @@ does not answer UPnP, so from outside only IPv6 or a forwarded port can work.
 The phone registers its APNs token with the PC. The PC signs with the Apple
 Push key in `<data>/remote/push` (`apns.p8` and `config.json` with `enabled`,
 `team_id`, `key_id` and `topic` `dev.openade.remote`) and sends: a permission
-or a question waiting, a turn that finished or failed. The title is the
-project and task, never the conversation. Nothing is sent while the window has
+or a question waiting, a turn that finished or failed. The lock screen shows
+"openADE" and what happened, never the project, the task or the conversation. Nothing is sent while the window has
 the keyboard focus: the person is at the PC.
 
 ### API
@@ -82,7 +99,7 @@ phone's bearer token.
 | POST | `/v2/tasks` | start a task: project, agent, prompt, files, plan |
 | POST | `/v2/tasks/{id}/messages` | send now or queue (`delivery`) |
 | POST | `/v2/tasks/{id}/stop` | stop its turn |
-| POST | `/v2/tasks/{id}/permissions/{request}` | `allow`, `allow_always`, `deny` |
+| POST | `/v2/tasks/{id}/permissions/{request}` | `allow`, `allow_session`, `allow_always` with the `always` prefix shown, `deny` |
 | POST | `/v2/tasks/{id}/answers/{request}` | answer the agent's questions |
 | PATCH | `/v2/tasks/{id}` | title, pinned, archived |
 | POST | `/v2/tasks/{id}/read` | mark read |
@@ -90,8 +107,9 @@ phone's bearer token.
 | POST/DELETE | `/v2/notifications/devices` | the phone's APNs token |
 | … | `/v2/projects/{id}/files`, `/file`, `/diff`, `/git/*` | files and Git |
 
-Mutations carry a `request_id`; the same id with the same request gets the
-same answer again.
+Mutations carry a `request_id`, per device; the same id with the same request
+gets the same answer again, and a retry while the first is still with the
+window waits for it instead of running the command twice.
 
 ## The app
 
