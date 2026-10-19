@@ -23,7 +23,25 @@ says 0.1.0.
 - Messages queued in a task off screen are sent when its turn ends instead of
   waiting for it to be opened
 - Push notices for permissions, questions and finished or failed turns of any
-  task, left out while the person is at the PC
+  task, left out while the person is at the PC; the lock screen shows what
+  happened, never the project, task or conversation
+- The pairing code carries the PC's stable IPv6 address, the security code to
+  compare with the phone, and works once for five minutes; the PC says when a
+  phone pairs. Settings → Remoto can keep the PC awake and explains the
+  firewall port
+- The remote holds up against a security review: connections are capped and
+  idle ones time out, revoking a phone ends its open streams, "always allow"
+  from the phone saves only the command prefix it showed, and requests too
+  large to show can only be refused
+- The iPhone app is rebuilt and named openADE, with the project's mark: tasks
+  grouped as in the sidebar with their agent and state, conversations that
+  stream in with tool work grouped and finished turns folded, permission and
+  question cards above the composer, Stop and queued messages, new tasks with
+  project, agent and plan mode, several PCs, a connection pill that keeps
+  cached tasks readable offline, and a Face ID lock on by default
+- The iPhone app reaches TestFlight from GitHub Actions with every release,
+  sharing the desktop's version number
+- Dead code goes: the workspace builds without a warning
 
 ## 0.4.1 — 2026-10-18
 
