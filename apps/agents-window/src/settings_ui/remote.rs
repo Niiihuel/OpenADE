@@ -59,7 +59,18 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
             ),
         ],
     ));
-    if remote.listening.is_some() {
+    if let Some(port) = remote.listening {
+        groups.push(settings_parts::settings_group(
+            "Firewall",
+            vec![settings_parts::value_row(
+                "Puerto abierto en este PC",
+                format!(
+                    "El sistema tiene que dejar entrar conexiones al puerto {port}, por IPv4 y por IPv6. Desde este mismo PC responde aunque esté cerrado, así que probalo desde el teléfono. En NixOS: networking.firewall.allowedTCPPorts = [ {port} ];"
+                ),
+                format!("TCP {port}"),
+                compact,
+            )],
+        ));
         groups.push(pairing(remote, compact));
         groups.push(devices(remote, compact));
         groups.push(settings_parts::settings_group(

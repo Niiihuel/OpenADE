@@ -266,3 +266,35 @@ fn a_phone_stops_a_turn_running_off_screen() {
     gate.store(true, Ordering::Release);
     drop(provider);
 }
+
+#[test]
+fn a_phone_cannot_allow_more_than_it_was_shown_nor_answer_a_permission_as_a_question() {
+    let root = tempfile::tempdir().unwrap();
+    let provider = ScriptedProvider::new(|request| {
+        if request["messages"].as_array().unwrap().iter().any(|message| message["role"] == "tool") {
+            Reply::Text("SIN_COMANDO")
+        } else {
+            Reply::Tool("run_command", json!({"command": "echo", "args": ["hola"]}))
+        }
+    });
+    let mut app = app_at(root.path(), &provider.endpoint);
+    let mut permissions = AgentToolSettings::default();
+    permissions.set(LocalTool::RunCommand, true);
+    assert!(app.commit_agent_tool_settings(permissions, "Commands ask first"));
+    let (base, token) = paired(&mut app);
+    let task = start_task(&mut app, &base, &token, "Saludá");
+    run_until(&mut app, &task, |kind| matches!(kind, AgentEventKind::PermissionRequested { .. }));
+    let waiting = history(&mut app, &base, &token, &task);
+    assert_eq!(waiting["pending"][0]["always"], "echo hola", "{waiting}");
+    let request = waiting["pending"][0]["request_id"].as_str().unwrap().to_owned();
+    let permission = format!("{base}/v2/tasks/{task}/permissions/{request}");
+
+    let wider = post(&mut app, permission.clone(), &token, json!({"decision": "allow_always", "always": "echo"}));
+    assert_eq!(wider["error"]["message"], "Lo que se permitiría siempre cambió; revisá el pedido", "{wider}");
+    let answered = post(&mut app, format!("{base}/v2/tasks/{task}/answers/{request}"), &token, json!({"answer": "{}"}));
+    assert_eq!(answered["error"]["message"], "No es una pregunta", "{answered}");
+    let denied = post(&mut app, permission, &token, json!({"decision": "deny"}));
+    assert_eq!(denied["decision"], "deny", "{denied}");
+    run_until(&mut app, &task, |kind| matches!(kind, AgentEventKind::TurnCompleted { .. }));
+    assert!(app.data_root.join("exec-policy.json").metadata().is_err() || !std::fs::read_to_string(app.data_root.join("exec-policy.json")).unwrap().contains("echo"));
+}

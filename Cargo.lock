@@ -4402,6 +4402,7 @@ dependencies = [
  "jsonwebtoken",
  "libc",
  "openide-core",
+ "openide-harness",
  "qrcode",
  "rcgen",
  "reqwest",

@@ -36,6 +36,9 @@ pub struct PendingPermission {
     pub tool_name: String,
     pub arguments: Value,
     pub arguments_truncated: bool,
+    /// What "always allow" would allow from now on, as the phone must show
+    /// it: a command prefix. None where only "allow in this task" exists.
+    pub always: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -88,6 +91,9 @@ pub fn pending_permissions(events: &[AgentEvent]) -> Vec<PendingPermission> {
                 tool_call,
             } => {
                 let (arguments, arguments_truncated) = safe_arguments(&tool_call.arguments);
+                let always = openide_harness::always_allow_prefix(&tool_call.name, &tool_call.arguments)
+                    .filter(|_| !arguments_truncated)
+                    .map(|prefix| prefix.join(" "));
                 pending.insert(
                     request_id.clone(),
                     PendingPermission {
@@ -96,6 +102,7 @@ pub fn pending_permissions(events: &[AgentEvent]) -> Vec<PendingPermission> {
                         tool_name: tool_call.name.clone(),
                         arguments,
                         arguments_truncated,
+                        always,
                     },
                 );
             }

@@ -6,6 +6,7 @@ rust-version.workspace = true
 
 [dependencies]
 openide-core = { path = "../openide-core" }
+openide-harness = { path = "../openide-harness" }
 axum = { version = "0.8", features = ["http2"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "fs", "io-util"] }
 serde = { version = "1", features = ["derive"] }
@@ -24,7 +25,7 @@ rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"]
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 hyper = { version = "1", features = ["server", "http1", "http2"] }
-hyper-util = { version = "0.1", features = ["server-auto", "tokio", "service"] }
+hyper-util = { version = "0.1", features = ["tokio", "service"] }
 futures-util = "0.3"
 # Opens the port on the home router when the person asks for it.
 igd-next = { version = "0.18", default-features = false, features = ["aio_tokio"] }

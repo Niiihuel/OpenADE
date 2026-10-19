@@ -84,7 +84,7 @@ pub use limit_gate::{
 };
 pub use provider_failure::{stated_context_limit, FailureClass, ProviderFailure};
 pub use exec_policy::{
-    ExecDecision, ExecEvaluation, ExecPatternToken, ExecPolicy, ExecPolicyError, ExecRule, is_opaque_wrapper,
+    always_allow_prefix, ExecDecision, ExecEvaluation, ExecPatternToken, ExecPolicy, ExecPolicyError, ExecRule, is_opaque_wrapper,
     MAX_EXEC_JUSTIFICATION_BYTES, MAX_EXEC_PATTERN_TOKENS, MAX_EXEC_RULES, MAX_EXEC_TOKEN_BYTES,
 };
 pub use goal_tools::NativeGoalToolExecutor;

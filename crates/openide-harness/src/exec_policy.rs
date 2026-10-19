@@ -306,6 +306,32 @@ fn executable_basename(program: &str) -> String {
         .to_owned()
 }
 
+/// The rule "always allow" would save for a command call: the program and
+/// its first plain argument (`cargo test`, `npm run`). None for anything else,
+/// and for a shell or interpreter, which runs whatever follows.
+pub fn always_allow_prefix(tool_name: &str, arguments: &serde_json::Value) -> Option<Vec<String>> {
+    if !matches!(tool_name, "run_command" | "start_command") {
+        return None;
+    }
+    let arguments = crate::split_command_arguments(arguments).unwrap_or_else(|| arguments.clone());
+    let command = arguments.get("command")?.as_str()?.trim();
+    if command.is_empty() || command.contains(char::is_whitespace) || is_opaque_wrapper(command) {
+        return None;
+    }
+    let mut prefix = vec![command.to_owned()];
+    let first = arguments
+        .get("args")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|args| args.first())
+        .and_then(serde_json::Value::as_str);
+    if let Some(first) = first.filter(|first| {
+        !first.starts_with('-') && !first.contains(['/', '\\', '.', ' ']) && first.len() <= 64
+    }) {
+        prefix.push(first.to_owned());
+    }
+    Some(prefix)
+}
+
 /// A shell or launcher that runs what its arguments say: no prefix of its
 /// argv tells what will run.
 pub fn is_opaque_wrapper(program: &str) -> bool {

@@ -17,6 +17,16 @@ use tokio::sync::{mpsc, oneshot, watch};
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(20);
 /// Answers kept for repeated request ids.
 const REMEMBERED: usize = 256;
+/// Streams one device may have open at once.
+const STREAMS_PER_DEVICE: usize = 4;
+/// Commands the window serves in one frame; the rest wait for the next.
+const COMMANDS_PER_FRAME: usize = 8;
+
+/// A request id's command and how it went: with the window still, or answered.
+struct Slot {
+    digest: String,
+    outcome: watch::Receiver<Option<Result<Value, String>>>,
+}
 
 /// A task as the window's sidebar shows it, with its turn now.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
@@ -64,12 +74,13 @@ pub enum Delivery {
     Queue,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub enum Decision {
     Allow,
-    /// Allow, and keep allowing this command in the project.
-    AllowAlways,
+    /// Allow this call and the same tool for the rest of the task.
+    AllowSession,
+    /// Allow this command prefix from now on, as the phone showed it.
+    AllowAlways(String),
     Deny,
 }
 
@@ -109,11 +120,15 @@ pub struct Bridge {
     queue: Mutex<Vec<Request>>,
     live: watch::Sender<Live>,
     wake: Box<dyn Fn() + Send + Sync>,
-    answers: Mutex<(HashMap<String, (String, Value)>, VecDeque<String>)>,
+    answers: Mutex<(HashMap<String, Slot>, VecDeque<String>)>,
     notices: mpsc::UnboundedSender<(Notice, String)>,
     notices_out: Mutex<Option<mpsc::UnboundedReceiver<(Notice, String)>>>,
     /// Devices with an open stream, and how many.
     connected: Mutex<BTreeMap<String, usize>>,
+    /// Bumped when a device loses access, so its open streams end.
+    revocations: watch::Sender<u64>,
+    /// Names of phones paired since the window last looked.
+    paired: Mutex<Vec<String>>,
 }
 
 impl Bridge {
@@ -127,12 +142,39 @@ impl Bridge {
             notices,
             notices_out: Mutex::new(Some(notices_out)),
             connected: Mutex::default(),
+            revocations: watch::channel(0).0,
+            paired: Mutex::default(),
         })
     }
 
-    /// The window takes what the phone asked for.
+    /// The window takes what the phone asked for, a few at a time.
     pub fn take_commands(&self) -> Vec<Request> {
-        std::mem::take(&mut *lock(&self.queue))
+        let mut queue = lock(&self.queue);
+        let count = queue.len().min(COMMANDS_PER_FRAME);
+        let taken: Vec<Request> = queue.drain(..count).collect();
+        if !queue.is_empty() {
+            (self.wake)();
+        }
+        taken
+    }
+
+    /// A device lost access: its open streams end.
+    pub fn revoked(&self) {
+        self.revocations.send_modify(|count| *count += 1);
+    }
+
+    pub(crate) fn revocations(&self) -> watch::Receiver<u64> {
+        self.revocations.subscribe()
+    }
+
+    /// A phone just paired; the window tells the person.
+    pub(crate) fn paired(&self, name: &str) {
+        lock(&self.paired).push(name.to_owned());
+        (self.wake)();
+    }
+
+    pub fn take_paired(&self) -> Vec<String> {
+        std::mem::take(&mut *lock(&self.paired))
     }
 
     /// The window says what is going on; the same state again wakes no one.
@@ -167,42 +209,76 @@ impl Bridge {
         lock(&self.connected).clone()
     }
 
-    pub(crate) fn connect(self: &Arc<Self>, device: &str) -> Connection {
-        *lock(&self.connected).entry(device.to_owned()).or_default() += 1;
-        Connection { bridge: self.clone(), device: device.to_owned() }
+    /// A new stream for `device`, unless it has as many as it may.
+    pub(crate) fn connect(self: &Arc<Self>, device: &str) -> Option<Connection> {
+        let mut connected = lock(&self.connected);
+        let count = connected.entry(device.to_owned()).or_default();
+        if *count >= STREAMS_PER_DEVICE {
+            return None;
+        }
+        *count += 1;
+        Some(Connection { bridge: self.clone(), device: device.to_owned() })
     }
 
     /// Hands `command` to the window and waits for its answer. A request id
-    /// seen before with the same command gets the same answer again.
-    pub async fn call(&self, request_id: &str, command: Command) -> ApiResult<Value> {
+    /// a device used before with the same command gets that command's answer,
+    /// waiting for it if the window has not given it yet: a retry after a
+    /// timeout never runs the command twice.
+    pub async fn call(&self, device: &str, request_id: &str, command: Command) -> ApiResult<Value> {
+        let key = format!("{device}:{request_id}");
         let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(&command).unwrap_or_default()));
-        if let Some((seen, answer)) = lock(&self.answers).0.get(request_id) {
-            return if *seen == digest {
-                Ok(answer.clone())
-            } else {
-                Err(ApiError::conflict("Ese pedido ya se usó para otra cosa"))
-            };
-        }
+        let outcome = {
+            let mut answers = lock(&self.answers);
+            let (map, order) = &mut *answers;
+            match map.get(&key) {
+                Some(slot) if slot.digest != digest => {
+                    return Err(ApiError::conflict("Ese pedido ya se usó para otra cosa"));
+                }
+                Some(slot) => slot.outcome.clone(),
+                None => {
+                    let outcome = self.send(command);
+                    map.insert(key.clone(), Slot { digest, outcome: outcome.clone() });
+                    order.push_back(key);
+                    if order.len() > REMEMBERED {
+                        if let Some(oldest) = order.pop_front() {
+                            map.remove(&oldest);
+                        }
+                    }
+                    outcome
+                }
+            }
+        };
+        Self::wait(outcome).await
+    }
+
+    /// Hands `command` to the window once, with nothing kept for a retry.
+    pub async fn call_once(&self, command: Command) -> ApiResult<Value> {
+        Self::wait(self.send(command)).await
+    }
+
+    fn send(&self, command: Command) -> watch::Receiver<Option<Result<Value, String>>> {
+        let (sender, outcome) = watch::channel(None);
         let (reply, answer) = oneshot::channel();
         lock(&self.queue).push(Request { command, reply });
         (self.wake)();
-        let value = match tokio::time::timeout(COMMAND_TIMEOUT, answer).await {
-            Ok(Ok(Ok(value))) => value,
-            Ok(Ok(Err(message))) => return Err(ApiError::conflict(message)),
-            Ok(Err(_)) => return Err(ApiError::unavailable()),
-            Err(_) => return Err(ApiError::busy()),
-        };
-        let mut answers = lock(&self.answers);
-        let (map, order) = &mut *answers;
-        if map.insert(request_id.to_owned(), (digest, value.clone())).is_none() {
-            order.push_back(request_id.to_owned());
-            if order.len() > REMEMBERED {
-                if let Some(oldest) = order.pop_front() {
-                    map.remove(&oldest);
-                }
-            }
+        // The window's answer is kept even once the phone stopped waiting.
+        tokio::spawn(async move {
+            let result = answer.await.unwrap_or_else(|_| Err("openADE se cerró antes de responder".into()));
+            let _ = sender.send(Some(result));
+        });
+        outcome
+    }
+
+    async fn wait(mut outcome: watch::Receiver<Option<Result<Value, String>>>) -> ApiResult<Value> {
+        match tokio::time::timeout(COMMAND_TIMEOUT, outcome.wait_for(Option::is_some)).await {
+            Ok(Ok(result)) => match result.clone() {
+                Some(Ok(value)) => Ok(value),
+                Some(Err(message)) => Err(ApiError::conflict(message)),
+                None => Err(ApiError::unavailable()),
+            },
+            Ok(Err(_)) => Err(ApiError::unavailable()),
+            Err(_) => Err(ApiError::busy()),
         }
-        Ok(value)
     }
 }
 
@@ -245,11 +321,43 @@ mod tests {
             }
         });
         let stop = Command::Stop { task: "t".into() };
-        let first = bridge.call("r1", stop.clone()).await.unwrap();
-        assert_eq!(bridge.call("r1", stop).await.unwrap(), first);
-        let other = bridge.call("r1", Command::Read { task: "t".into() }).await;
+        let first = bridge.call("phone", "r1", stop.clone()).await.unwrap();
+        assert_eq!(bridge.call("phone", "r1", stop.clone()).await.unwrap(), first);
+        let other = bridge.call("phone", "r1", Command::Read { task: "t".into() }).await;
         assert_eq!(other.unwrap_err().status, axum::http::StatusCode::CONFLICT);
+        // Another device's ids are its own.
+        assert!(bridge.call("tablet", "r1", Command::Read { task: "t".into() }).await.is_ok());
         serve.abort();
+    }
+
+    #[tokio::test]
+    async fn a_retry_after_a_timeout_waits_for_the_first_answer_instead_of_running_again() {
+        let bridge = Bridge::new(|| {});
+        let stop = Command::Stop { task: "t".into() };
+        let first = tokio::spawn({
+            let bridge = bridge.clone();
+            let stop = stop.clone();
+            async move { bridge.call("phone", "r1", stop).await }
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let retry = tokio::spawn({
+            let bridge = bridge.clone();
+            async move { bridge.call("phone", "r1", stop).await }
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let commands = bridge.take_commands();
+        assert_eq!(commands.len(), 1, "the retry queued nothing new");
+        commands.into_iter().for_each(|request| request.answer(Ok(serde_json::json!({"stopped": true}))));
+        assert_eq!(first.await.unwrap().unwrap(), retry.await.unwrap().unwrap());
+    }
+
+    #[test]
+    fn a_device_has_a_few_streams_at_most() {
+        let bridge = Bridge::new(|| {});
+        let open: Vec<_> = (0..STREAMS_PER_DEVICE).map(|_| bridge.connect("phone").unwrap()).collect();
+        assert!(bridge.connect("phone").is_none());
+        drop(open);
+        assert!(bridge.connect("phone").is_some());
     }
 
     #[test]

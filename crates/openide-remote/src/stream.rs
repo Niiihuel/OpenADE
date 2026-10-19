@@ -3,6 +3,7 @@
 //! The journal is the replay buffer: a phone that comes back names the last
 //! event it has and gets exactly what followed.
 
+use crate::auth::DeviceStore;
 use crate::bridge::{Bridge, Connection};
 use crate::projection::{self, PublicEvent};
 use crate::tasks::{self, Overview};
@@ -24,6 +25,16 @@ const JOURNAL_POLL: Duration = Duration::from_millis(150);
 const ACTIVITY_INTERVAL: Duration = Duration::from_secs(5);
 /// How often the list is rebuilt when the window has published nothing new.
 const LIST_INTERVAL: Duration = Duration::from_secs(1);
+/// How much of a long journal the first read takes, from its end.
+const FIRST_READ: u64 = 8 * 1024 * 1024;
+/// Pages of events sent in one go; the rest follow on the next look.
+const PAGES_AT_ONCE: usize = 64;
+
+/// Who the stream is for, checked again while it is open.
+pub(crate) struct Access {
+    pub devices: DeviceStore,
+    pub device: String,
+}
 
 /// The events of a journal, read as it grows.
 struct Tail {
@@ -61,6 +72,12 @@ impl Tail {
             self.events.clear();
             return Growth::Rewritten;
         }
+        let mut skip_partial = false;
+        if self.offset == 0 && len > FIRST_READ {
+            // The start of a long journal is history the phone pages through.
+            self.offset = len - FIRST_READ;
+            skip_partial = true;
+        }
         if len == self.offset || file.seek(SeekFrom::Start(self.offset)).is_err() {
             return Growth::Same;
         }
@@ -70,7 +87,9 @@ impl Tail {
         }
         // A line still being written waits for its end.
         let Some(end) = bytes.iter().rposition(|byte| *byte == b'\n') else { return Growth::Same };
-        for line in bytes[..=end].split(|byte| *byte == b'\n').filter(|line| !line.is_empty()) {
+        // A read that starts mid-journal drops the line it starts inside.
+        let start = if skip_partial { bytes.iter().position(|byte| *byte == b'\n').map_or(0, |at| at + 1) } else { 0 };
+        for line in bytes[start..=end].split(|byte| *byte == b'\n').filter(|line| !line.is_empty()) {
             if let Ok(event) = serde_json::from_slice::<AgentEvent>(line) {
                 self.events.push(event);
             }
@@ -96,6 +115,7 @@ fn event(name: &str, data: &impl Serialize) -> Event {
 pub(crate) fn open(
     bridge: Arc<Bridge>,
     connection: Connection,
+    access: Access,
     sessions: PathBuf,
     watch: Option<String>,
     after: u64,
@@ -103,7 +123,7 @@ pub(crate) fn open(
     let (sender, mut receiver) = mpsc::channel::<Event>(64);
     tokio::spawn(async move {
         let _connection = connection;
-        let _ = run(bridge, &sessions, watch, after, sender).await;
+        let _ = run(bridge, access, &sessions, watch, after, sender).await;
     });
     let stream = futures_util::stream::poll_fn(move |context| {
         receiver.poll_recv(context).map(|event| event.map(Ok))
@@ -113,12 +133,14 @@ pub(crate) fn open(
 
 async fn run(
     bridge: Arc<Bridge>,
+    access: Access,
     sessions: &Path,
     watch: Option<String>,
     mut cursor: u64,
     sender: mpsc::Sender<Event>,
 ) -> Result<(), mpsc::error::SendError<Event>> {
     let mut changes = bridge.subscribe();
+    let mut revocations = bridge.revocations();
     let mut tail = watch.as_ref().map(|id| Tail::new(sessions.join(format!("{id}.jsonl"))));
     let mut sent: Option<(Overview, Instant)> = None;
     let mut pending = None;
@@ -127,6 +149,10 @@ async fn run(
     loop {
         if published || listed.is_none_or(|at| at.elapsed() >= LIST_INTERVAL) {
             listed = Some(Instant::now());
+            // A device that lost access hears nothing more.
+            if !access.devices.is_active(&access.device) {
+                return Ok(());
+            }
             let overview = tasks::overview(sessions, &bridge.live());
             let due = match &sent {
                 None => true,
@@ -139,21 +165,33 @@ async fn run(
                 sent = Some((overview, Instant::now()));
             }
         }
-        if let (Some(tail), Some(task)) = (tail.as_mut(), watch.as_deref()) {
-            match tail.read() {
+        if let (Some(reading), Some(task)) = (tail.take(), watch.as_deref()) {
+            let (reading, growth) = tokio::task::spawn_blocking(move || {
+                let mut reading = reading;
+                let growth = reading.read();
+                (reading, growth)
+            })
+            .await
+            .map_err(|_| mpsc::error::SendError(Event::default()))?;
+            match growth {
                 Growth::Same => {}
                 Growth::Rewritten => {
                     cursor = 0;
                     sender.send(event("reset", &json!({"task": task}))).await?;
                 }
                 Growth::Grew => {
-                    let page = projection::project_events(&tail.events, cursor, usize::MAX);
-                    if !page.events.is_empty() {
-                        let events: Vec<PublicEvent> = page.events;
-                        sender.send(event("events", &json!({"task": task, "events": events}))).await?;
+                    for _ in 0..PAGES_AT_ONCE {
+                        let page = projection::project_events(&reading.events, cursor, usize::MAX);
+                        if !page.events.is_empty() {
+                            let events: Vec<PublicEvent> = page.events;
+                            sender.send(event("events", &json!({"task": task, "events": events}))).await?;
+                        }
+                        cursor = cursor.max(page.next_cursor);
+                        if !page.has_more {
+                            break;
+                        }
                     }
-                    cursor = cursor.max(page.next_cursor);
-                    let now = projection::pending_permissions(&tail.events);
+                    let now = projection::pending_permissions(&reading.events);
                     let keys: Vec<String> = now.iter().map(|item| item.request_id.clone()).collect();
                     if pending.as_ref() != Some(&keys) {
                         sender.send(event("pending", &json!({"task": task, "pending": now}))).await?;
@@ -161,12 +199,15 @@ async fn run(
                     }
                 }
             }
+            tail = Some(reading);
         }
         if sender.is_closed() {
             return Ok(());
         }
         published = tokio::select! {
             _ = changes.changed() => true,
+            // Checked at once: the device may be the one that lost access.
+            _ = revocations.changed() => true,
             _ = tokio::time::sleep(JOURNAL_POLL) => false,
         };
     }
